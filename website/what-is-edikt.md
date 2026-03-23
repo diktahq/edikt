@@ -176,6 +176,7 @@ Nine hooks govern the session lifecycle — ensuring governance stays present th
 | PostCompact | Recovers context after compaction |
 | UserPromptSubmit | Injects active plan phase on every prompt |
 | SubagentStop | Logs agent activity and enforces quality gates |
+| InstructionsLoaded | Logs which rule packs are active this session |
 
 ### Specialist agents — `.claude/agents/`
 

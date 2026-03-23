@@ -43,7 +43,7 @@ Every rule file in `.claude/rules/` is plain markdown you can edit directly. Add
 
 **Important:** When you edit a rule file, edikt detects the change. If you remove the `<!-- edikt:generated -->` tag, `/edikt:init` and `/edikt:rules-update` will never overwrite that file — your edits are protected. If the tag is still present, updates will regenerate the file from the template.
 
-## 3. Override a edikt template
+## 3. Override an edikt template
 
 If you want to customize a rule pack for your whole team (not just one project), create a template override:
 
@@ -114,11 +114,4 @@ Each rule file only loads when Claude edits files matching its path pattern. A G
 
 ## Community rule packs
 
-edikt ships with 20 rule packs covering common stacks. For domain-specific rules (fintech, healthcare, e-commerce, infrastructure), check the [edikt-rules](https://github.com/diktahq/edikt-rules) repository for community-contributed packs.
-
-To install a community pack, download the `.md` file to `.claude/rules/`:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-rules/main/domain/fintech.md \
-  -o .claude/rules/fintech.md
-```
+edikt ships with 20 rule packs covering common stacks. Community-contributed domain-specific packs (fintech, healthcare, e-commerce, infrastructure) are coming soon.

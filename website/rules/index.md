@@ -1,6 +1,6 @@
 # Rule Packs
 
-edikt's rule packs are guardrails against specific mistakes Claude makes — not a collection of best-practice opinions. Each pack targets a category of error: hallucinated APIs, placeholder code, race conditions, tautological tests, timing attacks. Architecture opinions belong in ADRs (or archway, if you use it). Rule packs are about correctness.
+edikt's rule packs are guardrails against specific mistakes Claude makes — not a collection of best-practice opinions. Each pack targets a category of error: hallucinated APIs, placeholder code, race conditions, tautological tests, timing attacks. Architecture opinions belong in ADRs (or verikt, if you use it). Rule packs are about correctness.
 
 Each rule is a single `.md` file installed to `.claude/rules/` with `paths:` frontmatter so it only activates on relevant files. All packs are at version 0.1.0.
 
@@ -41,7 +41,7 @@ Every rule in every pack follows a four-level phrasing system:
 | Pack | Enforces | Paths |
 |------|---------|-------|
 | [frontend](/rules/base#frontend) | Component patterns, a11y, state management — seo.md owns alt text | `**/*.{ts,tsx,js,jsx,vue,svelte,css,scss}` |
-| [architecture](/rules/base#architecture) | Layer boundary correctness, import discipline — if you use archway, skip this pack | `**/*.{go,ts,tsx,js,jsx,py,rb,php,rs,java,kt}` |
+| [architecture](/rules/base#architecture) | Layer boundary correctness, import discipline — if you use verikt, skip this pack | `**/*.{go,ts,tsx,js,jsx,py,rb,php,rs,java,kt}` |
 | [api](/rules/base#api) | REST/GraphQL/gRPC conventions, versioning, error shapes — security.md owns validation and error exposure | `**/*.{go,ts,tsx,js,jsx,py,rb,php,rs,java,kt}` |
 | [database](/rules/base#database) | Query hygiene, migration safety, index discipline — database.md owns index rules across all packs | `**/*.{go,ts,tsx,js,jsx,py,rb,php,rs,java,kt,sql}` |
 | [observability](/rules/base#observability) | Structured logging, tracing, metrics | `**/*.{go,ts,tsx,js,jsx,py,rb,php,rs,java,kt}` |

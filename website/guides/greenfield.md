@@ -74,7 +74,8 @@ your-project/
 │   ├── decisions/           # ready for your first ADR
 │   ├── invariants/          # hard constraints
 │   └── product/
-│       ├── spec.md          # product spec stub
+│       ├── prds/            # product requirements
+│       ├── specs/           # technical specifications
 │       └── plans/
 ├── .edikt/
 │   └── config.yaml          # edikt_version, stack, rules

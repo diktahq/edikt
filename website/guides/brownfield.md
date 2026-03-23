@@ -14,7 +14,7 @@ edikt audits what you have and installs guardrails that match.
 ## What the audit finds
 
 ```
-Ceel detected:
+edikt detected:
   Language:     Go 1.22 (go.mod)
   Framework:    Chi v5 (go.mod)
   Architecture: Layered (handler/ service/ repository/)

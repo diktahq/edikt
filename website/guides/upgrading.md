@@ -56,7 +56,7 @@ Agents (.claude/agents/)
   —  my-reviewer.md — custom, skipped
 
 Rule packs (.claude/rules/)
-  ⬆  go.md          1.0.0 → 0.1.0
+  ⬆  go.md          1.0.0 → 1.1.0
   ✓  testing.md     — up to date
   —  my-custom.md   — custom, skipped
 

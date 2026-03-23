@@ -82,7 +82,7 @@ docs/architecture/decisions/ADR-003.md (4 directives)
 
 ## Why this matters
 
-edikt's [EXP-001 experiment](/experiments/exp-001-rule-compliance) ran 123 eval scenarios and proved that well-written rules achieve 100% compliance on conventions Claude has never seen in training. The rule text is the mechanism — not the enforcement layer on top. This means governance quality is directly proportional to how well the documents are written.
+edikt's experiments ([EXP-001](/experiments/exp-001-rule-compliance) and [EXP-002](/experiments/exp-002-extended-compliance)) ran 123 eval scenarios and showed that well-written rules achieve 100% compliance on conventions Claude has never seen in training. The rule text is the mechanism — not the enforcement layer on top. This means governance quality is directly proportional to how well the documents are written.
 
 A vague directive like "handle errors properly" compiles into a vague governance rule. A specific directive like "every catch block MUST handle, propagate, or log — no empty catches" compiles into an enforceable one.
 

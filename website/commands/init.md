@@ -54,7 +54,7 @@ Rules (✓ = recommended for your stack):
     [x] security           — input validation, no hardcoded secrets
     [x] error-handling     — typed errors, context wrapping
     [ ] api                — REST conventions, pagination, versioning
-    [ ] architecture       — layer boundaries, import discipline (skipped: archway detected)
+    [ ] architecture       — layer boundaries, import discipline (skipped: verikt detected)
     [ ] database           — migrations, indexes, N+1 prevention
     ...
 

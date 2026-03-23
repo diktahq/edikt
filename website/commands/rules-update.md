@@ -35,7 +35,7 @@ Checking rule pack versions...
 
 ## Preserving customizations
 
-If you've added custom rules to a edikt-generated file, add a section below the generated content and remove the `<!-- edikt:generated -->` marker. edikt will never touch that file again.
+If you've added custom rules to an edikt-generated file, add a section below the generated content and remove the `<!-- edikt:generated -->` marker. edikt will never touch that file again.
 
 For extensible customization without losing updates, append rules in a separate file: `.claude/rules/my-custom-rules.md`.
 

@@ -253,7 +253,7 @@ He opens the trading dashboard project:
 <T>GOVERNANCE HEALTH</T>
 <T>  Rules:        7 active</T>
 <T dim>                code-quality, testing, security, error-handling,</T>
-<T dim>                typescript, react, next</T>
+<T dim>                typescript, frontend, nextjs</T>
 <T>  Agents:       7 installed</T>
 <T>  Decisions:    4 ADRs, 1 invariant</T>
 <T>  Directives:   6 compiled</T>

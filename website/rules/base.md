@@ -98,7 +98,7 @@ Key rules:
 
 ## architecture _(opt-in)_
 
-Layer boundary correctness and import discipline. If you use [archway](https://github.com/dcsg/archway) for architecture enforcement, skip this pack — archway handles the full architecture layer and edikt defers to it.
+Layer boundary correctness and import discipline. If you use [verikt](https://github.com/diktahq/verikt) for architecture enforcement, skip this pack — verikt handles the full architecture layer and edikt defers to it.
 
 Key rules:
 - Domain layer has zero infrastructure imports
