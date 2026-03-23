@@ -21,7 +21,7 @@ Two workstreams for v0.2.0:
 |-------|-------|--------|---------|
 | 1 | Design session — Claude Code surface sync | not started | — |
 | 2 | PRD-006 — v0.2.0 requirements | not started | — |
-| 3 | HTML sentinel fix (critical — may be broken now) | not started | — |
+| 3 | HTML sentinel fix (critical — may be broken now) | verified — not broken | 2026-03-23 |
 | 4 | Effort frontmatter + agent governance fields | not started | — |
 | 5 | New hooks (StopFailure, SessionEnd, SubagentStart) | not started | — |
 | 6 | Agent resume → SendMessage migration | not started | — |
