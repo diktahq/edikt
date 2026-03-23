@@ -32,10 +32,6 @@ export default withMermaid(defineConfig({
       { text: 'Guides', link: '/guides/solo-engineer' },
       { text: 'How It Works', link: '/governance/chain' },
       { text: 'Reference', link: '/commands/' },
-      {
-        text: 'GitHub',
-        link: 'https://github.com/diktahq/edikt',
-      },
     ],
 
     sidebar: [
