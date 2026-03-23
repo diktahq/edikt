@@ -21,7 +21,7 @@ Two workstreams for v0.2.0:
 |-------|-------|--------|---------|
 | 1 | Design session — Claude Code surface sync | not started | — |
 | 2 | PRD-006 — v0.2.0 requirements | not started | — |
-| 3 | HTML sentinel fix (critical — may be broken now) | verified — not broken | 2026-03-23 |
+| 3 | HTML sentinel migration — replace `<!-- -->` with visible markers | not started | — |
 | 4 | Effort frontmatter + agent governance fields | not started | — |
 | 5 | New hooks (StopFailure, SessionEnd, SubagentStart) | not started | — |
 | 6 | Agent resume → SendMessage migration | not started | — |
@@ -42,13 +42,17 @@ Two workstreams for v0.2.0:
 **Output:** PRD-006 with numbered requirements and acceptance criteria
 **Process:** `/edikt:prd`
 
-## Phase 3: HTML Sentinel Fix (Critical)
+## Phase 3: HTML Sentinel Migration
 
-**Why critical:** Claude Code v2.1.72 hides `<!-- -->` HTML comments from Claude during auto-injection. edikt uses `<!-- edikt:start -->` / `<!-- edikt:end -->` for safe CLAUDE.md merge (ADR-002). This could be broken NOW for any project using edikt.
+**Finding (2026-03-23):** Claude Code v2.1.72 hides `<!-- -->` HTML comments from Claude during auto-injection. edikt's commands (init, upgrade) still work because they use the Read tool and grep/sed on the raw file. **Not broken for commands.**
 
-**Test:** Run `/edikt:init` on a fresh project, check if sentinels are visible to Claude, check if `/edikt:upgrade` can find and replace between sentinels.
+**But:** Claude can no longer see the sentinel boundaries during normal conversation. If a user asks Claude to "edit my CLAUDE.md", Claude doesn't know where the edikt-managed section starts and ends — it could accidentally modify edikt's block.
 
-**If broken:** Replace with non-HTML markers or move to a separate file.
+**Action:** Migrate sentinels from HTML comments to visible text markers that Claude can see:
+- Replace `<!-- edikt:start — managed by edikt, do not edit -->` with a visible marker (e.g., `[edikt:start — managed by edikt, do not edit]` or a prose comment)
+- Update ADR-002 to reflect the change
+- Update `/edikt:init` and `/edikt:upgrade` to detect both old (HTML) and new (visible) markers for backwards compatibility
+- Migration path: `/edikt:upgrade` auto-converts old sentinels to new format
 
 ## Phase 4: Effort + Agent Governance
 
