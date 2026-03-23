@@ -27,7 +27,7 @@ edikt scans your codebase — languages, frameworks, linters, existing docs, com
   AI config:  CLAUDE.md (34 lines)
   Docs:       3 ADRs in docs/decisions/
   Commits:    conventional commits detected
-  Governance: archway.yaml detected — architecture pack skipped
+  Governance: verikt.yaml detected — architecture pack skipped
 ```
 
 For greenfield projects (no code), edikt asks one question:

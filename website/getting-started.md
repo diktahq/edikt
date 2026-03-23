@@ -14,7 +14,7 @@ After running `/edikt:init`, your project gets:
 - **Automatic behaviors** — code auto-formatted on edit, context refreshed each session, decisions captured when you make them
 - **A governance chain** — PRD → Spec → Plan → Code, with drift detection
 
-All committed to your repo. Your whole team gets identical governance.
+All committed to your repo. Your whole team gets identical governance. New to edikt? Read [What is edikt?](/what-is-edikt) first.
 
 ## 1. Install
 
@@ -54,7 +54,7 @@ edikt scans your codebase automatically — languages, frameworks, linters, exis
   AI config:  CLAUDE.md (34 lines)
   Docs:       3 ADRs in docs/decisions/
   Commits:    conventional commits detected
-  Governance: archway.yaml detected — architecture pack skipped
+  Governance: verikt.yaml detected — architecture pack skipped
 ```
 
 **New project (no code yet):**

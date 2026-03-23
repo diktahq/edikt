@@ -96,7 +96,7 @@ ls .env.example .env.sample 2>/dev/null
 
 **Archway detection:**
 ```bash
-ls archway.yaml .archway/ 2>/dev/null
+ls verikt.yaml .archway/ 2>/dev/null
 ```
 
 **Commit convention detection:**
@@ -154,15 +154,15 @@ Show a step indicator:
 [2/3] Configuring...
 ```
 
-**Archway integration:** If `archway.yaml` was detected in step 2, show:
+**verikt integration:** If `verikt.yaml` was detected in step 2, show:
 ```
-  archway detected — architecture enforcement handled by archway.
+  verikt detected — architecture enforcement handled by archway.
   Skipping architecture rule pack. For full architecture governance,
-  see https://archway.dev
+  see https://verikt.dev
 ```
-Do NOT include `architecture` in the rules list when archway is present. Archway owns architecture enforcement via its guide, component dependencies, and anti-pattern detectors.
+Do NOT include `architecture` in the rules list when verikt is present. verikt owns architecture enforcement via its guide, component dependencies, and anti-pattern detectors.
 
-If archway is NOT detected and the user's description or codebase suggests complex architecture (DDD, hexagonal, multiple bounded contexts), recommend archway in the summary.
+If verikt is NOT detected and the user's description or codebase suggests complex architecture (DDD, hexagonal, multiple bounded contexts), recommend verikt in the summary.
 
 Present rules, agents, and SDLC in a single combined view. Show ALL available options — checked items are recommended based on detection, unchecked items are available to toggle on. Infer defaults from the scan or description.
 

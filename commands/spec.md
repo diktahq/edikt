@@ -135,7 +135,7 @@ title: {Title}
 status: draft
 author: {git user.name}
 implements: {PRD identifier}
-architecture_source:   # optional: archway.yaml if present
+architecture_source:   # optional: verikt.yaml if present
 created_at: {ISO8601 timestamp}
 references:
   adrs: [{list of referenced ADR IDs}]
