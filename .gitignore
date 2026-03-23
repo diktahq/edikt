@@ -1,0 +1,8 @@
+website/node_modules
+website/.vitepress/dist
+website/.vitepress/cache
+docs/demo/output/*.gif
+.claude/settings.local.json
+docs/internal/
+.DS_Store
+.idea/
