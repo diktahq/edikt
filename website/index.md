@@ -2,7 +2,7 @@
 layout: home
 
 hero:
-  name: "edikt"
+  name: 'edi<span style="color: var(--vp-c-brand-1)">kt</span>'
   text: "The governance layer for agentic engineering."
   tagline: Your coding standards, enforced. Your decisions, remembered. Every session, every engineer, every project.
   actions:

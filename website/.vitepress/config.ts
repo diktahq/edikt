@@ -25,8 +25,8 @@ export default withMermaid(defineConfig({
   },
 
   themeConfig: {
-    logo: '/logo.svg',
-    siteTitle: 'edikt',
+    logo: { light: '/logo.svg', dark: '/logo-dark.svg' },
+    siteTitle: false,
 
     nav: [
       { text: 'Guides', link: '/guides/solo-engineer' },

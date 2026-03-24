@@ -150,18 +150,18 @@ html {
    Hero
    ============================================================ */
 .VPHero .name {
-  color: var(--edikt-slate) !important;
+  color: #334155 !important;
   font-size: 48px;
   font-weight: 700;
   letter-spacing: -0.03em;
   background: none !important;
   -webkit-background-clip: unset !important;
-  -webkit-text-fill-color: var(--edikt-slate) !important;
+  -webkit-text-fill-color: unset !important;
 }
 
 .dark .VPHero .name {
-  -webkit-text-fill-color: #F1F5F9 !important;
-  color: #F1F5F9 !important;
+  -webkit-text-fill-color: unset !important;
+  color: #CBD5E1 !important;
 }
 
 .VPHero .text {
@@ -199,15 +199,24 @@ html {
   }
 }
 
-/* Hero gradient override — no gradients */
+/* Hero name — teal K via inline HTML span */
 .VPHero .name .clip {
   background: none !important;
   -webkit-background-clip: unset !important;
-  -webkit-text-fill-color: var(--edikt-slate) !important;
+  -webkit-text-fill-color: unset !important;
+  color: #334155 !important;
 }
 
 .dark .VPHero .name .clip {
-  -webkit-text-fill-color: #F1F5F9 !important;
+  color: #CBD5E1 !important;
+  -webkit-text-fill-color: unset !important;
+}
+
+/* The teal K span inside the hero name */
+.VPHero .name .clip span,
+.dark .VPHero .name .clip span {
+  color: #0D9488 !important;
+  -webkit-text-fill-color: #0D9488 !important;
 }
 
 /* ============================================================
