@@ -23,14 +23,16 @@ Three workstreams for v0.2.0:
 |-------|-------|--------|---------|
 | 1a | Design session — codebase pattern learning | not started | — |
 | 1b | Design session — Claude Code surface sync | not started | — |
+| 1c | Design session — harness design audit | not started | — |
 | 2 | PRD-006 — v0.2.0 requirements | not started | — |
 | 3 | Codebase pattern learning — scan, index, point Claude to examples | not started | — |
 | 4 | HTML sentinel migration — replace `<!-- -->` with visible markers | not started | — |
 | 5 | Effort frontmatter + agent governance fields | not started | — |
 | 6 | New hooks (StopFailure, SessionEnd, SubagentStart) | not started | — |
 | 7 | Agent resume → SendMessage migration | not started | — |
-| 8 | EXP-003: Real-world compliance experiment | not started | — |
-| 9 | Website + docs update for v0.2.0 | not started | — |
+| 8 | Harness design audit — `/edikt:harness` command | not started | — |
+| 9 | EXP-003: Real-world compliance experiment | not started | — |
+| 10 | Website + docs update for v0.2.0 | not started | — |
 
 ---
 
@@ -39,6 +41,17 @@ Three workstreams for v0.2.0:
 **Input:** Phase 3 description below + codebase examples
 **Output:** Design decisions for how edikt learns and surfaces patterns
 **Process:** Load context → review the concept → decide on scan approach, storage, user confirmation
+
+## Phase 1c: Design Session — Harness Design Audit
+
+**Input:** Webinar learnings (memory/feedback_webinar_learnings.md), existing `/edikt:doctor` command
+**Output:** Design decisions for a `/edikt:harness` command and harness design guide
+**Key questions:**
+- What does a complete harness look like? (rules + compiled governance + hooks + agents + gates + scoping)
+- How do we audit completeness vs just setup correctness? (doctor checks "is it configured right," harness checks "is it configured enough")
+- What's the gap between `/edikt:init` (install a harness) and `/edikt:harness` (audit/design a harness)?
+- Should harness design be a guide, a command, or both?
+- Can we teach users to think about their governance as a "harness" — making the concept part of our vocabulary?
 
 ## Phase 1b: Design Session — Claude Code Surface Sync
 
@@ -96,7 +109,23 @@ Highest value: SessionEnd (auto-session-sweep).
 
 Search all templates for `resume` parameter usage. Replace with `SendMessage` pattern.
 
-## Phase 7: EXP-003
+## Phase 8: Harness Design Audit
+
+**The concept:** `/edikt:harness` audits the completeness of the user's governance harness — not just "is it configured correctly" (that's `/edikt:doctor`) but "is it configured enough."
+
+**What it checks:**
+- Rules installed but no compiled governance? → "Run `/edikt:compile` to turn your ADRs into enforcement"
+- Agents installed but no quality gates? → "Consider adding `gates: [security]` to block on critical findings"
+- Hooks configured but no compaction recovery? → "Add PostCompact hook to survive context compaction"
+- No signal detection? → "Enable stop hook to detect architecture decisions mid-session"
+- Rules but no agent scoping? → "Consider restricting DBA to migration files only"
+- Governance compiled but never verified? → "Run `/edikt:drift` to check compliance"
+
+**Output:** A harness completeness score with actionable recommendations. Not a pass/fail — a maturity assessment that guides users from basic to full governance.
+
+**Content:** "Designing your agent harness with edikt" guide on edikt.dev — category-defining content.
+
+## Phase 9: EXP-003
 
 **Brief:** `experiments/exp-003-real-world-compliance/BRIEF.md`
 **Scope:** ~48 runs testing multi-rule, compaction, multi-turn, real conventions.
