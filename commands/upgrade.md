@@ -117,7 +117,20 @@ installed_hash=$(md5 -q .claude/agents/{slug}.md 2>/dev/null || md5sum .claude/a
 
 Do NOT touch agents that have no matching template (user-created agents) or that are marked as custom.
 
-#### 2c. Rule packs check
+#### 2c. Config check
+
+Read `.edikt/config.yaml`. Check for missing keys that were added in newer versions:
+
+- `artifacts:` block missing → outdated (added in v0.1.1)
+- `artifacts.database.default_type` missing → outdated
+- `artifacts.fixtures.format` missing → outdated
+
+Note each missing key with a description:
+- "`artifacts:` block missing — enables database-type-aware spec-artifacts"
+
+Do NOT flag keys that exist but have unexpected values — those may be intentional user customizations.
+
+#### 2d. Rule packs check
 
 If `.claude/rules/` does not exist or contains no `.md` files → mark rule packs as "nothing installed, skip" (not outdated).
 
@@ -152,8 +165,11 @@ Rule packs (.claude/rules/)
   —  my-custom.md    — custom, skipped
   —  security.md     — manually edited, skipped
 
+Config (.edikt/config.yaml)
+  ⬆  artifacts: block missing — enables database-type-aware spec-artifacts
+
 ─────────────────────────────────────────────────────
-4 hook changes, 2 agents, 2 rule packs
+4 hook changes, 2 agents, 2 rule packs, 1 config addition
 ```
 
 If no rule packs are installed (`.claude/rules/` is missing or empty), show:
@@ -175,7 +191,7 @@ Ask the user:
 Apply these upgrades? (y/n/select)
   y      — apply all
   n      — cancel
-  select — choose which sections to apply (hooks / agents / rules)
+  select — choose which sections to apply (hooks / agents / rules / config)
 ```
 
 Wait for response. If `select`, ask separately for each section.
@@ -215,6 +231,31 @@ For each outdated agent:
 3. Replace the installed file with the template content
 
 Skip agents without a matching template. Skip user-created agents (no matching template slug).
+
+#### Config
+
+For each missing config key, append the block to `.edikt/config.yaml`. Preserve all existing content — only add what's missing.
+
+If `artifacts:` block is missing, append:
+
+```yaml
+
+artifacts:
+  database:
+    # Default database type for artifact generation.
+    # spec-artifacts checks spec frontmatter first, then this value, then keyword-scans the spec.
+    # Set by edikt:init from code signals. Change only if detection was wrong.
+    # Values: sql | document | key-value | mixed | auto
+    # auto = detect from spec each time (greenfield or genuinely undecided)
+    default_type: auto
+
+  fixtures:
+    # Fixture format. yaml is portable — transform to your stack at implementation time.
+    # Values: yaml | json | sql
+    format: yaml
+```
+
+Note: the `sql.migrations.tool` sub-key is only written by `/edikt:init` when a SQL database is detected. Do not add it during upgrade — `auto` is the correct default for unknown stacks.
 
 #### Rule packs
 
@@ -263,6 +304,7 @@ Version:     {old} → {new}
 Hooks:       4 updated
 Agents:      2 updated
 Rule packs:  2 updated (1 skipped — manually edited)
+Config:      1 addition (artifacts: block)
 
 Commit these changes to share the upgrade with your team:
   git add .claude/ .edikt/config.yaml && git commit -m "chore: upgrade edikt to {new}"
