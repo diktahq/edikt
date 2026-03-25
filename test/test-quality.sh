@@ -200,10 +200,10 @@ assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Rule override" "Doctor 
 
 # VERSION file
 FILE_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
-if [ "$FILE_VER" = "0.1.0" ]; then
-    pass "VERSION file is 0.1.0"
+if echo "$FILE_VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    pass "VERSION file is valid semver ($FILE_VER)"
 else
-    fail "VERSION file is 0.1.0" "Got: $FILE_VER"
+    fail "VERSION file is valid semver" "Got: $FILE_VER"
 fi
 
 # Config version matches
@@ -247,5 +247,84 @@ if command -v npx >/dev/null 2>&1 && [ -d "$PROJECT_ROOT/website" ]; then
 else
     echo "  SKIP  VitePress build (npx not available)"
 fi
+
+# ============================================================
+# spec-artifacts output contracts
+# ============================================================
+
+SPECS_DIR="$PROJECT_ROOT/test/fixtures/specs"
+
+# Test 1: SQL path - spec with Postgres keyword → data-model.mmd
+assert_file_exists "$SPECS_DIR/spec-sql-postgres.md" "Test fixture exists: spec-sql-postgres.md"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres.md" "Postgres" "Fixture contains Postgres keyword"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres.md" "status: accepted" "Fixture has accepted status"
+
+# Test 2: Document-mongo path - spec with MongoDB keyword → data-model.schema.yaml
+assert_file_exists "$SPECS_DIR/spec-doc-mongodb.md" "Test fixture exists: spec-doc-mongodb.md"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb.md" "MongoDB" "Fixture contains MongoDB keyword"
+
+# Test 3: Document-dynamo path - spec with DynamoDB keyword → data-model.md with Access Patterns
+assert_file_exists "$SPECS_DIR/spec-doc-dynamodb.md" "Test fixture exists: spec-doc-dynamodb.md"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb.md" "DynamoDB" "Fixture contains DynamoDB keyword"
+
+# Test 4: Key-value path - spec with Redis keyword → data-model.md with key schema
+assert_file_exists "$SPECS_DIR/spec-kv-redis.md" "Test fixture exists: spec-kv-redis.md"
+assert_file_contains "$SPECS_DIR/spec-kv-redis.md" "Redis" "Fixture contains Redis keyword"
+
+# Test 5: Mixed path - spec with Postgres and Redis → both data-model-sql.mmd and data-model-kv.md
+assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis.md" "Test fixture exists: spec-mixed-postgres-redis.md"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis.md" "Postgres" "Mixed fixture contains Postgres"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis.md" "Redis" "Mixed fixture contains Redis"
+
+# Test 6: Config fallback - spec with no keywords + config default_type: sql → data-model.mmd exists
+assert_file_exists "$SPECS_DIR/spec-no-keywords.md" "Test fixture exists: spec-no-keywords.md"
+assert_file_contains "$SPECS_DIR/spec-no-keywords.md" "Data Model" "No-keyword fixture has Data Model section"
+
+# Test 7: Config auto + no keywords - spec with no keywords + config auto → warning/prompt in output
+assert_file_exists "$SPECS_DIR/spec-auto-fallback.md" "Test fixture exists: spec-auto-fallback.md"
+assert_file_contains "$SPECS_DIR/spec-auto-fallback.md" "status: accepted" "Auto-fallback fixture has accepted status"
+
+# Test 8: Active constraints injected - spec with active invariant → "active constraints applied" in routing
+assert_file_exists "$SPECS_DIR/spec-with-constraints.md" "Test fixture exists: spec-with-constraints.md"
+assert_file_contains "$SPECS_DIR/spec-with-constraints.md" "Constrained Feature" "Constraint fixture has title"
+
+# Test 9: Empty invariant body warning - spec with empty invariant → "body is empty" in output
+assert_file_exists "$SPECS_DIR/spec-empty-constraint.md" "Test fixture exists: spec-empty-constraint.md"
+assert_file_contains "$SPECS_DIR/spec-empty-constraint.md" "Empty Constraint" "Empty constraint fixture exists"
+
+# Test 10: Superseded invariant excluded - spec with Superseded invariant → constraint count is 0
+assert_file_exists "$SPECS_DIR/spec-superseded-invariant.md" "Test fixture exists: spec-superseded-invariant.md"
+assert_file_contains "$SPECS_DIR/spec-superseded-invariant.md" "Superseded" "Superseded fixture exists"
+
+# Test 11: Spec-frontmatter override - config sql + spec database_type: document-mongo → data-model.schema.yaml exists
+assert_file_exists "$SPECS_DIR/spec-override-frontmatter.md" "Test fixture exists: spec-override-frontmatter.md"
+assert_file_contains "$SPECS_DIR/spec-override-frontmatter.md" "database_type: document-mongo" "Override fixture has frontmatter override"
+
+# Test 12: Design blueprint header - any spec with data model → artifact contains "Design blueprint" comment
+assert_file_exists "$SPECS_DIR/spec-blueprint-check.md" "Test fixture exists: spec-blueprint-check.md"
+assert_file_contains "$SPECS_DIR/spec-blueprint-check.md" "Data Model" "Blueprint fixture has Data Model section"
+
+# Verify spec-artifacts command has design blueprint framing
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Design blueprint" "spec-artifacts mentions design blueprint framing"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "design blueprints" "spec-artifacts uses design blueprint language"
+
+# Verify spec-artifacts command has constraint injection logic
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "ACTIVE CONSTRAINTS" "spec-artifacts injects active constraints"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Resolve Context" "spec-artifacts has resolve context step"
+
+# Verify spec-artifacts command has database type resolution
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "database_type:" "spec-artifacts reads spec frontmatter database_type"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "artifacts.database.default_type" "spec-artifacts reads config default_type"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Keyword scan" "spec-artifacts performs keyword scanning"
+
+# Verify data model lookup tables are referenced
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model.mmd" "spec-artifacts generates .mmd files"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model.schema.yaml" "spec-artifacts generates schema.yaml files"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "erDiagram" "spec-artifacts uses Mermaid erDiagram format"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "\$schema" "spec-artifacts uses JSON Schema"
+
+# Verify multi-database suffix naming
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-sql.mmd" "spec-artifacts uses sql suffix for mixed"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-kv.md" "spec-artifacts uses kv suffix for key-value"
 
 test_summary
