@@ -200,7 +200,7 @@ assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Rule override" "Doctor 
 
 # VERSION file
 FILE_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
-if echo "$FILE_VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+if echo "$FILE_VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
     pass "VERSION file is valid semver ($FILE_VER)"
 else
     fail "VERSION file is valid semver" "Got: $FILE_VER"

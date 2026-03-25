@@ -45,12 +45,13 @@ else
     fail "CHANGELOG.md has at least one version section"
 fi
 
-# CHANGELOG version matches VERSION file
+# CHANGELOG version matches VERSION file (strip pre-release suffix for lookup)
 FILE_VER=$(cat "$VERSION_FILE" | tr -d '[:space:]')
-if grep -q "^## v${FILE_VER}" "$CHANGELOG_FILE"; then
+BASE_VER=$(echo "$FILE_VER" | sed 's/-.*//')
+if grep -q "^## v${BASE_VER}" "$CHANGELOG_FILE"; then
     pass "CHANGELOG.md has an entry for version $FILE_VER"
 else
-    fail "CHANGELOG.md has an entry for version $FILE_VER" "No '## v${FILE_VER}' section found"
+    fail "CHANGELOG.md has an entry for version $FILE_VER" "No '## v${BASE_VER}' section found"
 fi
 
 # ============================================================
