@@ -4,14 +4,49 @@ umask 0022
 
 # edikt installer
 # TODO: add SHA-256 manifest verification once the release workflow exists
-# Usage: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash           # global (default)
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash -s -- --project  # project-only
 
 REPO="diktahq/edikt"
 BRANCH="main"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 
-EDIKT_HOME="${HOME}/.edikt"
-CLAUDE_COMMANDS="${HOME}/.claude/commands"
+# Parse flags — allow non-interactive mode via --global or --project
+INSTALL_MODE=""
+for arg in "$@"; do
+  case "$arg" in
+    --project) INSTALL_MODE="project" ;;
+    --global)  INSTALL_MODE="global" ;;
+  esac
+done
+
+# Interactive prompt if no flag provided
+if [ -z "$INSTALL_MODE" ]; then
+  echo ""
+  echo "  Where should edikt be installed?"
+  echo ""
+  echo "  [1] Global (default) — available in all projects"
+  echo "  [2] Project only     — installed in current directory"
+  echo ""
+  printf "  Choice [1]: "
+  read -r choice
+  case "$choice" in
+    2) INSTALL_MODE="project" ;;
+    *) INSTALL_MODE="global" ;;
+  esac
+fi
+
+if [ "$INSTALL_MODE" = "project" ]; then
+  EDIKT_HOME=".edikt"
+  CLAUDE_COMMANDS=".claude/commands"
+  echo -e "\033[1mInstalling edikt (project-local)...\033[0m"
+else
+  EDIKT_HOME="${HOME}/.edikt"
+  CLAUDE_COMMANDS="${HOME}/.claude/commands"
+  echo -e "\033[1mInstalling edikt (global)...\033[0m"
+fi
 
 # Colors
 RED='\033[0;31m'
@@ -28,7 +63,6 @@ error() { echo -e "${RED}error:${RESET} $1" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || error "curl is required"
 command -v git >/dev/null 2>&1  || error "git is required"
 
-echo -e "${BOLD}Installing edikt...${RESET}"
 echo
 
 # Create directories

@@ -20,7 +20,7 @@ EXT="${FILE##*.}"
 
 case "$EXT" in
   go)
-    command -v gofmt >/dev/null 2>&1 && gofmt -w "$FILE"
+    command -v gofmt >/dev/null 2>&1 && gofmt -w "$FILE" 2>/dev/null || true
     ;;
   ts|tsx|js|jsx)
     if [ -f "node_modules/.bin/prettier" ]; then

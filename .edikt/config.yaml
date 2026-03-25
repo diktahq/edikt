@@ -1,7 +1,7 @@
 # edikt configuration
 # This file configures edikt for the edikt project itself (dogfooding).
 
-edikt_version: "0.1.0"
+edikt_version: "0.1.1"
 base: docs
 
 stack: []  # edikt is pure markdown, no language stack
@@ -26,6 +26,16 @@ features:
   signal-detection: true   # detect ADR/invariant candidates on stop
   plan-injection: true     # inject active plan phase on every prompt
   quality-gates: true      # block on critical findings from gate agents
+
+artifacts:
+  database:
+    # Default database type for artifact generation.
+    # edikt has no database — use auto (spec-level detection).
+    default_type: auto
+
+  fixtures:
+    # Fixture format. yaml is portable — transform to your stack at implementation time.
+    format: yaml
 
 sdlc:
   commit-convention: conventional
