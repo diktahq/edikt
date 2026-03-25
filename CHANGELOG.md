@@ -42,6 +42,23 @@ All review commands now enumerate findings with IDs (#1, #2, #3...) so users can
 
 **Config contract.** `/edikt:init` now detects database type and migration tool from code signals and writes `artifacts.database.default_type` and `artifacts.sql.migrations.tool` to config. The `artifacts:` block is now part of the standard config schema.
 
+### HTML sentinel migration — CLAUDE.md section boundaries now visible to Claude
+
+Claude Code v2.1.72+ hides `<!-- -->` HTML comments when injecting `CLAUDE.md` into Claude's context. The old `<!-- edikt:start -->` / `<!-- edikt:end -->` sentinels were invisible to Claude, so asking Claude to "edit my CLAUDE.md" could accidentally overwrite edikt's managed section.
+
+New format uses markdown link reference definitions, which survive Claude Code's injection intact:
+
+```
+[edikt:start]: # managed by edikt — do not edit this block manually
+...
+[edikt:end]: #
+```
+
+- `/edikt:init` writes the new format on fresh installs and migrates old markers when re-running
+- `/edikt:upgrade` detects and migrates old HTML sentinels as part of the upgrade flow
+- Both old and new formats are detected for backward compatibility
+- ADR-002 updated to document the change and rationale
+
 ### Effort frontmatter on all commands
 
 All 24 commands now declare `effort: low | normal | high` in their frontmatter. Claude Code uses this to tune the model's thinking budget per command.

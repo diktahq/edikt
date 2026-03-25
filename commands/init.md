@@ -526,7 +526,21 @@ Rule template not found: ~/.edikt/templates/rules/{tier}/{name}.md
 Install edikt globally: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
 ```
 
-**`CLAUDE.md`** — Read the template from `~/.edikt/templates/CLAUDE.md.tmpl`. Sentinel merge using `<!-- edikt:start -->` / `<!-- edikt:end -->`. Fill template variables from config. If CLAUDE.md exists without edikt block, append. If edikt block exists, replace between sentinels only. Never Write the whole file — use Read + Edit.
+**`CLAUDE.md`** — Read the template from `~/.edikt/templates/CLAUDE.md.tmpl`. Sentinel merge using `[edikt:start]` / `[edikt:end]` markers. Fill template variables from config.
+
+Detect the existing sentinel format before writing:
+```bash
+grep -qF '[edikt:start]' CLAUDE.md 2>/dev/null && echo "new"
+grep -qF '<!-- edikt:start' CLAUDE.md 2>/dev/null && echo "old"
+```
+
+Three cases:
+- **No CLAUDE.md** — create the file with the new `[edikt:start]` / `[edikt:end]` markers
+- **CLAUDE.md exists, no edikt block** — append the edikt block (new markers) at the bottom, leave everything above untouched
+- **CLAUDE.md exists, new `[edikt:start]` marker** — replace only the content between `[edikt:start]` and `[edikt:end]`, leave everything outside untouched
+- **CLAUDE.md exists, old `<!-- edikt:start` marker** — replace content AND migrate sentinels to new format in the same operation
+
+Never Write the whole file — use Read + Edit.
 
 **`.claude/settings.json`** — Read the template from `~/.edikt/templates/settings.json.tmpl` and use it EXACTLY as-is for hook configuration. Do NOT invent or modify hook filenames — the template contains the correct paths. If settings.json exists, merge hooks from the template — preserve existing non-edikt settings. The exact hook filenames are: `session-start.sh`, `pre-tool-use.sh`, `post-tool-use.sh`, `stop-hook.sh`, `pre-compact.sh`, `post-compact.sh`, `user-prompt-submit.sh`, `subagent-stop.sh`, `instructions-loaded.sh`.
 
