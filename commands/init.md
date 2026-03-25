@@ -1,6 +1,7 @@
 ---
 name: edikt:init
 description: "Intelligent onboarding — detect project, infer architecture, install guardrails"
+effort: normal
 allowed-tools:
   - Read
   - Write
@@ -104,6 +105,141 @@ ls verikt.yaml .archway/ 2>/dev/null
 git log --oneline -20 2>/dev/null
 ```
 
+**Database detection:**
+
+Run these checks in order. Collect all signals before deciding type and tool.
+
+```bash
+# --- Definitive config/schema signals (high confidence) ---
+[ -f prisma/schema.prisma ]            && echo "DB_SIGNAL: sql prisma definitive"
+[ -f alembic.ini ]                     && echo "DB_SIGNAL: sql alembic definitive"
+[ -f flyway.conf ]                     && echo "DB_SIGNAL: sql flyway definitive"
+[ -f liquibase.properties ]            && echo "DB_SIGNAL: sql liquibase definitive"
+[ -f changelog.xml ]                   && echo "DB_SIGNAL: sql liquibase definitive"
+
+# Django: manage.py + at least one migrations directory
+if [ -f manage.py ]; then
+  find . -not -path './.git/*' -not -path './node_modules/*' \
+    -path '*/migrations/*.py' 2>/dev/null | head -1 | grep -q . \
+    && echo "DB_SIGNAL: sql django definitive"
+fi
+
+# Flyway migration directory (definitive if found without flyway.conf)
+find . -not -path './.git/*' -path '*/db/migration/*.sql' 2>/dev/null | head -1 | grep -q . \
+  && echo "DB_SIGNAL: sql flyway definitive"
+
+# --- go.mod dependency signals (inferred) ---
+if [ -f go.mod ]; then
+  grep -qF 'lib/pq'             go.mod && echo "DB_SIGNAL: sql - inferred lib/pq"
+  grep -qF 'jackc/pgx'          go.mod && echo "DB_SIGNAL: sql - inferred jackc/pgx"
+  grep -qF 'go-sql-driver/mysql' go.mod && echo "DB_SIGNAL: sql - inferred go-sql-driver/mysql"
+  grep -qF 'mongo-driver'        go.mod && echo "DB_SIGNAL: document - inferred mongo-driver"
+  grep -qF 'aws-sdk-go'          go.mod && echo "DB_SIGNAL: document - inferred aws-sdk-go (check .go files for DynamoDB import)"
+  grep -qF 'go-migrate'          go.mod && echo "DB_SIGNAL: sql golang-migrate inferred go-migrate"
+  grep -qF 'golang-migrate'      go.mod && echo "DB_SIGNAL: sql golang-migrate inferred golang-migrate"
+  grep -qF 'go-redis'            go.mod && echo "DB_SIGNAL: key-value - inferred go-redis"
+fi
+
+# --- package.json dependency signals (inferred) ---
+if [ -f package.json ]; then
+  grep -qF '"prisma"'                package.json && echo "DB_SIGNAL: sql prisma inferred prisma"
+  grep -qF '"@prisma/client"'        package.json && echo "DB_SIGNAL: sql prisma inferred @prisma/client"
+  grep -qF '"mongoose"'              package.json && echo "DB_SIGNAL: document - inferred mongoose"
+  grep -qF '"@aws-sdk/client-dynamodb"' package.json && echo "DB_SIGNAL: document - inferred @aws-sdk/client-dynamodb"
+  grep -qF '"drizzle-orm"'           package.json && echo "DB_SIGNAL: sql drizzle inferred drizzle-orm"
+  grep -qF '"knex"'                  package.json && echo "DB_SIGNAL: sql knex inferred knex"
+  grep -qF '"typeorm"'               package.json && echo "DB_SIGNAL: sql - inferred typeorm"
+  grep -qF '"ioredis"'               package.json && echo "DB_SIGNAL: key-value - inferred ioredis"
+  grep -qF '"redis"'                 package.json && echo "DB_SIGNAL: key-value - inferred redis"
+fi
+
+# --- Python dependency signals (inferred) ---
+for pyfile in requirements.txt pyproject.toml; do
+  if [ -f "$pyfile" ]; then
+    grep -qiF 'sqlalchemy' "$pyfile" && echo "DB_SIGNAL: sql - inferred sqlalchemy ($pyfile)"
+    grep -qiF 'pymongo'    "$pyfile" && echo "DB_SIGNAL: document - inferred pymongo ($pyfile)"
+    grep -qiF 'django'     "$pyfile" && echo "DB_SIGNAL: sql django inferred django ($pyfile)"
+  fi
+done
+
+# --- Ruby signals (inferred) ---
+if [ -f Gemfile ]; then
+  grep -qF 'pg'      Gemfile && echo "DB_SIGNAL: sql rails inferred pg"
+  grep -qF 'mysql2'  Gemfile && echo "DB_SIGNAL: sql rails inferred mysql2"
+  grep -qF 'mongoid' Gemfile && echo "DB_SIGNAL: document - inferred mongoid"
+fi
+
+# --- C# signals (inferred) ---
+find . -not -path './.git/*' -name '*.csproj' 2>/dev/null | while read f; do
+  grep -qF 'EntityFramework' "$f" && echo "DB_SIGNAL: sql ef-core inferred EntityFramework ($f)"
+  grep -qF 'Npgsql'          "$f" && echo "DB_SIGNAL: sql ef-core inferred Npgsql ($f)"
+done
+
+# --- Elixir signals (inferred) ---
+if [ -f mix.exs ]; then
+  grep -qF 'ecto_sql' mix.exs && echo "DB_SIGNAL: sql ecto inferred ecto_sql"
+fi
+
+# --- Rust signals (inferred) ---
+if [ -f Cargo.toml ]; then
+  grep -qF 'diesel' Cargo.toml && echo "DB_SIGNAL: sql diesel inferred diesel"
+  grep -qF 'sqlx'   Cargo.toml && echo "DB_SIGNAL: sql raw-sql inferred sqlx"
+fi
+```
+
+After collecting all `DB_SIGNAL` lines, apply these rules to determine `detected_db_type` and `detected_db_tool`:
+
+1. Collect unique DB types from all signals (`sql`, `document`, `key-value`).
+2. If only one type → `detected_db_type` = that type.
+3. If more than one type → `detected_db_type` = `mixed`.
+4. If no signals → `detected_db_type` = `none` (triggers greenfield questions below).
+5. For tool: if any definitive signal carries a tool name, use it. If only inferred signals carry a tool, use it but mark as inferred. If no tool in any signal → `detected_db_tool` = none.
+6. If type is `document` or `key-value` (and not `mixed`), `detected_db_tool` = none regardless.
+
+Show the user what was found before writing config. Use this format:
+
+For a definitive detection:
+```
+Database detected:
+  Type:  sql (from prisma/schema.prisma)
+  Tool:  prisma (definitive)
+```
+
+For an inferred detection:
+```
+Database detected:
+  Type:  document (inferred from mongoose in package.json)
+  Tool:  not detected
+```
+
+For mixed:
+```
+Database detected:
+  Type:  mixed (sql from lib/pq, key-value from go-redis in go.mod)
+  Tool:  golang-migrate (inferred from golang-migrate in go.mod)
+```
+
+For nothing detected — do NOT show this block yet. Instead, ask the greenfield questions during Step 3 (Configure), integrated into the interview after stack info is confirmed:
+
+```
+Database setup (nothing detected from code):
+  What database type will you use?
+  1. SQL (Postgres, MySQL, SQLite, etc.)
+  2. Document (MongoDB, DynamoDB, Firestore, etc.)
+  3. Key-Value (Redis, DynamoDB as KV, etc.)
+  4. Mixed (multiple types)
+  5. Not decided yet
+```
+
+If the user selects 1 (SQL) or 4 (Mixed), follow up with:
+```
+  Migration tool? (press enter to skip)
+  golang-migrate | flyway | alembic | django | rails | prisma |
+  liquibase | drizzle | knex | ecto | diesel | raw-sql
+```
+
+If the user selects 2, 3, or 5 — skip migration tool question entirely. Selection 5 → `default_type: auto`.
+
 Present findings — same format for both established and greenfield:
 
 **Established project:**
@@ -119,6 +255,20 @@ Present findings — same format for both established and greenfield:
   Docs:       3 ADRs in docs/decisions/
   Commits:    conventional commits detected (feat/fix/chore)
 ```
+
+**If existing ADRs or decision docs were detected**, offer to import them:
+```
+Found 3 existing architecture decisions in docs/decisions/.
+Import them into edikt's governance? (Y/n)
+```
+
+If the user accepts:
+- Read each existing ADR file
+- Copy or move to `{decisions_path}/` (from config, default `docs/architecture/decisions/`)
+- If the file doesn't follow ADR format (missing status, missing Decision section), convert it: extract the decision, add `status: accepted` frontmatter, preserve the original content
+- After import: "Imported 3 ADRs. Run `/edikt:compile` to compile them into governance directives."
+
+If the user declines, continue — remind them they can import later with `/edikt:intake`.
 
 **Greenfield (no code detected):**
 ```
@@ -306,6 +456,36 @@ features:
   plan-injection: true     # inject active plan phase on every prompt
   quality-gates: true      # block on critical findings from gate agents
 
+artifacts:
+  database:
+    # Default database type for artifact generation.
+    # spec-artifacts checks spec frontmatter first, then this value, then keyword-scans.
+    # Set by edikt:init from code signals. Change only if detection was wrong.
+    # Values: sql | document | key-value | mixed | auto
+    # auto = detect from spec each time (greenfield or genuinely undecided)
+    default_type: {WRITE the detected_db_type from Step 2 database detection, or the user's answer from the greenfield question. Write "auto" only when the user chose "Not decided yet" (option 5). Never write "unknown", never leave absent.}
+
+  {CONDITIONAL sql block — rules:
+   - Write the sql: block ONLY when default_type is "sql" or "mixed".
+   - When default_type is "document" or "key-value", omit the entire sql: block.
+   - When default_type is "auto", omit the sql: block (type unknown at init time).
+   - When default_type is "mixed", write the sql: block with the detected or user-provided tool.}
+  sql:
+    migrations:
+      # SQL-only. Only written when default_type is sql or mixed.
+      # null (~) = generic SQL with UP/DOWN/BACKFILL/RISK sections.
+      # Values: golang-migrate | flyway | alembic | django | rails | prisma |
+      #         liquibase | drizzle | knex | ecto | diesel | raw-sql | ~ (null)
+      tool: {WRITE the detected_db_tool when one was detected (definitive or inferred), the user's answer when asked during greenfield, or "~" when no tool was detected and the user skipped the migration tool question.}
+
+  {MIXED type comment — when default_type is "mixed", add a comment listing each detected DB type and its source signal. Example:
+    # detected: sql (lib/pq in go.mod), key-value (go-redis in go.mod)}
+
+  fixtures:
+    # Fixture format. yaml is portable — transform to your stack at implementation time.
+    # Values: yaml | json | sql
+    format: yaml
+
 sdlc:
   commit-convention: {choice or "none"}
   pr-template: {true/false}
@@ -348,7 +528,7 @@ Install edikt globally: curl -fsSL https://raw.githubusercontent.com/diktahq/edi
 
 **`CLAUDE.md`** — Read the template from `~/.edikt/templates/CLAUDE.md.tmpl`. Sentinel merge using `<!-- edikt:start -->` / `<!-- edikt:end -->`. Fill template variables from config. If CLAUDE.md exists without edikt block, append. If edikt block exists, replace between sentinels only. Never Write the whole file — use Read + Edit.
 
-**`.claude/settings.json`** — Generate hook config referencing `$HOME/.edikt/hooks/`. If settings.json exists, merge hooks — preserve existing non-edikt settings.
+**`.claude/settings.json`** — Read the template from `~/.edikt/templates/settings.json.tmpl` and use it EXACTLY as-is for hook configuration. Do NOT invent or modify hook filenames — the template contains the correct paths. If settings.json exists, merge hooks from the template — preserve existing non-edikt settings. The exact hook filenames are: `session-start.sh`, `pre-tool-use.sh`, `post-tool-use.sh`, `stop-hook.sh`, `pre-compact.sh`, `post-compact.sh`, `user-prompt-submit.sh`, `subagent-stop.sh`, `instructions-loaded.sh`.
 
 **PR template** — Only install `.github/pull_request_template.md` if it does NOT already exist. Never overwrite.
 

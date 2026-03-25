@@ -1,6 +1,7 @@
 ---
 name: edikt:docs
 description: "Audit documentation gaps — find what changed in code but wasn't reflected in docs"
+effort: high
 context: fork
 allowed-tools:
   - Read

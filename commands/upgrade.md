@@ -1,6 +1,7 @@
 ---
 name: edikt:upgrade
 description: "Upgrade edikt in this project — hooks, agents, and rules to the latest installed version"
+effort: normal
 allowed-tools:
   - Read
   - Write

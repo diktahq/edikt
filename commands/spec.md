@@ -1,6 +1,7 @@
 ---
 name: edikt:spec
 description: "Technical specification from an accepted PRD"
+effort: high
 ---
 
 (eval):1: no matches found: docs/product/specs/SPEC-*.md

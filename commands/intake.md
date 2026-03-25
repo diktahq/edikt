@@ -1,6 +1,7 @@
 ---
 name: edikt:intake
 description: "Onboard existing docs into edikt's standard structure"
+effort: normal
 allowed-tools:
   - Read
   - Write

@@ -1,6 +1,7 @@
 ---
 name: edikt:spec-artifacts
 description: "Generate implementable artifacts from an accepted spec"
+effort: high
 ---
 
 # edikt:spec-artifacts
@@ -15,16 +16,13 @@ Generate implementable artifacts (data model, API contracts, migrations, test st
 
 ### 1. Resolve Paths
 
-Read `.edikt/config.yaml`. Specs directory from `specs: { dir: }` (default: `docs/product/specs/`).
+Read `.edikt/config.yaml`. Specs directory from `specs: { dir: }` (default: `docs/product/specs/`). Invariants directory from `paths: { invariants: }` (default: `docs/architecture/invariants/`).
 
-### 2. Find and Validate the Spec
+### 2. Resolve Context
 
-If `$ARGUMENTS` is a SPEC identifier (e.g., `SPEC-005`):
-```bash
-find {specs_dir}/ -name "SPEC-005*" -type d
-```
+Work through this checklist before proceeding. Record each value explicitly.
 
-Read `{spec_folder}/spec.md`. Check the frontmatter `status:` field:
+**Spec validation** — find the spec folder and read `{spec_folder}/spec.md`. Check frontmatter `status:`:
 - If `status: accepted` → proceed
 - If `status: draft` → block:
   ```
@@ -33,6 +31,32 @@ Read `{spec_folder}/spec.md`. Check the frontmatter `status:` field:
      Review the spec and change status to "accepted" first.
   ```
 - If no frontmatter status → treat as accepted (backwards compatibility)
+
+**DB_TYPE** — check in priority order, use first match:
+1. Spec frontmatter `database_type:` → if present, use it. Note source: `spec-frontmatter`.
+2. Config `artifacts.database.default_type` → if not `auto`, use it. Note source: `config`.
+3. Keyword scan spec content using the DB type keyword table below → if matched. Note source: `keyword-scan`.
+4. Still unresolved → ask the user. Note source: `user`.
+
+**CONSTRAINTS** — load active invariants:
+- Read all files in `{invariants_dir}` (from config `paths.invariants`)
+- For each file where frontmatter `status: Active`:
+  - Strip frontmatter (content between first `---` and second `---`)
+  - Take remaining body verbatim
+  - If body empty → emit warning and skip:
+    ```
+    ⚠ INV-NNN body is empty — constraint not injected. Review docs/architecture/invariants/INV-NNN-*.md
+    ```
+- Build ACTIVE CONSTRAINTS block, or set to `none`
+
+**State checkpoint — confirm before proceeding:**
+```
+- [ ] DB_TYPE = {one of: sql | document-mongo | document-dynamo | key-value | mixed}
+       source: {spec-frontmatter | config | keyword-scan | user}
+       if mixed: list all detected sub-types
+- [ ] CONSTRAINTS = {ACTIVE CONSTRAINTS block text, or "none"}
+- [ ] Spec status: accepted
+```
 
 ### 3. Detect Relevant Artifacts
 
@@ -46,28 +70,54 @@ Apply these detection rules:
 
 | If the spec mentions... | Artifact | Primary agent | Secondary |
 |---|---|---|---|
-| database, model, schema, entity, table, column, field, relationship | `data-model.md` | dba | architect |
-| API, endpoint, route, REST, GraphQL, request, response, contract | `contracts/api.md` | api | architect |
+| database, model, schema, entity, table, column, field, relationship | *(see data model lookup table)* | dba | architect |
+| API, endpoint, route, REST, GraphQL, request, response, contract | `contracts/api.yaml` | api | architect |
 | gRPC, protobuf, proto, service definition | `contracts/proto/` | api | engineer |
-| migration, schema change, ALTER, CREATE TABLE | `migrations.md` | dba | sre |
-| event, message, queue, Kafka, RabbitMQ, pub/sub, webhook delivery | `contracts/events.md` | architect | sre |
+| migration, schema change, ALTER, CREATE TABLE | `migrations/` *(sql or mixed only)* | dba | sre |
+| event, message, queue, Kafka, RabbitMQ, pub/sub, webhook delivery | `contracts/events.yaml` | architect | sre |
 | test, testing strategy, coverage, unit test, integration test | `test-strategy.md` | qa | engineer |
 | config, environment variable, feature flag, configuration | `config-spec.md` | sre | engineer |
-| seed, fixture, test data, sample data, development data (also auto-triggers when data-model.md is generated) | `fixtures.md` | qa | dba |
+| seed, fixture, test data, sample data, development data (also auto-triggers when data-model is generated) | `fixtures.yaml` | qa | dba |
 
-Show the list with checkmarks:
+**Data model file — resolve from DB_TYPE:**
+
+Single DB type (no suffix):
+
+| DB_TYPE | File | Format |
+|---|---|---|
+| sql | `data-model.mmd` | Mermaid erDiagram |
+| document-mongo | `data-model.schema.yaml` | JSON Schema in YAML |
+| document-dynamo | `data-model.md` | Access patterns + PK/SK/GSI design |
+| key-value | `data-model.md` | Key schema table |
+
+Mixed (suffix per sub-type to avoid collision):
+
+| Sub-type | File |
+|---|---|
+| sql | `data-model-sql.mmd` |
+| document-mongo | `data-model-mongo.schema.yaml` |
+| document-dynamo | `data-model-dynamo.md` |
+| key-value | `data-model-kv.md` |
+
+**migrations/ is only generated when DB_TYPE is `sql` or `mixed`. Skip it entirely for `document` and `key-value`.**
+
+Show the list with checkmarks. Include DB_TYPE source warning when applicable:
+
 ```
-  ✓ data-model.md — schema mentions detected
-  ✓ contracts/api.md — API endpoint references
+  ✓ data-model.mmd — sql detected via config (Mermaid ERD)
+  ✓ contracts/api.yaml — API endpoint references
   ✓ test-strategy.md — testing strategy section
-  ✗ migrations.md — no schema changes
-  ✗ contracts/events.md — no messaging patterns
+  ✗ migrations/ — no schema changes
+  ✗ contracts/events.yaml — no messaging patterns
   ✗ config-spec.md — no config changes
-
-Generate 3 artifacts? (y/n)
 ```
 
-Wait for confirmation.
+If DB_TYPE was resolved via keyword-scan, add a warning beneath the data model line:
+```
+   ⚠ detected from spec content — verify this is correct
+```
+
+Wait for confirmation before proceeding.
 
 ### 4. Generate Artifacts
 
@@ -78,93 +128,234 @@ Each agent receives:
 - The source PRD content (read from `source_prd:` in spec frontmatter)
 - The project-context.md for project context
 - Any referenced ADRs
+- The ACTIVE CONSTRAINTS block (if CONSTRAINTS is not `none`) injected before the artifact-specific instruction, in this format:
+
+```
+ACTIVE CONSTRAINTS (from governance — these override artifact defaults):
+- [INV-001] {full invariant body verbatim}
+- [INV-003] {full invariant body verbatim}
+```
+
 - Instruction to produce the specific artifact type
 
-Show routing as it happens:
+Show routing as it happens. Include constraint count when CONSTRAINTS is not `none`:
 ```
-🪝 edikt: routing data-model.md to dba...
-🪝 edikt: routing contracts/api.md to api...
-🪝 edikt: routing test-strategy.md to qa...
+🪝 edikt: routing data-model.mmd to dba (2 active constraints applied)...
+🪝 edikt: routing contracts/api.yaml to api...
 ```
+
+If CONSTRAINTS is `none`, omit the constraint count entirely.
 
 ### 5. Artifact Templates
 
-Each artifact gets frontmatter and lives in the spec's folder:
+Each artifact lives in the spec's folder. Use native formats — not markdown wrappers.
 
-**data-model.md:**
+Each generated artifact gets a design blueprint comment header in format-appropriate syntax:
+- `.mmd`: `%% Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.`
+- `.yaml`: `# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.`
+- `.sql`: `-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.`
+- `.md`: `<!-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation. -->`
+
+**data-model.mmd** — Mermaid ERD (when DB_TYPE is `sql`):
+```
+%% Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+%% edikt:artifact type=data-model spec=SPEC-{NNN} status=draft reviewed_by=dba
+%% created_at={ISO8601 timestamp}
+erDiagram
+    {ENTITY} {
+        uuid id PK
+        {type} {field} "{constraints}"
+    }
+    {ENTITY} ||--o{ {OTHER_ENTITY} : "{relationship}"
+```
+
+Include one entity block per entity. Add `PK`, `FK`, `UK` markers on key fields. List all relationships with cardinality. Add `%% Index: {field} — {rationale}` comments for recommended indexes.
+
+**data-model.schema.yaml** — JSON Schema in YAML (when DB_TYPE is `document-mongo`):
+```yaml
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=data-model spec=SPEC-{NNN} status=draft reviewed_by=dba
+# created_at={ISO8601 timestamp}
+$schema: "https://json-schema.org/draft/07/schema#"
+collection: "{collection_name}"
+title: "{EntityName}"
+type: object
+required:
+  - {required_field}
+properties:
+  _id:
+    type: string
+    description: "MongoDB ObjectId or custom shard key"
+  {field}:
+    type: {type}
+    description: "{description}"
+indexes:
+  - fields: [{field}]
+    unique: {true|false}
+    reason: "{why this index exists}"
+```
+
+**data-model.md** — Access pattern design (when DB_TYPE is `document-dynamo`):
 ```markdown
----
-type: artifact
-artifact_type: data-model
-spec: SPEC-{NNN}
-status: draft
-created_at: {ISO8601 timestamp}
-reviewed_by: dba
----
+<!-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation. -->
+<!-- edikt:artifact type=data-model spec=SPEC-{NNN} status=draft reviewed_by=dba -->
+<!-- created_at={ISO8601 timestamp} -->
 
-# Data Model — {feature name}
+# Data Model — {Feature Name}
 
-## Entities
+## Access Patterns
 
-### {EntityName}
+| Pattern | PK | SK | Index | Notes |
+|---|---|---|---|---|
+| {description} | {PK value} | {SK value} | table | {notes} |
+| {description} | {PK value} | {SK value} | GSI1 | {notes} |
 
-| Field | Type | Constraints | Notes |
-|---|---|---|---|
-| id | UUID | PK | |
-| {field} | {type} | {constraints} | {notes} |
+## Entity Prefixes
 
-## Relationships
-
-{Entity relationship descriptions or diagram}
-
-## Indexes
-
-{Recommended indexes with rationale}
-
-## Migration Notes
-
-{What needs to change from current schema, if applicable}
-```
-
-**contracts/api.md:**
-```markdown
----
-type: artifact
-artifact_type: api-contract
-spec: SPEC-{NNN}
-status: draft
-created_at: {ISO8601 timestamp}
-reviewed_by: api
----
-
-# API Contracts — {feature name}
-
-## Endpoints
-
-### {METHOD} {path}
-
-**Purpose:** {what this endpoint does}
-
-**Request:**
-```json
-{request shape}
-```
-
-**Response (200):**
-```json
-{response shape}
-```
-
-**Errors:**
-| Code | Condition | Response |
+| Entity | PK prefix | SK prefix |
 |---|---|---|
-| 400 | {condition} | {error shape} |
-| 404 | {condition} | {error shape} |
+| {EntityName} | `{PREFIX}#` | `{PREFIX}#` |
 
-**Auth:** {auth requirements}
+## Key Design
+
+| Key | Pattern | Example |
+|---|---|---|
+| PK | `{ENTITY}#{id}` | `USER#abc123` |
+| SK | `{ENTITY}#{field}` | `USER#abc123` |
+| GSI1-PK | `{field}` | `{value}` |
+| GSI1-SK | `{field}` | `{value}` |
 ```
 
-**test-strategy.md:**
+**data-model.md** — Key schema (when DB_TYPE is `key-value`):
+```markdown
+<!-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation. -->
+<!-- edikt:artifact type=data-model spec=SPEC-{NNN} status=draft reviewed_by=dba -->
+<!-- created_at={ISO8601 timestamp} -->
+
+# Data Model — {Feature Name}
+
+## Key Schema
+
+| Key pattern | Value type | TTL | Purpose | Namespace |
+|---|---|---|---|---|
+| `{namespace}:{id}` | JSON object | {seconds or none} | {description} | `{ns}` |
+| `{namespace}:{id}:lock` | string | 30s | distributed lock | `{ns}` |
+
+## Notes
+
+- Key separator: `:`
+- Namespace rationale: {why these namespaces}
+- Eviction policy: {LRU / LFU / noeviction / etc}
+```
+
+For `mixed` DB_TYPE, generate one data model artifact per detected sub-type using the suffix naming convention (`data-model-sql.mmd`, `data-model-mongo.schema.yaml`, `data-model-dynamo.md`, `data-model-kv.md`).
+
+**contracts/api.yaml** — OpenAPI 3.0:
+```yaml
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=api-contract spec=SPEC-{NNN} status=draft reviewed_by=api
+# created_at={ISO8601 timestamp}
+openapi: "3.0.0"
+info:
+  title: "{Feature Name} API"
+  version: "0.1.0"
+paths:
+  /{resource}:
+    {method}:
+      summary: "{what this endpoint does}"
+      operationId: {camelCaseId}
+      security:
+        - {authScheme}: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [{required_fields}]
+              properties:
+                {field}:
+                  type: {type}
+                  description: "{description}"
+      responses:
+        "200":
+          description: "{success description}"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/{ResponseType}"
+        "400":
+          description: "{bad request condition}"
+        "404":
+          description: "{not found condition}"
+components:
+  schemas:
+    {TypeName}:
+      type: object
+      properties:
+        {field}:
+          type: {type}
+  securitySchemes:
+    {authScheme}:
+      type: {http|apiKey|oauth2}
+```
+
+**contracts/events.yaml** — AsyncAPI 2.6:
+```yaml
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=event-contract spec=SPEC-{NNN} status=draft reviewed_by=architect
+# created_at={ISO8601 timestamp}
+asyncapi: "2.6.0"
+info:
+  title: "{Feature Name} Events"
+  version: "0.1.0"
+channels:
+  {topic.or.queue.name}:
+    publish:
+      operationId: {EventName}Published
+      summary: "{what triggers this event}"
+      message:
+        name: {EventName}
+        payload:
+          type: object
+          required: [{required_fields}]
+          properties:
+            {field}:
+              type: {type}
+              description: "{description}"
+    x-producer: "{service/component}"
+    x-consumers:
+      - "{service/component}"
+    x-ordering: "{ordering guarantees or FIFO/UNORDERED}"
+    x-idempotency: "{idempotency strategy}"
+```
+
+**migrations/** — numbered SQL files, one per logical change (sql and mixed only):
+```sql
+-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+-- edikt:artifact type=migration spec=SPEC-{NNN} status=draft reviewed_by=dba
+-- created_at={ISO8601 timestamp}
+-- migration: 001_{descriptive_name}
+-- description: {what this migration does}
+
+-- === UP ===
+{SQL DDL statements}
+
+-- === DOWN ===
+{SQL rollback statements — required}
+
+-- === BACKFILL ===
+-- {data transformation SQL, or: none required}
+
+-- === RISK ===
+-- Lock duration: {estimated}
+-- Data volume: {estimated rows affected}
+-- Deployment notes: {zero-downtime considerations}
+```
+
+Name files `migrations/001_{descriptive_name}.sql`. Increment the number for each subsequent migration.
+
+**test-strategy.md** — design document (stays markdown):
 ```markdown
 ---
 type: artifact
@@ -198,69 +389,7 @@ reviewed_by: qa
 {What coverage looks like for this feature}
 ```
 
-**migrations.md:**
-```markdown
----
-type: artifact
-artifact_type: migrations
-spec: SPEC-{NNN}
-status: draft
-created_at: {ISO8601 timestamp}
-reviewed_by: dba
----
-
-# Migration Plan — {feature name}
-
-## Changes
-
-{What schema changes are needed}
-
-## Up Migration
-
-{SQL or migration framework commands}
-
-## Down Migration (rollback)
-
-{Rollback commands — required for every up migration}
-
-## Data Backfill
-
-{If existing data needs transformation — or "None"}
-
-## Risk Assessment
-
-{Lock duration, data volume impact, deployment considerations}
-```
-
-**contracts/events.md:**
-```markdown
----
-type: artifact
-artifact_type: event-contract
-spec: SPEC-{NNN}
-status: draft
-created_at: {ISO8601 timestamp}
-reviewed_by: architect
----
-
-# Event Contracts — {feature name}
-
-## Events
-
-### {EventName}
-
-**Topic/Queue:** {topic}
-**Schema:**
-```json
-{event shape}
-```
-**Producer:** {service/component}
-**Consumers:** {services/components}
-**Ordering:** {ordering guarantees}
-**Idempotency:** {idempotency strategy}
-```
-
-**config-spec.md:**
+**config-spec.md** — design document (stays markdown):
 ```markdown
 ---
 type: artifact
@@ -286,55 +415,40 @@ reviewed_by: sre
 | {flag_name} | {default} | {description} | {plan} |
 ```
 
-**fixtures.md:**
-```markdown
----
-type: artifact
-artifact_type: fixtures
-spec: SPEC-{NNN}
-status: draft
-created_at: {ISO8601 timestamp}
-reviewed_by: qa
----
+**fixtures.yaml** — seed data in portable YAML (stack-agnostic, transform to SQL/Prisma/factory at implementation time):
+```yaml
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=fixtures spec=SPEC-{NNN} status=draft reviewed_by=qa
+# created_at={ISO8601 timestamp}
+# Transform to your stack's format at implementation time:
+# SQL seeds, Prisma seed.ts, factory definitions, pytest fixtures, etc.
 
-# Fixtures & Seed Data — {feature name}
+scenarios:
+  - name: "{scenario name}"
+    purpose: "{what this enables: dev env | integration tests | demo}"
+    entities:
+      - entity: {EntityName}
+        records:
+          - id: {uuid or placeholder}
+            {field}: {value}
+            {field}: {value}
+            _note: "{why this specific data matters}"
+          - id: {uuid or placeholder}
+            {field}: {value}
+            _note: "{edge case or behavior this covers}"
 
-## Purpose
+  - name: "{edge case scenario}"
+    purpose: "edge case coverage"
+    entities:
+      - entity: {EntityName}
+        records:
+          - id: {uuid or placeholder}
+            {field}: {boundary_value}
+            _note: "{e.g. max-length string for validation testing}"
 
-{What this seed data enables: development environment, integration tests, demo, or all}
-
-## Seed Scenarios
-
-### Scenario: {name} — {what it tests or enables}
-
-| Entity | Key fields | Why this data matters |
-|---|---|---|
-| {Entity} | {field: value, field: value} | {what behavior this enables or edge case it covers} |
-
-### Scenario: {name}
-
-| Entity | Key fields | Why this data matters |
-|---|---|---|
-| {Entity} | {field: value} | {reason} |
-
-## Relationships
-
-{How seed entities relate to each other. Order of creation matters for foreign keys.}
-
-## Edge Cases
-
-{Seed data specifically designed to cover edge cases:
-- Expired subscriptions for renewal testing
-- Users with no permissions for auth boundary testing
-- Empty collections for nil-handling
-- Maximum-length strings for validation testing}
-
-## Implementation Notes
-
-{Database-agnostic. During implementation, generate the appropriate format
-for the project's stack: SQL seeds, factory definitions, JSON fixtures,
-Prisma seed.ts, etc. The data model artifact defines the schema — this
-artifact defines what data to populate and why.}
+relationships:
+  - "{EntityA}.{fk_field} references {EntityB}.id"
+  - "Create order: {EntityA} before {EntityB}"
 ```
 
 ---
@@ -346,11 +460,63 @@ REMEMBER: Every artifact must be reviewed by the appropriate specialist agent. N
 ```
 ✅ Artifacts created in {spec_folder}/
 
-  data-model.md         — reviewed by dba
-  contracts/api.md      — reviewed by api
-  test-strategy.md      — reviewed by qa
+  {data-model file}         — {format}, reviewed by dba
+  contracts/api.yaml        — OpenAPI 3.0, reviewed by api
+  contracts/events.yaml     — AsyncAPI 2.6, reviewed by architect
+  migrations/001_{name}.sql — SQL migration, reviewed by dba
+  fixtures.yaml             — seed data, reviewed by qa
+  test-strategy.md          — test design, reviewed by qa
 
   Status: draft
   Review and accept each artifact before planning.
   Run /edikt:plan to create an execution plan.
 ```
+
+These are design blueprints — implement them in your stack's native format.
+The data model defines what exists and why. The API contract defines the interface.
+The migration defines intent. Your code is the implementation.
+
+---
+
+## Reference Tables
+
+### DB Type Keyword Table
+
+Use this for priority-3 keyword scan. First match wins per DB type — if multiple types match, resolved DB_TYPE is `mixed`.
+
+| Spec mentions... | DB type |
+|---|---|
+| Postgres, MySQL, SQLite, MariaDB, SQL, relational, normalized, foreign key, JOIN | sql |
+| MongoDB, Firestore, CouchDB, document store, collection, embedded document | document-mongo |
+| DynamoDB, Cassandra, wide-column, HBase | document-dynamo |
+| Redis, Memcached, ElastiCache, cache layer, session store, KV store | key-value |
+
+### Data Model Artifact Lookup Table
+
+**Single DB type — no suffix:**
+
+| DB_TYPE | File | Format |
+|---|---|---|
+| sql | `data-model.mmd` | Mermaid erDiagram — entities, fields, relationships, `%% Index:` comments |
+| document-mongo | `data-model.schema.yaml` | JSON Schema in YAML — `$schema`, collection, properties, required, indexes |
+| document-dynamo | `data-model.md` | Access patterns table → entity prefixes → PK/SK/GSI design |
+| key-value | `data-model.md` | Key schema table — key pattern, value type, TTL, purpose, namespace |
+
+**Mixed — suffix per sub-type to avoid collision:**
+
+| Sub-type | File |
+|---|---|
+| sql | `data-model-sql.mmd` |
+| document-mongo | `data-model-mongo.schema.yaml` |
+| document-dynamo | `data-model-dynamo.md` |
+| key-value | `data-model-kv.md` |
+
+### Migration Generation Rules
+
+| DB_TYPE | Generate migrations/ |
+|---|---|
+| sql | yes |
+| mixed | yes (sql sub-type only) |
+| document-mongo | no |
+| document-dynamo | no |
+| key-value | no |

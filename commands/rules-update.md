@@ -1,6 +1,7 @@
 ---
 name: edikt:rules-update
 description: "Check for outdated rule packs and update them"
+effort: normal
 allowed-tools:
   - Read
   - Write

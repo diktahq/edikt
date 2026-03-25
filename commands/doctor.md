@@ -1,6 +1,7 @@
 ---
 name: edikt:doctor
 description: "Validate governance setup and report actionable warnings"
+effort: normal
 context: fork
 allowed-tools:
   - Read
@@ -238,7 +239,10 @@ Check the decision graph for consistency. Read all ADRs, invariants, and specs:
  [ok]   {n} plans found
  [ok]   {n} agents installed in .claude/agents/
  [ok]   Memory: {n} days old, {lines}/200 lines
+
+Note: Number all [!!] and [FAIL] items sequentially (#1, #2, #3...) so the user can reference them. [ok] items don't need numbers.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  {pass_count} passed, {warn_count} warnings, {fail_count} failures
+ {If warnings or failures: "Which issues should I fix? (e.g., #1, #3 or 'all')"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

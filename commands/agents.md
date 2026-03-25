@@ -1,6 +1,7 @@
 ---
 name: edikt:agents
 description: "List, inspect, and manage specialist agents"
+effort: low
 allowed-tools:
   - Read
   - Write

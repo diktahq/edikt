@@ -1,6 +1,7 @@
 ---
 name: edikt:adr
 description: "Capture an architecture decision record — from scratch or from the current conversation"
+effort: normal
 argument-hint: "[decision topic] — omit to extract from conversation"
 allowed-tools:
   - Read

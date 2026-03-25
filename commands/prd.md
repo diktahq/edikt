@@ -1,6 +1,7 @@
 ---
 name: edikt:prd
 description: "Write a Product Requirements Document for a feature"
+effort: high
 argument-hint: "<feature description>"
 allowed-tools:
   - Read

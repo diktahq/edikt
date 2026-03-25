@@ -1,6 +1,7 @@
 ---
 name: edikt:plan
 description: "Create execution plan with interview and codebase analysis"
+effort: high
 argument-hint: "[ticket-id or task description]"
 allowed-tools:
   - Read
@@ -145,13 +146,17 @@ PRE-FLIGHT REVIEW
 Domains detected: {list} ({n} of 6 checked)
 
 {AGENT NAME}
-  🔴  {finding}
-  🟡  {finding}
-  🟢  {positive finding}
+  #1 🔴  {finding} ({file:line if applicable})
+  #2 🟡  {finding}
+  #3 🟢  {positive finding}
+
+{AGENT NAME}
+  #4 🔴  {finding}
+  #5 🟡  {finding}
 
 ─────────────────────────────────────────────────────
-{N critical, N warnings}. Address in plan before executing?
-Type your updates now, or press enter to proceed with known risks noted.
+{N critical, N warnings}. Which findings should I address?
+(e.g., #1, #4 or "all critical" or "skip")
 ```
 
 ### Plan File Template

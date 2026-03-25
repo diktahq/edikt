@@ -1,6 +1,7 @@
 ---
 name: edikt:sync
 description: "Sync AI rules from linter configs — translate .golangci-lint.yaml, .eslintrc, ruff.toml etc. into .claude/rules/"
+effort: normal
 allowed-tools:
   - Read
   - Write
