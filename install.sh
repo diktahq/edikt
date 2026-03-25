@@ -77,8 +77,13 @@ mkdir -p "${CLAUDE_COMMANDS}/edikt"
 EDIKT_COMMANDS=(init context plan status intake doctor rules-update upgrade adr invariant prd agents mcp team docs sync audit review review-governance session spec spec-artifacts drift compile)
 info "Installing edikt commands..."
 for cmd in "${EDIKT_COMMANDS[@]}"; do
-  curl -fsSL "${BASE_URL}/commands/${cmd}.md" -o "${CLAUDE_COMMANDS}/edikt/${cmd}.md"
-  dim "edikt:${cmd}"
+  dest="${CLAUDE_COMMANDS}/edikt/${cmd}.md"
+  if [ -f "$dest" ] && grep -qF '<!-- edikt:custom -->' "$dest" 2>/dev/null; then
+    dim "edikt:${cmd} (skipped — custom)"
+  else
+    curl -fsSL "${BASE_URL}/commands/${cmd}.md" -o "$dest"
+    dim "edikt:${cmd}"
+  fi
 done
 
 # Download rule templates
