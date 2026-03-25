@@ -1,19 +1,23 @@
 # Plan: edikt v0.2.0
 
 **Status:** Planned
-**Theme:** Claude Code Surface Sync + Real-World Compliance Research
+**Theme:** Claude Code Surface Sync + Rule Pack UX + Installer Safety + Real-World Compliance
 
 ---
 
 ## Overview
 
-Three workstreams for v0.2.0:
+Five workstreams for v0.2.0:
 
 1. **Codebase Pattern Learning** — edikt learns from the existing codebase and points Claude to real examples. When writing a new PR, Claude looks at how existing PRs are structured. When creating a handler, Claude finds a similar handler in the project to follow. Reduces hallucination by grounding Claude in what already exists.
 
-2. **Claude Code Surface Sync** — Close the gap between edikt and Claude Code v2.1.72-81. Adopt new platform primitives (effort frontmatter, agent governance fields, new hooks), fix the HTML sentinel comment issue, verify security fixes.
+2. **Claude Code Surface Sync** — Close the gap between edikt and Claude Code. Adopt agent governance fields (`maxTurns:`, `disallowedTools:`), new hooks (StopFailure, SessionEnd, SubagentStart), and the SendMessage migration.
 
-3. **EXP-003: Real-World Compliance** — Test rule compliance under conditions that match actual edikt usage: 14+ rules loaded simultaneously, multi-turn conversations, context compaction recovery, real project conventions.
+3. **Rule Pack UX** — Rule packs installed by default can conflict with existing project conventions (e.g., `base/api.md` vs. an existing API guidelines file). The opacity is the real problem: Claude follows rules the user didn't author and doesn't know why. Design the right posture: conflict detection during init, opt-in vs. default-on, opinionated vs. principle-based.
+
+4. **Installer Safety** — `install.sh` silently overwrites files on reinstall, including customized commands. No safety guarantees are documented. Design explicit guarantees: what edikt touches, what it never touches, what happens on reinstall.
+
+5. **EXP-003: Real-World Compliance** — Test rule compliance under conditions that match actual edikt usage: 14+ rules loaded simultaneously, multi-turn conversations, context compaction recovery, real project conventions.
 
 ---
 
@@ -24,15 +28,22 @@ Three workstreams for v0.2.0:
 | 1a | Design session — codebase pattern learning | not started | — |
 | 1b | Design session — Claude Code surface sync | not started | — |
 | 1c | Design session — harness design audit | not started | — |
+| 1d | Design session — rule pack UX | not started | — |
+| 1e | Design session — installer safety | not started | — |
 | 2 | PRD-006 — v0.2.0 requirements | not started | — |
 | 3 | Codebase pattern learning — scan, index, point Claude to examples | not started | — |
-| 4 | HTML sentinel migration — replace `<!-- -->` with visible markers | not started | — |
-| 5 | Effort frontmatter + agent governance fields | not started | — |
-| 6 | New hooks (StopFailure, SessionEnd, SubagentStart) | not started | — |
-| 7 | Agent resume → SendMessage migration | not started | — |
-| 8 | Harness design audit — `/edikt:harness` command | not started | — |
-| 9 | EXP-003: Real-world compliance experiment | not started | — |
-| 10 | Website + docs update for v0.2.0 | not started | — |
+| 4 | Agent governance fields (`maxTurns:`, `disallowedTools:`) | not started | — |
+| 5 | New hooks (StopFailure, SessionEnd, SubagentStart) | not started | — |
+| 6 | Agent resume → SendMessage migration | not started | — |
+| 7 | Rule pack UX — conflict detection + install posture | not started | — |
+| 8 | Installer safety — guarantees + silent overwrite fix | not started | — |
+| 9 | Harness design audit — `/edikt:harness` command | not started | — |
+| 10 | EXP-003: Real-world compliance experiment | not started | — |
+| 11 | Website + docs update for v0.2.0 | not started | — |
+
+**Shipped in v0.1.1 (removed from this plan):**
+- ~~HTML sentinel migration~~ → shipped
+- ~~Effort frontmatter on all commands~~ → shipped
 
 ---
 
@@ -42,26 +53,58 @@ Three workstreams for v0.2.0:
 **Output:** Design decisions for how edikt learns and surfaces patterns
 **Process:** Load context → review the concept → decide on scan approach, storage, user confirmation
 
+## Phase 1b: Design Session — Claude Code Surface Sync
+
+**Input:** `v0.2.0 Design Session — Claude Code Surface Sync.md` in Obsidian
+**Output:** Design decisions for agent governance fields, new hooks, SendMessage migration
+**Process:** Load context → review each feature → decide on approach → resolve open questions
+
 ## Phase 1c: Design Session — Harness Design Audit
 
-**Input:** Webinar learnings (memory/feedback_webinar_learnings.md), existing `/edikt:doctor` command
+**Input:** Webinar learnings, existing `/edikt:doctor` command
 **Output:** Design decisions for a `/edikt:harness` command and harness design guide
 **Key questions:**
 - What does a complete harness look like? (rules + compiled governance + hooks + agents + gates + scoping)
 - How do we audit completeness vs just setup correctness? (doctor checks "is it configured right," harness checks "is it configured enough")
 - What's the gap between `/edikt:init` (install a harness) and `/edikt:harness` (audit/design a harness)?
 - Should harness design be a guide, a command, or both?
-- Can we teach users to think about their governance as a "harness" — making the concept part of our vocabulary?
 
-## Phase 1b: Design Session — Claude Code Surface Sync
+## Phase 1d: Design Session — Rule Pack UX
 
-**Input:** `v0.2.0 Design Session — Claude Code Surface Sync.md` in Obsidian
-**Output:** Design decisions for effort frontmatter, agent governance, hooks, sentinel migration
-**Process:** Load context → review each feature → decide on approach → resolve open questions
+**Problem (observed in real usage):** Rule packs installed by default conflict with existing project conventions. Example: `base/api.md` conflicts with an established API guidelines file already in the repo. The user doesn't understand why Claude is behaving differently — the rules are opaque.
+
+**The tension:** Don't install → no visible value. Install by default → conflicts and user confusion. Prompt to review → most users skip it.
+
+**Key questions:**
+- Should rule packs be conflict-detected before install? (`edikt:init` scans CLAUDE.md + docs/guidelines, flags overlaps before writing any rule pack)
+- What's the right default posture — install all, install none, install with explicit confirmation per pack?
+- Should packs be opinionated defaults or principle-based suggestions that defer to project conventions?
+- When a rule causes unexpected Claude behavior, how does the user trace it back to the rule pack? (transparency)
+- Should `edikt:doctor` report active rule packs and their scope?
+
+**Output:** Design decisions for Phase 7 implementation
+
+## Phase 1e: Design Session — Installer Safety
+
+**Problem:** `install.sh` silently overwrites files on reinstall — including any commands the user has customized in `~/.claude/commands/edikt/`. The `<!-- edikt:custom -->` protection exists in `edikt:upgrade` but not in `install.sh`. No safety guarantees are documented anywhere.
+
+**Current behavior:**
+- `curl -o` on each file → silent overwrite, no diff, no confirmation
+- Does NOT touch `~/.claude/settings.json` (hooks are project-level via `edikt:init`)
+- Does NOT touch files outside `~/.edikt/` and `~/.claude/commands/edikt/`
+- Project-local install (`--project`) scopes everything to the current directory
+
+**Key questions:**
+- What guarantees should edikt make explicit? ("edikt never touches X, always preserves Y")
+- Should reinstall check for customized commands (`<!-- edikt:custom -->`) before overwriting?
+- Should install.sh have a `--force` flag for explicit overwrite vs. safe-by-default?
+- Where should safety guarantees be documented — install.sh output, website, or both?
+
+**Output:** Design decisions for Phase 8 implementation
 
 ## Phase 3: Codebase Pattern Learning
 
-**The problem:** Claude hallucates patterns, naming conventions, and structures instead of learning from the codebase. When asked to "write a new handler," Claude invents a structure rather than finding an existing handler in the project and following that pattern. When writing a PR description, Claude guesses the format rather than looking at recent merged PRs.
+**The problem:** Claude hallucinates patterns, naming conventions, and structures instead of learning from the codebase. When asked to "write a new handler," Claude invents a structure rather than finding an existing handler and following it. When writing a PR description, Claude guesses the format rather than looking at recent merged PRs.
 
 **The concept:** edikt scans the codebase during init and on-demand, identifies patterns, and compiles them into guidance Claude reads automatically. Examples:
 
@@ -83,22 +126,9 @@ Three workstreams for v0.2.0:
 **Output:** PRD-006 with numbered requirements and acceptance criteria
 **Process:** `/edikt:prd`
 
-## Phase 3: HTML Sentinel Migration
+## Phase 4: Agent Governance Fields
 
-**Finding (2026-03-23):** Claude Code v2.1.72 hides `<!-- -->` HTML comments from Claude during auto-injection. edikt's commands (init, upgrade) still work because they use the Read tool and grep/sed on the raw file. **Not broken for commands.**
-
-**But:** Claude can no longer see the sentinel boundaries during normal conversation. If a user asks Claude to "edit my CLAUDE.md", Claude doesn't know where the edikt-managed section starts and ends — it could accidentally modify edikt's block.
-
-**Action:** Migrate sentinels from HTML comments to visible text markers that Claude can see:
-- Replace `<!-- edikt:start — managed by edikt, do not edit -->` with a visible marker (e.g., `[edikt:start — managed by edikt, do not edit]` or a prose comment)
-- Update ADR-002 to reflect the change
-- Update `/edikt:init` and `/edikt:upgrade` to detect both old (HTML) and new (visible) markers for backwards compatibility
-- Migration path: `/edikt:upgrade` auto-converts old sentinels to new format
-
-## Phase 4: Effort + Agent Governance
-
-**Effort:** Add `effort:` frontmatter to all 24 commands (low/medium/high).
-**Agent governance:** Add `maxTurns:` and `disallowedTools:` to all 18 agent templates.
+Add `maxTurns:` and `disallowedTools:` to all 18 agent templates. Values require design session (Phase 1b) to determine appropriate limits per agent type.
 
 ## Phase 5: New Hooks
 
@@ -109,7 +139,22 @@ Highest value: SessionEnd (auto-session-sweep).
 
 Search all templates for `resume` parameter usage. Replace with `SendMessage` pattern.
 
-## Phase 8: Harness Design Audit
+## Phase 7: Rule Pack UX
+
+Implementation of Phase 1d design decisions. Likely includes:
+- Conflict detection scan in `edikt:init` before installing rule packs
+- Changes to install posture (opt-in vs. default, per-pack confirmation)
+- Transparency improvements (doctor reports active packs + their scope)
+- Possibly: rule pack content audit (more principle-based, less opinionated)
+
+## Phase 8: Installer Safety
+
+Implementation of Phase 1e design decisions. Likely includes:
+- Check for `<!-- edikt:custom -->` marker before overwriting commands on reinstall
+- Explicit safety guarantees documented in install output and website
+- Possibly: `--force` flag for explicit overwrite behavior
+
+## Phase 9: Harness Design Audit
 
 **The concept:** `/edikt:harness` audits the completeness of the user's governance harness — not just "is it configured correctly" (that's `/edikt:doctor`) but "is it configured enough."
 
@@ -125,13 +170,13 @@ Search all templates for `resume` parameter usage. Replace with `SendMessage` pa
 
 **Content:** "Designing your agent harness with edikt" guide on edikt.dev — category-defining content.
 
-## Phase 9: EXP-003
+## Phase 10: EXP-003
 
 **Brief:** `experiments/exp-003-real-world-compliance/BRIEF.md`
 **Scope:** ~48 runs testing multi-rule, compaction, multi-turn, real conventions.
 **Output:** EXP-003 write-up on website using experiment template.
 
-## Phase 8: Website + Docs
+## Phase 11: Website + Docs
 
 Update website for v0.2.0 changes. CHANGELOG entry. Version bump.
 
@@ -139,8 +184,9 @@ Update website for v0.2.0 changes. CHANGELOG entry. Version bump.
 
 ## Dependencies
 
-- Phase 1 (design) blocks Phase 2 (PRD)
-- Phase 2 (PRD) blocks Phases 4-6
-- Phase 3 (sentinel fix) is independent — can run in parallel, highest urgency
-- Phase 7 (EXP-003) is independent — can run anytime
-- Phase 8 (docs) depends on all other phases completing
+- Phase 1 design sessions block Phase 2 (PRD)
+- Phase 2 (PRD) blocks Phases 3-9
+- Phase 1d (rule pack design) can feed Phase 7 directly without waiting for PRD
+- Phase 1e (installer safety) can feed Phase 8 directly without waiting for PRD
+- Phase 10 (EXP-003) is independent — can run anytime
+- Phase 11 (docs) depends on all other phases completing
