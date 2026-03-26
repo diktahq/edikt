@@ -61,13 +61,22 @@ Five workstreams for v0.2.0:
 
 ## Phase 1c: Design Session — Harness Design Audit
 
-**Input:** Webinar learnings, existing `/edikt:doctor` command
+**Input:** Anthropic's "Harness Design for Long-Running Application Development" (2026-03-24), existing `/edikt:doctor` command, EXP-004 results
 **Output:** Design decisions for a `/edikt:harness` command and harness design guide
+**Reference architecture (from article):**
+- Planner → Generator → Evaluator separation. edikt's equivalent: Spec → Artifacts → Plan → Execute + specialist agent review. This mapping should be explicit in the guide.
+- Sprint contracts = Completion Promises. The gap: edikt defines them in plan files but they aren't surfaced to evaluators as an explicit contract before execution starts.
+- "Every harness component encodes an assumption about what the model can't do." This is the key design principle. `/edikt:harness` should surface the assumption behind each installed component — not just "PostCompact hook is installed" but "PostCompact hook exists because Claude loses plan context after compaction without it." As models improve, these assumptions are the things to stress-test.
+- Self-evaluation bias: Claude generates AND evaluates its own output in most edikt commands. The generator-evaluator separation should be more explicit in harness guidance.
+- Context resets outperform compaction for long tasks (Sonnet 4.5 exhibited "context anxiety"). edikt handles compaction recovery but has no intentional context reset pattern. Should edikt provide a reset strategy — intentional window clear with state preserved in the plan progress table?
+
 **Key questions:**
 - What does a complete harness look like? (rules + compiled governance + hooks + agents + gates + scoping)
 - How do we audit completeness vs just setup correctness? (doctor checks "is it configured right," harness checks "is it configured enough")
 - What's the gap between `/edikt:init` (install a harness) and `/edikt:harness` (audit/design a harness)?
 - Should harness design be a guide, a command, or both?
+- How do we surface harness assumptions per component so users can stress-test them as models evolve?
+- Should edikt provide an intentional context reset pattern alongside compaction recovery?
 
 ## Phase 1d: Design Session — Rule Pack UX
 
@@ -156,7 +165,24 @@ Implementation of Phase 1e design decisions. Likely includes:
 
 ## Phase 9: Harness Design Audit
 
-**The concept:** `/edikt:harness` audits the completeness of the user's governance harness — not just "is it configured correctly" (that's `/edikt:doctor`) but "is it configured enough."
+**The concept:** `/edikt:harness` audits the completeness and assumptions of the user's governance harness — not just "is it configured correctly" (that's `/edikt:doctor`) but "is it configured enough, and do you know why each piece exists?"
+
+**Architecture frame (from Anthropic's harness design article):**
+Every harness component encodes an assumption about what the model can't do on its own. Those assumptions should be visible, testable, and revisited as models improve. `/edikt:harness` should surface them explicitly:
+
+| Component | Assumption |
+|-----------|------------|
+| PostCompact hook | Claude loses plan context after compaction without it |
+| Quality gates | Claude misses critical findings without a blocking reviewer |
+| Governance compiled | Claude won't honor ADRs it can't read |
+| Specialist agents | Claude self-evaluates with bias — external evaluators are more accurate |
+| Signal detection | Claude won't proactively capture architecture decisions mid-session |
+
+**Generator-Evaluator separation guidance:** Most edikt commands have Claude generate AND evaluate its own output. The harness guide should teach explicit generator-evaluator separation — when to invoke a specialist agent as evaluator, when to use a second Claude turn, and what "sprint contracts" look like in the edikt execution model (Completion Promises surfaced before execution, not just stored in the plan file).
+
+**Context management guidance:** Two strategies, different use cases:
+- Compaction recovery (PostCompact hook) — for sessions that run long and compact naturally
+- Intentional context reset — for tasks where coherence requires a clean window. Preserve state in the plan progress table, then start a fresh session. The article found this more effective than compaction for long tasks ("context anxiety" on Sonnet 4.5).
 
 **What it checks:**
 - Rules installed but no compiled governance? → "Run `/edikt:compile` to turn your ADRs into enforcement"
@@ -165,10 +191,11 @@ Implementation of Phase 1e design decisions. Likely includes:
 - No signal detection? → "Enable stop hook to detect architecture decisions mid-session"
 - Rules but no agent scoping? → "Consider restricting DBA to migration files only"
 - Governance compiled but never verified? → "Run `/edikt:drift` to check compliance"
+- No generator-evaluator separation? → "Your harness has no external evaluator — Claude is grading its own work"
 
-**Output:** A harness completeness score with actionable recommendations. Not a pass/fail — a maturity assessment that guides users from basic to full governance.
+**Output:** A harness maturity assessment with assumptions surfaced per component, actionable recommendations, and upgrade paths. Not pass/fail — guides users from basic setup to full harness design.
 
-**Content:** "Designing your agent harness with edikt" guide on edikt.dev — category-defining content.
+**Content:** "Designing your agent harness with edikt" guide on edikt.dev — positions edikt in the harness design conversation Anthropic just opened.
 
 ## Phase 10: EXP-003
 
