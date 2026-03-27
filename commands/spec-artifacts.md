@@ -44,7 +44,7 @@ Work through this checklist before proceeding. Record each value explicitly.
 3. Keyword scan spec content using the DB type keyword table below → if matched. Note source: `keyword-scan`.
 4. Still unresolved → ask the user. Note source: `user`.
 
-**Subtype resolution** — if DB_TYPE is `document` (generic, from config or user), resolve to a concrete subtype before proceeding:
+**Subtype resolution** — if DB_TYPE is `document` (generic, regardless of source), resolve to a concrete subtype before proceeding:
 - Keyword scan spec content for vendor names using the DB type keyword table below
 - Collect all matches. If only mongo-family keywords found → `document-mongo`
 - If only dynamo-family keywords found → `document-dynamo`

@@ -140,7 +140,7 @@ if [ -f go.mod ]; then
   grep -qF 'jackc/pgx'          go.mod && echo "DB_SIGNAL: sql - inferred jackc/pgx"
   grep -qF 'go-sql-driver/mysql' go.mod && echo "DB_SIGNAL: sql - inferred go-sql-driver/mysql"
   grep -qF 'mongo-driver'        go.mod && echo "DB_SIGNAL: document - inferred mongo-driver"
-  if grep -qF 'aws-sdk-go' go.mod; then
+  if grep -qE 'aws-sdk-go(-v2)?' go.mod; then
     grep -rqF 'dynamodb' --include='*.go' . 2>/dev/null && echo "DB_SIGNAL: document - inferred aws-sdk-go+dynamodb"
   fi
   grep -qF 'go-migrate'          go.mod && echo "DB_SIGNAL: sql golang-migrate inferred go-migrate"
