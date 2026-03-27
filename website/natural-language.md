@@ -2,7 +2,7 @@
 
 edikt teaches Claude to respond to how you naturally talk — no need to remember slash commands.
 
-After `/edikt:init`, your `CLAUDE.md` includes a trigger table. Claude reads it at session start and knows what to do when you ask everyday questions.
+After `/edikt:init`, your `CLAUDE.md` includes a trigger table. Claude reads it at session start and knows what to do when you ask everyday questions. The table matches intent, not exact phrases — if the meaning is close, Claude runs the right command.
 
 ## How it works in practice
 
@@ -60,7 +60,7 @@ You come back after the weekend and want Claude to catch up:
 
 You want to start planning a new feature:
 
-> **You:** let's plan the export to CSV feature
+> **You:** help me plan the export to CSV feature
 
 > **Claude:** *(runs `/edikt:plan`)*
 > Great, let me ask a few questions to scope this out...
@@ -69,39 +69,34 @@ You want to start planning a new feature:
 
 ## Full trigger list
 
-| You say... | Claude runs |
-|------------|-------------|
-| "what's our status?" | `/edikt:status` |
-| "where are we?" | `/edikt:status` |
-| "what's next?" | `/edikt:status` |
-| "what should we work on?" | `/edikt:status` |
-| "remind yourself" | `/edikt:context` |
-| "load context" | `/edikt:context` |
-| "what's this project?" | `/edikt:context` |
-| "let's plan X" | `/edikt:plan` |
-| "create a plan for X" | `/edikt:plan` |
-| "save this decision" | `/edikt:adr` |
-| "record this choice" | `/edikt:adr` |
-| "capture that" | `/edikt:adr` |
-| "that's a hard rule" | `/edikt:invariant` |
-| "never do X" | `/edikt:invariant` |
-| "write a PRD for X" | `/edikt:prd` |
-| "document this feature" | `/edikt:prd` |
-| "what agents do we have?" | `/edikt:agents` |
-| "add the security agent" | `/edikt:agents add security` |
-| "setup Linear" | `/edikt:mcp add linear` |
-| "validate my environment" | `/edikt:team setup` |
+Claude matches intent, not exact words. These are representative examples — any phrase with the same meaning works.
 
-These are defined in `.claude/CLAUDE.md` — you can add your own triggers by editing that file.
+| Intent | Examples | Command |
+|--------|----------|---------|
+| Project status / what's next | "what's our status", "where are we", "what's next", "project status" | `/edikt:status` |
+| Load project context | "load context", "remind yourself", "what's this project", "give me context" | `/edikt:context` |
+| Create an execution plan | "create a plan", "make a plan", "plan for X", "plan this ticket", "help me plan", "how should we approach X" | `/edikt:plan` |
+| Capture a decision | "save this decision", "record this", "capture that", "write an ADR", "document this decision" | `/edikt:adr` |
+| Add a hard constraint | "add an invariant", "that's a hard rule", "never do X", "this must always be true" | `/edikt:invariant` |
+| Write a PRD | "write a PRD", "document this feature", "requirements for X", "product requirements" | `/edikt:prd` |
+| Write a technical spec | "write a spec", "technical spec for X", "spec this out", "design doc for X" | `/edikt:spec` |
+| Generate spec artifacts | "generate artifacts", "create the data model", "generate the contracts" | `/edikt:spec-artifacts` |
+| Check implementation drift | "check drift", "did we build what we decided", "verify the implementation", "are we on track" | `/edikt:drift` |
+| Compile governance | "compile governance", "update directives", "update the rules" | `/edikt:compile` |
+| Review governance quality | "review governance", "are our ADRs well written", "check governance quality" | `/edikt:review-governance` |
+| List or manage agents | "what agents do we have", "add the security agent" | `/edikt:agents` |
+| Set up integrations | "setup Linear", "connect Jira" | `/edikt:mcp` |
+| Team onboarding | "validate my environment", "onboard me" | `/edikt:team` |
+
+These are defined in `CLAUDE.md` — you can add your own triggers by editing that file.
 
 ## Adding your own triggers
 
-Open `.claude/CLAUDE.md` and add rows to the trigger table:
+Open `CLAUDE.md` and add rows to the trigger table:
 
 ```markdown
-| "run the tests" | `make test` |
-| "deploy to staging" | `make deploy-staging` |
-| "what broke?" | `/edikt:status` then check recent git log |
+| Run tests | "run the tests", "check if tests pass" | `make test` |
+| Deploy | "deploy to staging", "ship it to staging" | `make deploy-staging` |
 ```
 
 Any instruction you find yourself repeating to Claude belongs here.
