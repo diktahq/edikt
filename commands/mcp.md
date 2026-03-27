@@ -1,6 +1,7 @@
 ---
 name: edikt:mcp
 description: "Manage MCP server configuration for project management integrations"
+effort: low
 allowed-tools:
   - Read
   - Write

@@ -1,6 +1,7 @@
 ---
 name: edikt:adr
 description: "Capture an architecture decision record — from scratch or from the current conversation"
+effort: normal
 argument-hint: "[decision topic] — omit to extract from conversation"
 allowed-tools:
   - Read
@@ -13,6 +14,12 @@ allowed-tools:
 # edikt:adr
 
 Create an Architecture Decision Record (ADR). Two modes:
+
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
 
 - **With argument** — `/edikt:adr use postgres for persistence` — works through the decision from scratch
 - **No argument** — `/edikt:adr` — extracts the decision from the current conversation

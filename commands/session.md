@@ -1,6 +1,7 @@
 ---
 name: edikt:session
 description: "End-of-session sweep — summarize what happened, surface missed captures before context is lost"
+effort: normal
 context: fork
 allowed-tools:
   - Read

@@ -1,6 +1,7 @@
 ---
 name: edikt:audit
 description: "Security audit — OWASP scan, secret detection, auth coverage, vulnerability patterns"
+effort: high
 context: fork
 allowed-tools:
   - Read
@@ -146,10 +147,12 @@ Scope: {scope description}
 
 SECURITY
 🔴 CRITICAL
-  • {file:line} — {finding} — {why it matters}
+  #1  {file:line} — {finding} — {why it matters}
+  #2  {file:line} — {finding} — {why it matters}
 
 🟡 WARNINGS
-  • {file:line} — {finding}
+  #3  {file:line} — {finding}
+  #4  {file:line} — {finding}
 
 🟢 CLEAN
   • {area}: {status}
@@ -165,10 +168,10 @@ OWASP Checklist:
 
 RELIABILITY
 🔴 CRITICAL
-  • {file:line} — {finding} — {why it matters}
+  #5  {file:line} — {finding} — {why it matters}
 
 🟡 WARNINGS
-  • {file:line} — {finding}
+  #6  {file:line} — {finding}
 
 🟢 CLEAN
   • {area}: {status}
@@ -181,9 +184,11 @@ Reliability Checklist:
   Graceful shutdown     ✅/⚠️/❌
   Rate limiting         ✅/⚠️/❌
 ─────────────────────────────────────────────────────
+{total: N critical, N warnings}
+Which findings should I address? (e.g., #1, #3 or "all critical")
 ```
 
-Use ✅ when no issues found, ⚠️ for warnings, ❌ for critical issues.
+Use ✅ when no issues found, ⚠️ for warnings, ❌ for critical issues. Number findings sequentially across all sections (#1, #2, #3...) so the user can reference them by number.
 
 If no issues found:
 ```

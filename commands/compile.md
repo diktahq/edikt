@@ -1,6 +1,7 @@
 ---
 name: edikt:compile
 description: "Compile ADRs and invariants into governance directives"
+effort: normal
 allowed-tools:
   - Read
   - Glob

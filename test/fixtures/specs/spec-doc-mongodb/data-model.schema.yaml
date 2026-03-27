@@ -1,0 +1,35 @@
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=data-model spec=SPEC-TEST status=draft reviewed_by=dba
+# created_at=2026-03-27T00:00:00Z
+$schema: "https://json-schema.org/draft/07/schema#"
+collection: "user_profiles"
+title: "UserProfile"
+type: object
+required:
+  - email
+  - name
+properties:
+  _id:
+    type: string
+    description: "MongoDB ObjectId"
+  email:
+    type: string
+    description: "User email address"
+  name:
+    type: string
+    description: "Display name"
+  metadata:
+    type: object
+    description: "Embedded user preferences and settings"
+    properties:
+      theme:
+        type: string
+      locale:
+        type: string
+indexes:
+  - fields: [email]
+    unique: true
+    reason: "Unique lookup by email"
+  - fields: [name]
+    unique: false
+    reason: "Search by display name"

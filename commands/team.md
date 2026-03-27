@@ -1,6 +1,7 @@
 ---
 name: edikt:team
 description: "Onboard team members and show shared team configuration"
+effort: low
 allowed-tools:
   - Read
   - Write

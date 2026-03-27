@@ -1,0 +1,154 @@
+language: "en-US"
+tone_instructions: >
+  This is a governance tool for agentic engineering. Reviews should be precise and direct.
+  Focus on correctness, security, and consistency — not style preferences.
+
+early_access: true
+
+reviews:
+  profile: "assertive"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  collapse_walkthrough: false
+  sequence_diagrams: false
+  changed_files_summary: true
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+    base_branches:
+      - "main"
+    ignore_title_keywords:
+      - "WIP"
+      - "DO NOT MERGE"
+      - "chore(deps)"
+
+  path_filters:
+    - "!website/node_modules/**"
+    - "!**/.DS_Store"
+    - "!website/.vitepress/cache/**"
+    - "!website/.vitepress/dist/**"
+
+  path_instructions:
+    - path: "commands/**"
+      instructions: >
+        These are Claude Code slash commands (markdown files). Each command is a prompt
+        template that Claude executes. Check for: clear instructions, proper use of
+        shell preprocessing (lines starting with !), consistent structure across commands,
+        and that plan-mode guards exist for interactive commands.
+
+    - path: "templates/rules/**"
+      instructions: >
+        Rule packs are markdown files that compile into .claude/rules/ for enforcement.
+        Check for: NEVER/MUST phrasing (four-tier severity), governance checkpoint block
+        before the title, edikt:generated marker, rule count between 7-25 per pack,
+        proper file glob scoping (base packs should NOT glob **/*), and version consistency.
+
+    - path: "templates/hooks/**"
+      instructions: >
+        Hook scripts execute automatically during Claude Code sessions. Security is critical.
+        Check for: JSON output via python3 json.dumps (NEVER sed-based escaping),
+        grep -F for fixed-string matching on LLM-derived content (NEVER regex on untrusted input),
+        proper exit codes, and no dangerous command patterns (rm -rf without guards, eval, etc.).
+
+    - path: "templates/agents/**"
+      instructions: >
+        Agent templates define specialist advisors (read-only, no execution).
+        Check for: consistent frontmatter structure, registry alignment with _registry.yaml,
+        and that agents never instruct execution — only analysis and recommendations.
+
+    - path: "test/**"
+      instructions: >
+        Bash test suite using a custom assertion library (helpers.sh).
+        Check for: proper use of assert_* functions, test isolation (each test
+        should clean up after itself), and that new features have corresponding test coverage.
+
+    - path: "templates/sdlc/**"
+      instructions: >
+        SDLC templates (commit conventions, PR templates). Check for consistency
+        with the project's own conventions documented in CLAUDE.md.
+
+    - path: "install.sh"
+      instructions: >
+        The installer copies files to ~/.claude/ or project-local .claude/.
+        Security-sensitive: check for path traversal, proper quoting of variables,
+        safe file operations, and that it never overwrites user customizations
+        marked with edikt:custom.
+
+    - path: "website/**"
+      instructions: >
+        Vitepress documentation site. Check for: accurate command documentation
+        matching the actual command files, working internal links, and consistent
+        formatting across pages.
+
+    - path: ".edikt/**"
+      instructions: >
+        Project governance configuration. Changes here affect how edikt governs itself.
+        Check for: valid YAML, version consistency with VERSION file, and that
+        feature flags match what's actually implemented.
+
+    - path: "docs/architecture/decisions/**"
+      instructions: >
+        Architecture Decision Records. Once status is "accepted", content is immutable
+        (INV-002). Only status can change to "superseded". Check that accepted ADRs
+        are not being modified beyond status changes.
+
+    - path: "docs/architecture/invariants/**"
+      instructions: >
+        Hard architectural constraints. These are the project's non-negotiable rules.
+        Check for: clear MUST/NEVER phrasing, concrete enforcement mechanism,
+        and that new invariants don't contradict existing ones.
+
+  tools:
+    shellcheck:
+      enabled: true
+    markdownlint:
+      enabled: true
+    yamllint:
+      enabled: true
+    languagetool:
+      enabled: true
+      enabled_categories:
+        - "GRAMMAR"
+        - "TYPOS"
+      disabled_categories:
+        - "STYLE"
+        - "TYPOGRAPHY"
+    gitleaks:
+      enabled: true
+    github-checks:
+      enabled: true
+      timeout_ms: 90000
+    # Disabled — not applicable to this project
+    eslint:
+      enabled: false
+    biome:
+      enabled: false
+    ruff:
+      enabled: false
+    golangci-lint:
+      enabled: false
+    hadolint:
+      enabled: false
+    swiftlint:
+      enabled: false
+    phpstan:
+      enabled: false
+    detekt:
+      enabled: false
+    checkov:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  learnings:
+    scope: "auto"
+  issues:
+    scope: "auto"
+  pull_requests:
+    scope: "auto"

@@ -139,6 +139,23 @@ for cmd in prd adr invariant spec drift compile; do
     assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "paths:" "${cmd} references paths: config"
 done
 
+# Interactive commands have plan mode guard
+for cmd in init prd spec spec-artifacts adr invariant intake plan; do
+    assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "plan mode" "${cmd} has plan mode guard"
+done
+
+# ============================================================
+# Natural language triggers
+# ============================================================
+
+# CLAUDE.md template has intent-based trigger table
+assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "Match the user" "Template has intent-matching instruction"
+
+# All 24 commands have a trigger in the template
+for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade agents mcp team; do
+    assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "edikt:${cmd}" "Template has trigger for ${cmd}"
+done
+
 # ============================================================
 # Configurable paths
 # ============================================================
@@ -200,10 +217,10 @@ assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Rule override" "Doctor 
 
 # VERSION file
 FILE_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
-if [ "$FILE_VER" = "0.1.0" ]; then
-    pass "VERSION file is 0.1.0"
+if echo "$FILE_VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+    pass "VERSION file is valid semver ($FILE_VER)"
 else
-    fail "VERSION file is 0.1.0" "Got: $FILE_VER"
+    fail "VERSION file is valid semver" "Got: $FILE_VER"
 fi
 
 # Config version matches
@@ -246,6 +263,199 @@ if command -v npx >/dev/null 2>&1 && [ -d "$PROJECT_ROOT/website" ]; then
     fi
 else
     echo "  SKIP  VitePress build (npx not available)"
+fi
+
+# ============================================================
+# spec-artifacts output contracts
+# ============================================================
+
+SPECS_DIR="$PROJECT_ROOT/test/fixtures/specs"
+
+# Test 1: SQL path - spec with Postgres keyword → data-model.mmd
+assert_file_exists "$SPECS_DIR/spec-sql-postgres.md" "Test fixture exists: spec-sql-postgres.md"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres.md" "Postgres" "Fixture contains Postgres keyword"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres.md" "status: accepted" "Fixture has accepted status"
+
+# Test 2: Document-mongo path - spec with MongoDB keyword → data-model.schema.yaml
+assert_file_exists "$SPECS_DIR/spec-doc-mongodb.md" "Test fixture exists: spec-doc-mongodb.md"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb.md" "MongoDB" "Fixture contains MongoDB keyword"
+
+# Test 3: Document-dynamo path - spec with DynamoDB keyword → data-model.md with Access Patterns
+assert_file_exists "$SPECS_DIR/spec-doc-dynamodb.md" "Test fixture exists: spec-doc-dynamodb.md"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb.md" "DynamoDB" "Fixture contains DynamoDB keyword"
+
+# Test 4: Key-value path - spec with Redis keyword → data-model.md with key schema
+assert_file_exists "$SPECS_DIR/spec-kv-redis.md" "Test fixture exists: spec-kv-redis.md"
+assert_file_contains "$SPECS_DIR/spec-kv-redis.md" "Redis" "Fixture contains Redis keyword"
+
+# Test 5: Mixed path - spec with Postgres and Redis → both data-model-sql.mmd and data-model-kv.md
+assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis.md" "Test fixture exists: spec-mixed-postgres-redis.md"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis.md" "Postgres" "Mixed fixture contains Postgres"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis.md" "Redis" "Mixed fixture contains Redis"
+
+# Test 6: Config fallback - spec with no keywords + config default_type: sql → data-model.mmd exists
+assert_file_exists "$SPECS_DIR/spec-no-keywords.md" "Test fixture exists: spec-no-keywords.md"
+assert_file_contains "$SPECS_DIR/spec-no-keywords.md" "Data Model" "No-keyword fixture has Data Model section"
+
+# Test 7: Config auto + no keywords - spec with no keywords + config auto → warning/prompt in output
+assert_file_exists "$SPECS_DIR/spec-auto-fallback.md" "Test fixture exists: spec-auto-fallback.md"
+assert_file_contains "$SPECS_DIR/spec-auto-fallback.md" "status: accepted" "Auto-fallback fixture has accepted status"
+
+# Test 8: Active constraints injected - spec with active invariant → "active constraints applied" in routing
+assert_file_exists "$SPECS_DIR/spec-with-constraints.md" "Test fixture exists: spec-with-constraints.md"
+assert_file_contains "$SPECS_DIR/spec-with-constraints.md" "Constrained Feature" "Constraint fixture has title"
+
+# Test 9: Empty invariant body warning - spec with empty invariant → "body is empty" in output
+assert_file_exists "$SPECS_DIR/spec-empty-constraint.md" "Test fixture exists: spec-empty-constraint.md"
+assert_file_contains "$SPECS_DIR/spec-empty-constraint.md" "Empty Constraint" "Empty constraint fixture exists"
+
+# Test 10: Superseded invariant excluded - spec with Superseded invariant → constraint count is 0
+assert_file_exists "$SPECS_DIR/spec-superseded-invariant.md" "Test fixture exists: spec-superseded-invariant.md"
+assert_file_contains "$SPECS_DIR/spec-superseded-invariant.md" "Superseded" "Superseded fixture exists"
+
+# Test 11: Spec-frontmatter override - config sql + spec database_type: document-mongo → data-model.schema.yaml exists
+assert_file_exists "$SPECS_DIR/spec-override-frontmatter.md" "Test fixture exists: spec-override-frontmatter.md"
+assert_file_contains "$SPECS_DIR/spec-override-frontmatter.md" "database_type: document-mongo" "Override fixture has frontmatter override"
+
+# Test 12: Design blueprint header - any spec with data model → artifact contains "Design blueprint" comment
+assert_file_exists "$SPECS_DIR/spec-blueprint-check.md" "Test fixture exists: spec-blueprint-check.md"
+assert_file_contains "$SPECS_DIR/spec-blueprint-check.md" "Data Model" "Blueprint fixture has Data Model section"
+
+# Verify spec-artifacts command has design blueprint framing
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Design blueprint" "spec-artifacts mentions design blueprint framing"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "design blueprints" "spec-artifacts uses design blueprint language"
+
+# Verify spec-artifacts command has constraint injection logic
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "ACTIVE CONSTRAINTS" "spec-artifacts injects active constraints"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Resolve Context" "spec-artifacts has resolve context step"
+
+# Verify spec-artifacts command has database type resolution
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "database_type:" "spec-artifacts reads spec frontmatter database_type"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "artifacts.database.default_type" "spec-artifacts reads config default_type"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Keyword scan" "spec-artifacts performs keyword scanning"
+
+# Verify data model lookup tables are referenced
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model.mmd" "spec-artifacts generates .mmd files"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model.schema.yaml" "spec-artifacts generates schema.yaml files"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "erDiagram" "spec-artifacts uses Mermaid erDiagram format"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "\$schema" "spec-artifacts uses JSON Schema"
+
+# Verify multi-database suffix naming
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-sql.mmd" "spec-artifacts uses sql suffix for mixed"
+assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-kv.md" "spec-artifacts uses kv suffix for key-value"
+
+# ============================================================
+# Golden artifact validation
+# ============================================================
+
+# SQL golden — Mermaid ERD
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "Golden: SQL data-model.mmd exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "erDiagram" "Golden: SQL has erDiagram"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "Design blueprint" "Golden: SQL has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "edikt:artifact" "Golden: SQL has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "status=draft" "Golden: SQL has draft status"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "%% Index:" "Golden: SQL has index comments"
+
+# Document-mongo golden — JSON Schema YAML
+assert_file_exists "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "Golden: Mongo data-model.schema.yaml exists"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "\$schema" "Golden: Mongo has \$schema"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "collection:" "Golden: Mongo has collection"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "indexes:" "Golden: Mongo has indexes"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "Design blueprint" "Golden: Mongo has blueprint header"
+
+# Document-dynamo golden — Access patterns
+assert_file_exists "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Golden: DynamoDB data-model.md exists"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Access Patterns" "Golden: DynamoDB has Access Patterns"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "GSI" "Golden: DynamoDB has GSI design"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Entity Prefixes" "Golden: DynamoDB has entity prefixes"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Design blueprint" "Golden: DynamoDB has blueprint header"
+
+# Key-value golden — Key schema
+assert_file_exists "$SPECS_DIR/spec-kv-redis/data-model.md" "Golden: Redis data-model.md exists"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "Key Schema" "Golden: Redis has Key Schema"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "TTL" "Golden: Redis has TTL column"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "Namespace" "Golden: Redis has Namespace"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "Design blueprint" "Golden: Redis has blueprint header"
+
+# Mixed golden — suffix naming with both artifacts
+assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis/data-model-sql.mmd" "Golden: Mixed SQL data-model-sql.mmd exists"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-sql.mmd" "erDiagram" "Golden: Mixed SQL has erDiagram"
+assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "Golden: Mixed KV data-model-kv.md exists"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "Key Schema" "Golden: Mixed KV has Key Schema"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "## Notes" "Golden: Mixed KV has Notes section"
+
+# API contract golden — OpenAPI 3.0
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "Golden: API contract exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "openapi:" "Golden: API has openapi field"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "Design blueprint" "Golden: API has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "edikt:artifact" "Golden: API has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "paths:" "Golden: API has paths section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "components:" "Golden: API has components"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "securitySchemes:" "Golden: API has security schemes"
+
+# Event contract golden — AsyncAPI 2.6
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "Golden: Event contract exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "asyncapi:" "Golden: Events has asyncapi field"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "Design blueprint" "Golden: Events has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "channels:" "Golden: Events has channels"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "x-producer:" "Golden: Events has producer"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "x-idempotency:" "Golden: Events has idempotency"
+
+# Migration golden — SQL with UP/DOWN/BACKFILL/RISK
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "Golden: Migration exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "Design blueprint" "Golden: Migration has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "edikt:artifact" "Golden: Migration has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== UP ===" "Golden: Migration has UP section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== DOWN ===" "Golden: Migration has DOWN section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== BACKFILL ===" "Golden: Migration has BACKFILL section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== RISK ===" "Golden: Migration has RISK section"
+
+# Fixtures golden — YAML seed data
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "Golden: Fixtures exist"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "Design blueprint" "Golden: Fixtures has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "edikt:artifact" "Golden: Fixtures has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "scenarios:" "Golden: Fixtures has scenarios"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "_note:" "Golden: Fixtures has _note fields"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "relationships:" "Golden: Fixtures has relationships"
+
+# Test strategy golden — markdown with frontmatter
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "Golden: Test strategy exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "artifact_type: test-strategy" "Golden: Test strategy has artifact_type"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "reviewed_by: qa" "Golden: Test strategy reviewed by qa"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Unit Tests" "Golden: Test strategy has Unit Tests"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Integration Tests" "Golden: Test strategy has Integration Tests"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Edge Cases" "Golden: Test strategy has Edge Cases"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Coverage Target" "Golden: Test strategy has Coverage Target"
+
+# ============================================================
+# Compile golden validation
+# ============================================================
+
+COMPILE_DIR="$PROJECT_ROOT/test/fixtures/compile"
+
+# Input fixtures exist
+assert_file_exists "$COMPILE_DIR/decisions/ADR-001-test.md" "Compile fixture: ADR-001 exists"
+assert_file_contains "$COMPILE_DIR/decisions/ADR-001-test.md" "Accepted" "Compile fixture: ADR-001 is Accepted"
+assert_file_exists "$COMPILE_DIR/decisions/ADR-002-test.md" "Compile fixture: ADR-002 exists"
+assert_file_contains "$COMPILE_DIR/decisions/ADR-002-test.md" "Superseded" "Compile fixture: ADR-002 is Superseded"
+assert_file_exists "$COMPILE_DIR/invariants/INV-001-test.md" "Compile fixture: INV-001 exists"
+assert_file_contains "$COMPILE_DIR/invariants/INV-001-test.md" "Active" "Compile fixture: INV-001 is Active"
+
+# Expected output structure
+assert_file_exists "$COMPILE_DIR/expected-governance.md" "Compile golden: expected-governance.md exists"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "edikt:compiled" "Compile golden: has compiled marker"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "1 accepted, 1 superseded" "Compile golden: correct ADR counts"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Non-Negotiable Constraints" "Compile golden: has constraints section"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Architecture Decisions" "Compile golden: has architecture section"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Reminder:" "Compile golden: has reminder section (recency)"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: INV-001" "Compile golden: INV-001 referenced"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: ADR-001" "Compile golden: ADR-001 referenced"
+
+# Superseded ADR must NOT appear in compiled output
+if grep -q "kebab-case" "$COMPILE_DIR/expected-governance.md" 2>/dev/null; then
+    fail "Compile golden: ADR-002 (superseded) excluded from output"
+else
+    pass "Compile golden: ADR-002 (superseded) excluded from output"
 fi
 
 test_summary

@@ -1,6 +1,7 @@
 ---
 name: edikt:drift
 description: "Verify implementation matches spec, PRD, and ADRs"
+effort: high
 ---
 
 # edikt:drift
@@ -31,7 +32,7 @@ CRITICAL: NEVER assign a severity level without reading the actual code — ever
 
 8. If `--output=json` is in arguments, use the JSON Output Format from the Reference section. Otherwise use the Terminal Output Format.
 
-9. Save the report to `{reports_path}/drift-{SPEC-NNN}-{YYYY-MM-DD}.md` using the terminal format with frontmatter from the Reference section.
+9. Save the FULL report to `{reports_path}/drift-{SPEC-NNN}-{YYYY-MM-DD}.md`. The saved file MUST contain: (1) the Report Frontmatter from the Reference section, THEN (2) the complete Terminal Output Format content — summary line, emoji summary, findings table, and footer. Do NOT save only the frontmatter — the full report body must be included.
 
 10. Log the drift event:
     ```bash
@@ -52,7 +53,7 @@ CRITICAL: NEVER assign a severity level without reading the actual code — ever
     Report saved: {reports_path}/drift-{SPEC-NNN}-{date}.md
 
     {If diverged findings:}
-      {n} diverged finding(s). Want me to prioritize them?
+      {n} diverged finding(s). Which should I address? (e.g., #1, #3 or "all diverged")
 
     {If all compliant:}
       All clear — implementation matches governance.
@@ -90,7 +91,7 @@ REMEMBER: NEVER assign a severity without reading the actual code. Every finding
 |---|---|---|
 | Layer 1: PRD Acceptance Criteria | For each acceptance criterion in the PRD, is it satisfied? | `architect` |
 | Layer 2: Spec Requirements | For each requirement or component in the spec, was it implemented as specified? | `architect` + `engineer` |
-| Layer 3: Artifact Contracts | `data-model.md` → actual schema matches? `contracts/api.md` → actual endpoints match? `test-strategy.md` → tests exist? `contracts/events.md` → event schema matches? Skip artifacts that don't exist. | `dba`, `api`, `qa`, `architect` |
+| Layer 3: Artifact Contracts | `data-model.*` (`.mmd`, `.schema.yaml`, or `.md`) → actual schema matches? `contracts/api.yaml` → actual endpoints match? `test-strategy.md` → tests exist? `contracts/events.yaml` → event schema matches? `fixtures.yaml` → test data covers scenarios? Skip artifacts that don't exist. | `dba`, `api`, `qa`, `architect` |
 | Layer 4: ADR Compliance | For each referenced ADR, does the implementation follow the decision? | `architect` |
 | Layer 5: Invariant Compliance | For each invariant, is it violated by any changed file? | `architect` |
 

@@ -1,6 +1,7 @@
 ---
 name: edikt:spec
 description: "Technical specification from an accepted PRD"
+effort: high
 ---
 
 (eval):1: no matches found: docs/product/specs/SPEC-*.md
@@ -13,6 +14,12 @@ Existing specs: (none yet)
 # edikt:spec
 
 Write a technical specification from an accepted PRD. The spec is the engineering response to a product requirement — it defines HOW to build what the PRD says to build.
+
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
 
 ## Arguments
 

@@ -1,6 +1,7 @@
 ---
 name: edikt:review
 description: "Post-implementation specialist review — routes to relevant domain agents based on what was built"
+effort: high
 context: fork
 allowed-tools:
   - Read
@@ -120,13 +121,17 @@ Scope: {n} files changed ({scope description})
 Domains: {detected domains}
 
 {AGENT NAME}              {severity counts: 🔴 N 🟡 N 🟢 N — list ALL non-zero levels}
-  🔴  {finding — specific, actionable, with file reference}
-  🟡  {finding}
-  🟢  {area that looks good}
+  #1 🔴  {finding — specific, actionable, with file reference}
+  #2 🟡  {finding}
+  #3 🟢  {area that looks good}
+
+{AGENT NAME}              {severity counts}
+  #4 🔴  {finding}
+  #5 🟡  {finding}
 
 ─────────────────────────────────────────────────────
 {total: N critical, N warnings — count ALL 🔴 and 🟡 across all agents}
-{If critical: "Address before shipping?"}
+{If critical: "Which findings should I address? (e.g., #1, #4 or 'all critical')"}
 {If all clean: "✅ All domains clear — looks good to ship."}
 ```
 

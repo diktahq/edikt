@@ -52,9 +52,11 @@ For lighter continuous security checks, edikt also adds a pre-push git hook that
 ## Output
 
 ```
-SECURITY AUDIT — 2026-03-08
+AUDIT REPORT — 2026-03-08
 ─────────────────────────────────────────────────────
 Scope: full codebase
+
+SECURITY
 
 🔴 CRITICAL
   • src/api/users.go:42 — SQL query built with string concat — inject risk
@@ -74,8 +76,12 @@ OWASP Checklist:
   A05 Misconfiguration  ✅
   A07 Auth Failures     ⚠️
   A09 Logging           ✅
+RELIABILITY
+  🟢 Error handling present on all public routes
+  🟡 No circuit breaker on external API calls
+
 ─────────────────────────────────────────────────────
-Run /edikt:audit auth to narrow focus.
+1 critical, 3 warnings. Run /edikt:audit auth to narrow focus.
 ```
 
 ## Proactive suggestions

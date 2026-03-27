@@ -1,6 +1,7 @@
 ---
 name: edikt:plan
 description: "Create execution plan with interview and codebase analysis"
+effort: high
 argument-hint: "[ticket-id or task description]"
 allowed-tools:
   - Read
@@ -16,6 +17,14 @@ allowed-tools:
 # edikt:plan
 
 Create an optimized execution plan through interview and codebase analysis.
+
+CRITICAL: This command requires live back-and-forth interview with the user. Check immediately whether you are in plan mode:
+- If you are in plan mode (you can only describe actions, not perform them), output exactly this and stop:
+  ```
+  ⚠️  /edikt:plan requires an interactive interview and cannot run in plan mode.
+  Exit plan mode first, then run /edikt:plan again.
+  ```
+- If you are not in plan mode, proceed normally with the interview.
 
 CRITICAL: NEVER write a plan without running the pre-flight specialist review — skip it only if `--no-review` is explicitly passed.
 
@@ -145,13 +154,17 @@ PRE-FLIGHT REVIEW
 Domains detected: {list} ({n} of 6 checked)
 
 {AGENT NAME}
-  🔴  {finding}
-  🟡  {finding}
-  🟢  {positive finding}
+  #1 🔴  {finding} ({file:line if applicable})
+  #2 🟡  {finding}
+  #3 🟢  {positive finding}
+
+{AGENT NAME}
+  #4 🔴  {finding}
+  #5 🟡  {finding}
 
 ─────────────────────────────────────────────────────
-{N critical, N warnings}. Address in plan before executing?
-Type your updates now, or press enter to proceed with known risks noted.
+{N critical, N warnings}. Which findings should I address?
+(e.g., #1, #4 or "all critical" or "skip")
 ```
 
 ### Plan File Template

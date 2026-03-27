@@ -1,0 +1,41 @@
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=fixtures spec=SPEC-TEST status=draft reviewed_by=qa
+# created_at=2026-03-27T00:00:00Z
+# Transform to your stack's format at implementation time:
+# SQL seeds, Prisma seed.ts, factory definitions, pytest fixtures, etc.
+
+scenarios:
+  - name: "basic users and posts"
+    purpose: "dev env and integration tests"
+    entities:
+      - entity: User
+        records:
+          - id: "550e8400-e29b-41d4-a716-446655440001"
+            email: "alice@example.com"
+            name: "Alice"
+            _note: "primary test user with posts"
+          - id: "550e8400-e29b-41d4-a716-446655440002"
+            email: "bob@example.com"
+            name: "Bob"
+            _note: "secondary user with no posts"
+      - entity: Post
+        records:
+          - id: "660e8400-e29b-41d4-a716-446655440001"
+            user_id: "550e8400-e29b-41d4-a716-446655440001"
+            title: "First Post"
+            body: "Hello world"
+            _note: "standard post by Alice"
+
+  - name: "duplicate email edge case"
+    purpose: "edge case coverage"
+    entities:
+      - entity: User
+        records:
+          - id: "550e8400-e29b-41d4-a716-446655440099"
+            email: "alice@example.com"
+            name: "Alice Duplicate"
+            _note: "conflicts with basic scenario — tests unique constraint"
+
+relationships:
+  - "Post.user_id references User.id"
+  - "Create order: User before Post"

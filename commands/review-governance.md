@@ -1,6 +1,7 @@
 ---
 name: edikt:review-governance
 description: "Review governance document language for enforceability and clarity"
+effort: normal
 allowed-tools:
   - Read
   - Glob

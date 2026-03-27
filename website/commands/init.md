@@ -14,7 +14,7 @@ No arguments. edikt figures out the rest.
 
 ### [1/3] Scan
 
-edikt scans your codebase — languages, frameworks, linters, existing docs, commit conventions, and governance tooling — and shows what it found:
+edikt scans your codebase — languages, frameworks, linters, databases, existing docs, commit conventions, and governance tooling — and shows what it found:
 
 ```
 [1/3] Scanning project...
@@ -105,7 +105,7 @@ One screen. Say "looks good" when the selection is right. Toggle anything by nam
 
 | File | Purpose |
 |------|---------|
-| `.edikt/config.yaml` | Governance configuration |
+| `.edikt/config.yaml` | Governance configuration (includes detected database type and artifacts settings) |
 | `.claude/rules/*.md` | Rule packs (tagged `<!-- edikt:generated -->`) |
 | `.claude/agents/*.md` | Specialist agents matched to your stack |
 | `.claude/settings.json` | 9 automatic behaviors (see below) |
@@ -144,7 +144,7 @@ Running `/edikt:init` on an existing edikt project handles three scenarios:
 
 **Team member joining** — config exists, local files match: "Nothing to do." If gaps exist (missing rules, no hooks), edikt syncs the gaps without overwriting anything.
 
-**Reconfigure** — shows exactly what will change before writing anything. Files you've manually edited (no `<!-- edikt:generated -->` tag) are never overwritten.
+**Reconfigure** — shows exactly what will change before writing anything. Files you've manually edited (no `<!-- edikt:generated -->` tag) are never overwritten. Old HTML sentinel markers in CLAUDE.md are migrated to the visible format automatically.
 
 **Upgrade** — for version upgrades, use `/edikt:upgrade` instead.
 

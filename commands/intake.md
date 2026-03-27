@@ -1,6 +1,7 @@
 ---
 name: edikt:intake
 description: "Onboard existing docs into edikt's standard structure"
+effort: normal
 allowed-tools:
   - Read
   - Write
@@ -14,6 +15,12 @@ allowed-tools:
 # edikt:intake
 
 Scan the project for existing documentation and organize it into edikt's standard structure.
+
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
 
 ## Instructions
 

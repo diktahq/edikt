@@ -1,7 +1,7 @@
 # ADR-002: Safe CLAUDE.md Merge via Sentinel Comments
 
 **Date:** 2026-03-06
-**Status:** Accepted
+**Status:** Superseded by ADR-006
 
 ## Context
 
