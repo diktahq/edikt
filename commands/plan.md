@@ -43,6 +43,17 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
    - **Natural language description** (anything else): use it as the task description directly
    - **Empty**: check the current conversation for context. If a task or feature was being discussed, summarize it and confirm: "It sounds like you want to plan: {summary}. Is that right?" If no conversation context, ask: "What are you planning?"
 
+   **Disambiguation** — when the input is natural language or inferred from conversation (not a SPEC, ticket, or PLAN reference), offer the user a choice before proceeding:
+   ```
+   How would you like to plan this?
+
+   1. edikt plan — phased execution plan with model assignment, cost estimate,
+      codebase analysis, and specialist pre-flight review. Saved to docs/plans/.
+   2. Quick plan — help you think through the approach right here in conversation.
+      No file, no ceremony.
+   ```
+   If the user picks 2, help them think through the task conversationally — don't run the rest of this command. If the user picks 1 (or explicitly invoked `/edikt:plan`), proceed with the full flow.
+
 3. Check the **governance chain** — only when a SPEC was resolved:
    - Read spec frontmatter for `status:`. If not `accepted`, warn the user.
    - Check for spec-artifacts in the spec folder. If any have `status: draft`, warn and ask to proceed.
