@@ -344,4 +344,43 @@ assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "\$schema" "spec
 assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-sql.mmd" "spec-artifacts uses sql suffix for mixed"
 assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-kv.md" "spec-artifacts uses kv suffix for key-value"
 
+# ============================================================
+# Golden artifact validation
+# ============================================================
+
+# SQL golden — Mermaid ERD
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "Golden: SQL data-model.mmd exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "erDiagram" "Golden: SQL has erDiagram"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "Design blueprint" "Golden: SQL has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "edikt:artifact" "Golden: SQL has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "status=draft" "Golden: SQL has draft status"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/data-model.mmd" "%% Index:" "Golden: SQL has index comments"
+
+# Document-mongo golden — JSON Schema YAML
+assert_file_exists "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "Golden: Mongo data-model.schema.yaml exists"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "\$schema" "Golden: Mongo has \$schema"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "collection:" "Golden: Mongo has collection"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "indexes:" "Golden: Mongo has indexes"
+assert_file_contains "$SPECS_DIR/spec-doc-mongodb/data-model.schema.yaml" "Design blueprint" "Golden: Mongo has blueprint header"
+
+# Document-dynamo golden — Access patterns
+assert_file_exists "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Golden: DynamoDB data-model.md exists"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Access Patterns" "Golden: DynamoDB has Access Patterns"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "GSI" "Golden: DynamoDB has GSI design"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Entity Prefixes" "Golden: DynamoDB has entity prefixes"
+assert_file_contains "$SPECS_DIR/spec-doc-dynamodb/data-model.md" "Design blueprint" "Golden: DynamoDB has blueprint header"
+
+# Key-value golden — Key schema
+assert_file_exists "$SPECS_DIR/spec-kv-redis/data-model.md" "Golden: Redis data-model.md exists"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "Key Schema" "Golden: Redis has Key Schema"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "TTL" "Golden: Redis has TTL column"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "Namespace" "Golden: Redis has Namespace"
+assert_file_contains "$SPECS_DIR/spec-kv-redis/data-model.md" "Design blueprint" "Golden: Redis has blueprint header"
+
+# Mixed golden — suffix naming with both artifacts
+assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis/data-model-sql.mmd" "Golden: Mixed SQL data-model-sql.mmd exists"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-sql.mmd" "erDiagram" "Golden: Mixed SQL has erDiagram"
+assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "Golden: Mixed KV data-model-kv.md exists"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "Key Schema" "Golden: Mixed KV has Key Schema"
+
 test_summary
