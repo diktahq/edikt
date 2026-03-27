@@ -102,6 +102,16 @@ Match the user's intent, not their exact words. These are representative example
 | Check implementation drift | "check drift", "did we build what we decided", "verify the implementation", "are we on track with the spec" | `/edikt:drift` |
 | Compile governance | "compile governance", "update directives", "update the rules" | `/edikt:compile` |
 | Review governance quality | "review governance", "are our ADRs well written", "check governance quality" | `/edikt:review-governance` |
+| Review implementation | "review what we built", "post-implementation review", "review this code" | `/edikt:review` |
+| Security audit | "run a security audit", "check for vulnerabilities", "security check" | `/edikt:audit` |
+| Check documentation gaps | "check for doc gaps", "what docs are outdated", "audit documentation" | `/edikt:docs` |
+| Validate setup | "check my setup", "is everything configured right", "health check", "run doctor" | `/edikt:doctor` |
+| Initialize project | "set up edikt", "initialize this project", "onboard this repo" | `/edikt:init` |
+| Import existing docs | "import existing docs", "onboard these docs", "intake our documentation" | `/edikt:intake` |
+| Update rule packs | "check for rule updates", "are my rules outdated", "update rules" | `/edikt:rules-update` |
+| Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:sync` |
+| End-of-session sweep | "wrap up this session", "end of session", "session summary" | `/edikt:session` |
+| Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
 
 ### After Compaction
 If context was compacted, the PostCompact hook will re-inject the active plan phase and invariants automatically. If you need full context, run `/edikt:context`.
