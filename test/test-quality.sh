@@ -144,6 +144,13 @@ for cmd in init prd spec spec-artifacts adr invariant intake plan; do
     assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "plan mode" "${cmd} has plan mode guard"
 done
 
+# Plan command accepts flexible input
+assert_file_contains "$PROJECT_ROOT/commands/plan.md" "SPEC identifier" "plan accepts SPEC input"
+assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Ticket ID" "plan accepts ticket input"
+assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Existing plan name" "plan accepts PLAN input"
+assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Natural language" "plan accepts natural language"
+assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Quick plan" "plan offers disambiguation"
+
 # ============================================================
 # Natural language triggers
 # ============================================================
