@@ -10,3 +10,9 @@
 |---|---|---|---|---|
 | `session:<user_id>` | JSON object | 3600s | User session | `session` |
 | `cache:result:<hash>` | JSON object | 300s | Result cache | `cache` |
+
+## Notes
+
+- Key separator: `:`
+- Namespace rationale: sessions isolated from cache for independent eviction
+- Eviction policy: LRU for cache, noeviction for session

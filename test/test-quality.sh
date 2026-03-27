@@ -382,5 +382,80 @@ assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis/data-model-sql.mmd" "Go
 assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-sql.mmd" "erDiagram" "Golden: Mixed SQL has erDiagram"
 assert_file_exists "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "Golden: Mixed KV data-model-kv.md exists"
 assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "Key Schema" "Golden: Mixed KV has Key Schema"
+assert_file_contains "$SPECS_DIR/spec-mixed-postgres-redis/data-model-kv.md" "## Notes" "Golden: Mixed KV has Notes section"
+
+# API contract golden — OpenAPI 3.0
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "Golden: API contract exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "openapi:" "Golden: API has openapi field"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "Design blueprint" "Golden: API has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "edikt:artifact" "Golden: API has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "paths:" "Golden: API has paths section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "components:" "Golden: API has components"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/api.yaml" "securitySchemes:" "Golden: API has security schemes"
+
+# Event contract golden — AsyncAPI 2.6
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "Golden: Event contract exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "asyncapi:" "Golden: Events has asyncapi field"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "Design blueprint" "Golden: Events has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "channels:" "Golden: Events has channels"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "x-producer:" "Golden: Events has producer"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/contracts/events.yaml" "x-idempotency:" "Golden: Events has idempotency"
+
+# Migration golden — SQL with UP/DOWN/BACKFILL/RISK
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "Golden: Migration exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "Design blueprint" "Golden: Migration has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "edikt:artifact" "Golden: Migration has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== UP ===" "Golden: Migration has UP section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== DOWN ===" "Golden: Migration has DOWN section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== BACKFILL ===" "Golden: Migration has BACKFILL section"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/migrations/001_create_users.sql" "=== RISK ===" "Golden: Migration has RISK section"
+
+# Fixtures golden — YAML seed data
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "Golden: Fixtures exist"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "Design blueprint" "Golden: Fixtures has blueprint header"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "edikt:artifact" "Golden: Fixtures has artifact marker"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "scenarios:" "Golden: Fixtures has scenarios"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "_note:" "Golden: Fixtures has _note fields"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/fixtures.yaml" "relationships:" "Golden: Fixtures has relationships"
+
+# Test strategy golden — markdown with frontmatter
+assert_file_exists "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "Golden: Test strategy exists"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "artifact_type: test-strategy" "Golden: Test strategy has artifact_type"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "reviewed_by: qa" "Golden: Test strategy reviewed by qa"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Unit Tests" "Golden: Test strategy has Unit Tests"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Integration Tests" "Golden: Test strategy has Integration Tests"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Edge Cases" "Golden: Test strategy has Edge Cases"
+assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Coverage Target" "Golden: Test strategy has Coverage Target"
+
+# ============================================================
+# Compile golden validation
+# ============================================================
+
+COMPILE_DIR="$PROJECT_ROOT/test/fixtures/compile"
+
+# Input fixtures exist
+assert_file_exists "$COMPILE_DIR/decisions/ADR-001-test.md" "Compile fixture: ADR-001 exists"
+assert_file_contains "$COMPILE_DIR/decisions/ADR-001-test.md" "Accepted" "Compile fixture: ADR-001 is Accepted"
+assert_file_exists "$COMPILE_DIR/decisions/ADR-002-test.md" "Compile fixture: ADR-002 exists"
+assert_file_contains "$COMPILE_DIR/decisions/ADR-002-test.md" "Superseded" "Compile fixture: ADR-002 is Superseded"
+assert_file_exists "$COMPILE_DIR/invariants/INV-001-test.md" "Compile fixture: INV-001 exists"
+assert_file_contains "$COMPILE_DIR/invariants/INV-001-test.md" "Active" "Compile fixture: INV-001 is Active"
+
+# Expected output structure
+assert_file_exists "$COMPILE_DIR/expected-governance.md" "Compile golden: expected-governance.md exists"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "edikt:compiled" "Compile golden: has compiled marker"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "1 accepted, 1 superseded" "Compile golden: correct ADR counts"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Non-Negotiable Constraints" "Compile golden: has constraints section"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Architecture Decisions" "Compile golden: has architecture section"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Reminder:" "Compile golden: has reminder section (recency)"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: INV-001" "Compile golden: INV-001 referenced"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: ADR-001" "Compile golden: ADR-001 referenced"
+
+# Superseded ADR must NOT appear in compiled output
+if grep -q "kebab-case" "$COMPILE_DIR/expected-governance.md" 2>/dev/null; then
+    fail "Compile golden: ADR-002 (superseded) excluded from output"
+else
+    pass "Compile golden: ADR-002 (superseded) excluded from output"
+fi
 
 test_summary
