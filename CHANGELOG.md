@@ -1,6 +1,6 @@
 # edikt changelog
 
-## v0.1.1 (2026-03-25)
+## v0.1.1 (2026-03-27)
 
 ### Numbered findings in reviews
 

@@ -70,6 +70,10 @@ export default withMermaid(defineConfig({
           { text: 'Existing Projects', link: '/guides/brownfield' },
           { text: 'Monorepos', link: '/guides/monorepo' },
           { text: 'Natural Language', link: '/natural-language' },
+          { text: 'Daily Workflow', link: '/guides/daily-workflow' },
+          { text: 'Specialist Agents', link: '/guides/specialist-agents' },
+          { text: 'Security', link: '/guides/security' },
+          { text: 'Keeping Up to Date', link: '/guides/upgrading' },
         ],
       },
       {

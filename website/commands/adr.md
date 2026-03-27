@@ -56,6 +56,12 @@ File format: title, status (Accepted/Proposed/Deprecated), date, context, decisi
 
 ADRs are loaded by `/edikt:context` and available to Claude in every future session.
 
+## ADRs are immutable once accepted
+
+Once an ADR is accepted, its content — context, decision, and consequences — must never be edited. This is enforced by INV-002 and compiled into governance directives.
+
+When a decision changes, create a new ADR that supersedes the old one. The old ADR's status is updated to `Superseded by ADR-NNN` — the only permitted mutation after acceptance. Draft ADRs may be freely edited before acceptance.
+
 ## Natural language triggers
 
 - "save this decision"
