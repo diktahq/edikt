@@ -12,11 +12,17 @@ All review commands now enumerate findings with IDs (#1, #2, #3...) so users can
 - `/edikt:drift` — diverged findings include triage prompt
 - `/edikt:doctor` — warnings and failures numbered for easy reference
 
+### Natural language command triggers
+
+The CLAUDE.md command table now matches intent, not exact phrases. Each command has an intent label and broader representative examples. "Create me a plan for this ticket", "help me plan this out", "spec this out", "are we on track with the spec" — all now trigger the right command.
+
 ### Bug fixes
 
 - **Init hook filename hallucination** — `/edikt:init` now reads the settings template exactly as-is instead of generating hook filenames. Fixes `stop-signals.sh: No such file or directory` error.
 - **PostToolUse gofmt error** — `gofmt -w` failures on invalid Go syntax no longer propagate as hook errors.
 - **Drift report only saving frontmatter** — `/edikt:drift` now explicitly writes the full report (frontmatter + body), not just the frontmatter.
+- **Plan mode guard** — `/edikt:plan` now detects plan mode and tells you to exit it first, instead of silently skipping the interview and producing a low-quality plan.
+- **Installer preserves customized commands** — `install.sh` now checks for `<!-- edikt:custom -->` before overwriting, so customized commands survive reinstall.
 
 ### spec-artifacts redesign — design blueprints with database type awareness
 
