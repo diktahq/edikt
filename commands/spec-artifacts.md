@@ -22,7 +22,7 @@ Exit plan mode first, then run the command again.
 
 ### 1. Resolve Paths
 
-Read `.edikt/config.yaml`. Specs directory from `specs: { dir: }` (default: `docs/product/specs/`). Invariants directory from `paths: { invariants: }` (default: `docs/architecture/invariants/`).
+Read `.edikt/config.yaml`. Specs directory from `paths.specs` (default: `docs/product/specs/`). Invariants directory from `paths.invariants` (default: `docs/architecture/invariants/`).
 
 ### 2. Resolve Context
 
@@ -43,6 +43,13 @@ Work through this checklist before proceeding. Record each value explicitly.
 2. Config `artifacts.database.default_type` → if not `auto`, use it. Note source: `config`.
 3. Keyword scan spec content using the DB type keyword table below → if matched. Note source: `keyword-scan`.
 4. Still unresolved → ask the user. Note source: `user`.
+
+**Subtype resolution** — if DB_TYPE is `document` (generic, from config or user), resolve to a concrete subtype before proceeding:
+- Keyword scan spec content for vendor names using the DB type keyword table below
+- If MongoDB, Firestore, CouchDB, or "collection" found → `document-mongo`
+- If DynamoDB, Cassandra, HBase, or "wide-column" found → `document-dynamo`
+- If no vendor detected → ask: "Your config says document database — which type? (1) MongoDB/Firestore (2) DynamoDB/Cassandra"
+- Note: config stores `document` (generic) because init detects from code signals, not spec content. Subtype resolution always happens at spec-artifacts runtime.
 
 **CONSTRAINTS** — load active invariants:
 - Read all files in `{invariants_dir}` (from config `paths.invariants`)
@@ -475,6 +482,7 @@ REMEMBER: Every artifact must be reviewed by the appropriate specialist agent. N
 
   Status: draft
   Review and accept each artifact before planning.
+  To accept: change status=draft to status=accepted in the artifact header.
   Run /edikt:plan to create an execution plan.
 ```
 
