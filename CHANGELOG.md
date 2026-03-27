@@ -1,5 +1,15 @@
 # edikt changelog
 
+## v0.1.3 (2026-03-27)
+
+### Flexible plan input
+
+`/edikt:plan` now accepts any input format — natural language prompts, existing plan names, ticket IDs, SPEC identifiers, or nothing (infers from conversation context). When the intent is ambiguous (natural language or conversation context), edikt offers a choice between a full phased plan (saved to `docs/plans/`) and a quick conversational plan.
+
+- `PLAN-NNN` input: continue from current phase, re-plan remaining phases, or create a sub-plan
+- Empty input: infers from current conversation context before asking
+- Natural language: offers full vs quick plan disambiguation
+
 ## v0.1.2 (2026-03-27)
 
 ### Bug fix

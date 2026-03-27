@@ -38,6 +38,8 @@ reviews:
         template that Claude executes. Check for: clear instructions, proper use of
         shell preprocessing (lines starting with !), consistent structure across commands,
         and that plan-mode guards exist for interactive commands.
+        IGNORE: MD040 (fenced-code-language) — these files are prompts read by Claude,
+        not published markdown. Unlabeled fenced blocks are intentional output templates.
 
     - path: "templates/rules/**"
       instructions: >

@@ -18,6 +18,8 @@ Or describe the task inline:
 /edikt:plan add bulk order creation endpoint
 /edikt:plan CON-42
 /edikt:plan SPEC-005
+/edikt:plan PLAN-007
+/edikt:plan refactor the compile command
 /edikt:plan add bulk order creation endpoint --no-review
 ```
 
@@ -25,11 +27,27 @@ Or describe the task inline:
 
 | Argument | Description |
 |----------|-------------|
-| (none) | Asks for task description interactively |
+| (none) | Infers from conversation context, or asks interactively |
 | A task description | Uses it as the plan task |
-| A ticket ID (e.g. `CON-42`) | References the ticket as the task |
+| A ticket ID (e.g. `CON-42`) | References the ticket, fetches details via MCP if configured |
 | `SPEC-NNN` | Uses the spec and its accepted artifacts as primary planning context |
+| `PLAN-NNN` | Continue, re-plan, or create a sub-plan for an existing plan |
 | `--no-review` | Skip the pre-flight specialist review after the plan is written |
+
+## Full plan vs quick plan
+
+When the input is a natural language description (not a SPEC, ticket, or PLAN reference), edikt offers a choice:
+
+```
+How would you like to plan this?
+
+1. edikt plan — phased execution plan with model assignment, cost estimate,
+   codebase analysis, and specialist pre-flight review. Saved to docs/product/plans/.
+2. Quick plan — help you think through the approach right here in conversation.
+   No file, no ceremony.
+```
+
+Explicit `/edikt:plan` invocations with a SPEC, ticket, or PLAN reference skip this and go straight to the full flow.
 
 ## Plan mode
 
