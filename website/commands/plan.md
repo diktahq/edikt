@@ -31,6 +31,12 @@ Or describe the task inline:
 | `SPEC-NNN` | Uses the spec and its accepted artifacts as primary planning context |
 | `--no-review` | Skip the pre-flight specialist review after the plan is written |
 
+## Plan mode
+
+This command requires an interactive interview. If you (or Claude) are in plan mode (`/plan`), the interview will be silently skipped — Claude will describe what it would do instead of actually doing it, producing a low-quality plan. Exit plan mode first, then run `/edikt:plan`.
+
+This applies to all edikt commands that interview the user: `init`, `plan`, `prd`, `spec`, `spec-artifacts`, `adr`, `invariant`, `intake`.
+
 ## What happens
 
 edikt asks 3-6 targeted questions, reads your codebase for relevant context, then writes a phased plan to `docs/product/plans/`.
