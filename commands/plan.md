@@ -48,7 +48,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
    How would you like to plan this?
 
    1. edikt plan — phased execution plan with model assignment, cost estimate,
-      codebase analysis, and specialist pre-flight review. Saved to docs/plans/.
+      codebase analysis, and specialist pre-flight review. Saved to docs/product/plans/.
    2. Quick plan — help you think through the approach right here in conversation.
       No file, no ceremony.
    ```
