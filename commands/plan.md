@@ -18,6 +18,14 @@ allowed-tools:
 
 Create an optimized execution plan through interview and codebase analysis.
 
+CRITICAL: This command requires live back-and-forth interview with the user. Check immediately whether you are in plan mode:
+- If you are in plan mode (you can only describe actions, not perform them), output exactly this and stop:
+  ```
+  ⚠️  /edikt:plan requires an interactive interview and cannot run in plan mode.
+  Exit plan mode first, then run /edikt:plan again.
+  ```
+- If you are not in plan mode, proceed normally with the interview.
+
 CRITICAL: NEVER write a plan without running the pre-flight specialist review — skip it only if `--no-review` is explicitly passed.
 
 ## Arguments
