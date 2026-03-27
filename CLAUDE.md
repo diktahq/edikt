@@ -63,7 +63,7 @@ Run `./test/run.sh` to validate templates, registry, and install.
 
 Types: feat | fix | refactor | test | docs | chore
 
-<!-- edikt:start — managed by edikt, do not edit manually -->
+[edikt:start]: # managed by edikt — do not edit this block manually
 ## edikt
 
 ### Project
@@ -74,6 +74,7 @@ edikt is the governance layer for agentic engineering. It enforces coding standa
 2. Rules are enforced automatically via `.claude/rules/`
 3. If a plan is active, read it in `docs/plans/` — check progress table for current state
 4. If a spec exists, read it in `docs/product/specs/` — the spec and its artifacts are the engineering blueprint
+5. All paths are configurable in `.edikt/config.yaml` under `paths:`
 
 ### Build & Test Commands
 ```
@@ -85,22 +86,23 @@ curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bas
 ```
 
 ### edikt Commands
-When the user asks any of the following, run the corresponding command automatically:
 
-| If the user asks... | Run |
-|---------------------|-----|
-| "what's our status?", "where are we?", "project status" | `/edikt:status` |
-| "load context", "remind yourself", "what's this project?" | `/edikt:context` |
-| "create a plan", "let's plan this", "plan for X" | `/edikt:plan` |
-| "save this decision", "record this", "capture that" | `/edikt:adr` |
-| "add an invariant", "that's a hard rule", "never do X" | `/edikt:invariant` |
-| "write a PRD", "document this feature" | `/edikt:prd` |
-| "write a spec", "technical spec for X" | `/edikt:spec` |
-| "generate artifacts", "create the data model" | `/edikt:spec-artifacts` |
-| "check drift", "did we build what we decided?" | `/edikt:drift` |
-| "compile governance", "update directives" | `/edikt:compile` |
-| "review governance", "are our ADRs well written?", "check governance quality" | `/edikt:review-governance` |
+Match the user's intent, not their exact words. These are representative examples — if the meaning is the same, run the command.
+
+| Intent | Examples | Run |
+|--------|----------|-----|
+| Project status / what's next | "what's our status", "where are we", "what's next", "project status", "next steps" | `/edikt:status` |
+| Load project context | "load context", "remind yourself", "what's this project", "give me context" | `/edikt:context` |
+| Create an execution plan | "create a plan", "make a plan", "let's plan this", "plan for X", "plan this ticket", "help me plan", "how should we approach X", "plan [ticket ID]" | `/edikt:plan` |
+| Capture an architecture decision | "save this decision", "record this", "capture that", "write an ADR", "document this decision" | `/edikt:adr` |
+| Add a hard constraint | "add an invariant", "that's a hard rule", "never do X", "this must always be true" | `/edikt:invariant` |
+| Write a PRD | "write a PRD", "document this feature", "requirements for X", "product requirements" | `/edikt:prd` |
+| Write a technical spec | "write a spec", "technical spec for X", "spec this out", "design doc for X" | `/edikt:spec` |
+| Generate spec artifacts | "generate artifacts", "create the data model", "generate the contracts", "build the artifacts" | `/edikt:spec-artifacts` |
+| Check implementation drift | "check drift", "did we build what we decided", "verify the implementation", "are we on track with the spec" | `/edikt:drift` |
+| Compile governance | "compile governance", "update directives", "update the rules" | `/edikt:compile` |
+| Review governance quality | "review governance", "are our ADRs well written", "check governance quality" | `/edikt:review-governance` |
 
 ### After Compaction
 If context was compacted, the PostCompact hook will re-inject the active plan phase and invariants automatically. If you need full context, run `/edikt:context`.
-<!-- edikt:end -->
+[edikt:end]: #
