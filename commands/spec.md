@@ -15,6 +15,12 @@ Existing specs: (none yet)
 
 Write a technical specification from an accepted PRD. The spec is the engineering response to a product requirement — it defines HOW to build what the PRD says to build.
 
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
+
 ## Arguments
 
 - `$ARGUMENTS` — PRD identifier (e.g., `PRD-005`) or path to the PRD file

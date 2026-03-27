@@ -15,6 +15,12 @@ allowed-tools:
 
 Write a Product Requirements Document (PRD) for a feature or change.
 
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
+
 ## Instructions
 
 ### 1. Resolve Paths

@@ -8,6 +8,12 @@ effort: high
 
 Generate implementable artifacts (data model, API contracts, migrations, test strategy) from an accepted technical specification. Each artifact is reviewed by the appropriate domain specialist.
 
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
+
 ## Arguments
 
 - `$ARGUMENTS` — SPEC identifier (e.g., `SPEC-005`) or path to the spec folder

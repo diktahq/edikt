@@ -16,6 +16,12 @@ allowed-tools:
 
 Set up edikt governance for a project. Detects what exists, confirms with the user, and generates everything.
 
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
+
 CRITICAL: NEVER guess or invent project details. If something is unclear, ask. If an artifact detection is uncertain, skip it and tell the user how to import it manually.
 
 ## Instructions

@@ -15,6 +15,12 @@ allowed-tools:
 
 Capture an invariant — a hard constraint that must never be violated, regardless of context.
 
+CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
+```
+⚠️  This command requires user interaction and cannot run in plan mode.
+Exit plan mode first, then run the command again.
+```
+
 Invariants are always loaded by `/edikt:context` (all depth levels) because they are non-negotiables.
 
 Two modes:

@@ -139,6 +139,23 @@ for cmd in prd adr invariant spec drift compile; do
     assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "paths:" "${cmd} references paths: config"
 done
 
+# Interactive commands have plan mode guard
+for cmd in init prd spec spec-artifacts adr invariant intake plan; do
+    assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "plan mode" "${cmd} has plan mode guard"
+done
+
+# ============================================================
+# Natural language triggers
+# ============================================================
+
+# CLAUDE.md template has intent-based trigger table
+assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "Match the user" "Template has intent-matching instruction"
+
+# All 24 commands have a trigger in the template
+for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade; do
+    assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "edikt:${cmd}" "Template has trigger for ${cmd}"
+done
+
 # ============================================================
 # Configurable paths
 # ============================================================
