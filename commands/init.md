@@ -536,17 +536,22 @@ Install edikt globally: curl -fsSL https://raw.githubusercontent.com/diktahq/edi
 
 **`CLAUDE.md`** — Read the template from `~/.edikt/templates/CLAUDE.md.tmpl`. Sentinel merge using `[edikt:start]` / `[edikt:end]` markers. Fill template variables from config.
 
-Detect the existing sentinel format before writing:
+Detect the existing sentinel format before writing. New format takes precedence if both exist:
 ```bash
-grep -qF '[edikt:start]' CLAUDE.md 2>/dev/null && echo "new"
-grep -qF '<!-- edikt:start' CLAUDE.md 2>/dev/null && echo "old"
+if grep -qF '[edikt:start]' CLAUDE.md 2>/dev/null; then
+  SENTINEL="new"
+elif grep -qF '<!-- edikt:start' CLAUDE.md 2>/dev/null; then
+  SENTINEL="old"
+else
+  SENTINEL="none"
+fi
 ```
 
-Three cases:
-- **No CLAUDE.md** — create the file with the new `[edikt:start]` / `[edikt:end]` markers
-- **CLAUDE.md exists, no edikt block** — append the edikt block (new markers) at the bottom, leave everything above untouched
-- **CLAUDE.md exists, new `[edikt:start]` marker** — replace only the content between `[edikt:start]` and `[edikt:end]`, leave everything outside untouched
-- **CLAUDE.md exists, old `<!-- edikt:start` marker** — replace content AND migrate sentinels to new format in the same operation
+Four cases:
+- **No CLAUDE.md** (`SENTINEL=none`) — create the file with the new `[edikt:start]` / `[edikt:end]` markers
+- **CLAUDE.md exists, no edikt block** (`SENTINEL=none`) — append the edikt block (new markers) at the bottom, leave everything above untouched
+- **CLAUDE.md exists, new format** (`SENTINEL=new`) — replace only the content between `[edikt:start]` and `[edikt:end]`, leave everything outside untouched
+- **CLAUDE.md exists, old format** (`SENTINEL=old`) — replace content AND migrate sentinels to new format in the same operation
 
 Never Write the whole file — use Read + Edit.
 

@@ -46,8 +46,9 @@ Work through this checklist before proceeding. Record each value explicitly.
 
 **Subtype resolution** — if DB_TYPE is `document` (generic, from config or user), resolve to a concrete subtype before proceeding:
 - Keyword scan spec content for vendor names using the DB type keyword table below
-- If MongoDB, Firestore, CouchDB, or "collection" found → `document-mongo`
-- If DynamoDB, Cassandra, HBase, or "wide-column" found → `document-dynamo`
+- Collect all matches. If only mongo-family keywords found → `document-mongo`
+- If only dynamo-family keywords found → `document-dynamo`
+- If both families found → treat as `mixed` with both `document-mongo` and `document-dynamo` sub-types
 - If no vendor detected → ask: "Your config says document database — which type? (1) MongoDB/Firestore (2) DynamoDB/Cassandra"
 - Note: config stores `document` (generic) because init detects from code signals, not spec content. Subtype resolution always happens at spec-artifacts runtime.
 
