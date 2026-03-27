@@ -112,6 +112,9 @@ Match the user's intent, not their exact words. These are representative example
 | Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:sync` |
 | End-of-session sweep | "wrap up this session", "end of session", "session summary" | `/edikt:session` |
 | Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
+| List or manage agents | "what agents do we have", "list agents", "add the security agent" | `/edikt:agents` |
+| Set up integrations | "setup Linear", "connect Jira", "add MCP server" | `/edikt:mcp` |
+| Team onboarding | "validate my environment", "onboard me", "team setup" | `/edikt:team` |
 
 ### After Compaction
 If context was compacted, the PostCompact hook will re-inject the active plan phase and invariants automatically. If you need full context, run `/edikt:context`.

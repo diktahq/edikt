@@ -152,7 +152,7 @@ done
 assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "Match the user" "Template has intent-matching instruction"
 
 # All 24 commands have a trigger in the template
-for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade; do
+for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade agents mcp team; do
     assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "edikt:${cmd}" "Template has trigger for ${cmd}"
 done
 
