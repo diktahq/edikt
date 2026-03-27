@@ -30,6 +30,7 @@ Five workstreams for v0.2.0:
 | 1c | Design session — harness design audit | not started | — |
 | 1d | Design session — rule pack UX | not started | — |
 | 1e | Design session — installer safety | not started | — |
+| 1f | Design session — dual-audience governance docs | not started | — |
 | 2 | PRD-006 — v0.2.0 requirements | not started | — |
 | 3 | Codebase pattern learning — scan, index, point Claude to examples | not started | — |
 | 4 | Agent governance fields (`maxTurns:`, `disallowedTools:`) | not started | — |
@@ -37,9 +38,10 @@ Five workstreams for v0.2.0:
 | 6 | Agent resume → SendMessage migration | not started | — |
 | 7 | Rule pack UX — conflict detection + install posture | not started | — |
 | 8 | Installer safety — guarantees + silent overwrite fix | not started | — |
-| 9 | Harness design audit — `/edikt:harness` command | not started | — |
-| 10 | EXP-003: Real-world compliance experiment | not started | — |
-| 11 | Website + docs update for v0.2.0 | not started | — |
+| 9 | Dual-audience governance docs — sentinel-based guideline format | not started | — |
+| 10 | Harness design audit — `/edikt:harness` command | not started | — |
+| 11 | EXP-003: Real-world compliance experiment | not started | — |
+| 12 | Website + docs update for v0.2.0 | not started | — |
 
 **Shipped in v0.1.1 (removed from this plan):**
 - ~~HTML sentinel migration~~ → shipped
@@ -111,6 +113,129 @@ Five workstreams for v0.2.0:
 
 **Output:** Design decisions for Phase 8 implementation
 
+## Phase 1f: Design Session — Dual-Audience Governance Docs
+
+**Problem:** Governance documents serve two audiences with different needs. Humans need readable prose — context, rationale, nuance. LLMs need short, actionable directives — constraints, not explanations. Today, `/edikt:compile` guesses the directive from the prose. Teams write ADRs, invariants, and guidelines in whatever format they prefer — some are terse, some are verbose, some are structured, some aren't. Compile's extraction is lossy and inconsistent because it's inferring enforcement rules from human-oriented prose.
+
+**The core insight:** The human writes for humans. The format doesn't matter — use MADR, lightweight ADRs, team templates, whatever works. But every governance document should also carry an explicit directive section that tells the LLM exactly what to enforce. The human owns the prose; edikt generates and maintains the directives. Compile reads directives, not prose. Review checks that they're aligned.
+
+**The concept:** Every governance document (ADR, invariant, guideline) is dual-audience. A sentinel-delimited directive section lives inside the file alongside the human prose. The directive section is the contract between the document and the compiled governance output.
+
+Example — ADR with team's preferred format:
+```markdown
+# ADR-007: Use cursor-based pagination
+
+Date: 2026-03-27
+Status: Accepted
+Decision-makers: @daniel, @alice
+
+## Why
+Offset pagination breaks on large tables and is O(n) on most databases...
+
+## Decision
+All API endpoints returning collections must use cursor-based pagination...
+
+## Consequences
+- Frontend must store cursors, not page numbers
+- Existing endpoints need migration path
+
+[edikt:directives]: #
+- All collection API endpoints MUST use cursor-based pagination. Never use offset pagination. (ref: ADR-007)
+- Frontend clients MUST store opaque cursor tokens, not page numbers. (ref: ADR-007)
+[edikt:directives-end]: #
+```
+
+Example — Invariant in terse style:
+```markdown
+# INV-003: No secrets in source
+
+Never commit secrets, tokens, API keys, or passwords to source control.
+Use environment variables or a secret manager.
+
+[edikt:directives]: #
+- NEVER commit secrets, tokens, API keys, or passwords to source control. Use environment variables or a secret manager. Violation is non-negotiable. (ref: INV-003)
+[edikt:directives-end]: #
+```
+
+Example — Team guideline:
+```markdown
+# Error Handling Conventions
+
+We use structured errors with error codes. All errors from our API
+include a machine-readable `code` field and a human-readable `message`...
+
+[edikt:directives]: #
+- All API error responses MUST include a machine-readable `code` field and a human-readable `message` field. (ref: guidelines/error-handling.md)
+- Error codes MUST be documented in the API contract. Do not return undocumented error codes. (ref: guidelines/error-handling.md)
+[edikt:directives-end]: #
+```
+
+**Compile behavior — deterministic, never infers:**
+1. For each governance doc with the right status (accepted ADR, active invariant, any guideline):
+2. Check for `[edikt:directives]` sentinels
+3. If present → read the directive section, compile into governance.md
+4. If absent → **skip it**. Don't infer, don't guess. Surface it:
+   ```
+   ⚠ ADR-007 (accepted) has no directive section — skipped.
+     Run /edikt:review-governance to generate directives for it.
+   ```
+5. Check for conflicts across all compiled directive sections before writing governance.md
+
+Compile becomes a pure reader — it only compiles what's explicitly marked. No inference.
+
+**Review-governance — the generative step:**
+`/edikt:review-governance` is where prose becomes directives:
+- Finds documents with the right status but no `[edikt:directives]` sentinels
+- Reads the prose, generates candidate directives, asks the user to confirm
+- Writes the sentinel section into the file
+- Next compile run picks it up automatically
+
+Also checks:
+- Has the prose drifted from existing directives? (human edited the decision but didn't regenerate)
+- Do directives conflict across documents?
+- Are directives actionable and specific enough for enforcement?
+
+**Creation commands generate directives on write:**
+`/edikt:adr`, `/edikt:invariant`, and `/edikt:guideline` should generate the directive section when creating a new document. The user gets the dual-audience file from the start. But if they skip it or the document predates the feature, review-governance catches it.
+
+**Directive scoring (review-governance):**
+Review-governance scores prose and directives with different lenses:
+
+| Audience | Scores on | Strong | Weak |
+|----------|-----------|--------|------|
+| Prose (human) | Clarity, context, rationale completeness | "Clear rationale, alternatives documented" | "Missing context — why was this chosen?" |
+| Directives (LLM) | Enforceability, specificity, verifiability | "MUST use cursor pagination, never offset" | "Keep API design clean" |
+
+Directive enforceability scale:
+- **Strong:** MUST/NEVER/ALWAYS, references specific patterns or files, unambiguous, an LLM knows when it's violating this
+- **Adequate:** SHOULD/PREFER, general concept but clear enough to follow
+- **Weak:** Vague, aspirational, no concrete constraint — an LLM can't verify compliance
+
+**Manual editing — the trust model:**
+Directive sections are user-editable. The trust model:
+- **Compile trusts what's in the sentinels.** It reads directives as-is, never second-guesses the user. It does structural validation only: empty sections, references to superseded ADRs, contradictions across documents.
+- **Review-governance evaluates quality.** It detects prose-directive drift, scores enforceability, flags weak directives. But it never blocks — it reports and recommends.
+- **The user decides.** They can accept review suggestions, edit manually, or override. edikt surfaces issues but the human has final say.
+
+Compile structural checks (lightweight, every run):
+- Directive section is empty → warn
+- Directive references a superseded ADR → warn
+- Two directives contradict each other → block (same as current contradiction check)
+- Directive section present but document status is draft → skip (don't compile drafts)
+
+Review-governance quality checks (on demand):
+- Directive scored as weak → suggest strengthening
+- Prose-directive drift detected → show diff, offer to regenerate
+- Missing directive section → offer to generate
+
+**Key questions:**
+- What happens when an ADR is superseded? Clear the directive section, mark it inactive, or leave it for historical reference?
+- What's the migration path for existing projects? `/edikt:review-governance --generate-all` flag?
+- Should compile output which documents were compiled vs skipped? (yes — transparency matters)
+- Should review-governance score prose and directives separately in the output, or a single combined score?
+
+**Output:** Design decisions for Phase 9 implementation
+
 ## Phase 3: Codebase Pattern Learning
 
 **The problem:** Claude hallucinates patterns, naming conventions, and structures instead of learning from the codebase. When asked to "write a new handler," Claude invents a structure rather than finding an existing handler and following it. When writing a PR description, Claude guesses the format rather than looking at recent merged PRs.
@@ -163,7 +288,17 @@ Implementation of Phase 1e design decisions. Likely includes:
 - Explicit safety guarantees documented in install output and website
 - Possibly: `--force` flag for explicit overwrite behavior
 
-## Phase 9: Harness Design Audit
+## Phase 9: Dual-Audience Governance Docs
+
+Implementation of Phase 1f design decisions. Likely includes:
+- Directive sentinel support in `/edikt:adr`, `/edikt:invariant`, and new `/edikt:guideline` command
+- `/edikt:compile` reads `[edikt:directives]` sections when present, warns on missing
+- `/edikt:compile --generate-directives` to add directive sections to existing docs
+- `/edikt:review-governance` detects prose-directive drift and cross-document conflicts
+- Backward compat: documents without sentinels still compile via prose inference
+- Superseded ADRs: directive section cleared or marked inactive
+
+## Phase 10: Harness Design Audit
 
 **The concept:** `/edikt:harness` audits the completeness and assumptions of the user's governance harness — not just "is it configured correctly" (that's `/edikt:doctor`) but "is it configured enough, and do you know why each piece exists?"
 
@@ -197,13 +332,13 @@ Every harness component encodes an assumption about what the model can't do on i
 
 **Content:** "Designing your agent harness with edikt" guide on edikt.dev — positions edikt in the harness design conversation Anthropic just opened.
 
-## Phase 10: EXP-003
+## Phase 11: EXP-003
 
 **Brief:** `experiments/exp-003-real-world-compliance/BRIEF.md`
 **Scope:** ~48 runs testing multi-rule, compaction, multi-turn, real conventions.
 **Output:** EXP-003 write-up on website using experiment template.
 
-## Phase 11: Website + Docs
+## Phase 12: Website + Docs
 
 Update website for v0.2.0 changes. CHANGELOG entry. Version bump.
 
@@ -212,8 +347,9 @@ Update website for v0.2.0 changes. CHANGELOG entry. Version bump.
 ## Dependencies
 
 - Phase 1 design sessions block Phase 2 (PRD)
-- Phase 2 (PRD) blocks Phases 3-9
+- Phase 2 (PRD) blocks Phases 3-10
 - Phase 1d (rule pack design) can feed Phase 7 directly without waiting for PRD
 - Phase 1e (installer safety) can feed Phase 8 directly without waiting for PRD
-- Phase 10 (EXP-003) is independent — can run anytime
-- Phase 11 (docs) depends on all other phases completing
+- Phase 1f (dual-audience docs) can feed Phase 9 directly without waiting for PRD
+- Phase 11 (EXP-003) is independent — can run anytime
+- Phase 12 (docs) depends on all other phases completing
