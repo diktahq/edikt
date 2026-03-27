@@ -52,7 +52,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
    2. Quick plan — help you think through the approach right here in conversation.
       No file, no ceremony.
    ```
-   If the user picks 2, help them think through the task conversationally — don't run the rest of this command. If the user picks 1 (or explicitly invoked `/edikt:plan`), proceed with the full flow.
+   If the user picks 2, help them think through the task conversationally — don't run the rest of this command. If the user picks 1, proceed with the full flow.
 
 3. Check the **governance chain** — only when a SPEC was resolved:
    - Read spec frontmatter for `status:`. If not `accepted`, warn the user.

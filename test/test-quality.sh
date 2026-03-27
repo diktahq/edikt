@@ -151,6 +151,10 @@ assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Existing plan name" "plan
 assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Natural language" "plan accepts natural language"
 assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Quick plan" "plan offers disambiguation"
 
+# Website plan page matches command behavior
+assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "PLAN-NNN" "website plan page documents PLAN input"
+assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "Quick plan" "website plan page documents disambiguation"
+
 # ============================================================
 # Natural language triggers
 # ============================================================
