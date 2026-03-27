@@ -228,12 +228,13 @@ This isn't a suggestion. The gate exists because a draft PRD represents unresolv
 
 **Spec** — architecture approach, components, trade-offs, alternatives considered, references to ADRs and invariants. The engineering response to the PRD.
 
-**Artifacts** — the implementable outputs of the spec:
-- `data-model.md` — entities, relationships, indexes
-- `contracts/api.md` — endpoint definitions, request/response shapes, error codes
-- `migrations.md` — schema changes with up and down migrations
+**Artifacts** — design blueprints generated from the spec. Format depends on database type:
+- `data-model.mmd` (SQL), `data-model.schema.yaml` (MongoDB), or `data-model.md` (DynamoDB/KV) — entities, relationships, indexes
+- `contracts/api.yaml` — OpenAPI 3.0 endpoint definitions, request/response shapes, error codes
+- `migrations/` — numbered SQL migration files with up/down/backfill/risk (SQL and mixed only)
 - `test-strategy.md` — unit, integration, and edge case coverage
-- `contracts/events.md` — event schemas, producers, consumers
+- `contracts/events.yaml` — AsyncAPI 2.6 event schemas, producers, consumers
+- `fixtures.yaml` — portable seed data for dev and testing
 - `config-spec.md` — environment variables, feature flags
 
 **Plan** — phased execution with pre-flight specialist review. Each phase is reviewed by the domain agents before any code is written.

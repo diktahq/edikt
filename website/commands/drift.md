@@ -33,10 +33,11 @@ Default scope is the full chain.
 **Layer 2 — Spec requirements.** For each component or requirement in the spec, determines whether it was implemented as specified.
 
 **Layer 3 — Artifact contracts.** For each artifact in the spec folder:
-- `data-model.md` → actual schema matches? (dba)
-- `contracts/api.md` → actual endpoints match? (api)
+- `data-model.*` (`.mmd`, `.schema.yaml`, or `.md`) → actual schema matches? (dba)
+- `contracts/api.yaml` → actual endpoints match? (api)
 - `test-strategy.md` → tests exist as specified? (qa)
-- `contracts/events.md` → event schema matches? (architect)
+- `contracts/events.yaml` → event schema matches? (architect)
+- `fixtures.yaml` → test data covers scenarios? (qa)
 
 **Layer 4 — ADR compliance.** For each ADR referenced in the spec frontmatter, checks whether the implementation follows the decision.
 
@@ -72,7 +73,7 @@ SUMMARY
 │ 1 │  ⚠️    │ PRD-005: "Failed deliveries visible in admin dashboard" —        │
 │   │        │ no admin endpoint for webhook status exists                      │
 ├───┼────────┼──────────────────────────────────────────────────────────────────┤
-│ 2 │  ⚠️    │ contracts/api.md: POST /webhooks/retry response shape —          │
+│ 2 │  ⚠️    │ contracts/api.yaml: POST /webhooks/retry response shape —        │
 │   │        │ contract says { "queued", "delivery_ids" }, actual returns 204   │
 ├───┼────────┼──────────────────────────────────────────────────────────────────┤
 │ 3 │  🟡    │ SPEC-005: "Handle webhook delivery failures gracefully" —        │

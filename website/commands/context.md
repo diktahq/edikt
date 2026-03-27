@@ -18,8 +18,8 @@ Loads your project's memory into the current session.
 | `docs/product/spec.md` | What you're building and why |
 | `docs/product/prds/` | Active feature requirements |
 | `docs/product/plans/` | Current plan + phase progress |
-| `docs/decisions/` | Architecture decisions and their reasoning |
-| `docs/invariants/` | Hard constraints — non-negotiables Claude must never violate |
+| `docs/architecture/decisions/` | Architecture decisions and their reasoning |
+| `docs/architecture/invariants/` | Hard constraints — non-negotiables Claude must never violate |
 | `.edikt/config.yaml` | Ticket system config (Linear/Jira/GitHub) |
 | `.claude/rules/` | Which packs are active; flags manually edited files |
 

@@ -86,8 +86,8 @@ SPEC REQUIREMENTS
              actual: migration exists but index not in schema
 
 ARTIFACT CONTRACTS
-  COMPLIANT  data-model.md: WebhookDelivery entity — matches schema
-  DIVERGED   contracts/api.md: POST /webhooks/retry — response shape differs
+  COMPLIANT  data-model.mmd: WebhookDelivery entity — matches schema
+  DIVERGED   contracts/api.yaml: POST /webhooks/retry — response shape differs
              contract: { "queued": number, "delivery_ids": string[] }
              actual: returns 204 No Content
 
