@@ -22,20 +22,25 @@ for arg in "$@"; do
   esac
 done
 
-# Interactive prompt if no flag provided
+# Interactive prompt if no flag provided and stdin is a terminal
 if [ -z "$INSTALL_MODE" ]; then
-  echo ""
-  echo "  Where should edikt be installed?"
-  echo ""
-  echo "  [1] Global (default) — available in all projects"
-  echo "  [2] Project only     — installed in current directory"
-  echo ""
-  printf "  Choice [1]: "
-  read -r choice
-  case "$choice" in
-    2) INSTALL_MODE="project" ;;
-    *) INSTALL_MODE="global" ;;
-  esac
+  if [ -t 0 ]; then
+    echo ""
+    echo "  Where should edikt be installed?"
+    echo ""
+    echo "  [1] Global (default) — available in all projects"
+    echo "  [2] Project only     — installed in current directory"
+    echo ""
+    printf "  Choice [1]: "
+    read -r choice
+    case "$choice" in
+      2) INSTALL_MODE="project" ;;
+      *) INSTALL_MODE="global" ;;
+    esac
+  else
+    # Piped install (curl | bash) — default to global, no prompt
+    INSTALL_MODE="global"
+  fi
 fi
 
 if [ "$INSTALL_MODE" = "project" ]; then

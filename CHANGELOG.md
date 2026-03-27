@@ -1,5 +1,11 @@
 # edikt changelog
 
+## v0.1.2 (2026-03-27)
+
+### Bug fix
+
+- **Installer prompt auto-answered when piped** — `curl | bash` triggered the interactive install mode prompt which got EOF from stdin, flashing the prompt and auto-selecting global. Now detects non-terminal stdin and defaults to global silently. Use `--project` flag for project-local install.
+
 ## v0.1.1 (2026-03-27)
 
 ### Numbered findings in reviews
