@@ -471,7 +471,7 @@ artifacts:
     # Set by edikt:init from code signals. Change only if detection was wrong.
     # Values: sql | document | key-value | mixed | auto
     # auto = detect from spec each time (greenfield or genuinely undecided)
-    default_type: {WRITE the detected_db_type from Step 2 database detection, or the user's answer from the greenfield question. Write "auto" only when the user chose "Not decided yet" (option 5). Never write "unknown", never leave absent.}
+    default_type: {WRITE the resolved type: if detected_db_type is "none", write the user's answer from the greenfield question (sql/document/key-value/mixed) or "auto" if they chose "Not decided yet" (option 5). If detected_db_type is a concrete value, write it. Never write "none", "unknown", or leave absent.}
 
   {CONDITIONAL sql block — rules:
    - Write the sql: block ONLY when default_type is "sql" or "mixed".

@@ -163,11 +163,15 @@ If CONSTRAINTS is `none`, omit the constraint count entirely.
 
 Each artifact lives in the spec's folder. Use native formats — not markdown wrappers.
 
-Each generated artifact gets a design blueprint comment header in format-appropriate syntax:
+Each generated artifact gets a design blueprint header. Native-format artifacts (`.mmd`, `.yaml`, `.sql`) use format-appropriate comments. Markdown artifacts (`test-strategy.md`, `config-spec.md`) use YAML frontmatter instead:
+
+**Comment-header artifacts** (`.mmd`, `.yaml`, `.sql`, non-frontmatter `.md`):
 - `.mmd`: `%% Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.`
 - `.yaml`: `# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.`
 - `.sql`: `-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.`
-- `.md`: `<!-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation. -->`
+- `.md` (data model): `<!-- Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation. -->`
+
+**Frontmatter artifacts** (`test-strategy.md`, `config-spec.md`): use YAML frontmatter with `type: artifact`, `artifact_type:`, `status: draft`, `reviewed_by:`.
 
 **data-model.mmd** — Mermaid ERD (when DB_TYPE is `sql`):
 ```
@@ -482,7 +486,8 @@ REMEMBER: Every artifact must be reviewed by the appropriate specialist agent. N
 
   Status: draft
   Review and accept each artifact before planning.
-  To accept: change status=draft to status=accepted in the artifact header.
+  To accept: change status=draft to status=accepted in the comment header,
+  or status: draft to status: accepted in frontmatter artifacts.
   Run /edikt:plan to create an execution plan.
 ```
 

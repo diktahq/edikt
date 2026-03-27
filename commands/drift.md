@@ -91,7 +91,7 @@ REMEMBER: NEVER assign a severity without reading the actual code. Every finding
 |---|---|---|
 | Layer 1: PRD Acceptance Criteria | For each acceptance criterion in the PRD, is it satisfied? | `architect` |
 | Layer 2: Spec Requirements | For each requirement or component in the spec, was it implemented as specified? | `architect` + `engineer` |
-| Layer 3: Artifact Contracts | `data-model.md` → actual schema matches? `contracts/api.md` → actual endpoints match? `test-strategy.md` → tests exist? `contracts/events.md` → event schema matches? Skip artifacts that don't exist. | `dba`, `api`, `qa`, `architect` |
+| Layer 3: Artifact Contracts | `data-model.*` (`.mmd`, `.schema.yaml`, or `.md`) → actual schema matches? `contracts/api.yaml` → actual endpoints match? `test-strategy.md` → tests exist? `contracts/events.yaml` → event schema matches? `fixtures.yaml` → test data covers scenarios? Skip artifacts that don't exist. | `dba`, `api`, `qa`, `architect` |
 | Layer 4: ADR Compliance | For each referenced ADR, does the implementation follow the decision? | `architect` |
 | Layer 5: Invariant Compliance | For each invariant, is it violated by any changed file? | `architect` |
 
