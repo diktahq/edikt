@@ -53,7 +53,7 @@ Work through this checklist before proceeding. Record each value explicitly.
 
 **CONSTRAINTS** — load active invariants:
 - Read all files in `{invariants_dir}` (from config `paths.invariants`)
-- For each file where frontmatter `status: Active`:
+- For each file where frontmatter `status:` is `active` or `Active` (case-insensitive):
   - Strip frontmatter (content between first `---` and second `---`)
   - Take remaining body verbatim
   - If body empty → emit warning and skip:

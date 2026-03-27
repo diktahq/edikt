@@ -140,7 +140,9 @@ if [ -f go.mod ]; then
   grep -qF 'jackc/pgx'          go.mod && echo "DB_SIGNAL: sql - inferred jackc/pgx"
   grep -qF 'go-sql-driver/mysql' go.mod && echo "DB_SIGNAL: sql - inferred go-sql-driver/mysql"
   grep -qF 'mongo-driver'        go.mod && echo "DB_SIGNAL: document - inferred mongo-driver"
-  grep -qF 'aws-sdk-go'          go.mod && echo "DB_SIGNAL: document - inferred aws-sdk-go (check .go files for DynamoDB import)"
+  if grep -qF 'aws-sdk-go' go.mod; then
+    grep -rqF 'dynamodb' --include='*.go' . 2>/dev/null && echo "DB_SIGNAL: document - inferred aws-sdk-go+dynamodb"
+  fi
   grep -qF 'go-migrate'          go.mod && echo "DB_SIGNAL: sql golang-migrate inferred go-migrate"
   grep -qF 'golang-migrate'      go.mod && echo "DB_SIGNAL: sql golang-migrate inferred golang-migrate"
   grep -qF 'go-redis'            go.mod && echo "DB_SIGNAL: key-value - inferred go-redis"
@@ -241,7 +243,7 @@ If the user selects 1 (SQL) or 4 (Mixed), follow up with:
 ```
   Migration tool? (press enter to skip)
   golang-migrate | flyway | alembic | django | rails | prisma |
-  liquibase | drizzle | knex | ecto | diesel | raw-sql
+  liquibase | drizzle | knex | ecto | diesel | ef-core | raw-sql
 ```
 
 If the user selects 2, 3, or 5 — skip migration tool question entirely. Selection 5 → `default_type: auto`.
@@ -481,7 +483,7 @@ artifacts:
       # SQL-only. Only written when default_type is sql or mixed.
       # null (~) = generic SQL with UP/DOWN/BACKFILL/RISK sections.
       # Values: golang-migrate | flyway | alembic | django | rails | prisma |
-      #         liquibase | drizzle | knex | ecto | diesel | raw-sql | ~ (null)
+      #         liquibase | drizzle | knex | ecto | diesel | ef-core | raw-sql | ~ (null)
       tool: {WRITE the detected_db_tool when one was detected (definitive or inferred), the user's answer when asked during greenfield, or "~" when no tool was detected and the user skipped the migration tool question.}
 
   {MIXED type comment — when default_type is "mixed", add a comment listing each detected DB type and its source signal. Example:
