@@ -2,7 +2,7 @@
 name: edikt:plan
 description: "Create execution plan with interview and codebase analysis"
 effort: high
-argument-hint: "[ticket-id or task description]"
+argument-hint: "[task, ticket, SPEC-NNN, or PLAN-NNN to continue]"
 allowed-tools:
   - Read
   - Write
@@ -30,19 +30,20 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 ## Arguments
 
-- `$ARGUMENTS` — Optional ticket ID or task description
+- `$ARGUMENTS` — Optional. Any of: a task description, ticket ID, SPEC identifier, plan name, or nothing (triggers interview)
 
 ## Instructions
 
 1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules.
 
-2. Determine the task from `$ARGUMENTS`:
-   - Looks like a ticket ID (e.g., `GLO-35`): note it for reference
-   - Is a SPEC identifier (e.g., `SPEC-005`): find the spec folder and use it as primary context
-   - Is a description: use it as the task
-   - Empty: ask "What are you planning? Describe the task or feature."
+2. Determine the task from `$ARGUMENTS`. Check in order — use first match:
+   - **SPEC identifier** (e.g., `SPEC-005`): find the spec folder, use spec + accepted artifacts as primary context
+   - **Ticket ID** (e.g., `GLO-35`, `PROJ-123`): note it for reference, fetch details if MCP is configured
+   - **Existing plan name** (e.g., `PLAN-007`, `v0.2.0`): read the plan, ask what the user wants — continue from current phase, re-plan remaining phases, or create a sub-plan for a specific phase
+   - **Natural language description** (anything else): use it as the task description directly
+   - **Empty**: check the current conversation for context. If a task or feature was being discussed, summarize it and confirm: "It sounds like you want to plan: {summary}. Is that right?" If no conversation context, ask: "What are you planning?"
 
-3. If a SPEC identifier was provided or detected, check the governance chain:
+3. Check the **governance chain** — only when a SPEC was resolved:
    - Read spec frontmatter for `status:`. If not `accepted`, warn the user.
    - Check for spec-artifacts in the spec folder. If any have `status: draft`, warn and ask to proceed.
    - If artifacts exist and are accepted, read them as planning context.
@@ -96,9 +97,14 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 ### Interview Guidance
 
-- Feature work: "Should this be behind a feature flag?", "What's the data model?"
-- Refactoring: "What's the migration strategy?", "Can we do it incrementally?"
-- Bug fix: "Can you reproduce it?", "What's the impact?"
+Adapt questions to what was provided. Skip questions the input already answers.
+
+- **Feature work:** "Should this be behind a feature flag?", "What's the data model?"
+- **Refactoring:** "What's the migration strategy?", "Can we do it incrementally?"
+- **Bug fix:** "Can you reproduce it?", "What's the impact?"
+- **Natural prompt** (e.g., "plan how to refactor compile"): clarify scope and constraints — "What outcome do you want?", "Any constraints I should know?", "Should this be backward compatible?"
+- **Continuing a plan** (PLAN-NNN): "Which phase are you on?", "Did the approach change?", "Want to re-plan the remaining phases or create a sub-plan for one phase?"
+- **From conversation context** (empty args, ongoing discussion): summarize what was discussed and confirm before interviewing — don't re-ask what was already covered
 
 ### Model Assignment
 
