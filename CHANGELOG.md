@@ -1,6 +1,6 @@
 # edikt changelog
 
-## v0.1.3 (unreleased)
+## v0.1.3 (2026-03-27)
 
 ### Flexible plan input
 
