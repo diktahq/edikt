@@ -151,6 +151,12 @@ assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Existing plan name" "plan
 assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Natural language" "plan accepts natural language"
 assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Quick plan" "plan offers disambiguation"
 
+# Upgrade command has remote version check
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "Check for Updates" "upgrade has remote version check"
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "offline" "upgrade supports --offline flag"
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "raw.githubusercontent.com" "upgrade fetches from GitHub"
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "max-time" "upgrade has curl timeout"
+
 # Website plan page matches command behavior
 assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "PLAN-NNN" "website plan page documents PLAN input"
 assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "Quick plan" "website plan page documents disambiguation"

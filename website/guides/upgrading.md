@@ -33,7 +33,9 @@ Open the project in Claude Code and say:
 
 > "Upgrade edikt"
 
-edikt shows release notes first, then a diff of what will change:
+edikt first checks if your global install is current. If a newer version exists on GitHub, it tells you to re-run the installer before proceeding — ensuring project upgrades always use the latest templates. Use `--offline` to skip this check in air-gapped environments.
+
+Then it shows a diff of what will change:
 
 ```
 WHAT'S NEW

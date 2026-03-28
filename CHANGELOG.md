@@ -1,5 +1,11 @@
 # edikt changelog
 
+## v0.1.4 (unreleased)
+
+### Upgrade version check
+
+`/edikt:upgrade` now checks for newer edikt releases before upgrading the project. If a newer version exists, it shows the install command and stops — ensuring project upgrades always use the latest templates. Skip with `--offline` for air-gapped environments.
+
 ## v0.1.3 (2026-03-27)
 
 ### Flexible plan input

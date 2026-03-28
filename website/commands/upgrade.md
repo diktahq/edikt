@@ -6,7 +6,33 @@ Upgrade edikt in this project — hooks, agents, and rule packs — to match the
 
 ```
 /edikt:upgrade
+/edikt:upgrade --offline
 ```
+
+| Argument | Description |
+|----------|-------------|
+| (none) | Checks for updates, then upgrades the project |
+| `--offline` | Skip the remote version check (air-gapped environments) |
+
+## Version check
+
+Before upgrading the project, edikt checks if a newer version is available on GitHub. Three outcomes:
+
+- **Newer version available** — shows the install command and stops. You update globally first, then re-run upgrade.
+- **Up to date** — proceeds silently to the project upgrade.
+- **No network** — warns and continues with the installed version.
+
+```
+📦 edikt 0.2.0 is available (you have 0.1.3).
+
+  Update now:
+    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+
+  Then re-run /edikt:upgrade to apply changes to this project.
+  To skip this check: /edikt:upgrade --offline
+```
+
+This ensures project upgrades always use the latest templates. Skip with `--offline` for air-gapped or CI environments.
 
 ## The problem it solves
 
