@@ -126,7 +126,7 @@ assert_file_contains "$PROJECT_ROOT/commands/compile.md" "directives:" "Compile 
 # Command quality — CRITICAL + REMEMBER blocks
 # ============================================================
 
-for cmd in doctor audit drift plan compile review; do
+for cmd in doctor audit drift plan compile review brainstorm; do
     assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "CRITICAL:" "${cmd} has CRITICAL statement"
 done
 
@@ -140,9 +140,17 @@ for cmd in prd adr invariant spec drift compile; do
 done
 
 # Interactive commands have plan mode guard
-for cmd in init prd spec spec-artifacts adr invariant intake plan; do
+for cmd in init prd spec spec-artifacts adr invariant intake plan brainstorm; do
     assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "plan mode" "${cmd} has plan mode guard"
 done
+
+# Brainstorm command has required phases and features
+assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "Open Exploration" "brainstorm has open exploration phase"
+assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "Guided Narrowing" "brainstorm has guided narrowing phase"
+assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "Formalize" "brainstorm has formalize step"
+assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "BRAIN-" "brainstorm uses BRAIN- prefix"
+assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "fresh" "brainstorm supports --fresh flag"
+assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "unconstrained" "brainstorm has unconstrained mode"
 
 # Plan command accepts flexible input
 assert_file_contains "$PROJECT_ROOT/commands/plan.md" "SPEC identifier" "plan accepts SPEC input"
@@ -169,7 +177,7 @@ assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "Quick plan" "webs
 assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "Match the user" "Template has intent-matching instruction"
 
 # All 24 commands have a trigger in the template
-for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade agents mcp team; do
+for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade agents mcp team brainstorm; do
     assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "edikt:${cmd}" "Template has trigger for ${cmd}"
 done
 

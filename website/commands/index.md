@@ -16,6 +16,7 @@ edikt has 24 commands. Each does exactly one thing. You rarely need to remember 
 | [`/edikt:team`](/commands/team) | Validate team member setup and show shared config |
 | [`/edikt:adr`](/commands/adr) | Capture an architecture decision record |
 | [`/edikt:invariant`](/commands/invariant) | Define a hard constraint that must never be violated |
+| [`/edikt:brainstorm`](/commands/brainstorm) | Brainstorm features, explore design space, converge toward PRD or spec |
 | [`/edikt:prd`](/commands/prd) | Write a product requirement document |
 | [`/edikt:spec`](/commands/spec) | Technical specification from an accepted PRD |
 | [`/edikt:spec-artifacts`](/commands/spec-artifacts) | Data model, contracts, migrations from an accepted spec |
