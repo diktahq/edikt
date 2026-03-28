@@ -4,5 +4,6 @@ website/.vitepress/cache
 docs/demo/output/*.gif
 .claude/settings.local.json
 docs/internal/
+docs/plans/
 .DS_Store
 .idea/
