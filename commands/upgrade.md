@@ -30,7 +30,7 @@ Otherwise, check if a newer edikt version is available:
 
 ```bash
 LATEST_VERSION=$(curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/main/VERSION" 2>/dev/null | tr -d '[:space:]')
-INSTALLED_VERSION=$(cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]')
+INSTALLED_VERSION=$(cat .edikt/VERSION 2>/dev/null || cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]')
 ```
 
 Three outcomes:

@@ -4,7 +4,7 @@ Upgrade edikt in this project — hooks, agents, and rule packs — to match the
 
 ## Usage
 
-```
+```bash
 /edikt:upgrade
 /edikt:upgrade --offline
 ```
@@ -22,7 +22,7 @@ Before upgrading the project, edikt checks if a newer version is available on Gi
 - **Up to date** — proceeds silently to the project upgrade.
 - **No network** — warns and continues with the installed version.
 
-```
+```text
 📦 edikt 0.2.0 is available (you have 0.1.3).
 
   Update now:
