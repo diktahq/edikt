@@ -40,7 +40,7 @@ Not every drift check needs to run all five layers. Narrow the scope when you ne
 /edikt:drift SPEC-005 --scope=spec      # spec requirements only
 /edikt:drift SPEC-005 --scope=artifacts # artifact contracts only
 /edikt:drift SPEC-005 --scope=adrs      # ADR compliance only
-```
+```text
 
 Run `--scope=spec` frequently during implementation. Run the full chain before marking a feature complete.
 
@@ -103,7 +103,7 @@ Report saved: docs/reports/drift-SPEC-005-2026-03-20.md
 
 2 diverged finding(s) need attention.
 Fix the divergences and run /edikt:drift again.
-```
+```markdown
 
 ## Persisted reports
 
@@ -112,7 +112,7 @@ Drift reports are saved to `docs/reports/` automatically:
 ```
 docs/reports/
 └── drift-SPEC-005-2026-03-20.md      ← saved automatically
-```
+```bash
 
 The filename format is `drift-{SPEC-NNN}-{YYYY-MM-DD}.md`. The report is version-controlled. You can track how drift resolves over time by comparing reports.
 

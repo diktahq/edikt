@@ -4,7 +4,7 @@ List, install, and manage specialist agent templates.
 
 ## Usage
 
-```
+```bash
 /edikt:agents
 /edikt:agents add {slug}
 /edikt:agents remove {slug}
@@ -64,7 +64,7 @@ edikt ships 18 specialist agents organized in four tiers.
 
 ### No argument — list agents
 
-```
+```bash
 /edikt:agents
 
 Installed agents (11):
@@ -88,7 +88,7 @@ Available (not installed):
 
 ### `add {slug}` — install an agent
 
-```
+```bash
 /edikt:agents add performance
 ```
 
@@ -96,7 +96,7 @@ Copies the agent template from `~/.edikt/templates/agents/` to `.claude/agents/`
 
 ### `remove {slug}` — uninstall an agent
 
-```
+```bash
 /edikt:agents remove pm
 ```
 
@@ -104,7 +104,7 @@ Deletes `.claude/agents/{slug}.md`.
 
 ### `show {slug}` — view agent details
 
-```
+```bash
 /edikt:agents show dba
 ```
 
@@ -112,7 +112,7 @@ Prints the full agent system prompt — domain identity, expertise, constraints.
 
 ### `suggest` — get recommendations for your stack
 
-```
+```bash
 /edikt:agents suggest
 
 Recommended agents for your stack (go, chi):
@@ -158,7 +158,7 @@ tools:
   - Grep
   - Glob
 ---
-```
+```yaml
 
 **Config** — list agents in `.edikt/config.yaml`:
 

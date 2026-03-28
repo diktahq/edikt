@@ -7,7 +7,7 @@ Upgrade edikt in this project — hooks, agents, and rule packs — to match the
 ```bash
 /edikt:upgrade
 /edikt:upgrade --offline
-```
+```bash
 
 | Argument | Description |
 |----------|-------------|
@@ -82,7 +82,7 @@ tools:
   - Read
   - Grep
 ---
-```
+```yaml
 
 **Config** — list agents in `.edikt/config.yaml`:
 
@@ -97,7 +97,7 @@ Config takes precedence over the file marker. Both protect the agent from upgrad
 
 ## Output
 
-```
+```text
 EDIKT UPGRADE
 ─────────────────────────────────────────────────────
 Hooks (.claude/settings.json)
@@ -122,7 +122,7 @@ Apply these upgrades? (y/n/select)
 
 After every upgrade, edikt shows the release notes for the new version — the relevant section from the changelog — so you know what changed without having to look it up:
 
-```
+```text
 WHAT'S NEW in 0.2.0
 ─────────────────────────────────────────────────────
 {changelog content for this release}

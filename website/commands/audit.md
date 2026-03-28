@@ -4,7 +4,7 @@ Security audit — OWASP scan, secret detection, auth coverage, and vulnerabilit
 
 ## Usage
 
-```
+```bash
 /edikt:audit                     ← full codebase scan
 /edikt:audit api                 ← routes and handlers only
 /edikt:audit auth                ← authentication and authorization code
@@ -51,7 +51,7 @@ For lighter continuous security checks, edikt also adds a pre-push git hook that
 
 ## Output
 
-```
+```text
 AUDIT REPORT — 2026-03-08
 ─────────────────────────────────────────────────────
 Scope: full codebase
@@ -88,7 +88,7 @@ RELIABILITY
 
 The `Stop` hook watches for security-sensitive domains — auth, payments, PII, tokens, cryptography. When detected, Claude adds:
 
-```
+```text
 🔒 Security-sensitive domain — run `/edikt:audit` before shipping this feature.
 ```
 

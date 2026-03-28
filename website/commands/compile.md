@@ -6,7 +6,7 @@ The output — `.claude/rules/governance.md` — is read by Claude automatically
 
 ## Usage
 
-```
+```bash
 /edikt:compile
 /edikt:compile --check
 ```
@@ -30,7 +30,7 @@ The output — `.claude/rules/governance.md` — is read by Claude automatically
 
 Before writing, the command checks for contradictions:
 
-```
+```text
 CONTRADICTION DETECTED
   ADR-001: "Claude Code only — no multi-tool support"
   ADR-007: "Support Cursor for rule distribution"
@@ -40,7 +40,7 @@ CONTRADICTION DETECTED
 
 Cross-source conflicts:
 
-```
+```text
 CONFLICT: guideline vs invariant
   guidelines/testing.md: "Always mock the database in all tests"
   INV-001: "Integration tests must hit a real database, no mocks"
@@ -77,7 +77,7 @@ paths: "**/*"
 ### Testing
 
 - Always test error paths first. (ref: guidelines/testing.md)
-```
+```text
 
 Confirmation:
 
@@ -91,7 +91,7 @@ COMPILED  .claude/rules/governance.md
 
   Skipped: 1 superseded ADR, 2 draft ADRs
   Claude will read these directives automatically in every session.
-```
+```bash
 
 ## CI validation
 
@@ -101,7 +101,7 @@ COMPILED  .claude/rules/governance.md
 
 Exit code `1` if contradictions or conflicts exist. Use this in CI to catch governance drift before it reaches production.
 
-```
+```bash
 /edikt:compile --check
 
   Sources: 5 ADRs (4 accepted), 2 invariants (2 active), 1 guideline
@@ -122,7 +122,7 @@ Run after:
 
 The ADR and invariant commands will remind you:
 
-```
+```text
 Run /edikt:compile to update governance directives.
 ```
 

@@ -6,7 +6,7 @@ Drift detection is the verification step that closes the governance chain. It an
 
 ## Usage
 
-```
+```bash
 /edikt:drift SPEC-005
 /edikt:drift SPEC-005 --scope=spec
 /edikt:drift SPEC-005 --scope=adrs
@@ -56,7 +56,7 @@ Default scope is the full chain.
 
 Emoji summary at the top, then a single table showing ALL findings — diverged, likely, unknown, and compliant. Nothing hidden.
 
-```
+```text
 DRIFT REPORT — SPEC-005
 ─────────────────────────────────────────────────
 Source: SPEC-005 + 3 artifacts + 2 ADRs + 1 invariant
@@ -90,7 +90,7 @@ Report saved: docs/reports/drift-SPEC-005-2026-03-20.md
 
 The report is saved to `docs/reports/` automatically:
 
-```
+```text
 docs/reports/drift-SPEC-005-2026-03-20.md
 ```
 

@@ -6,7 +6,7 @@ Four levels of customization — from toggling packs to writing your own from sc
 
 When you run `/edikt:init`, the configure step shows all available rule packs. Toggle by name:
 
-```
+```text
 > add api
 > add database
 > remove architecture
@@ -23,7 +23,7 @@ rules:
   go: { include: all }
   chi: { include: all }
   # api: { include: all }   ← uncomment to enable
-```
+```markdown
 
 ## 2. Edit an installed pack
 
@@ -47,7 +47,7 @@ Every rule file in `.claude/rules/` is plain markdown you can edit directly. Add
 
 If you want to customize a rule pack for your whole team (not just one project), create a template override:
 
-```
+```text
 .edikt/templates/go.md
 ```
 
@@ -78,7 +78,7 @@ Rules specific to the billing bounded context.
 
 - Refunds go through `RefundService`, never direct DB writes.
 - All billing events publish to the `billing.events` topic with the charge ID as the partition key.
-```
+```diff
 
 Claude reads this file automatically when editing files matching `internal/billing/**/*.go`.
 
@@ -94,7 +94,7 @@ If your project has linter configs (`.golangci-lint.yaml`, `.eslintrc`, `ruff.to
 
 ```
 /edikt:sync
-```
+```text
 
 This creates `.claude/rules/linter-{name}.md` files that teach Claude what your linter enforces — so it writes code that passes linting on the first try instead of fixing violations after the fact.
 

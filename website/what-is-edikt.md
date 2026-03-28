@@ -38,7 +38,7 @@ And on a team, the problem multiplies. Five engineers, five different Claude ses
 
 You can't fix a stateless tool by talking to it more. You fix it by installing governance.
 
-```
+```bash
 /edikt:init
 ```
 
@@ -94,7 +94,7 @@ Claude runs drift detection — comparing what got built against the PRD accepta
 
 The full sequence:
 
-```
+```text
 PRD → spec → artifacts → plan → execute → drift detection
 ```
 
@@ -128,7 +128,7 @@ Tell Claude to compile your governance directives after capturing decisions:
 
 edikt reads your accepted ADRs, active invariants, and team guidelines, produces `.claude/rules/governance.md` — short, actionable directives Claude follows automatically. The ADRs are the source of truth. The compiled output is the enforcement format.
 
-```
+```text
 ADRs (accepted) + Invariants (active) + Guidelines
         ↓ /edikt:compile
 .claude/rules/governance.md (auto-loaded every session)
@@ -142,7 +142,7 @@ Update an ADR, recompile. One source of truth, one enforcement point.
 
 One `.md` file per standard. Path-conditional — each rule only fires on the files it's relevant to.
 
-```
+```text
 .claude/rules/code-quality.md       ← every file
 .claude/rules/testing.md            ← every file
 .claude/rules/security.md           ← every file
@@ -182,7 +182,7 @@ Nine hooks govern the session lifecycle — ensuring governance stays present th
 
 18 domain agents matched to your stack. Each applies a specific domain lens.
 
-```
+```text
 architect    ← system design, ADRs, bounded contexts
 security         ← OWASP, threat modeling, auth patterns
 dba          ← schema design, migration safety, N+1 queries
@@ -196,7 +196,7 @@ Used in plan pre-flight review, review, and audit — or called directly.
 
 Claude knows your project identity, not just your file structure.
 
-```
+```text
 docs/project-context.md  ← what the project is, stack, non-negotiables
 docs/decisions/       ← why you chose PostgreSQL, why you went DDD
 docs/invariants/      ← constraints that must NEVER be violated

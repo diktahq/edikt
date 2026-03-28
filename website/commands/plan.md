@@ -8,13 +8,13 @@ Whenever a task is bigger than a single prompt. If it touches multiple files, ha
 
 ## Usage
 
-```
+```bash
 /edikt:plan
 ```
 
 Or describe the task inline:
 
-```
+```bash
 /edikt:plan add bulk order creation endpoint
 /edikt:plan CON-42
 /edikt:plan SPEC-005
@@ -38,7 +38,7 @@ Or describe the task inline:
 
 When the input is a natural language description (not a SPEC, ticket, or PLAN reference), edikt offers a choice:
 
-```
+```text
 How would you like to plan this?
 
 1. edikt plan — phased execution plan with model assignment, cost estimate,

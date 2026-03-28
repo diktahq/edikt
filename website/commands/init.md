@@ -4,7 +4,7 @@ Intelligent onboarding. Detects your project, infers architecture and rules, and
 
 ## Usage
 
-```
+```bash
 /edikt:init
 ```
 
@@ -16,7 +16,7 @@ No arguments. edikt figures out the rest.
 
 edikt scans your codebase — languages, frameworks, linters, databases, existing docs, commit conventions, and governance tooling — and shows what it found:
 
-```
+```text
 [1/3] Scanning project...
 
   Code:       Go project, 142 files
@@ -32,7 +32,7 @@ edikt scans your codebase — languages, frameworks, linters, databases, existin
 
 For greenfield projects (no code), edikt asks one question:
 
-```
+```text
 What are you building?
 
   Example: "A multi-tenant SaaS for restaurant inventory.
@@ -45,7 +45,7 @@ Describe yours in a few sentences:
 
 All available rules and agents in a single view. Recommended items are checked, everything else is available to toggle on:
 
-```
+```text
 Rules (✓ = recommended for your stack):
 
   Base:
@@ -89,7 +89,7 @@ One screen. Say "looks good" when the selection is right. Toggle anything by nam
 
 ### [3/3] Install
 
-```
+```text
 [3/3] Installing...
 
   ✓ Config          .edikt/config.yaml

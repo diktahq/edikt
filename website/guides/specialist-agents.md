@@ -72,7 +72,7 @@ Claude routes to agents using their `description:` field. Each description inclu
 description: "Reviews and implements database schema, migrations,
   queries, and data modeling. Use proactively when migration or
   schema files are modified."
-```
+```yaml
 
 When Claude sees you working on a migration file, it reads this description and delegates to the dba agent.
 
@@ -161,7 +161,7 @@ Phase 3: CRUD handler implementation
   Complexity: Medium
   Suggested model: sonnet
   Reviewers: backend, api
-```
+```yaml
 
 Complexity-to-model mapping:
 
@@ -183,18 +183,18 @@ When agents run outside a plan (ad-hoc review, direct delegation), Claude uses i
 **List installed agents:**
 ```
 /edikt:agents
-```
+```text
 
 **Add an optional agent:**
 ```
 /edikt:agents add performance
 /edikt:agents add compliance
-```
+```text
 
 **Get recommendations for your stack:**
 ```
 /edikt:agents suggest
-```
+```text
 
 **Command reference:** [/edikt:agents](/commands/agents)
 

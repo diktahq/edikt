@@ -13,7 +13,7 @@ edikt is at its best here. Describe what you're building once. Everything gets i
 
 ## Example
 
-```
+```bash
 /edikt:init
 
 > What are you building?
@@ -43,7 +43,7 @@ func HandleCreateOrder(w http.ResponseWriter, r *http.Request) {
     sendConfirmationEmail(order.CustomerEmail) // side effect in handler
     w.WriteHeader(http.StatusCreated)
 }
-```
+```yaml
 
 After `/edikt:init` with DDD + Go rules:
 
@@ -67,7 +67,7 @@ The handler delegates. Errors are returned. Business logic lives in the service 
 
 ## What gets generated
 
-```
+```text
 your-project/
 ├── docs/
 │   ├── project-context.md   # seeded from your description

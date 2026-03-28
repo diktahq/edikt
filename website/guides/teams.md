@@ -50,7 +50,7 @@ Elena commits:
 git add .claude/ .edikt/ docs/
 git commit -m "chore: add edikt governance"
 git push
-```
+```diff
 
 That commit is the only setup step. Every engineer who pulls this branch gets the full governance — rules, agents, hooks, project identity. No Slack message saying "hey, update your CLAUDE.md." No wiki page nobody reads. One commit, done.
 
@@ -103,7 +103,7 @@ Elena: "Nice cursor-based pagination choice. One thought — should we
 Elena: "The OrderSearchCriteria value object is clean. Consider adding
        a Validate() method so the service doesn't need to check each
        field individually."
-```
+```text
 
 Two comments. Both about design decisions. Neither about standards violations.
 

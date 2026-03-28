@@ -30,7 +30,7 @@ The dashboard has six sections:
 
 **Signals detected** — ADR candidates, doc gaps, and security signals surfaced by the Stop hook during the session.
 
-```
+```text
 EDIKT STATUS — Orders API
 ═══════════════════════════════════════════════
 

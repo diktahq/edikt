@@ -8,12 +8,12 @@ Every edikt install writes its version to `~/.edikt/VERSION`. Every project reco
 
 ```yaml
 edikt_version: "0.1.0"
-```
+```text
 
 `/edikt:doctor` compares the two and warns when they differ:
 ```
 [!!] project on edikt 0.1.0, installed is 0.2.0 — run /edikt:upgrade
-```
+```bash
 
 `/edikt:upgrade` reads both, shows a diff, applies changes, and bumps `edikt_version` in your config when done.
 
@@ -37,7 +37,7 @@ edikt first checks if your global install is current. If a newer version exists 
 
 Then it shows a diff of what will change:
 
-```
+```text
 WHAT'S NEW
 ─────────────────────────────────────────────────────
 v0.2.0 — New agents, rule pack updates, hook improvements
@@ -73,7 +73,7 @@ You can apply everything, cancel, or choose sections. After applying, `edikt_ver
 ```bash
 git add .claude/ .edikt/config.yaml && git commit -m "chore: upgrade edikt to 0.2.0"
 git push
-```
+```diff
 
 Your team gets the upgrade on next pull.
 
@@ -121,7 +121,7 @@ Or directly:
 > "Run doctor"
 
 Doctor shows version status:
-```
+```text
 [!!] project on edikt 0.1.0, installed is 0.2.0 — run /edikt:upgrade
 [!!] go.md outdated (installed: 1.0.0, available: 0.1.0) — run /edikt:upgrade
 ```

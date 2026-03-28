@@ -8,7 +8,7 @@ ADRs are detailed documents. An ADR for "use hexagonal architecture" might be 20
 
 The compiled output strips the rationale and extracts the directive:
 
-```
+```text
 ADR source (200 lines of context and rationale)
 
 Compiled directive (1 line):
@@ -26,13 +26,13 @@ After capturing decisions with "Save this decision" or adding invariants with "T
 
 Or trigger it directly:
 
-```
+```bash
 /edikt:compile
 ```
 
 Claude reads all accepted ADRs and active invariants, extracts directives, and writes `.claude/rules/governance.md`.
 
-```
+```text
 ✅ Governance compiled: .claude/rules/governance.md
 
   5 ADRs → 6 directives
@@ -55,7 +55,7 @@ Claude reads all accepted ADRs and active invariants, extracts directives, and w
 status: accepted   # included
 status: draft      # skipped
 status: superseded # skipped, warns if referenced
-```
+```yaml
 
 ## The output file
 
@@ -96,7 +96,7 @@ The `paths: "**/*"` frontmatter means Claude reads this file on every file it to
 
 Before compiling, Claude checks for contradictions between accepted ADRs:
 
-```
+```text
 CONTRADICTION DETECTED
   ADR-001: "Claude Code only — no multi-tool support"
   ADR-007: "Support Cursor for rule distribution"
@@ -106,7 +106,7 @@ CONTRADICTION DETECTED
 
 Cross-source conflicts are also detected — guidelines that contradict ADRs or invariants:
 
-```
+```text
 CONFLICT: guideline vs invariant
   guidelines/testing.md: "Always mock the database in all tests"
   INV-001: "Integration tests must hit a real database, no mocks"
@@ -121,7 +121,7 @@ Invariant conflicts are errors — invariants always win. ADR conflicts are warn
 
 Run `/edikt:compile --check` in CI to validate without writing:
 
-```
+```bash
 /edikt:compile --check
 
   Sources: 5 ADRs (4 accepted), 2 invariants (2 active), 1 guideline
@@ -144,7 +144,7 @@ Recompile after:
 
 The command output will remind you when recompilation is needed:
 
-```
+```text
 Run /edikt:compile to update governance directives.
 ```
 

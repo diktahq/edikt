@@ -4,7 +4,7 @@ Write a Product Requirements Document for a feature.
 
 ## Usage
 
-```
+```bash
 /edikt:prd webhook delivery with retry logic
 /edikt:prd                                    ← extracts from current conversation
 ```
@@ -19,7 +19,7 @@ edikt reads `docs/project-context.md` and `docs/product/spec.md` before writing 
 
 ### With argument — define from scratch
 
-```
+```bash
 /edikt:prd webhook delivery with retry logic
 ```
 
@@ -32,7 +32,7 @@ Creates: `docs/product/prds/PRD-{NNN}-webhook-delivery-with-retry-logic.md`
 
 ### No argument — extract from conversation
 
-```
+```bash
 /edikt:prd
 ```
 
@@ -42,13 +42,13 @@ Extracts the last clearly-defined feature requirement from the current conversat
 
 The `Stop` hook watches every Claude response for product requirement signals. When it detects a clearly-defined feature, Claude suggests:
 
-```
+```text
 💡 This looks like a PRD — run `/edikt:prd` to capture it.
 ```
 
 ## Output
 
-```
+```text
 docs/product/prds/
 └── PRD-001-webhook-delivery-with-retry-logic.md
 ```

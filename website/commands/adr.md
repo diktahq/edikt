@@ -4,7 +4,7 @@ Capture an Architecture Decision Record — from scratch or extracted from the c
 
 ## Usage
 
-```
+```bash
 /edikt:adr use postgres for persistence
 /edikt:adr                                  ← extracts from current conversation
 ```
@@ -17,7 +17,7 @@ An Architecture Decision Record captures a significant technical choice with its
 
 ### With argument — define from scratch
 
-```
+```bash
 /edikt:adr use postgres for persistence
 ```
 
@@ -31,7 +31,7 @@ Creates: `docs/decisions/{NNN}-use-postgres-for-persistence.md`
 
 ### No argument — extract from conversation
 
-```
+```bash
 /edikt:adr
 ```
 
@@ -41,13 +41,13 @@ edikt reads the current conversation, extracts the last significant technical de
 
 You don't need to remember to run this. The `Stop` hook installed by `/edikt:init` watches every Claude response for significant technical choices with trade-offs. When it detects one, Claude ends its response with:
 
-```
+```text
 💡 This looks like an ADR — run `/edikt:adr` to capture it.
 ```
 
 ## Output
 
-```
+```text
 docs/decisions/
 └── 003-use-postgres-for-persistence.md
 ```

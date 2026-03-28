@@ -13,7 +13,7 @@ edikt audits what you have and installs guardrails that match.
 
 ## What the audit finds
 
-```
+```yaml
 edikt detected:
   Language:     Go 1.22 (go.mod)
   Framework:    Chi v5 (go.mod)
@@ -45,7 +45,7 @@ func (r *OrderRepo) FindByStatus(status string) []Order {
     r.db.Where("status = ?", status).Find(&orders)  // no error handling
     return orders                                     // silently returns nil on error
 }
-```
+```text
 
 After edikt installs `error-handling.md` and `go.md`:
 
@@ -65,7 +65,7 @@ Context propagation. Error wrapping. Return value. Claude got there because it r
 
 Your project has implicit decisions baked into the code. Surface them:
 
-```
+```bash
 /edikt:adr we use repository pattern for all data access
 /edikt:adr all monetary amounts use decimal not float64
 /edikt:invariant payments table is append-only, never update or delete rows
@@ -74,7 +74,7 @@ Your project has implicit decisions baked into the code. Surface them:
 These become ADRs and invariants in `docs/`. Claude reads them in every future session. The decisions stop living only in your head.
 
 If you have scattered docs — READMEs, old ADR folders, wiki pages — bring them in:
-```
+```bash
 /edikt:intake
 ```
 

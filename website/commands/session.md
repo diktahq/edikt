@@ -4,7 +4,7 @@ End-of-session sweep — summarize what was built and surface missed captures be
 
 ## Usage
 
-```
+```bash
 /edikt:session
 ```
 
@@ -26,7 +26,7 @@ Before surfacing any suggestion, it cross-references against existing files to a
 
 ## Output
 
-```
+```text
 SESSION SUMMARY — 2026-03-08 17:42
 ─────────────────────────────────────────────────────
 Built:    webhook delivery (3 files), DB migration
@@ -46,7 +46,7 @@ Possible captures:
 
 If nothing was built:
 
-```
+```text
 Nothing built in this session — no captures needed.
 ```
 
@@ -54,7 +54,7 @@ Nothing built in this session — no captures needed.
 
 The PreCompact hook (triggered automatically before Claude compacts context) reminds you:
 
-```
+```text
 ⚠️ Context compacting. (1) Update your active plan's progress table NOW.
 (2) Run /edikt:session to capture any decisions, constraints, or doc gaps before context is lost.
 ```
