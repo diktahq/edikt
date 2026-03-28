@@ -16,7 +16,45 @@ allowed-tools:
 
 Upgrade edikt in this project to match the currently installed edikt version. Updates hooks, agent templates, and rule packs — never overwrites customizations without asking.
 
+## Arguments
+
+- `$ARGUMENTS` — Optional. `--offline` skips the remote version check. `--no-review` is not applicable to this command.
+
 ## Instructions
+
+### 0. Check for Updates
+
+If `--offline` is in `$ARGUMENTS`, skip this step entirely and proceed to Step 1.
+
+Otherwise, check if a newer edikt version is available:
+
+```bash
+LATEST_VERSION=$(curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/main/VERSION" 2>/dev/null | tr -d '[:space:]')
+INSTALLED_VERSION=$(cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]')
+```
+
+Three outcomes:
+
+**Fetch failed** (no network, timeout, empty response):
+```
+⚠ Could not check for updates (network unavailable). Proceeding with installed version.
+  To skip this check: /edikt:upgrade --offline
+```
+Proceed to Step 1 normally.
+
+**Latest version matches installed** — proceed to Step 1 silently.
+
+**Latest version is newer than installed:**
+```
+📦 edikt {LATEST_VERSION} is available (you have {INSTALLED_VERSION}).
+
+  Update now:
+    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+
+  Then re-run /edikt:upgrade to apply changes to this project.
+  To skip this check: /edikt:upgrade --offline
+```
+Stop here — do not proceed to Step 1. The user needs to update global templates first, otherwise the project upgrade would use stale templates.
 
 ### 1. Check Prerequisites
 
