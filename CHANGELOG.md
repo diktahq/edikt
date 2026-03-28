@@ -1,6 +1,6 @@
 # edikt changelog
 
-## v0.1.4 (unreleased)
+## v0.1.4 (2026-03-28)
 
 ### Brainstorm command
 
