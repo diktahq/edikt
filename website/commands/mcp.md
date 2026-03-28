@@ -4,7 +4,7 @@ Connect Claude to project management tools via MCP (Model Context Protocol).
 
 ## Usage
 
-```
+```bash
 /edikt:mcp
 /edikt:mcp add linear|github|jira
 /edikt:mcp remove {server}
@@ -21,7 +21,7 @@ edikt generates `.mcp.json` in your project root with server configurations. Com
 
 ### Linear
 
-```
+```bash
 /edikt:mcp add linear
 ```
 
@@ -49,7 +49,7 @@ export GITHUB_TOKEN="ghp_..."
 
 ### Jira
 
-```
+```bash
 /edikt:mcp add jira
 ```
 

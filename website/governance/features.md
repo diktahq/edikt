@@ -96,7 +96,7 @@ Each entry is a JSON line with an ISO 8601 timestamp, event type, and relevant c
 
 ## Checking feature status
 
-```
+```bash
 /edikt:doctor
 ```
 

@@ -4,7 +4,7 @@ Onboard team members and show what's shared across the team.
 
 ## Usage
 
-```
+```bash
 /edikt:team
 /edikt:team setup
 /edikt:team init "Team Name"
@@ -14,7 +14,7 @@ Onboard team members and show what's shared across the team.
 
 Shows what's committed to git and what each member needs locally.
 
-```
+```bash
 /edikt:team
 
 Team: Orders API
@@ -39,7 +39,7 @@ Onboarding a new member:
 
 Run this when joining a project or after the team adds new MCP servers.
 
-```
+```bash
 /edikt:team setup
 
 edikt Team Setup — Orders API
@@ -65,7 +65,7 @@ Checks:
 
 ## `init {name}` — add team config
 
-```
+```bash
 /edikt:team init "Orders API Team"
 ```
 

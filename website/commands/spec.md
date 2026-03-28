@@ -6,7 +6,7 @@ The spec is the engineering response to a product requirement — it defines HOW
 
 ## Usage
 
-```
+```bash
 /edikt:spec PRD-005
 /edikt:spec path/to/prd-file.md
 ```
@@ -17,7 +17,7 @@ Pass a PRD identifier (e.g., `PRD-005`) or the path to the PRD file directly.
 
 The PRD must have `status: accepted` before a spec can be generated:
 
-```
+```text
 BLOCKED  PRD-005 status is "draft".
          PRDs must be accepted before generating a spec.
          Review the PRD and change status to "accepted" first.
@@ -31,7 +31,7 @@ This gate exists because drafting a technical specification against unresolved r
 
 **2. Interviews with context** — asks 2–4 questions that prove it understood the codebase, not just the PRD. Questions reference what it found:
 
-```
+```text
 The codebase has ADR-003 for error handling (wrapped errors with context).
 Should this spec follow that pattern or propose a different approach?
 
@@ -41,7 +41,7 @@ Should this feature follow the same pattern?
 
 **3. Shows an outline** — before routing to specialist agents, confirms what the spec will cover:
 
-```
+```text
 Based on the PRD and your answers, the spec will cover:
   - Architecture: hexagonal, same pattern as existing code
   - Key components: WebhookService, WebhookRepository, delivery adapter
@@ -57,7 +57,7 @@ Proceed? (y/n)
 
 **5. Generates the spec** — routes to `architect` and relevant domain specialists. Produces a spec file at:
 
-```
+```text
 docs/product/specs/SPEC-{NNN}-{slug}/spec.md
 ```
 

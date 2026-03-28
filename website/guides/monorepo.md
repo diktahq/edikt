@@ -6,7 +6,7 @@ edikt supports monorepos via path-scoped rule files — different rules per pack
 
 Each `.claude/rules/*.md` file has a `paths:` frontmatter field. Claude only reads a rule file when editing files that match those paths.
 
-```
+```text
 .claude/rules/
 ├── code-quality.md          ← paths: all files (global)
 ├── testing.md               ← paths: all files (global)

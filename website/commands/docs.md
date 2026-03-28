@@ -4,7 +4,7 @@ Review documentation gaps — surfaces new routes, env vars, CLI flags, and serv
 
 ## Usage
 
-```
+```bash
 /edikt:docs                  ← show pending doc gaps
 /edikt:docs audit            ← full sweep with fixes
 /edikt:docs audit api        ← API routes vs API docs only
@@ -42,7 +42,7 @@ Compares recent code changes against existing documentation to find public surfa
 
 The `Stop` hook watches every Claude response for doc gap signals. When a new route, env var, or service is added, Claude ends its response with:
 
-```
+```text
 📄 Doc gap: POST /webhooks/retry — new endpoint. Run `/edikt:docs` to review.
 ```
 

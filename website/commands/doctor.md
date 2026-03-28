@@ -4,7 +4,7 @@ Validate governance setup and report what's healthy, what's missing, and how to 
 
 ## Usage
 
-```
+```bash
 /edikt:doctor
 ```
 
@@ -47,7 +47,7 @@ Doctor also validates the consistency of the governance graph:
 
 ## Output
 
-```
+```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  EDIKT DOCTOR
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -4,7 +4,7 @@ Capture a hard architectural constraint that must never be violated.
 
 ## Usage
 
-```
+```bash
 /edikt:invariant no floats for money
 /edikt:invariant                         ← extracts from current conversation
 ```
@@ -24,7 +24,7 @@ An invariant is not a guideline — it's a rule where violation causes real harm
 
 ### With argument — define from scratch
 
-```
+```bash
 /edikt:invariant no floats for money
 ```
 
@@ -34,7 +34,7 @@ Creates: `docs/invariants/INV-{NNN}-no-floats-for-money.md`
 
 ### No argument — extract from conversation
 
-```
+```bash
 /edikt:invariant
 ```
 
@@ -44,13 +44,13 @@ Extracts the last hard constraint discussed in the current conversation.
 
 The `Stop` hook watches every Claude response for hard constraint signals. When it detects one, Claude suggests:
 
-```
+```text
 💡 This is an invariant — run `/edikt:invariant` to capture it.
 ```
 
 ## Output
 
-```
+```text
 docs/invariants/
 └── INV-001-no-floats-for-money.md
 ```

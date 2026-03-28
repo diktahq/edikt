@@ -194,7 +194,7 @@ Claude runs drift detection — comparing what got built against the PRD accepta
 
 The full sequence:
 
-```
+```text
 PRD → spec → artifacts → plan → execute → drift detection
 ```
 
@@ -214,7 +214,7 @@ Each step in the chain has a status. The chain enforces a strict progression: ea
 
 Attempting to write a spec on a draft PRD produces a hard block:
 
-```
+```text
 BLOCKED  PRD-005 status is "draft".
          PRDs must be accepted before generating a spec.
          Review the PRD and change status to "accepted" first.

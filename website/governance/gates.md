@@ -25,7 +25,7 @@ Not all findings trigger a gate. Findings are classified by severity:
 
 ## What you see when a gate fires
 
-```
+```text
 GATE: security — critical finding
    Hardcoded JWT secret in auth/handler.go:47
 
@@ -46,7 +46,7 @@ This is intentional. Gates are not about blocking work — they're about making 
 
 Override log format:
 
-```
+```text
 GATE OVERRIDE
   Finding:    Hardcoded JWT secret in auth/handler.go:47
   Agent:      security

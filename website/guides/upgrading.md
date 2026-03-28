@@ -33,9 +33,11 @@ Open the project in Claude Code and say:
 
 > "Upgrade edikt"
 
-edikt shows release notes first, then a diff of what will change:
+edikt first checks if your global install is current. If a newer version exists on GitHub, it tells you to re-run the installer before proceeding — ensuring project upgrades always use the latest templates. Use `--offline` to skip this check in air-gapped environments.
 
-```
+Then it shows a diff of what will change:
+
+```text
 WHAT'S NEW
 ─────────────────────────────────────────────────────
 v0.2.0 — New agents, rule pack updates, hook improvements
@@ -119,7 +121,7 @@ Or directly:
 > "Run doctor"
 
 Doctor shows version status:
-```
+```text
 [!!] project on edikt 0.1.0, installed is 0.2.0 — run /edikt:upgrade
 [!!] go.md outdated (installed: 1.0.0, available: 0.1.0) — run /edikt:upgrade
 ```

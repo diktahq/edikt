@@ -2,7 +2,7 @@
 
 The problem edikt solves is session-to-session drift — Claude forgetting your standards, losing your decisions, starting over every time. The daily workflow is how you prevent that.
 
-```
+```text
 Start session → Load context → Build → Review → Capture → End session
 ```
 
@@ -18,7 +18,7 @@ Most of this is automatic. The explicit steps are one command each.
 
 The session refresh fires automatically and tells you what changed since last time:
 
-```
+```yaml
 📋 edikt — since your last session (2d ago):
    3 migration/schema files changed
    Relevant agents: dba
@@ -26,12 +26,12 @@ The session refresh fires automatically and tells you what changed since last ti
 ```
 
 If nothing significant changed:
-```
+```text
 📋 edikt — 2d since last session. Run /edikt:context to load context.
 ```
 
 **Then run:**
-```
+```bash
 /edikt:context
 ```
 
@@ -44,13 +44,13 @@ This loads your project context, active plan, decisions, invariants, and install
 **The problem without edikt:** You describe a feature, Claude starts coding, and halfway through you discover the migration is missing a rollback, there's no index on the query column, and the API contract breaks a mobile client.
 
 **With edikt:**
-```
+```bash
 /edikt:plan add webhook delivery with retry logic
 ```
 
 edikt interviews you (3–6 focused questions), scans the codebase for relevant patterns, breaks work into phases, then runs a pre-flight specialist review before execution:
 
-```
+```text
 PRE-FLIGHT REVIEW
 ─────────────────────────────────────────────────────
 Domains detected: database, api
@@ -68,7 +68,7 @@ API
 Fix the migration gap now. It takes 5 minutes. After implementation it takes an hour.
 
 Skip pre-flight for simple tasks:
-```
+```bash
 /edikt:plan --no-review fix typo in error message
 ```
 
@@ -82,7 +82,7 @@ Just build. edikt works in the background:
 
 **Signal detection** watches every response for decisions worth capturing:
 
-```
+```text
 💡 ADR candidate — run /edikt:adr to capture it.
 📄 Doc gap: new /webhooks/retry endpoint — run /edikt:docs to review.
 🔒 Security-sensitive domain — run /edikt:audit before shipping.
@@ -92,7 +92,7 @@ When you see one of these, run the command. That decision becomes a permanent re
 
 **Update your plan progress table** as phases complete — it's the state that survives context compaction:
 
-```
+```text
 | Phase | Status | Updated    |
 |-------|--------|------------|
 | 1     | done   | 2026-03-08 |
@@ -106,14 +106,14 @@ When you see one of these, run the command. That decision becomes a permanent re
 **The problem without edikt:** You push code that has a missing index, a security gap you missed at 6pm, or an API response that breaks an existing client. You find out in code review or production.
 
 **With edikt:**
-```
+```bash
 /edikt:review             ← review last commit
 /edikt:review --branch    ← review everything on this branch
 ```
 
 edikt classifies changed files by domain and routes to the right specialists automatically:
 
-```
+```text
 IMPLEMENTATION REVIEW
 ─────────────────────────────────────────────────────
 Scope: 5 files changed
@@ -130,7 +130,7 @@ API
 ```
 
 For security-sensitive features (auth, payments, PII), also run:
-```
+```bash
 /edikt:audit
 ```
 
@@ -143,17 +143,17 @@ For security-sensitive features (auth, payments, PII), also run:
 **What happens automatically:**
 
 The PreCompact hook fires before context compression:
-```
+```text
 ⚠️ Context compacting. Update your active plan's progress table NOW.
    Run /edikt:session to capture decisions before context is lost.
 ```
 
 **Run explicitly at end of day:**
-```
+```bash
 /edikt:session
 ```
 
-```
+```text
 SESSION SUMMARY — 2026-03-08
 ─────────────────────────────────────────────────────
 Built:    webhook delivery (5 files), DB migration

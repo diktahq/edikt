@@ -4,7 +4,7 @@ Translate linter configs into Claude rule packs — so Claude enforces the same 
 
 ## Usage
 
-```
+```bash
 /edikt:sync              ← sync all detected linter configs
 /edikt:sync golangci     ← sync only golangci-lint rules
 /edikt:sync eslint       ← sync only ESLint rules

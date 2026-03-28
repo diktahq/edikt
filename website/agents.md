@@ -13,7 +13,7 @@ Agents don't replace Claude — they add domain-specific focus. Claude is the en
 
 Three layers govern what Claude produces:
 
-```
+```text
 Rule packs (.claude/rules/)     → static standards, always loaded
 Agents (.claude/agents/)        → specialist review and implementation
 Plan phases                     → assign agents + model to each phase
@@ -28,7 +28,7 @@ Plan phases                     → assign agents + model to each phase
 
 **Plan phases** assign specific agents as reviewers and suggest a model based on complexity:
 
-```
+```text
 Phase 2: Database layer
   Complexity: Medium
   Suggested model: sonnet

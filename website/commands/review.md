@@ -4,7 +4,7 @@ Post-implementation specialist review — routes to relevant domain agents based
 
 ## Usage
 
-```
+```bash
 /edikt:review                    ← review last commit
 /edikt:review --staged           ← review staged changes
 /edikt:review --branch           ← review all changes on this branch
@@ -39,7 +39,7 @@ A migration file triggers the DBA. Auth changes trigger the security agent. A Do
 
 ## Output
 
-```
+```text
 IMPLEMENTATION REVIEW — 2026-03-08
 ─────────────────────────────────────────────────────
 Scope: 4 files changed

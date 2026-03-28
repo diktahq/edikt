@@ -6,7 +6,7 @@ Four levels of customization — from toggling packs to writing your own from sc
 
 When you run `/edikt:init`, the configure step shows all available rule packs. Toggle by name:
 
-```
+```text
 > add api
 > add database
 > remove architecture
@@ -47,7 +47,7 @@ Every rule file in `.claude/rules/` is plain markdown you can edit directly. Add
 
 If you want to customize a rule pack for your whole team (not just one project), create a template override:
 
-```
+```text
 .edikt/templates/go.md
 ```
 

@@ -6,7 +6,7 @@ This is a language quality review — not a structural check ([`/edikt:doctor`](
 
 ## Usage
 
-```
+```bash
 /edikt:review-governance
 /edikt:review-governance compiled
 /edikt:review-governance ADR-003
@@ -44,7 +44,7 @@ For the compiled output, it also checks:
 
 ## Output
 
-```
+```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  GOVERNANCE REVIEW
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

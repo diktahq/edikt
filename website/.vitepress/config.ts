@@ -87,6 +87,7 @@ export default withMermaid(defineConfig({
         text: 'Reference',
         items: [
           { text: 'Commands', link: '/commands/' },
+          { text: 'Brainstorm', link: '/commands/brainstorm' },
           { text: 'Rule Packs', link: '/rules/' },
           { text: 'FAQ', link: '/faq' },
         ],

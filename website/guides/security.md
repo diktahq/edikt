@@ -4,7 +4,7 @@ edikt provides security coverage at three points in your workflow: while you bui
 
 ## The three layers
 
-```
+```text
 Building → Stop hook flags security domains
 Pushing  → Pre-push hook scans for obvious patterns
 On demand → /edikt:audit for deliberate security passes
@@ -18,7 +18,7 @@ These layers are complementary — lightweight and continuous early, thorough an
 
 The `Stop` hook watches every Claude response for security-sensitive domains. When it detects one, Claude ends its response with:
 
-```
+```text
 🔒 Security-sensitive domain — run `/edikt:audit` before shipping this feature.
 ```
 
@@ -38,7 +38,7 @@ The pre-push git hook runs a lightweight grep scan on every `git push`. It check
 
 If patterns are found, it warns before the push completes:
 
-```
+```text
 🔒 edikt: security patterns detected (2):
    • api_key = "sk-..." — src/config.go
    • TODO: validate input — src/api/users.go
@@ -81,7 +81,7 @@ hooks:
 
 For features that touch security-sensitive domains, run a full audit before shipping:
 
-```
+```bash
 /edikt:audit              ← full codebase
 /edikt:audit api          ← routes and handlers only
 /edikt:audit auth         ← authentication and authorization code
@@ -106,7 +106,7 @@ This invokes the `security` agent for a thorough review:
 - SQL parameterization check
 
 **Output:**
-```
+```text
 SECURITY AUDIT — 2026-03-08
 ─────────────────────────────────────────────────────
 Scope: src/payments/
@@ -150,7 +150,7 @@ OWASP Checklist:
 
 When you run `/edikt:plan` and the plan mentions auth, payments, tokens, RBAC, or similar, the `security` agent automatically reviews the plan before execution:
 
-```
+```text
 SECURITY
   🟡  JWT secret storage not specified — clarify storage mechanism in phase 2
   🟢  Auth middleware scoping looks correct
@@ -164,7 +164,7 @@ Catching security issues in the plan is far cheaper than catching them in code r
 
 All security checks in edikt route through the `security` specialist agent. You can invoke it directly for anything security-related — threat modeling, reviewing a specific pattern, checking a library's security posture:
 
-```
+```text
 Ask security to review our OAuth implementation
 ```
 

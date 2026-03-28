@@ -4,7 +4,7 @@ Scans for scattered docs and organizes them into edikt's structure.
 
 ## Usage
 
-```
+```bash
 /edikt:intake
 ```
 
@@ -20,7 +20,7 @@ Many projects accumulate docs in random places — READMEs with architecture not
 
 ## Example
 
-```
+```text
 Found 7 documents:
 
   docs/ARCHITECTURE.md      → docs/decisions/architecture-overview.md

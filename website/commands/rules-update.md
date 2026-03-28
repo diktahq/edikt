@@ -4,7 +4,7 @@ Check for outdated rule packs and update them to the latest version from the edi
 
 ## Usage
 
-```
+```bash
 /edikt:rules-update
 ```
 
@@ -16,7 +16,7 @@ Manually edited rule files (no `<!-- edikt:generated -->` marker) are never over
 
 ## Output
 
-```
+```text
 Checking rule pack versions...
 
   go.md         1.0 → 1.2  updated
