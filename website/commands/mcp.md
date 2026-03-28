@@ -31,13 +31,13 @@ Get one at: https://linear.app/settings/api
 ```bash
 # Add to ~/.zshrc:
 export LINEAR_API_KEY="lin_api_..."
-```text
+```
 
 ### GitHub
 
 ```
 /edikt:mcp add github
-```text
+```
 
 Requires: `GITHUB_TOKEN` in your shell environment
 Get one at: https://github.com/settings/tokens (needs `repo` scope)
@@ -61,7 +61,7 @@ Get a token at: https://id.atlassian.com/manage-profile/security/api-tokens
 export JIRA_URL="https://yourorg.atlassian.net"
 export JIRA_USERNAME="you@yourorg.com"
 export JIRA_API_TOKEN="your-token"
-```markdown
+```
 
 ## Status check
 
@@ -80,7 +80,7 @@ Not configured:
 
 .mcp.json is committed to git — team inherits server configs.
 Each member needs their own API keys in their local environment.
-```markdown
+```
 
 ## What gets generated
 

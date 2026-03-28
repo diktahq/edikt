@@ -52,7 +52,7 @@ The pre-push git hook also scans for undocumented public surfaces before every p
 
 ```bash
 EDIKT_DOCS_SKIP=1 git push          # skip for one push
-```yaml
+```
 
 Or permanently in `.edikt/config.yaml`:
 ```yaml

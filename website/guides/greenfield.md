@@ -43,7 +43,7 @@ func HandleCreateOrder(w http.ResponseWriter, r *http.Request) {
     sendConfirmationEmail(order.CustomerEmail) // side effect in handler
     w.WriteHeader(http.StatusCreated)
 }
-```yaml
+```
 
 After `/edikt:init` with DDD + Go rules:
 

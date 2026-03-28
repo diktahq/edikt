@@ -45,7 +45,7 @@ func (r *OrderRepo) FindByStatus(status string) []Order {
     r.db.Where("status = ?", status).Find(&orders)  // no error handling
     return orders                                     // silently returns nil on error
 }
-```text
+```
 
 After edikt installs `error-handling.md` and `go.md`:
 

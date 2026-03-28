@@ -77,7 +77,7 @@ paths: "**/*"
 ### Testing
 
 - Always test error paths first. (ref: guidelines/testing.md)
-```text
+```
 
 Confirmation:
 
@@ -91,7 +91,7 @@ COMPILED  .claude/rules/governance.md
 
   Skipped: 1 superseded ADR, 2 draft ADRs
   Claude will read these directives automatically in every session.
-```bash
+```
 
 ## CI validation
 

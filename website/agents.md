@@ -78,7 +78,7 @@ Claude picks agents based on their `description:` field. Each agent's descriptio
 description: "Reviews and implements database schema, migrations,
   queries, and data modeling. Use proactively when migration or
   schema files are modified."
-```text
+```
 
 When Claude sees you working on a migration file, it reads this description and knows to involve the dba agent.
 
@@ -102,7 +102,7 @@ Standard implementation        → sonnet
 Mechanical tasks (docs, tests) → haiku or sonnet
 Critical review (security)     → opus
 Routine review                 → sonnet
-```text
+```
 
 When you create a plan, each phase includes a complexity assessment and suggested model:
 
@@ -111,7 +111,7 @@ Phase 1: Multi-tenant schema design
   Complexity: High — architecture decision with security implications
   Suggested model: opus
   Reviewers: architect, dba, security
-```text
+```
 
 Claude follows the suggestion. No model is hardcoded in agent templates.
 
@@ -175,7 +175,7 @@ tools:
   - Grep
   - Glob
 ---
-```yaml
+```
 
 ### 2. Add to config
 

@@ -8,12 +8,12 @@ Every edikt install writes its version to `~/.edikt/VERSION`. Every project reco
 
 ```yaml
 edikt_version: "0.1.0"
-```text
+```
 
 `/edikt:doctor` compares the two and warns when they differ:
 ```
 [!!] project on edikt 0.1.0, installed is 0.2.0 — run /edikt:upgrade
-```bash
+```
 
 `/edikt:upgrade` reads both, shows a diff, applies changes, and bumps `edikt_version` in your config when done.
 
@@ -73,7 +73,7 @@ You can apply everything, cancel, or choose sections. After applying, `edikt_ver
 ```bash
 git add .claude/ .edikt/config.yaml && git commit -m "chore: upgrade edikt to 0.2.0"
 git push
-```diff
+```
 
 Your team gets the upgrade on next pull.
 

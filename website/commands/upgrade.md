@@ -7,7 +7,7 @@ Upgrade edikt in this project — hooks, agents, and rule packs — to match the
 ```bash
 /edikt:upgrade
 /edikt:upgrade --offline
-```bash
+```
 
 | Argument | Description |
 |----------|-------------|
@@ -82,7 +82,7 @@ tools:
   - Read
   - Grep
 ---
-```yaml
+```
 
 **Config** — list agents in `.edikt/config.yaml`:
 

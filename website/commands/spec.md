@@ -74,7 +74,7 @@ references:
 status: draft
 created_at: 2026-03-20T14:30:00Z
 ---
-```yaml
+```
 
 Sections:
 - Summary

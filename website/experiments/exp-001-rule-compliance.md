@@ -83,7 +83,7 @@ After receiving tool results, re-check:
 2. If it does not, fix the violation before taking any other action.
 3. Do not chain corrections — verify each step against these rules.
 </governance_checkpoint>
-```text
+```
 
 ### Procedure
 
@@ -120,7 +120,7 @@ Struct field order              3/3              3/3       0/3
 Test_X_y_z naming               3/3              3/3       0/3
 ----------------------------------------------------------------
 TOTAL                         15/15            15/15      0/15
-```text
+```
 
 All 15 runs with a rule file present (regardless of checkpoint) achieved compliance. All 15 runs without a rule file failed. No partial passes. No excluded runs.
 
@@ -134,7 +134,7 @@ B: Process in checkpoint                 3/3        unknown
 C: Numbered workflow                     3/3        unknown
 D: Post-result enforcement               3/3        unknown
 Baseline (no rule)                       0/3            n/a
-```bash
+```
 
 All 4 phrasings produced tests (12/12 vs 0/3 baseline). Test-before-code ordering could not be verified from file output alone — the scorer checks file contents, not tool call sequence.
 

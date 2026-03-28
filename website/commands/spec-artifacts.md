@@ -140,7 +140,7 @@ artifacts:
       tool: golang-migrate  # golang-migrate | prisma | alembic | django | rails | etc.
   fixtures:
     format: yaml
-```text
+```
 
 `auto` means the command detects from spec content each time. Use it for greenfield projects or monorepos where each spec sets its own `database_type:` in frontmatter.
 

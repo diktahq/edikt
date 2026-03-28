@@ -254,7 +254,7 @@ references:
   adrs: [ADR-001, ADR-003]
   invariants: [INV-001]
 status: accepted
-```markdown
+```
 
 ```yaml
 # artifact frontmatter

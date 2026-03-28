@@ -19,7 +19,7 @@ features:
   signal-detection: true   # detect ADR/invariant candidates on stop
   plan-injection: true     # inject active plan phase on every prompt
   quality-gates: true      # block on critical findings from gate agents
-```text
+```
 
 All default to `true`. Set any to `false` to disable.
 
@@ -41,7 +41,7 @@ Shows what changed since your last session when you open the project — modifie
 ```yaml
 features:
   session-summary: false
-```text
+```
 
 ### signal-detection
 
@@ -59,7 +59,7 @@ Injects the active plan's current phase into every prompt so Claude always knows
 ```yaml
 features:
   plan-injection: false
-```text
+```
 
 ### quality-gates
 

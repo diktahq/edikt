@@ -53,7 +53,7 @@ If patterns are found, it warns before the push completes:
 
 ```bash
 EDIKT_SECURITY_SKIP=1 git push
-```text
+```
 
 To also skip the invariant check in the same push:
 
@@ -65,7 +65,7 @@ Both flags can be combined:
 
 ```bash
 EDIKT_SECURITY_SKIP=1 EDIKT_INVARIANT_SKIP=1 git push
-```text
+```
 
 ### Disable permanently
 

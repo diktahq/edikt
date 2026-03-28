@@ -23,7 +23,7 @@ rules:
   go: { include: all }
   chi: { include: all }
   # api: { include: all }   ← uncomment to enable
-```markdown
+```
 
 ## 2. Edit an installed pack
 
@@ -78,7 +78,7 @@ Rules specific to the billing bounded context.
 
 - Refunds go through `RefundService`, never direct DB writes.
 - All billing events publish to the `billing.events` topic with the charge ID as the partition key.
-```diff
+```
 
 Claude reads this file automatically when editing files matching `internal/billing/**/*.go`.
 
@@ -94,7 +94,7 @@ If your project has linter configs (`.golangci-lint.yaml`, `.eslintrc`, `ruff.to
 
 ```
 /edikt:sync
-```text
+```
 
 This creates `.claude/rules/linter-{name}.md` files that teach Claude what your linter enforces — so it writes code that passes linting on the first try instead of fixing violations after the fact.
 

@@ -74,7 +74,7 @@ Adds a `team:` block to `.edikt/config.yaml`:
 ```yaml
 team:
   name: "Orders API Team"
-```bash
+```
 
 Commit the updated config so the team name appears in `/edikt:team` output for everyone.
 

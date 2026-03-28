@@ -55,7 +55,7 @@ Claude reads all accepted ADRs and active invariants, extracts directives, and w
 status: accepted   # included
 status: draft      # skipped
 status: superseded # skipped, warns if referenced
-```yaml
+```
 
 ## The output file
 

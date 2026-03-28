@@ -158,7 +158,7 @@ tools:
   - Grep
   - Glob
 ---
-```yaml
+```
 
 **Config** — list agents in `.edikt/config.yaml`:
 

@@ -20,7 +20,7 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
-```text
+```
 
 Copies commands to `~/.claude/commands/edikt/` and templates to `~/.edikt/templates/`. No dependencies, no build step, no runtime — just files.
 
@@ -32,7 +32,7 @@ edikt works on any project. New or existing.
 
 ```
 /edikt:init
-```diff
+```
 
 Init runs in three steps. You talk to Claude naturally throughout — no CLI flags, no config files to edit.
 
@@ -55,7 +55,7 @@ edikt scans your codebase automatically — languages, frameworks, linters, exis
   Docs:       3 ADRs in docs/decisions/
   Commits:    conventional commits detected
   Governance: verikt.yaml detected — architecture pack skipped
-```text
+```
 
 **New project (no code yet):**
 
@@ -110,7 +110,7 @@ SDLC:
 
 Toggle items by name (e.g. "add api", "add security"),
 or say "looks good" to proceed.
-```diff
+```
 
 One screen. Say "looks good" when you're happy with the selection.
 
@@ -130,7 +130,7 @@ edikt generates everything and shows progress:
   ✓ Hooks           .claude/settings.json (9 behaviors)
   ✓ CLAUDE.md       updated
   ✓ Directories     docs/architecture/, docs/plans/, docs/product/
-```markdown
+```
 
 ---
 
@@ -160,7 +160,7 @@ What just changed:
   Commit .edikt/, .claude/, and docs/ to git — your team gets
   identical governance automatically.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```markdown
+```
 
 ---
 
