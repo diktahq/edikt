@@ -79,7 +79,7 @@ mkdir -p "${EDIKT_HOME}/templates/sdlc"
 mkdir -p "${CLAUDE_COMMANDS}/edikt"
 
 # Download edikt commands (/edikt:init, /edikt:context, etc.)
-EDIKT_COMMANDS=(init context plan status intake doctor rules-update upgrade adr invariant prd agents mcp team docs sync audit review review-governance session spec spec-artifacts drift compile)
+EDIKT_COMMANDS=(init context plan status intake doctor rules-update upgrade adr invariant prd agents mcp team docs sync audit review review-governance session spec spec-artifacts drift compile brainstorm)
 info "Installing edikt commands..."
 for cmd in "${EDIKT_COMMANDS[@]}"; do
   dest="${CLAUDE_COMMANDS}/edikt/${cmd}.md"
