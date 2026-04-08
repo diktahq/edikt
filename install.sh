@@ -91,7 +91,7 @@ install_file() {
     rel_path="${rel_path#"$CLAUDE_COMMANDS"/}"
     mkdir -p "$(dirname "$BACKUP_DIR/$rel_path")"
     cp "$dest" "$BACKUP_DIR/$rel_path"
-    ((BACKUP_COUNT++))
+    BACKUP_COUNT=$((BACKUP_COUNT + 1))
   fi
 }
 

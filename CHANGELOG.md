@@ -1,5 +1,19 @@
 # edikt changelog
 
+## v0.2.2 (2026-04-08)
+
+Critical bug-fix release. The v0.2.1 installer was silently broken on the v0.1.x → v0.2.x upgrade path.
+
+### Installer: upgrade from v0.1.x was silently broken
+
+- **`((BACKUP_COUNT++))` under `set -euo pipefail` killed the installer on the first backup.** Postfix `++` returns the pre-increment value (`0` on the first call), which bash's `set -e` treats as a failure and exits the script. Symptoms: the cleanup loop removed *nothing*, the new namespaced commands were *never* installed, old flat files stayed in place, and the installer exited without any error message. This shipped in v0.2.1 and affected everyone upgrading from v0.1.x via `curl | bash`. Fixed by using `BACKUP_COUNT=$((BACKUP_COUNT + 1))`.
+- **New integration test** (`test/test-install-e2e.sh`) — 22 assertions across five scenarios: fresh install, upgrade from v0.1.x, user-customized file preservation, network failure abort, and repeated-install idempotency. Shims `curl` with a mock that serves files from the local repo, so the full `install.sh` runs end-to-end against a fake `$HOME` in `/tmp`. This is the test we wished existed before v0.2.0 shipped — it caught the v0.2.1 regression immediately.
+
+### `/edikt:upgrade`: migrate v0.1.x command references
+
+- **New step 5 in `/edikt:upgrade`: rewrite old flat command references in project files to their new namespaced equivalents.** Projects initialized with v0.1.x have hardcoded references to `/edikt:adr`, `/edikt:plan`, `/edikt:compile`, etc. in their `CLAUDE.md` managed block and in compiled rule packs. Previously, `/edikt:upgrade` only migrated the *sentinel format* (HTML → visible) and left the *content* inside the sentinels untouched. Now upgrade runs a targeted string-replace across all 15 moved commands, scoped to edikt-owned content only (the CLAUDE.md managed block and rule pack files marked with `edikt:generated` or `edikt:compiled`). User content outside the managed blocks is never touched.
+- **Idempotent and safe:** the instruction tells Claude to match only occurrences NOT already followed by `:`, using surrounding context (backticks, punctuation, end-of-line) for disambiguation. Running upgrade twice is a no-op.
+
 ## v0.2.1 (2026-04-08)
 
 Bug-fix release following v0.2.0 field reports.

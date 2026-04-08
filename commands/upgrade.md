@@ -340,6 +340,61 @@ Note: the `sql.migrations.tool` sub-key is only written by `/edikt:init` when a 
 
 Same as `/edikt:rules-update` logic — replace outdated packs, skip manually edited and custom ones.
 
+#### Command reference migration (v0.1.x → v0.2.x)
+
+v0.2.0 renamed 15 flat commands into namespaces. Projects initialized with v0.1.x have hardcoded references to the old flat names in `CLAUDE.md` (the intent table inside the edikt-managed block) and in compiled rule packs. These references still resolve today via deprecated stubs, but they'll break in v0.4.0 when the stubs are removed.
+
+Apply this migration table to the following targets:
+
+| Old (v0.1.x)           | New (v0.2.x)             |
+|------------------------|--------------------------|
+| `/edikt:adr`           | `/edikt:adr:new`         |
+| `/edikt:invariant`     | `/edikt:invariant:new`   |
+| `/edikt:compile`       | `/edikt:gov:compile`     |
+| `/edikt:review-governance` | `/edikt:gov:review`  |
+| `/edikt:rules-update`  | `/edikt:gov:rules-update`|
+| `/edikt:sync`          | `/edikt:gov:sync`        |
+| `/edikt:prd`           | `/edikt:sdlc:prd`        |
+| `/edikt:spec`          | `/edikt:sdlc:spec`       |
+| `/edikt:spec-artifacts`| `/edikt:sdlc:artifacts`  |
+| `/edikt:plan`          | `/edikt:sdlc:plan`       |
+| `/edikt:review`        | `/edikt:sdlc:review`     |
+| `/edikt:drift`         | `/edikt:sdlc:drift`      |
+| `/edikt:audit`         | `/edikt:sdlc:audit`      |
+| `/edikt:docs`          | `/edikt:docs:review`     |
+| `/edikt:intake`        | `/edikt:docs:intake`     |
+
+**Targets** (only files edikt owns — never touch user content):
+
+1. **CLAUDE.md managed block** — the content strictly between `[edikt:start]: #` and `[edikt:end]: #` sentinels (or the old HTML sentinels if they weren't migrated yet). Leave everything outside the sentinels untouched.
+2. **Generated rule packs** — any file under `.claude/rules/` or `.claude/rules/governance/` that contains the `edikt:generated` or `edikt:compiled` marker. Skip files without the marker (those are user-written).
+
+**Safety rules:**
+
+- **Idempotency is critical.** Do NOT replace `/edikt:adr` if it's already followed by `:` (e.g. `/edikt:adr:new` or `/edikt:adr:compile`). Use string contexts that make the match unambiguous: backtick-wrapped (`` `/edikt:adr` ``), end of line (`/edikt:adr\n`), or punctuation-delimited (`/edikt:adr,`, `/edikt:adr.`, `/edikt:adr)`).
+- **Longest first is WRONG here.** The old commands have no overlap with each other, but they DO have overlap with the new names (`/edikt:adr` is a prefix of `/edikt:adr:new`). Always match the old pattern with a non-`:` terminator.
+- **Use Edit with literal strings**, not Write. Preserve line endings, trailing whitespace, and all other content. For each replacement, include enough context (at least the backtick/paren/whitespace around the token) to avoid ambiguity.
+- **Skip if already migrated.** Before making any edit, grep the file for any of the NEW command names in the table. If even one new name is present (e.g. `/edikt:adr:new` exists in the file), the file was already migrated on a previous upgrade — still run the full mapping pass to catch any stragglers, but don't report it as "migrated" unless actual changes were made.
+
+**Process for each target file:**
+
+1. Read the file.
+2. Determine the edit scope (for CLAUDE.md: the managed block only; for rule packs: the whole file if it has the `edikt:generated` marker).
+3. For each row in the mapping table, search the edit scope for old-name occurrences that are NOT followed by `:`. Track the count.
+4. If any matches were found, apply them via Edit with full surrounding context for disambiguation.
+5. Record: filename + count of replacements.
+
+Report the results as part of the upgrade summary:
+
+```
+Command references:
+  CLAUDE.md:                               7 replacements
+  .claude/rules/governance.md:             3 replacements
+  .claude/rules/governance/api-design.md:  0 (already current)
+```
+
+If a project has no v0.1.x references anywhere, report `Command references: ✓ up to date` instead of the per-file breakdown.
+
 ### 6. Post-Upgrade
 
 After applying:
