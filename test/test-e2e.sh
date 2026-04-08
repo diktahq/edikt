@@ -729,10 +729,11 @@ FILE_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
 CONFIG_VER=$(grep 'edikt_version:' "$PROJECT_ROOT/.edikt/config.yaml" | awk '{print $2}' | tr -d '"')
 GOV_VER=$(grep 'version:' "$PROJECT_ROOT/.claude/rules/governance.md" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
 
-if [ "$FILE_VER" = "0.2.0" ]; then
-    pass "VERSION is 0.2.0"
+# VERSION must be a valid semver (x.y.z) or a -dev suffix on main
+if echo "$FILE_VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-dev)?$'; then
+    pass "VERSION is valid semver: $FILE_VER"
 else
-    fail "VERSION expected 0.2.0, got $FILE_VER"
+    fail "VERSION is valid semver" "Got: $FILE_VER"
 fi
 
 if [ "$CONFIG_VER" = "$FILE_VER" ]; then

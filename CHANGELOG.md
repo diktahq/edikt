@@ -1,5 +1,31 @@
 # edikt changelog
 
+## v0.2.1 (2026-04-08)
+
+Bug-fix release following v0.2.0 field reports.
+
+### Installer upgrade path
+
+- **Old flat commands no longer linger after upgrade.** v0.1.x installed commands like `~/.claude/commands/edikt/adr.md`, `plan.md`, `compile.md` at the top level. v0.2.0 moved them into namespaces but the installer never removed the old files, so users saw both `/edikt:adr` (stale) and `/edikt:adr:new` (new) in their command list. The installer now deletes the 15 moved v0.1.x commands before installing new files, with backup. User-customized files (marked with `<!-- edikt:custom -->`) are preserved.
+- **Silent curl failures now abort the install.** Every `curl -o` call now goes through a `_fetch` helper that enforces `--retry 2`, `--max-time 30`, non-empty download verification, and exits with an error on failure. Previously a network blip during `curl | bash` could leave files partially updated without any warning.
+
+### `/edikt:init` ADR path adoption
+
+- **init now configures `paths.decisions` to match detected ADR locations.** Previously, init detected existing ADRs in folders like `docs/decisions/` and offered to import them, but the import flow hardcoded the destination to edikt's default (`docs/architecture/decisions/`) and never wrote the detected path into `.edikt/config.yaml`. Users ended up with ADRs in one place and edikt looking for them somewhere else — `/edikt:gov:compile` and `/edikt:status` reported zero ADRs.
+- New prompt: **[1] Adopt** (keep ADRs where they are, configure edikt to use that path), **[2] Migrate** (move to edikt's default layout), **[3] Skip**. Same flow for invariants.
+
+### Command documentation cleanup
+
+- **Seniority prefixes removed from `/edikt:sdlc:review` reviewer lenses.** The command documentation still labeled agents as `Principal DBA`, `Staff SRE`, `Staff Security`, `Senior API`, `Principal Architect`, `Senior Performance` — inconsistent with the agent templates which dropped seniority prefixes in v0.2.0. Now just `DBA`, `SRE`, `Security`, `API`, `Architect`, `Performance`.
+
+### Website content
+
+- **Fixed 10 dead links in `website/governance/chain.md`, `website/governance/compile.md`, `website/governance/drift.md`, and `website/commands/brainstorm.md`** — they referenced old flat command paths (`/commands/prd`, `/commands/spec`, `/commands/plan`, etc.) that broke the v0.2.0 VitePress deploy. Now use namespaced paths (`/commands/sdlc/prd`, `/commands/gov/compile`, etc.).
+
+### Test coverage
+
+- New `test/test-v021-regressions.sh` — 36 assertions guarding against all five v0.2.1 bugs so they can't silently return.
+
 ## v0.2.0 (2026-03-31)
 
 ### Intelligent Compile — topic-grouped rule files

@@ -91,39 +91,39 @@ CRITICAL: NEVER spawn agents for domains not detected from the changed files —
 
 ### Reviewer Lenses
 
-**Principal DBA**
+**DBA**
 - Schema correctness and migration safety
 - Query efficiency and N+1 risks
 - Missing indexes on queried columns
 - Transaction boundaries
 - Missing rollback migrations
 
-**Staff SRE**
+**SRE**
 - Deployment readiness and health checks
 - Rollback capability
 - Observability: logging and metrics coverage
 - Resource limits defined
 
-**Staff Security**
+**Security**
 - OWASP Top 10 scan of changed code
 - Hardcoded secrets or credentials
 - Input validation gaps
 - Auth gaps on new endpoints
 - Exposed sensitive data
 
-**Senior API**
+**API**
 - Contract stability and breaking changes
 - Missing or outdated documentation
 - Versioning strategy
 - Response schema consistency
 
-**Principal Architect**
+**Architect**
 - Bounded context violations
 - Dependency direction correctness
 - Pattern consistency with existing codebase
 - Technical debt introduced
 
-**Senior Performance**
+**Performance**
 - N+1 query patterns introduced
 - Missing caching opportunities
 - Algorithmic complexity concerns

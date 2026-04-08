@@ -139,6 +139,35 @@ fi
 # Download edikt commands (/edikt:init, /edikt:context, etc.)
 info "Installing edikt commands..."
 
+# Clean up OLD flat command files from v0.1.x that moved into namespaces in v0.2.0.
+# These files now live under ${CLAUDE_COMMANDS}/edikt/{adr,invariant,gov,sdlc,docs}/
+# but may still exist at the top level from a prior install. Skip user-customized files.
+V01_MOVED_COMMANDS=(adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake)
+for cmd in "${V01_MOVED_COMMANDS[@]}"; do
+  old="${CLAUDE_COMMANDS}/edikt/${cmd}.md"
+  [ -f "$old" ] || continue
+  if grep -qF '<!-- edikt:custom -->' "$old" 2>/dev/null; then
+    dim "keeping old edikt:${cmd} (custom)"
+    continue
+  fi
+  install_file "$old"  # backup before removing
+  if ! $DRY_RUN; then
+    rm -f "$old"
+  fi
+  dim "removed old edikt:${cmd} (moved into namespace)"
+done
+
+# Safe curl — exits on failure instead of silently leaving a stale file
+_fetch() {
+  local url="$1" dest="$2"
+  if ! curl -fsSL --retry 2 --max-time 30 "$url" -o "$dest"; then
+    error "Failed to download ${url} — install aborted (file: ${dest})"
+  fi
+  if [ ! -s "$dest" ]; then
+    error "Downloaded file is empty: ${dest}"
+  fi
+}
+
 # Flat commands (top-level)
 FLAT_COMMANDS=(init upgrade doctor status context brainstorm session team agents mcp capture)
 for cmd in "${FLAT_COMMANDS[@]}"; do
@@ -148,7 +177,7 @@ for cmd in "${FLAT_COMMANDS[@]}"; do
   else
     install_file "$dest"
     if ! $DRY_RUN; then
-      curl -fsSL "${BASE_URL}/commands/${cmd}.md" -o "$dest"
+      _fetch "${BASE_URL}/commands/${cmd}.md" "$dest"
     fi
     dim "edikt:${cmd}"
   fi
@@ -163,7 +192,7 @@ _install_ns_cmd() {
   else
     install_file "$dest"
     if ! $DRY_RUN; then
-      curl -fsSL "${BASE_URL}/commands/${ns}/${cmd}.md" -o "$dest"
+      _fetch "${BASE_URL}/commands/${ns}/${cmd}.md" "$dest"
     fi
     dim "edikt:${ns}:${cmd}"
   fi
@@ -210,14 +239,14 @@ info "Installing rule templates..."
 # Registry
 install_file "${EDIKT_HOME}/templates/rules/_registry.yaml"
 if ! $DRY_RUN; then
-  curl -fsSL "${BASE_URL}/templates/rules/_registry.yaml" -o "${EDIKT_HOME}/templates/rules/_registry.yaml"
+  _fetch "${BASE_URL}/templates/rules/_registry.yaml" "${EDIKT_HOME}/templates/rules/_registry.yaml"
 fi
 
 # Base rules
 for rule in code-quality testing security error-handling frontend architecture api database observability seo; do
   install_file "${EDIKT_HOME}/templates/rules/base/${rule}.md"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/rules/base/${rule}.md" -o "${EDIKT_HOME}/templates/rules/base/${rule}.md"
+    _fetch "${BASE_URL}/templates/rules/base/${rule}.md" "${EDIKT_HOME}/templates/rules/base/${rule}.md"
   fi
   dim "base/${rule}"
 done
@@ -226,7 +255,7 @@ done
 for rule in go typescript python php; do
   install_file "${EDIKT_HOME}/templates/rules/lang/${rule}.md"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/rules/lang/${rule}.md" -o "${EDIKT_HOME}/templates/rules/lang/${rule}.md"
+    _fetch "${BASE_URL}/templates/rules/lang/${rule}.md" "${EDIKT_HOME}/templates/rules/lang/${rule}.md"
   fi
   dim "lang/${rule}"
 done
@@ -235,7 +264,7 @@ done
 for rule in chi nextjs laravel symfony rails django; do
   install_file "${EDIKT_HOME}/templates/rules/framework/${rule}.md"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/rules/framework/${rule}.md" -o "${EDIKT_HOME}/templates/rules/framework/${rule}.md"
+    _fetch "${BASE_URL}/templates/rules/framework/${rule}.md" "${EDIKT_HOME}/templates/rules/framework/${rule}.md"
   fi
   dim "framework/${rule}"
 done
@@ -245,7 +274,7 @@ info "Installing templates..."
 for tmpl in CLAUDE.md.tmpl project-context.md.tmpl product-spec.md.tmpl prd.md.tmpl settings.json.tmpl; do
   install_file "${EDIKT_HOME}/templates/${tmpl}"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/${tmpl}" -o "${EDIKT_HOME}/templates/${tmpl}"
+    _fetch "${BASE_URL}/templates/${tmpl}" "${EDIKT_HOME}/templates/${tmpl}"
   fi
   dim "${tmpl}"
 done
@@ -254,13 +283,13 @@ done
 for agent in architect dba security api backend frontend qa sre platform docs pm ux data performance compliance mobile seo gtm evaluator; do
   install_file "${EDIKT_HOME}/templates/agents/${agent}.md"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/agents/${agent}.md" -o "${EDIKT_HOME}/templates/agents/${agent}.md"
+    _fetch "${BASE_URL}/templates/agents/${agent}.md" "${EDIKT_HOME}/templates/agents/${agent}.md"
   fi
   dim "agents/${agent}"
 done
 install_file "${EDIKT_HOME}/templates/agents/_registry.yaml"
 if ! $DRY_RUN; then
-  curl -fsSL "${BASE_URL}/templates/agents/_registry.yaml" -o "${EDIKT_HOME}/templates/agents/_registry.yaml"
+  _fetch "${BASE_URL}/templates/agents/_registry.yaml" "${EDIKT_HOME}/templates/agents/_registry.yaml"
 fi
 dim "agents/_registry.yaml"
 
@@ -274,18 +303,18 @@ fi
 # Event logging utility (sourced by other hooks, not executed directly)
 install_file "${EDIKT_HOME}/hooks/event-log.sh"
 if ! $DRY_RUN; then
-  curl -fsSL "${BASE_URL}/templates/hooks/event-log.sh" -o "${EDIKT_HOME}/hooks/event-log.sh"
-  curl -fsSL "${BASE_URL}/templates/hooks/event-log.sh" -o "${EDIKT_HOME}/templates/hooks/event-log.sh"
+  _fetch "${BASE_URL}/templates/hooks/event-log.sh" "${EDIKT_HOME}/hooks/event-log.sh"
+  _fetch "${BASE_URL}/templates/hooks/event-log.sh" "${EDIKT_HOME}/templates/hooks/event-log.sh"
 fi
 dim "hooks/event-log.sh"
 
 for hook in session-start pre-tool-use post-tool-use pre-compact stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask; do
   install_file "${EDIKT_HOME}/hooks/${hook}.sh"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/hooks/${hook}.sh" -o "${EDIKT_HOME}/hooks/${hook}.sh"
+    _fetch "${BASE_URL}/templates/hooks/${hook}.sh" "${EDIKT_HOME}/hooks/${hook}.sh"
     chmod +x "${EDIKT_HOME}/hooks/${hook}.sh"
     # Also keep in templates/ for upgrade hash comparison
-    curl -fsSL "${BASE_URL}/templates/hooks/${hook}.sh" -o "${EDIKT_HOME}/templates/hooks/${hook}.sh"
+    _fetch "${BASE_URL}/templates/hooks/${hook}.sh" "${EDIKT_HOME}/templates/hooks/${hook}.sh"
   fi
   dim "hooks/${hook}.sh"
 done
@@ -293,7 +322,7 @@ done
 # Git pre-push hook template
 install_file "${EDIKT_HOME}/templates/hooks/pre-push"
 if ! $DRY_RUN; then
-  curl -fsSL "${BASE_URL}/templates/hooks/pre-push" -o "${EDIKT_HOME}/templates/hooks/pre-push"
+  _fetch "${BASE_URL}/templates/hooks/pre-push" "${EDIKT_HOME}/templates/hooks/pre-push"
   chmod +x "${EDIKT_HOME}/templates/hooks/pre-push"
 fi
 dim "hooks/pre-push"
@@ -302,7 +331,7 @@ dim "hooks/pre-push"
 for sdlc in pull_request_template commit-convention; do
   install_file "${EDIKT_HOME}/templates/sdlc/${sdlc}.md"
   if ! $DRY_RUN; then
-    curl -fsSL "${BASE_URL}/templates/sdlc/${sdlc}.md" -o "${EDIKT_HOME}/templates/sdlc/${sdlc}.md"
+    _fetch "${BASE_URL}/templates/sdlc/${sdlc}.md" "${EDIKT_HOME}/templates/sdlc/${sdlc}.md"
   fi
   dim "sdlc/${sdlc}"
 done
@@ -311,8 +340,8 @@ done
 install_file "${EDIKT_HOME}/VERSION"
 install_file "${EDIKT_HOME}/CHANGELOG.md"
 if ! $DRY_RUN; then
-  curl -fsSL "${BASE_URL}/VERSION" -o "${EDIKT_HOME}/VERSION"
-  curl -fsSL "${BASE_URL}/CHANGELOG.md" -o "${EDIKT_HOME}/CHANGELOG.md"
+  _fetch "${BASE_URL}/VERSION" "${EDIKT_HOME}/VERSION"
+  _fetch "${BASE_URL}/CHANGELOG.md" "${EDIKT_HOME}/CHANGELOG.md"
 fi
 
 echo

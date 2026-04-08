@@ -291,19 +291,37 @@ Present findings — same format for both established and greenfield:
   Commits:    conventional commits detected (feat/fix/chore)
 ```
 
-**If existing ADRs or decision docs were detected**, offer to import them:
+**If existing ADRs or decision docs were detected**, capture the detected folder path (e.g. `docs/decisions/`) as `$DETECTED_DECISIONS_PATH`. Do the same for invariants if found: `$DETECTED_INVARIANTS_PATH`.
+
+If the detected path differs from edikt's default (`docs/architecture/decisions/` / `docs/architecture/invariants/`), you MUST prompt:
 ```
 Found 3 existing architecture decisions in docs/decisions/.
-Import them into edikt's governance? (Y/n)
+
+How should edikt handle them?
+  [1] Adopt   — keep them at docs/decisions/ and configure edikt to use that path (default)
+  [2] Migrate — move them to docs/architecture/decisions/ (edikt's default layout)
+  [3] Skip    — ignore them, don't import
+Choice [1]:
 ```
 
-If the user accepts:
-- Read each existing ADR file
-- Copy or move to `{decisions_path}/` (from config, default `docs/architecture/decisions/`)
-- If the file doesn't follow ADR format (missing status, missing Decision section), convert it: extract the decision, add `status: accepted` frontmatter, preserve the original content
-- After import: "Imported 3 ADRs. Run `/edikt:compile` to compile them into governance directives."
+**If the user chooses [1] Adopt (or accepts the default):**
+- Write `paths.decisions: docs/decisions` (the detected path, without trailing slash) to the generated `.edikt/config.yaml` — do NOT use the edikt default
+- Same for invariants if detected in a non-default location
+- Do NOT move or copy files — they stay where they are
+- After: "Configured edikt to use docs/decisions/ for ADRs. Run `/edikt:gov:compile` to compile them into governance directives."
 
-If the user declines, continue — remind them they can import later with `/edikt:intake`.
+**If the user chooses [2] Migrate:**
+- Read each existing ADR file
+- Move to `docs/architecture/decisions/` (edikt's default)
+- If the file doesn't follow ADR format (missing status, missing Decision section), convert it: extract the decision, add `status: accepted` frontmatter, preserve the original content
+- Write the DEFAULT `paths.decisions: docs/architecture/decisions` to config
+- After: "Migrated 3 ADRs to docs/architecture/decisions/. Run `/edikt:gov:compile` to compile them into governance directives."
+
+**If the user chooses [3] Skip** (or the detected path is already the default and no prompt was shown):
+- Continue with edikt's default paths
+- Remind them they can import later with `/edikt:docs:intake`
+
+**Critical:** whichever choice is made, the generated `.edikt/config.yaml` MUST reflect the actual location of the ADRs. Never leave the default path in config when ADRs live elsewhere. Otherwise `/edikt:gov:compile` and `/edikt:status` will report zero ADRs despite them existing.
 
 **Greenfield (no code detected):**
 ```
@@ -504,8 +522,8 @@ base: docs
 stack: [{detected or stated stack}]
 
 paths:
-  decisions: {adapted or default: docs/architecture/decisions}
-  invariants: {adapted or default: docs/architecture/invariants}
+  decisions: {$DETECTED_DECISIONS_PATH if user chose Adopt, else docs/architecture/decisions}
+  invariants: {$DETECTED_INVARIANTS_PATH if user chose Adopt, else docs/architecture/invariants}
   plans: docs/plans
   specs: docs/product/specs
   prds: docs/product/prds
