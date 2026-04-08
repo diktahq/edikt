@@ -279,4 +279,4 @@ You don't have to use the full chain for every piece of work. For ad hoc tasks, 
 
 For new features, the chain is the right default. Tell Claude what you want to build, let it generate acceptance criteria, review and accept it, then proceed.
 
-See [/edikt:prd](/commands/prd), [/edikt:spec](/commands/spec), [/edikt:spec-artifacts](/commands/spec-artifacts), [/edikt:plan](/commands/plan), [/edikt:drift](/commands/drift).
+See [/edikt:sdlc:prd](/commands/sdlc/prd), [/edikt:sdlc:spec](/commands/sdlc/spec), [/edikt:sdlc:artifacts](/commands/sdlc/artifacts), [/edikt:sdlc:plan](/commands/sdlc/plan), [/edikt:sdlc:drift](/commands/sdlc/drift).

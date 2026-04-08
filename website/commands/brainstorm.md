@@ -121,6 +121,6 @@ If the brainstorm ran in `--fresh` mode and you choose PRD or SPEC, edikt loads 
 
 ## What's next
 
-- [/edikt:prd](/commands/prd) — product requirements document
-- [/edikt:spec](/commands/spec) — technical specification from an accepted PRD
-- [/edikt:plan](/commands/plan) — phased execution plan
+- [/edikt:sdlc:prd](/commands/sdlc/prd) — product requirements document
+- [/edikt:sdlc:spec](/commands/sdlc/spec) — technical specification from an accepted PRD
+- [/edikt:sdlc:plan](/commands/sdlc/plan) — phased execution plan

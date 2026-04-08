@@ -158,4 +158,4 @@ Guidelines are the extension point for team-specific knowledge that doesn't fit 
 
 Guidelines are freeform markdown. They compile into the `## Team Guidelines` section of `governance.md`.
 
-See [/edikt:compile](/commands/compile) for full command reference.
+See [/edikt:gov:compile](/commands/gov/compile) for full command reference.

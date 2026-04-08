@@ -134,4 +134,4 @@ Wire this into CI to catch regressions. A spec-passing implementation that regre
 
 When `/edikt:review` runs and an active spec exists, it automatically runs a scoped drift check (`--scope=spec`) and appends the findings under a "DRIFT CHECK" section. You don't need to run both separately during a review cycle.
 
-See [/edikt:drift](/commands/drift) for full command reference.
+See [/edikt:sdlc:drift](/commands/sdlc/drift) for full command reference.
