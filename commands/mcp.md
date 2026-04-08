@@ -90,6 +90,8 @@ Required: `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` — get token at https:/
 
    .mcp.json is committed to git — team inherits server configs.
    Each member needs their own API keys in their local environment.
+
+   Next: Run /edikt:mcp add {server} to configure missing integrations.
    ```
 
 ### `add {server}` — Add an MCP server
@@ -119,6 +121,8 @@ Required: `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` — get token at https:/
 
    Commit .mcp.json to git — your team will inherit the server config.
    Each team member adds their own key to their local environment.
+
+   Next: Restart Claude Code to connect the new server.
    ```
 6. If the server is already in `.mcp.json`: output "linear is already configured." and show status.
 

@@ -24,6 +24,14 @@ List, inspect, and manage specialist agent templates installed in `.claude/agent
 
 ## Instructions
 
+### Config Guard
+
+If `.edikt/config.yaml` does not exist, output:
+```
+No edikt config found. Run /edikt:init to set up this project.
+```
+And stop.
+
 ### Parse argument
 
 Check if an argument was provided and which subcommand it is.
@@ -60,6 +68,8 @@ Check if an argument was provided and which subcommand it is.
      /edikt:agents show security
      /edikt:agents remove pm
      /edikt:agents suggest          — recommend agents for this stack
+
+   Next: Run /edikt:agents add {slug} to install more, or /edikt:agents suggest for recommendations.
    ```
 
    If no agents are installed yet:
@@ -83,6 +93,7 @@ Check if an argument was provided and which subcommand it is.
    - Copy `~/.edikt/templates/agents/{slug}.md` to `.claude/agents/{slug}.md`
    - Output: `✅ Installed {slug} → .claude/agents/{slug}.md`
    - Show the agent's name and description
+   - `  Next: The agent is now available for routing.`
 
 ### `remove {slug}` — Uninstall an agent
 

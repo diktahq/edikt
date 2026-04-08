@@ -16,9 +16,15 @@ Validate the entire edikt governance setup and report what's healthy, what's mis
 
 CRITICAL: NEVER skip a check or assume it passes — run every check from the Reference section and report an explicit status for each one.
 
+## Arguments
+
+- `--json` — output only the JSON format (see Reference). No progress indicators, no emoji, no prose.
+
 ## Instructions
 
-1. Read `.edikt/config.yaml`. If not found, output `[FAIL] .edikt/config.yaml missing — run /edikt:init to set up this project.` and stop.
+0. If `--json` is in `$ARGUMENTS`, output only the JSON format at the end — no progress indicators, no emoji, no prose.
+
+1. Read `.edikt/config.yaml`. If not found, output `[FAIL] No edikt config found. Run /edikt:init to set up this project.` and stop.
 
 2. Extract `base:` directory from config (default: `docs`).
 
@@ -37,9 +43,27 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
      2. {second issue} — run {command}
    ```
 
-8. If everything passes, output: `All clear — governance is healthy.`
+8. If everything passes, output:
+   ```
+   All clear — governance is healthy.
+
+   Next: No action needed — governance is healthy.
+   ```
 
 ## Reference
+
+### JSON Output Format
+
+```json
+{
+  "status": "warnings",
+  "checks": [
+    {"name": "config", "status": "ok", "detail": "valid YAML"},
+    {"name": "rules", "status": "warning", "detail": "2 packs outdated"}
+  ],
+  "summary": {"ok": 12, "warnings": 2, "failures": 0}
+}
+```
 
 ### Check Definitions
 
@@ -175,6 +199,20 @@ ls .claude/agents/*.md 2>/dev/null
   - `[ok] Rule extension: {name} + {extend_file}`
   - `[!!] Rule extension configured but file missing: {extend_file}`
 
+**Compiled governance:**
+- Check if `.claude/rules/governance.md` exists and contains `Routing Table`
+- `[ok] Compiled governance — index + {n} topic files` if governance.md + governance/ directory exist
+- `[!!] Compiled governance uses flat format (v0.1.x) — run /edikt:compile to migrate` if governance.md exists but no governance/ directory
+- `[!!] No compiled governance — run /edikt:compile` if governance.md missing
+- For each topic file in `governance/`, check `paths:` frontmatter exists:
+  - `[ok] governance/{topic}.md — paths: {glob summary}`
+  - `[!!] governance/{topic}.md has no paths: frontmatter — run /edikt:compile`
+- **Override detection:** For each rule pack in `.claude/rules/`, check if any of its rules conflict with compiled governance directives:
+  - `[!!] Rule pack {name}.md may conflict with compiled governance: {brief description}`
+- **Sentinel coverage:** Count source documents (ADRs, invariants) with and without `[edikt:directives:start]` sentinel blocks:
+  - `[ok] Directive sentinels: {n}/{total} documents ({pct}%)`
+  - `[!!] {m} documents missing directive sentinels — run /edikt:review-governance`
+
 **Linter sync:**
 ```bash
 find . -maxdepth 3 -name ".golangci-lint.yaml" -o -name ".golangci.yaml" -o -name ".eslintrc*" -o -name "eslint.config.*" -o -name "ruff.toml" -o -name ".rubocop.yml" -o -name "biome.json" 2>/dev/null | grep -v node_modules | grep -v .git
@@ -244,5 +282,6 @@ Note: Number all [!!] and [FAIL] items sequentially (#1, #2, #3...) so the user 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  {pass_count} passed, {warn_count} warnings, {fail_count} failures
  {If warnings or failures: "Which issues should I fix? (e.g., #1, #3 or 'all')"}
+ Next: Fix the issues above, or say "fix #1, #3" to address specific items.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

@@ -48,6 +48,8 @@ Manage team configuration and help new team members get set up quickly.
    Onboarding a new member:
      git clone {remote URL} && cd {project}
      /edikt:team setup    — validates their local environment
+
+   Next: New members should run /edikt:team setup to validate their environment.
    ```
 
    If no team block:
@@ -78,7 +80,7 @@ Run environment checks for this member:
 
 3. **edikt config:**
    - ✅ if `.edikt/config.yaml` exists
-   - ❌ if missing — "Run /edikt:init to set up this project"
+   - ❌ if missing — "No edikt config found. Run /edikt:init to set up this project."
 
 4. **MCP environment variables:**
    Read `.mcp.json` and check each required env var:
@@ -86,7 +88,14 @@ Run environment checks for this member:
    - GitHub: `GITHUB_TOKEN`
    - Jira: `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`
 
-5. **Git pre-push hook:**
+5. **Environment hardening:**
+   ```bash
+   echo "$CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"
+   ```
+   - ✅ if set to `1` — credentials stripped from subprocesses
+   - ⚠️ if not set — recommend adding `export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` to shell profile
+
+6. **Git pre-push hook:**
    ```bash
    ls .git/hooks/pre-push 2>/dev/null
    ```
@@ -98,7 +107,7 @@ Run environment checks for this member:
      ```
    Note: if `hooks: { pre-push: false }` is set in `.edikt/config.yaml`, show as intentionally disabled (✅ disabled by config).
 
-6. **Output:**
+7. **Output:**
    ```
    edikt Team Setup — {team-name}
 
@@ -120,6 +129,25 @@ Run environment checks for this member:
    ✅ All checks passed — you're ready to go!
    Run /edikt:context to load project context.
    ```
+
+### Managed settings detection
+
+After all checks, detect organization-managed settings:
+
+```bash
+ls ~/.claude/managed-settings.json ~/.claude/managed-settings.d/*.json 2>/dev/null
+```
+
+If found:
+```
+Organization policies detected:
+  managed-settings.json — {brief description of what's enforced}
+  {If managed-settings.d/ has files}: {n} policy fragments in managed-settings.d/
+
+These policies are enforced by your organization and cannot be overridden locally.
+```
+
+If not found: skip silently.
 
 ### `init {team-name}` — Add team config
 

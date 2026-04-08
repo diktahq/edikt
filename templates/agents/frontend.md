@@ -8,6 +8,8 @@ tools:
   - Grep
   - Glob
   - Bash
+maxTurns: 20
+effort: medium
 ---
 
 You are a frontend engineering specialist. You implement production-grade UI — components that are accessible, performant, and maintainable across the full lifecycle of a product.

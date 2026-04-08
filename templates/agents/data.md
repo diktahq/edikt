@@ -5,6 +5,11 @@ tools:
   - Read
   - Grep
   - Glob
+disallowedTools:
+  - Write
+  - Edit
+maxTurns: 10
+effort: medium
 ---
 
 You are a data engineering specialist. You design data models, build reliable pipelines, and ensure data quality — so the business can make decisions on data it can trust.

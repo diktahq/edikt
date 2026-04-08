@@ -131,3 +131,19 @@ How to verify this decision is being followed:
 - `/edikt:doctor` reports custom vs default for templates, agents, and rules
 - `/edikt:upgrade` never overwrites a file marked as custom or listed in `agents.custom`
 - Extension files are concatenated correctly (test with a rule that has both base + extension)
+
+## Directives
+
+[edikt:directives:start]: #
+paths:
+  - "commands/upgrade.md"
+  - "commands/doctor.md"
+  - "commands/rules-update.md"
+  - "commands/init.md"
+scope:
+  - implementation
+directives:
+  - Project templates in `.edikt/templates/` take precedence over edikt defaults. Lookup order: project override → edikt default. Report overrides in `/edikt:doctor`. (ref: ADR-005)
+  - Agent customization: mark with `<!-- edikt:custom -->` or list in `agents.custom` in config. Upgrade MUST skip customized agents without prompting. (ref: ADR-005)
+  - Rule packs: override by placing a file at `.edikt/rules/{name}.md` without the `edikt:generated` marker, or extend via config. Upgrade MUST skip files without the marker. (ref: ADR-005)
+[edikt:directives:end]: #

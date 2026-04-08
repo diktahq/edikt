@@ -89,59 +89,80 @@ assert_file_exists "$RULES_DIR/base/seo.md" "New pack exists: seo.md"
 # ============================================================
 
 # PRD template has numbered requirements
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "FR-001" "PRD has numbered requirements (FR-001)"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "AC-001" "PRD has numbered acceptance criteria (AC-001)"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "NEEDS CLARIFICATION" "PRD has NEEDS CLARIFICATION markers"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "Verify:" "PRD acceptance criteria have verification methods"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "stakeholders" "PRD has stakeholders in frontmatter"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "FR-001" "PRD has numbered requirements (FR-001)"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "AC-001" "PRD has numbered acceptance criteria (AC-001)"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "NEEDS CLARIFICATION" "PRD has NEEDS CLARIFICATION markers"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "Verify:" "PRD acceptance criteria have verification methods"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "stakeholders" "PRD has stakeholders in frontmatter"
 
 # ADR template has MADR sections
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "Confirmation" "ADR has Confirmation section"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "Decision Drivers" "ADR has Decision Drivers section"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "decision-makers" "ADR has decision-makers in frontmatter"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "supersedes" "ADR has supersedes in frontmatter"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "Rejected because" "ADR alternatives have rejection reasons"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "Confirmation" "ADR has Confirmation section"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "Decision Drivers" "ADR has Decision Drivers section"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "decision-makers" "ADR has decision-makers in frontmatter"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "supersedes" "ADR has supersedes in frontmatter"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "Rejected because" "ADR alternatives have rejection reasons"
+
+# ADR template has directive sentinel block
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:directives:start" "ADR template has directive sentinel start"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:directives:end" "ADR template has directive sentinel end"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "scope:" "ADR template has scope in sentinel"
+
+# Invariant template has directive sentinel block
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:directives:start" "Invariant template has directive sentinel start"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:directives:end" "Invariant template has directive sentinel end"
 
 # Invariant template has new sections
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "severity:" "Invariant has severity in frontmatter"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "scope:" "Invariant has scope in frontmatter"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "Violation Consequences" "Invariant has Violation Consequences"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "Verification" "Invariant has Verification section"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "Exceptions" "Invariant has Exceptions section"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "severity:" "Invariant has severity in frontmatter"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "scope:" "Invariant has scope in frontmatter"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "Violation Consequences" "Invariant has Violation Consequences"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "Verification" "Invariant has Verification section"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "Exceptions" "Invariant has Exceptions section"
 
 # Spec template has new sections
-assert_file_contains "$PROJECT_ROOT/commands/spec.md" "Non-Goals" "Spec has Non-Goals section"
-assert_file_contains "$PROJECT_ROOT/commands/spec.md" "Alternatives Considered" "Spec has Alternatives Considered"
-assert_file_contains "$PROJECT_ROOT/commands/spec.md" "Risks" "Spec has Risks section"
-assert_file_contains "$PROJECT_ROOT/commands/spec.md" "AC-001" "Spec has numbered acceptance criteria"
-assert_file_contains "$PROJECT_ROOT/commands/spec.md" "NEEDS CLARIFICATION" "Spec has NEEDS CLARIFICATION markers"
-assert_file_contains "$PROJECT_ROOT/commands/spec.md" "implements:" "Spec uses implements: (not source_prd:)"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "Non-Goals" "Spec has Non-Goals section"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "Alternatives Considered" "Spec has Alternatives Considered"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "Risks" "Spec has Risks section"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "AC-001" "Spec has numbered acceptance criteria"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "NEEDS CLARIFICATION" "Spec has NEEDS CLARIFICATION markers"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "implements:" "Spec uses implements: (not source_prd:)"
 
 # Compile output has primacy + recency
-assert_file_contains "$PROJECT_ROOT/commands/compile.md" "Non-Negotiable Constraints" "Compile has constraints at top"
-assert_file_contains "$PROJECT_ROOT/commands/compile.md" "Reminder:" "Compile has reminder at bottom (recency)"
-assert_file_contains "$PROJECT_ROOT/commands/compile.md" "directives:" "Compile output has directive count"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "Non-Negotiable Constraints" "Compile has constraints at top"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "Reminder:" "Compile has reminder at bottom (recency)"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "directives:" "Compile output has directive count"
+
+# Compile v0.2.0 — topic-grouped output
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "governance/" "Compile writes to governance/ directory"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "Routing Table" "Compile generates routing table"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "edikt:directives:start" "Compile reads directive sentinels"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "edikt:directives:end" "Compile reads directive sentinel end"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "sentinel block" "Compile handles missing sentinels"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "topic" "Compile groups by topic"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "scope:" "Compile supports scope tags"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "Sentinel coverage" "Compile reports sentinel coverage"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "reverse source map" "Compile outputs reverse source map"
+assert_file_not_contains "$PROJECT_ROOT/commands/gov/compile.md" "exceeds 30 directives" "Compile no longer has 30-directive cap"
 
 # ============================================================
 # Command quality — CRITICAL + REMEMBER blocks
 # ============================================================
 
-for cmd in doctor audit drift plan compile review brainstorm; do
-    assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "CRITICAL:" "${cmd} has CRITICAL statement"
+for cmd_path in doctor sdlc/audit sdlc/drift sdlc/plan gov/compile sdlc/review brainstorm; do
+    assert_file_contains "$PROJECT_ROOT/commands/${cmd_path}.md" "CRITICAL:" "${cmd_path} has CRITICAL statement"
 done
 
-for cmd in prd adr invariant spec spec-artifacts compile drift; do
-    assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "REMEMBER:" "${cmd} has REMEMBER block"
+for cmd_path in sdlc/prd adr/new invariant/new sdlc/spec sdlc/artifacts gov/compile sdlc/drift; do
+    assert_file_contains "$PROJECT_ROOT/commands/${cmd_path}.md" "REMEMBER:" "${cmd_path} has REMEMBER block"
 done
 
 # Commands use paths: config (not hardcoded)
-for cmd in prd adr invariant spec drift compile; do
-    assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "paths:" "${cmd} references paths: config"
+for cmd_path in sdlc/prd adr/new invariant/new sdlc/spec sdlc/drift gov/compile; do
+    assert_file_contains "$PROJECT_ROOT/commands/${cmd_path}.md" "paths:" "${cmd_path} references paths: config"
 done
 
 # Interactive commands have plan mode guard
-for cmd in init prd spec spec-artifacts adr invariant intake plan brainstorm; do
-    assert_file_contains "$PROJECT_ROOT/commands/${cmd}.md" "plan mode" "${cmd} has plan mode guard"
+for cmd_path in init sdlc/prd sdlc/spec sdlc/artifacts adr/new invariant/new docs/intake sdlc/plan brainstorm; do
+    assert_file_contains "$PROJECT_ROOT/commands/${cmd_path}.md" "plan mode" "${cmd_path} has plan mode guard"
 done
 
 # Brainstorm command has required phases and features
@@ -152,12 +173,20 @@ assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "BRAIN-" "brainstorm
 assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "fresh" "brainstorm supports --fresh flag"
 assert_file_contains "$PROJECT_ROOT/commands/brainstorm.md" "unconstrained" "brainstorm has unconstrained mode"
 
+# Plan command has artifact coverage check
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Artifact coverage check" "Plan has artifact coverage step"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Artifact Coverage Table" "Plan has artifact coverage table"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "fixtures" "Plan covers fixtures artifacts"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "test-strategy" "Plan covers test strategy artifacts"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Uncovered API endpoints" "Plan warns on uncovered endpoints"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Inventory all artifacts" "Plan inventories spec artifacts"
+
 # Plan command accepts flexible input
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "SPEC identifier" "plan accepts SPEC input"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Ticket ID" "plan accepts ticket input"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Existing plan name" "plan accepts PLAN input"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Natural language" "plan accepts natural language"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "Quick plan" "plan offers disambiguation"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "SPEC identifier" "plan accepts SPEC input"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Ticket ID" "plan accepts ticket input"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Existing plan name" "plan accepts PLAN input"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Natural language" "plan accepts natural language"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Quick plan" "plan offers disambiguation"
 
 # Upgrade command has remote version check
 assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "Check for Updates" "upgrade has remote version check"
@@ -166,8 +195,8 @@ assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "raw.githubusercontent.
 assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "max-time 5" "upgrade has 5s curl timeout"
 
 # Website plan page matches command behavior
-assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "PLAN-NNN" "website plan page documents PLAN input"
-assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "Quick plan" "website plan page documents disambiguation"
+assert_file_contains "$PROJECT_ROOT/website/commands/sdlc/plan.md" "PLAN-NNN" "website plan page documents PLAN input"
+assert_file_contains "$PROJECT_ROOT/website/commands/sdlc/plan.md" "Quick plan" "website plan page documents disambiguation"
 
 # ============================================================
 # Natural language triggers
@@ -176,8 +205,11 @@ assert_file_contains "$PROJECT_ROOT/website/commands/plan.md" "Quick plan" "webs
 # CLAUDE.md template has intent-based trigger table
 assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "Match the user" "Template has intent-matching instruction"
 
-# All 24 commands have a trigger in the template
-for cmd in status context plan adr invariant prd spec spec-artifacts drift compile review-governance review audit docs doctor init intake rules-update sync session upgrade agents mcp team brainstorm; do
+# All commands have a trigger in the template (flat and namespaced)
+for cmd in status context doctor init upgrade brainstorm session team agents mcp capture; do
+    assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "edikt:${cmd}" "Template has trigger for ${cmd}"
+done
+for cmd in adr:new adr:compile adr:review invariant:new invariant:compile invariant:review guideline:new guideline:review gov:compile gov:review gov:rules-update gov:sync sdlc:prd sdlc:spec sdlc:artifacts sdlc:plan sdlc:review sdlc:drift sdlc:audit docs:review docs:intake; do
     assert_file_contains "$PROJECT_ROOT/templates/CLAUDE.md.tmpl" "edikt:${cmd}" "Template has trigger for ${cmd}"
 done
 
@@ -204,6 +236,48 @@ assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "signal-detection:" "Con
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "plan-injection:" "Config has plan-injection feature"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "quality-gates:" "Config has quality-gates feature"
 
+# ============================================================
+# Hook modernization (v0.2.0)
+# ============================================================
+
+# settings.json.tmpl has if field on PostToolUse
+assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" '"if":' "Settings template has conditional if field"
+
+# PostToolUse if field scopes to code files
+if grep -qF "Write(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs})" "$PROJECT_ROOT/templates/settings.json.tmpl" 2>/dev/null; then
+    pass "PostToolUse if scopes to code files"
+else
+    fail "PostToolUse if scopes to code files"
+fi
+
+# InstructionsLoaded if field scopes to rules
+if grep -qF "Read(.claude/rules/*.md)" "$PROJECT_ROOT/templates/settings.json.tmpl" 2>/dev/null; then
+    pass "InstructionsLoaded if scopes to rules"
+else
+    fail "InstructionsLoaded if scopes to rules"
+fi
+
+# New hook events exist in settings template
+assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "StopFailure" "Settings has StopFailure event"
+assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "TaskCreated" "Settings has TaskCreated event"
+assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "CwdChanged" "Settings has CwdChanged event"
+assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "FileChanged" "Settings has FileChanged event"
+
+# New hook scripts exist
+assert_file_exists "$PROJECT_ROOT/templates/hooks/stop-failure.sh" "StopFailure hook script exists"
+assert_file_exists "$PROJECT_ROOT/templates/hooks/task-created.sh" "TaskCreated hook script exists"
+assert_file_exists "$PROJECT_ROOT/templates/hooks/cwd-changed.sh" "CwdChanged hook script exists"
+assert_file_exists "$PROJECT_ROOT/templates/hooks/file-changed.sh" "FileChanged hook script exists"
+
+# New hook scripts source event-log.sh or log to session-signals
+assert_file_contains "$PROJECT_ROOT/templates/hooks/stop-failure.sh" "event-log.sh" "StopFailure uses event logger"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/task-created.sh" "event-log.sh" "TaskCreated uses event logger"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/cwd-changed.sh" "session-signals.log" "CwdChanged logs to session signals"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/file-changed.sh" "session-signals.log" "FileChanged logs to session signals"
+
+# FileChanged warns about governance files
+assert_file_contains "$PROJECT_ROOT/templates/hooks/file-changed.sh" "Governance file modified externally" "FileChanged warns about governance changes"
+
 # Hooks respect feature config
 assert_file_contains "$PROJECT_ROOT/templates/hooks/post-tool-use.sh" "auto-format: false" "PostToolUse checks auto-format config"
 assert_file_contains "$PROJECT_ROOT/templates/hooks/session-start.sh" "session-summary: false" "SessionStart checks session-summary config"
@@ -211,11 +285,174 @@ assert_file_contains "$PROJECT_ROOT/templates/hooks/stop-hook.sh" "signal-detect
 assert_file_contains "$PROJECT_ROOT/templates/hooks/user-prompt-submit.sh" "plan-injection: false" "UserPromptSubmit checks plan-injection config"
 assert_file_contains "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" "quality-gates: false" "SubagentStop checks quality-gates config"
 
+# ============================================================
+# Agent governance frontmatter (v0.2.0)
+# ============================================================
+
+AGENTS_DIR="$PROJECT_ROOT/templates/agents"
+
+# All agents must have maxTurns
+for agent in "$AGENTS_DIR"/*.md; do
+    name=$(basename "$agent" .md)
+    assert_file_contains "$agent" "maxTurns:" "$name has maxTurns"
+done
+
+# All agents must have effort
+for agent in "$AGENTS_DIR"/*.md; do
+    name=$(basename "$agent" .md)
+    assert_file_contains "$agent" "effort:" "$name has effort"
+done
+
+# Read-only agents must have disallowedTools: Write, Edit
+for agent in architect dba api sre docs ux compliance seo gtm data performance evaluator; do
+    assert_file_contains "$AGENTS_DIR/$agent.md" "disallowedTools:" "$agent has disallowedTools"
+    assert_file_contains "$AGENTS_DIR/$agent.md" "Write" "$agent disallows Write"
+done
+
+# Code-writing agents must NOT have disallowedTools
+for agent in backend frontend qa mobile platform pm; do
+    assert_file_not_contains "$AGENTS_DIR/$agent.md" "disallowedTools:" "$agent has no disallowedTools (code-writing)"
+done
+
+# initialPrompt on architect, security, pm only
+assert_file_contains "$AGENTS_DIR/architect.md" "initialPrompt:" "architect has initialPrompt"
+assert_file_contains "$AGENTS_DIR/security.md" "initialPrompt:" "security has initialPrompt"
+assert_file_contains "$AGENTS_DIR/pm.md" "initialPrompt:" "pm has initialPrompt"
+
+# Agents without initialPrompt
+for agent in dba api sre docs ux compliance seo gtm data performance backend frontend qa mobile platform evaluator; do
+    assert_file_not_contains "$AGENTS_DIR/$agent.md" "initialPrompt:" "$agent has no initialPrompt"
+done
+
+# High effort agents
+for agent in architect security qa performance; do
+    assert_file_contains "$AGENTS_DIR/$agent.md" "effort: high" "$agent has effort: high"
+done
+
+# Read-only maxTurns: 10 (evaluator is 15 — separate check)
+for agent in architect dba security api sre docs ux compliance seo gtm data performance; do
+    assert_file_contains "$AGENTS_DIR/$agent.md" "maxTurns: 10" "$agent has maxTurns: 10"
+done
+assert_file_contains "$AGENTS_DIR/evaluator.md" "maxTurns: 15" "evaluator has maxTurns: 15"
+
+# Code-writing maxTurns: 20
+for agent in backend frontend qa mobile platform pm; do
+    assert_file_contains "$AGENTS_DIR/$agent.md" "maxTurns: 20" "$agent has maxTurns: 20"
+done
+
+# ============================================================
+# Harness improvements (v0.2.0)
+# ============================================================
+
+# Evaluator agent exists with correct governance
+assert_file_exists "$AGENTS_DIR/evaluator.md" "Evaluator agent template exists"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "maxTurns: 15" "Evaluator has maxTurns: 15"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "effort: high" "Evaluator has effort: high"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "disallowedTools:" "Evaluator has disallowedTools"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "PASS" "Evaluator outputs PASS verdicts"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "FAIL" "Evaluator outputs FAIL verdicts"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "skeptical" "Evaluator is skeptical by default"
+assert_file_contains "$AGENTS_DIR/evaluator.md" "evaluator-tuning" "Evaluator reads tuning doc"
+
+# Evaluator in agent registry
+assert_file_contains "$PROJECT_ROOT/templates/agents/_registry.yaml" "evaluator" "Evaluator in agent registry"
+
+# Plan command has acceptance criteria
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Acceptance Criteria" "Plan has acceptance criteria section"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Acceptance Criteria Rules" "Plan has acceptance criteria rules"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Binary" "Plan enforces binary criteria"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Evaluate:" "Plan template has evaluate flag"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Conditional Evaluation" "Plan has conditional evaluation"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "context reset" "Plan has context reset guidance"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "Phase-End Flow" "Plan has phase-end flow"
+
+# Spec command has scope guidance and binary criteria
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "scope level" "Spec has scope guidance"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "binary PASS/FAIL" "Spec enforces binary criteria"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/spec.md" "flow downstream" "Spec explains criteria flow to plans"
+
+# Harness docs exist
+assert_file_exists "$PROJECT_ROOT/docs/architecture/assumptions.md" "Assumptions document exists"
+assert_file_contains "$PROJECT_ROOT/docs/architecture/assumptions.md" "A-001" "Assumptions has first assumption"
+assert_file_contains "$PROJECT_ROOT/docs/architecture/assumptions.md" "A-005" "Assumptions has evaluator assumption"
+assert_file_contains "$PROJECT_ROOT/docs/architecture/assumptions.md" "Retired Assumptions" "Assumptions has retired section"
+
+assert_file_exists "$PROJECT_ROOT/docs/architecture/evaluator-tuning.md" "Evaluator tuning document exists"
+assert_file_contains "$PROJECT_ROOT/docs/architecture/evaluator-tuning.md" "False Positives" "Tuning doc tracks false positives"
+assert_file_contains "$PROJECT_ROOT/docs/architecture/evaluator-tuning.md" "False Negatives" "Tuning doc tracks false negatives"
+
+# Upgrade mentions assumption review
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "assumptions.md" "Upgrade references assumptions"
+
+# ============================================================
+# Platform alignment (v0.2.0)
+# ============================================================
+
+# Security guide has env hardening
+assert_file_contains "$PROJECT_ROOT/website/guides/security.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Security guide documents env scrub"
+assert_file_contains "$PROJECT_ROOT/website/guides/security.md" "failIfUnavailable" "Security guide documents sandbox enforcement"
+
+# Team command checks env hardening
+assert_file_contains "$PROJECT_ROOT/commands/team.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Team command checks env scrub"
+
+# Website documents SendMessage auto-resume
+assert_file_contains "$PROJECT_ROOT/website/agents.md" "SendMessage" "Website documents agent resumption"
+assert_file_contains "$PROJECT_ROOT/website/agents.md" "auto-resumes" "Website explains auto-resume behavior"
+
+# Website documents evaluator agent
+assert_file_contains "$PROJECT_ROOT/website/agents.md" "evaluator" "Website documents evaluator agent"
+assert_file_contains "$PROJECT_ROOT/website/agents.md" "phase boundaries" "Website explains phase-end evaluation"
+
+# ============================================================
+# Headless & CI foundations (v0.2.0)
+# ============================================================
+
+# Headless hook exists
+assert_file_exists "$PROJECT_ROOT/templates/hooks/headless-ask.sh" "Headless hook script exists"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/headless-ask.sh" "EDIKT_HEADLESS" "Headless hook checks EDIKT_HEADLESS"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/headless-ask.sh" "AskUserQuestion" "Headless hook intercepts AskUserQuestion"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/headless-ask.sh" "updatedInput" "Headless hook returns updatedInput"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/headless-ask.sh" "permissionDecision" "Headless hook returns permissionDecision"
+
+# CI guide exists
+assert_file_exists "$PROJECT_ROOT/website/guides/ci.md" "CI guide exists"
+assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "bare" "CI guide documents --bare flag"
+assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "compile --check" "CI guide shows compile check"
+assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "EDIKT_HEADLESS" "CI guide documents headless mode"
+assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "failIfUnavailable" "CI guide documents sandbox enforcement"
+assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "GitHub Actions" "CI guide has GitHub Actions example"
+
+# Team command detects managed settings
+assert_file_contains "$PROJECT_ROOT/commands/team.md" "managed-settings" "Team command detects managed settings"
+assert_file_contains "$PROJECT_ROOT/commands/team.md" "managed-settings.d" "Team command detects policy fragments"
+
+# Install includes headless hook
+if grep -qF "headless-ask" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
+    pass "install.sh includes headless-ask hook"
+else
+    fail "install.sh includes headless-ask hook"
+fi
+
 # Reports directory exists
 assert_dir_exists "$PROJECT_ROOT/docs/reports" "Reports directory exists"
 
 # Init creates reports directory
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "reports" "Init creates reports directory"
+
+# Init has rule preview (UX value signal)
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "Rule Preview" "Init has rule preview step"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "preview of what Claude will enforce" "Init shows rule preview to user"
+
+# Init customization UX
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "Keep mine" "Init has Keep mine option for edited files"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "content hash" "Init uses content hash comparison"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "Override a pack" "Init teaches override customization"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "Extend a pack" "Init teaches extend customization"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "is now yours" "Init confirms ownership transfer"
+
+# Upgrade has hash comparison protection
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "content hash" "Upgrade uses content hash comparison"
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "Keep mine" "Upgrade has Keep mine option"
 
 # ============================================================
 # Extensibility (ADR-006)
@@ -229,8 +466,24 @@ assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "edikt:custom" "Upgrade
 assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "agents.custom" "Upgrade respects custom agent config"
 
 # Rules-update handles overrides and extensions
-assert_file_contains "$PROJECT_ROOT/commands/rules-update.md" "Overridden" "Rules-update detects overridden packs"
-assert_file_contains "$PROJECT_ROOT/commands/rules-update.md" "extend" "Rules-update handles extensions"
+assert_file_contains "$PROJECT_ROOT/commands/gov/rules-update.md" "Overridden" "Rules-update detects overridden packs"
+assert_file_contains "$PROJECT_ROOT/commands/gov/rules-update.md" "extend" "Rules-update handles extensions"
+
+# Rule Pack UX (v0.2.0)
+assert_file_contains "$PROJECT_ROOT/commands/gov/rules-update.md" "Conflict Detection" "Rules-update has conflict detection"
+assert_file_contains "$PROJECT_ROOT/commands/gov/rules-update.md" "Install Preview" "Rules-update has install preview"
+assert_file_contains "$PROJECT_ROOT/commands/gov/rules-update.md" "compiled governance" "Rules-update checks against compiled governance"
+
+# Doctor reports compiled governance status
+assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Compiled governance" "Doctor checks compiled governance"
+assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Routing Table" "Doctor checks for routing table"
+assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Sentinel coverage" "Doctor reports sentinel coverage"
+assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Override detection" "Doctor detects rule pack vs governance conflicts"
+
+# Status shows compiled governance info
+assert_file_contains "$PROJECT_ROOT/commands/status.md" "topic files" "Status shows topic file count"
+assert_file_contains "$PROJECT_ROOT/commands/status.md" "Sentinels:" "Status shows sentinel coverage"
+assert_file_contains "$PROJECT_ROOT/commands/status.md" "Overrides:" "Status shows override count"
 
 # Doctor reports extensibility state
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Template override" "Doctor reports template overrides"
@@ -279,7 +532,7 @@ fi
 # Website builds
 # ============================================================
 
-if command -v npx >/dev/null 2>&1 && [ -d "$PROJECT_ROOT/website" ]; then
+if command -v npx >/dev/null 2>&1 && [ -d "$PROJECT_ROOT/website" ] && [ -d "$PROJECT_ROOT/website/node_modules/vitepress" ]; then
     BUILD_OUTPUT=$(cd "$PROJECT_ROOT/website" && npx vitepress build 2>&1)
     if echo "$BUILD_OUTPUT" | grep -q "build complete"; then
         pass "VitePress website builds successfully"
@@ -287,7 +540,7 @@ if command -v npx >/dev/null 2>&1 && [ -d "$PROJECT_ROOT/website" ]; then
         fail "VitePress website build failed"
     fi
 else
-    echo "  SKIP  VitePress build (npx not available)"
+    echo "  SKIP  VitePress build (npx or vitepress not available)"
 fi
 
 # ============================================================
@@ -346,28 +599,28 @@ assert_file_contains "$SPECS_DIR/spec-override-frontmatter.md" "database_type: d
 assert_file_exists "$SPECS_DIR/spec-blueprint-check.md" "Test fixture exists: spec-blueprint-check.md"
 assert_file_contains "$SPECS_DIR/spec-blueprint-check.md" "Data Model" "Blueprint fixture has Data Model section"
 
-# Verify spec-artifacts command has design blueprint framing
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Design blueprint" "spec-artifacts mentions design blueprint framing"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "design blueprints" "spec-artifacts uses design blueprint language"
+# Verify sdlc/artifacts command has design blueprint framing
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "Design blueprint" "sdlc/artifacts mentions design blueprint framing"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "design blueprints" "sdlc/artifacts uses design blueprint language"
 
-# Verify spec-artifacts command has constraint injection logic
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "ACTIVE CONSTRAINTS" "spec-artifacts injects active constraints"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Resolve Context" "spec-artifacts has resolve context step"
+# Verify sdlc/artifacts command has constraint injection logic
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "ACTIVE CONSTRAINTS" "sdlc/artifacts injects active constraints"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "Resolve Context" "sdlc/artifacts has resolve context step"
 
-# Verify spec-artifacts command has database type resolution
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "database_type:" "spec-artifacts reads spec frontmatter database_type"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "artifacts.database.default_type" "spec-artifacts reads config default_type"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "Keyword scan" "spec-artifacts performs keyword scanning"
+# Verify sdlc/artifacts command has database type resolution
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "database_type:" "sdlc/artifacts reads spec frontmatter database_type"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "artifacts.database.default_type" "sdlc/artifacts reads config default_type"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "Keyword scan" "sdlc/artifacts performs keyword scanning"
 
 # Verify data model lookup tables are referenced
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model.mmd" "spec-artifacts generates .mmd files"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model.schema.yaml" "spec-artifacts generates schema.yaml files"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "erDiagram" "spec-artifacts uses Mermaid erDiagram format"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "\$schema" "spec-artifacts uses JSON Schema"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "data-model.mmd" "sdlc/artifacts generates .mmd files"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "data-model.schema.yaml" "sdlc/artifacts generates schema.yaml files"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "erDiagram" "sdlc/artifacts uses Mermaid erDiagram format"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "\$schema" "sdlc/artifacts uses JSON Schema"
 
 # Verify multi-database suffix naming
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-sql.mmd" "spec-artifacts uses sql suffix for mixed"
-assert_file_contains "$PROJECT_ROOT/commands/spec-artifacts.md" "data-model-kv.md" "spec-artifacts uses kv suffix for key-value"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "data-model-sql.mmd" "sdlc/artifacts uses sql suffix for mixed"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/artifacts.md" "data-model-kv.md" "sdlc/artifacts uses kv suffix for key-value"
 
 # ============================================================
 # Golden artifact validation
@@ -453,6 +706,48 @@ assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Edge Ca
 assert_file_contains "$SPECS_DIR/spec-sql-postgres/test-strategy.md" "## Coverage Target" "Golden: Test strategy has Coverage Target"
 
 # ============================================================
+# Directive sentinels in dogfood governance docs
+# ============================================================
+
+DECISIONS_DIR="$PROJECT_ROOT/docs/architecture/decisions"
+INVARIANTS_DIR="$PROJECT_ROOT/docs/architecture/invariants"
+
+# All accepted ADRs must have directive sentinels
+for adr in "$DECISIONS_DIR"/*.md; do
+    name=$(basename "$adr")
+    # Skip superseded ADRs
+    if grep -q "Superseded" "$adr" 2>/dev/null; then
+        continue
+    fi
+    if grep -q "Accepted\|accepted" "$adr" 2>/dev/null; then
+        assert_file_contains "$adr" "edikt:directives:start" "Directive sentinel in $name"
+    fi
+done
+
+# All active invariants must have directive sentinels
+for inv in "$INVARIANTS_DIR"/*.md; do
+    name=$(basename "$inv")
+    assert_file_contains "$inv" "edikt:directives:start" "Directive sentinel in $name"
+done
+
+# Compile test fixtures have sentinels
+assert_file_contains "$PROJECT_ROOT/test/fixtures/compile/decisions/ADR-001-test.md" "edikt:directives:start" "Compile fixture ADR-001 has sentinel"
+assert_file_contains "$PROJECT_ROOT/test/fixtures/compile/invariants/INV-001-test.md" "edikt:directives:start" "Compile fixture INV-001 has sentinel"
+
+# Expected governance output has new format
+assert_file_contains "$PROJECT_ROOT/test/fixtures/compile/expected-governance.md" "Routing Table" "Compile golden has routing table"
+assert_file_not_contains "$PROJECT_ROOT/test/fixtures/compile/expected-governance.md" "Architecture Decisions" "Compile golden no longer has flat Architecture section"
+
+# gov/review checks directive language quality and stale sentinels
+assert_file_contains "$PROJECT_ROOT/commands/gov/review.md" "DIRECTIVE SENTINELS" "gov/review has sentinel summary"
+assert_file_contains "$PROJECT_ROOT/commands/gov/review.md" "stale" "gov/review detects stale sentinels"
+assert_file_contains "$PROJECT_ROOT/commands/gov/review.md" "language quality\|language" "gov/review reviews language quality"
+
+# gov/compile validates cross-references
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "Validate Cross-References" "gov/compile has cross-reference validation step"
+assert_file_contains "$PROJECT_ROOT/commands/gov/compile.md" "strip the fabricated reference" "gov/compile strips fabricated refs"
+
+# ============================================================
 # Compile golden validation
 # ============================================================
 
@@ -466,15 +761,13 @@ assert_file_contains "$COMPILE_DIR/decisions/ADR-002-test.md" "Superseded" "Comp
 assert_file_exists "$COMPILE_DIR/invariants/INV-001-test.md" "Compile fixture: INV-001 exists"
 assert_file_contains "$COMPILE_DIR/invariants/INV-001-test.md" "Active" "Compile fixture: INV-001 is Active"
 
-# Expected output structure
+# Expected output structure — new index format
 assert_file_exists "$COMPILE_DIR/expected-governance.md" "Compile golden: expected-governance.md exists"
 assert_file_contains "$COMPILE_DIR/expected-governance.md" "edikt:compiled" "Compile golden: has compiled marker"
-assert_file_contains "$COMPILE_DIR/expected-governance.md" "1 accepted, 1 superseded" "Compile golden: correct ADR counts"
 assert_file_contains "$COMPILE_DIR/expected-governance.md" "Non-Negotiable Constraints" "Compile golden: has constraints section"
-assert_file_contains "$COMPILE_DIR/expected-governance.md" "Architecture Decisions" "Compile golden: has architecture section"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "Routing Table" "Compile golden: has routing table"
 assert_file_contains "$COMPILE_DIR/expected-governance.md" "Reminder:" "Compile golden: has reminder section (recency)"
-assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: INV-001" "Compile golden: INV-001 referenced"
-assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: ADR-001" "Compile golden: ADR-001 referenced"
+assert_file_contains "$COMPILE_DIR/expected-governance.md" "ref: INV-001" "Compile golden: INV-001 referenced in index"
 
 # Superseded ADR must NOT appear in compiled output
 if grep -q "kebab-case" "$COMPILE_DIR/expected-governance.md" 2>/dev/null; then

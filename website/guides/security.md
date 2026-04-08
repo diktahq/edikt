@@ -169,3 +169,32 @@ Ask security to review our OAuth implementation
 ```
 
 The agent is installed automatically on projects where the project-context.md description mentions payments, auth, HIPAA, PCI, compliance, or security.
+
+---
+
+## Environment hardening
+
+### Strip credentials from subprocesses
+
+Set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` to strip Anthropic and cloud provider credentials from subprocess environments (Bash tool, hooks, MCP servers). This prevents hook scripts and MCP servers from accidentally accessing or leaking API keys.
+
+Add to your shell profile:
+
+```bash
+export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1
+```
+
+### Sandbox enforcement in CI
+
+Set `sandbox.failIfUnavailable: true` in your CI settings to ensure Claude Code exits with an error if the sandbox cannot start, instead of running unsandboxed:
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true
+  }
+}
+```
+
+This prevents governance checks from running in an unprotected environment.

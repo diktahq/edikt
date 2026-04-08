@@ -50,18 +50,45 @@ ls -la .edikt/ 2>/dev/null || echo "No .edikt/ directory"
   ```
   Sync only fills gaps — never overwrites existing files.
 
-- **Reconfigure** (user explicitly wants to change settings): Before any file generation, scan existing `.claude/rules/*.md` for the `<!-- edikt:generated -->` tag. Files WITHOUT this tag have been manually customized. Show a change summary:
+- **Reconfigure** (user explicitly wants to change settings): Before any file generation, scan existing `.claude/rules/*.md` for customization:
+
+  **Step 1 — Detect customizations:** For each `.claude/rules/*.md` file:
+  - Check for `<!-- edikt:generated -->` tag
+  - If tag is present: compute content hash and compare against the template's content hash. If hashes differ, the file was edited but the marker wasn't removed.
+  - If tag is absent: file is explicitly customized (user owns it)
+
+  **Step 2 — Show change summary with per-file options:**
   ```
   Reconfiguring edikt.
 
-  Will update:  3 rule packs (from templates)
-  Will create:  2 new rule packs
-  Will skip:    1 customized file (security.md — manually edited)
+  Will create:  2 new rule packs (testing.md, api.md)
+  Will update:  2 rule packs (from templates, unchanged since install)
   Will preserve: CLAUDE.md (sentinel merge), settings.json (hook merge)
 
-  Proceed? (y/N)
+  ⚠ These files have edikt:generated marker but content differs from template:
+    .claude/rules/go.md — edited since install
+
+    Per file:
+    [1] Overwrite — replace with latest edikt template
+    [2] Keep mine — remove the edikt:generated marker so edikt never overwrites this file again
+    [3] Show diff — see what changed before deciding
+
+  These files were manually customized (no edikt:generated marker):
+    .claude/rules/security.md — will NOT be touched
   ```
-  Never overwrite files that lack the `<!-- edikt:generated -->` tag.
+
+  **If user picks [2] (Keep mine):** Remove the `<!-- edikt:generated -->` marker from the file and confirm:
+  ```
+  ✅ .claude/rules/go.md is now yours.
+
+    edikt will never overwrite this file again.
+    You'll still get update notifications via /edikt:rules-update — but updates
+    are manual (you review the diff and pick what to merge).
+
+    To go back to edikt-managed: add <!-- edikt:generated --> to the file.
+  ```
+
+  Never overwrite files that lack the `<!-- edikt:generated -->` tag. Never silently overwrite files whose content differs from the template — always ask.
 
 ### 2. Scan the Project
 
@@ -381,18 +408,20 @@ Agents (✓ = matched to your stack):
     [ ] ux                 — user experience
 ```
 
-**SDLC:**
+**SDLC** — include in the same view, not a separate prompt:
 
 ```
 SDLC:
-  Commits:    conventional commits (detected from git log)
-  PR template: yes (GitHub repo detected)
-  Tickets:    none detected
+    [x] conventional commits   — detected from git log
+    [x] PR template            — GitHub repo detected
+    [ ] ticket integration     — Linear, GitHub Issues, or Jira
 ```
 
+All three sections (Rules, Agents, SDLC) are shown together as ONE screen. One prompt at the end:
+
 ```
-Toggle items by name (e.g. "add api", "remove chi", "add security"),
-adjust SDLC (e.g. "tickets linear"), or say "looks good" to proceed:
+Toggle items by name (e.g. "add api", "remove chi", "add security",
+"tickets linear"), or say "looks good" to proceed.
 ```
 
 One screen, one confirmation. If the user makes changes, re-display and confirm again.
@@ -408,6 +437,38 @@ Linear selected — needs LINEAR_API_KEY.
 
   I'll add the config. The connection activates once the key is set.
 ```
+
+### 3b. Rule Preview (value signal)
+
+Before generating, show a preview of one actual rule to prove the configuration will produce useful output. Pick the most relevant rule pack for the detected stack (e.g., `go.md` for Go projects, `typescript.md` for TS projects, `security.md` as fallback).
+
+Read 10-15 lines from that rule template and show:
+
+```
+Here's a preview of what Claude will enforce for your project:
+
+  From {pack_name} rules:
+  ┌─────────────────────────────────────────
+  │ - NEVER use string concatenation for SQL queries — use parameterized
+  │   queries or a query builder. String concat is the #1 injection vector.
+  │ - MUST wrap all errors with context before returning: include the
+  │   operation that failed and any relevant identifiers.
+  │ - NEVER log sensitive fields (email, password, token, card) — use a
+  │   structured logger with field-level redaction.
+  └─────────────────────────────────────────
+
+These rules will fire automatically on every {extension} file Claude touches.
+
+Want to customize any rules before installing? You can always change them later.
+
+  • Edit directly — modify any file in .claude/rules/ after init
+  • Override a pack — copy it to .edikt/rules/{name}.md and edit there
+  • Extend a pack — add rules in .edikt/rules/{name}-extensions.md
+
+Ready to install? (y/n)
+```
+
+This deposits goodwill before the generation step — the user sees proof that their answers produced something real, learns the customization paths, and commits with confidence.
 
 ### 4. Generate
 
@@ -631,7 +692,7 @@ For each enabled agent from step 3, Read the template and Write to `.claude/agen
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- EDIKT INITIALIZED
+✅ edikt initialized: {project name}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Rules:   6 packs — code-quality, testing, security,
@@ -643,19 +704,30 @@ For each enabled agent from step 3, Read the template and Write to `.claude/agen
 
   {If imported}: Imported: 3 ADRs from docs/decisions/
 
-What just changed:
+What changed:
+  Before: Claude starts every session with no knowledge of your decisions.
+  After:  Claude reads {n} rule packs, {m} agents review your work, and
+          {k} hooks enforce standards automatically.
 
-  Before edikt, Claude writes code with no project standards,
-  no architecture awareness, and forgets everything between sessions.
+  Claude will now:
+  {Pick 3 concrete examples from the installed rules and agents. Match
+   the user's stack. Examples by stack:}
+  {Go}:     ✓ Wrap all errors with context before returning (go rules)
+  {Go}:     ✓ Flag naked error returns without wrapping (error-handling rules)
+  {TS}:     ✓ Reject `any` types and require strict mode (typescript rules)
+  {DB}:     ✓ Route DBA review on migration files (dba agent)
+  {Always}: ✓ Flag hardcoded secrets in any file (security rules)
+  {Always}: ✓ Auto-format code after every edit (PostToolUse hook)
 
-  Now Claude reads your 6 rule packs before writing any code.
   Try it — ask Claude to write a function and watch it follow
-  your project's error handling and testing patterns.
+  your project's patterns.
 
   Commit .edikt/, .claude/, and docs/ to git — your team gets
   identical governance automatically.
 
   To undo: git checkout . && rm -rf .edikt/ (before committing)
+
+  Next: Start building! Claude now follows your governance rules automatically.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 

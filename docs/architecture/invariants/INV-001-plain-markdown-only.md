@@ -18,3 +18,17 @@ Every edikt command is a `.md` file. No TypeScript, no compiled binaries, no bui
 - No `package.json`, `go.mod`, or build files at the root
 - All commands live in `commands/` as `.md` files
 - Templates are plain `.md` files in `templates/`
+
+## Directives
+
+[edikt:directives:start]: #
+paths:
+  - "**/*"
+scope:
+  - planning
+  - design
+  - review
+  - implementation
+directives:
+  - Every command and template MUST be a `.md` or `.yaml` file. No TypeScript, no compiled binaries, no build step. Installation is copy files only — no npm, no package managers. (ref: INV-001)
+[edikt:directives:end]: #

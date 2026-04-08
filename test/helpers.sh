@@ -126,7 +126,7 @@ assert_valid_yaml() {
         fail "$msg" "File not found: $file"
         return
     fi
-    if command -v python3 &>/dev/null; then
+    if command -v python3 &>/dev/null && python3 -c "import yaml" 2>/dev/null; then
         if python3 -c "import yaml; yaml.safe_load(open('$file'))" 2>/dev/null; then
             pass "$msg"
         else

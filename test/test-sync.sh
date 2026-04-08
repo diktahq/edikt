@@ -8,34 +8,34 @@ source "$(dirname "$0")/helpers.sh"
 echo ""
 
 # Command exists
-assert_file_exists "$PROJECT_ROOT/commands/sync.md" "sync command exists"
+assert_file_exists "$PROJECT_ROOT/commands/gov/sync.md" "sync command exists"
 
 # Has correct frontmatter
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "name: edikt:sync" "sync has name"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "edikt:sync" "sync references itself"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "name: edikt:gov:sync" "sync has name"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "edikt:gov:sync\|edikt:sync" "sync references itself"
 
 # Supports expected linters
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "golangci" "sync supports golangci-lint"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "eslint" "sync supports ESLint"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "ruff" "sync supports Ruff"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "rubocop" "sync supports RuboCop"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "prettier" "sync mentions prettier"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "biome" "sync supports Biome"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "golangci" "sync supports golangci-lint"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "eslint" "sync supports ESLint"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "ruff" "sync supports Ruff"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "rubocop" "sync supports RuboCop"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "prettier" "sync mentions prettier"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "biome" "sync supports Biome"
 
 # Has dry-run
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "dry-run" "sync has --dry-run mode"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "dry-run" "sync has --dry-run mode"
 
 # Has monorepo support
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "onorepo" "sync supports monorepos"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "onorepo" "sync supports monorepos"
 
 # Has source frontmatter in generated rules
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "source: linter" "generated rules have source marker"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "source: linter" "generated rules have source marker"
 
 # Has generated-by marker
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "generated-by: edikt:sync" "generated rules have generated-by marker"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "generated-by: edikt:sync" "generated rules have generated-by marker"
 
-# install.sh includes sync
-assert_file_contains "$PROJECT_ROOT/install.sh" "sync" "install.sh includes sync command"
+# install.sh includes sync (via gov namespace)
+assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers sync)"
 
 # doctor checks linter sync
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "edikt:sync" "doctor references edikt:sync"
@@ -44,13 +44,13 @@ assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "edikt:sync" "doctor ref
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "edikt:sync" "init wires edikt:sync for established projects"
 
 # Translation tables present for each linter
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "gomnd" "sync translates gomnd"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "cyclop" "sync translates cyclop"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "no-console" "sync translates no-console"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "F401" "sync translates Ruff F401"
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "Metrics/MethodLength" "sync translates RuboCop MethodLength"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "gomnd" "sync translates gomnd"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "cyclop" "sync translates cyclop"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "no-console" "sync translates no-console"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "F401" "sync translates Ruff F401"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "Metrics/MethodLength" "sync translates RuboCop MethodLength"
 
 # Frontmatter fields in generated files
-assert_file_contains "$PROJECT_ROOT/commands/sync.md" "linter: golangci-lint" "generated rules have linter field"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "linter: golangci-lint" "generated rules have linter field"
 
 test_summary

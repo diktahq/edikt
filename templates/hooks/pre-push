@@ -113,7 +113,7 @@ if [ "${EDIKT_DOCS_SKIP:-0}" != "1" ]; then
       echo "   • ${GAP}"
     done
     echo ""
-    echo "   Run /edikt:docs to review. Pushing anyway."
+    echo "   Run /edikt:docs:review to review. Pushing anyway."
     echo "   To skip this check: EDIKT_DOCS_SKIP=1 git push"
     echo ""
   fi
@@ -141,7 +141,7 @@ if [ "${EDIKT_SECURITY_SKIP:-0}" != "1" ]; then
       echo "🔒 edikt: security patterns detected:"
       printf "$SEC_FINDINGS"
       echo ""
-      echo "   Run /edikt:audit to review. Pushing anyway."
+      echo "   Run /edikt:sdlc:audit to review. Pushing anyway."
       echo "   To skip: EDIKT_SECURITY_SKIP=1 git push"
       echo ""
     fi

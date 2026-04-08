@@ -1,5 +1,107 @@
 # edikt changelog
 
+## v0.2.0 (2026-03-31)
+
+### Intelligent Compile — topic-grouped rule files
+
+`/edikt:compile` no longer produces a single flat `governance.md`. It now generates **topic-grouped rule files** under `.claude/rules/governance/` — each topic file contains full-fidelity directives from all sources (ADRs, invariants, guidelines), loaded automatically by path matching.
+
+- **Directive sentinels** — ADRs and invariants can include `[edikt:directives:start/end]` blocks with pre-written LLM directives. Compile reads these verbatim — no extraction, no distillation.
+- **Routing table** — `governance.md` becomes an index with invariants + a routing table. Claude matches task signals and scopes to load relevant topic files.
+- **Three loading mechanisms** — `paths:` frontmatter (platform-enforced on file edits), `scope:` tags (activity-matched for planning/design/review), and signal keywords (domain-matched).
+- **No directive cap** — the 30-directive limit is removed. Soft warning if a topic file exceeds 100 directives.
+- **Reverse source map** — compile output shows which ADRs/guidelines contributed to which topic files.
+- **Sentinel generation moved to compile** — `/edikt:compile` now generates missing sentinel blocks inline before compiling. No separate step needed. `/edikt:review-governance` is now pure language quality review + staleness detection.
+- `/edikt:review-governance` redesigned — language quality review only. Detects stale sentinels and directs to compile. No longer generates anything.
+
+### Command namespacing
+
+edikt commands are now grouped into namespaces matching the artifacts they touch. Nested namespacing confirmed working in Claude Code.
+
+**New structure:**
+- `edikt:adr:new` / `:compile` / `:review` — ADR lifecycle
+- `edikt:invariant:new` / `:compile` / `:review` — invariant lifecycle
+- `edikt:guideline:new` / `:review` — guideline management
+- `edikt:gov:compile` / `:review` / `:rules-update` / `:sync` — governance assembly
+- `edikt:sdlc:prd` / `:spec` / `:artifacts` / `:plan` / `:review` / `:drift` / `:audit` — SDLC chain
+- `edikt:docs:review` / `:intake` — documentation
+- `edikt:capture` — mid-session decision sweep (new command)
+
+**New commands:** `capture`, `guideline:new`, `guideline:review`, `adr:compile`, `adr:review`, `invariant:compile`, `invariant:review`
+
+**Deprecated** (removed in v0.4.0): old flat names (`edikt:adr`, `edikt:compile`, `edikt:spec`, etc.) — each stub tells you the new name.
+
+### Agent governance
+
+All 19 agent templates now include governance frontmatter:
+
+- **`maxTurns`** — 10 for advisory agents, 20 for code-writing agents, 15 for the evaluator.
+- **`disallowedTools`** — advisory agents have `Write` and `Edit` disallowed at the platform level.
+- **`effort`** — high for architect/security/qa/performance/compliance, medium for backend/frontend/dba/api/sre/docs/pm/data/platform/ux, low for gtm/seo.
+- **Agent effort fixes** — `data` was `low` with `disallowedTools: [Write, Edit]` which blocked artifact creation. Fixed to `medium` with write access. `platform`, `compliance`, and `ux` effort levels corrected to match their review depth.
+- **`initialPrompt`** — architect, security, and pm auto-load project context when run as main session agents.
+- **New `evaluator` agent** — phase-end evaluator that verifies work against acceptance criteria with fresh context. Skeptical by default.
+
+### Hook modernization
+
+- **Conditional `if` field** on PostToolUse (scopes to code files only) and InstructionsLoaded (scopes to rule files only). Avoids spawning hook processes for non-matching files.
+- **4 new hooks** — `StopFailure` (logs API errors), `TaskCreated` (tracks plan phase parallelism), `CwdChanged` (monorepo directory detection), `FileChanged` (warns on external governance file modifications).
+
+### Harness improvements
+
+- **Context reset guidance** — at phase boundaries, edikt recommends starting a fresh session. State lives in the plan file.
+- **Phase-end evaluation** — evaluator agent checks acceptance criteria with binary PASS/FAIL per criterion before suggesting context reset.
+- **Acceptance criteria per phase** — plans now include testable, binary assertions per phase. Specs enforce downstream flow.
+- **Conditional evaluation** — `evaluate: true/false` per phase. High-effort phases evaluate by default, low-effort skip.
+- **Evaluator tuning** — `docs/architecture/evaluator-tuning.md` tracks false positives/negatives for prompt refinement.
+- **Harness assumptions** — `docs/architecture/assumptions.md` documents 6 testable assumptions about model limitations. `/edikt:upgrade` prompts for re-testing.
+
+### Rule pack UX
+
+- **Conflict detection** — `/edikt:rules-update` checks new rule packs against compiled governance before installing.
+- **Install preview** — shows what will change (added/changed/removed sections) before applying updates.
+- **Override transparency** — `/edikt:doctor` and `/edikt:status` report compiled governance status, sentinel coverage, and rule pack overrides.
+
+### Installer safety
+
+- **`--dry-run`** — preview what the installer would change without writing files.
+- **Backup before overwrite** — existing files backed up to `~/.edikt/backups/{timestamp}/` before overwriting.
+- **Existing install detection** — reports installed version and confirms before proceeding.
+
+### Headless & CI foundations
+
+- **`--json` output** — compile, drift, audit, doctor, review, and review-governance support `--json` for machine-readable output.
+- **Headless mode** — `EDIKT_HEADLESS=1` with `headless-ask.sh` hook auto-answers interactive prompts for CI pipelines.
+- **CI guide** — new website guide with GitHub Actions example, recommended settings, and environment variables.
+- **Managed settings awareness** — `/edikt:team` detects organization-managed settings (`managed-settings.json`, `managed-settings.d/`).
+
+### UX consistency improvements
+
+- **Standardized completion signals** — all 25 commands end with `✅ {Action}: {identifier}` + `Next:` line.
+- **Standardized error messages** — all commands that read config use the same missing-config message.
+- **Config guards** — 10 additional commands now guard for missing `.edikt/config.yaml` instead of failing mid-execution.
+- **Init rule preview** — step 3b shows a preview of actual rules before generating files, with customization paths taught at the moment of installation.
+- **Init reconfigure protection** — content hash comparison detects edited files. Per-file `[1] Overwrite / [2] Keep mine / [3] Show diff` flow instead of silent overwrites.
+- **Composite config screen** — SDLC options merged into the single combined rules/agents view. One screen, one confirmation.
+- **Concrete init summary** — before/after with stack-specific examples from installed rules and agents.
+- **Agent routing standardized** — all commands use `🔀 edikt: routing to {agents}` format.
+- **Progress breadcrumbs** — compile, audit, review, drift, and review-governance show `Step N/M:` progress.
+- **Numbered confirmation options** — letter-code choices (`[a]/[s]/[k]`) replaced with `[1]/[2]/[3]`.
+- **Emoji key** — output conventions table added to CLAUDE.md template.
+
+### Bug fixes
+
+- **Plan ignores spec artifacts when generating phases** — `/edikt:plan` now scans the spec directory for all artifact files (fixtures, test strategy, API contracts, event contracts, migrations) and verifies each has plan coverage. Uncovered fixtures get a seeding phase, uncovered test categories get test tasks, uncovered API endpoints get a warning. A hard gate (step 6c) blocks plan writing if any artifact has no coverage — the user must add phases, defer explicitly, or cancel. Prevents silent failures where artifacts are generated but never consumed.
+- **Cross-reference validation in compile and review-governance** — both commands now verify that every `(ref: INV-NNN)` and `(ref: ADR-NNN)` reference points to an actual source document. Fabricated references are stripped before writing.
+- **Plan trigger not matching "let's create a plan to fix X"** — added trigger examples with trailing context ("plan to fix these issues", "plan these changes", "plan this work") so Claude matches the plan intent even when the sentence includes what to fix.
+- **SessionStart hook errors on compact** — `set -euo pipefail` caused silent non-zero exits when Claude Code fires `SessionStart` after `/compact`. Relaxed to `set -uo pipefail` — the hook already guards every fallible command with `|| true`.
+- **Test suite requires pyyaml** — agent and registry tests used `python3 -c "import yaml"` which fails silently when pyyaml isn't installed. Rewrote agent frontmatter checks in pure bash, registry checks to fall back to `yq`, and `assert_valid_yaml` to try `yq` when python3-yaml is unavailable.
+
+### Platform alignment
+
+- **Environment hardening** — `/edikt:team` checks for `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`. Security guide documents `sandbox.failIfUnavailable`.
+- **SendMessage auto-resume** — documented on website for agent resumption.
+
 ## v0.1.4 (2026-03-28)
 
 ### Brainstorm command

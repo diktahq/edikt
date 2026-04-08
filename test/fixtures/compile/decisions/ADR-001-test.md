@@ -15,3 +15,14 @@ All filenames in the project must use snake_case. This applies to source files, 
 
 - Existing files must be renamed during migration
 - CI checks will enforce the convention
+
+## Directives
+
+[edikt:directives:start]: #
+paths:
+  - "**/*"
+scope:
+  - implementation
+directives:
+  - All filenames MUST use snake_case. This applies to source files, test files, and configuration files — no exceptions for language conventions. (ref: ADR-001)
+[edikt:directives:end]: #

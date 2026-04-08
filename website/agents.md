@@ -91,6 +91,46 @@ For explicit routing, edikt's commands handle it:
 | "create a plan" | `/edikt:plan` assigns reviewers to each phase based on domain |
 | "have dba review this" | Claude routes directly to the dba agent |
 
+## Agent governance
+
+Every agent template includes governance frontmatter that controls autonomy and resource usage.
+
+### Turn limits
+
+`maxTurns` caps how many agentic turns an agent can take before stopping. Advisory agents get 10 turns (enough for reading, grepping, and reporting). Implementation agents get 20 (room for write-test-fix cycles).
+
+### Tool restrictions
+
+`disallowedTools` enforces the advisory/implementation boundary at the platform level. Advisory agents have `Write` and `Edit` disallowed — they can read and analyze but never modify code. This is enforced by Claude Code, not just by the prompt.
+
+### Effort level
+
+`effort` controls how hard the model works per turn. Security and architecture reviews run at `high` effort. Routine checks run at `low`. This is independent of the model — you can run a `high` effort agent on Sonnet.
+
+| Effort | Agents |
+|---|---|
+| high | architect, security, qa, performance |
+| medium | backend, frontend, dba, api, sre, docs, pm |
+| low | seo, gtm, compliance, data, ux, mobile, platform |
+
+### Auto-context loading
+
+Three agents have `initialPrompt` — they auto-load project context when run as the main session agent via `claude --agent`:
+
+- **architect** — reads all ADRs and invariants before responding
+- **security** — reads project architecture and identifies trust boundaries
+- **pm** — reads all active PRDs and specs
+
+When invoked as subagents by edikt commands, the parent command provides the context instead.
+
+### Agent resumption
+
+When a specialist agent stops (after completing a review or hitting its turn limit), it can be resumed with `SendMessage`. Claude Code auto-resumes stopped background agents instead of returning an error. This means edikt commands that spawn specialist agents can safely re-engage them later without checking state — useful when a review produces follow-up questions.
+
+### Phase-end evaluator
+
+The `evaluator` agent is a special agent that runs at phase boundaries during plan execution. It verifies completed work against acceptance criteria with no shared context from the generator. It's skeptical by default — assuming work is incomplete until proven otherwise.
+
 ## Model selection — per phase, not per agent
 
 Agents don't have a fixed model. The model is chosen based on what's being done and how complex it is.

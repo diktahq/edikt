@@ -1,7 +1,7 @@
 # edikt configuration
 # This file configures edikt for the edikt project itself (dogfooding).
 
-edikt_version: "0.1.4"
+edikt_version: "0.2.0"
 base: docs
 
 stack: []  # edikt is pure markdown, no language stack

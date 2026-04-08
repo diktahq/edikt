@@ -26,3 +26,17 @@ This is the original intent of the ADR format as described by Michael Nygard (20
 
 - Fixing a typo or broken markdown formatting in an accepted ADR is permitted if it does not change the meaning
 - Adding `Superseded by ADR-NNN` to the status field is the one required mutation after acceptance
+
+## Directives
+
+[edikt:directives:start]: #
+paths:
+  - "docs/architecture/decisions/**"
+scope:
+  - planning
+  - design
+  - review
+  - implementation
+directives:
+  - ADRs in `draft` status may be freely edited. Once `accepted`, content is immutable — NEVER edit it. When a decision changes, create a new ADR that supersedes the old one and update the old ADR's `Status:` to `Superseded by ADR-NNN`. No other changes permitted after acceptance. (ref: INV-002)
+[edikt:directives:end]: #

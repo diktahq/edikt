@@ -101,10 +101,10 @@ Updated:  {plan progress changes, or "no plans updated"}
 
 Possible captures:
   💡 ADR: {decision description} — {why it qualifies as an ADR}
-     → Run /edikt:adr to capture
+     → Run /edikt:adr:new to capture
 
   💡 Invariant: {constraint description}
-     → Run /edikt:invariant to capture
+     → Run /edikt:invariant:new to capture
 
   📄 Doc gap: {new public surface} — not in {doc file}
      → Run /edikt:docs to review
@@ -116,4 +116,6 @@ Possible captures:
 If there are no possible captures, output instead:
 ```
 ✅ Session looks complete — nothing missed.
+
+  Next: Start a fresh session for your next task.
 ```

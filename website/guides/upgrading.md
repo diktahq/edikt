@@ -112,6 +112,38 @@ agents:
 
 ---
 
+## Upgrading to v0.2.0
+
+v0.2.0 changes how governance is compiled. The flat `governance.md` is replaced by topic-grouped rule files. Here's what to expect:
+
+**Compile migration** — running `/edikt:compile` automatically migrates from the old flat format to topic-grouped files:
+
+```text
+📦 Migrated from flat governance.md to topic-grouped rule files.
+   Old format: 1 file, 13 directives
+   New format: 3 topic files + index
+```
+
+**Directive sentinels** — for full-fidelity compilation, run `/edikt:review-governance` to generate directive sentinel blocks in your ADRs and invariants. Without sentinels, compile falls back to extraction (same quality as v0.1.x).
+
+**Agent governance** — all agent templates now have `maxTurns`, `disallowedTools`, and `effort`. The new `evaluator` agent is installed automatically.
+
+**New hooks** — 4 new hook events (StopFailure, TaskCreated, CwdChanged, FileChanged) and conditional `if` field on 2 existing hooks.
+
+**Installer safety** — reinstalling now backs up existing files. Use `--dry-run` to preview changes.
+
+**Recommended upgrade steps:**
+
+```text
+1. Update global:    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+2. Upgrade project:  /edikt:upgrade
+3. Generate sentinels: /edikt:review-governance
+4. Recompile:        /edikt:compile
+5. Commit:           git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.2.0"
+```
+
+---
+
 ## Checking if a project needs upgrading
 
 > "What's our status?"

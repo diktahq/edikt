@@ -37,7 +37,7 @@ SIGNALS=()
 # ARCHITECTURE: explicit trade-off language or "chose X over Y" patterns
 if echo "$LAST_MSG" | grep -qiE \
     'chose .+ over |trade.?off|architectural (decision|constraint|choice)|going forward .*(all|every|must)|hard (constraint|rule|requirement)|ADR|decision record'; then
-    SIGNALS+=("💡 ADR candidate — run /edikt:adr to capture this decision.")
+    SIGNALS+=("💡 ADR candidate — run /edikt:adr:new to capture this decision.")
 fi
 
 # DOC GAP: new HTTP routes or env vars added
@@ -46,11 +46,11 @@ NEW_ENV=$(echo "$LAST_MSG" | grep -oE '(added|new|required|Added|New|Required).{
 
 if [ -n "$NEW_ROUTES" ]; then
     FIRST_ROUTE=$(echo "$NEW_ROUTES" | head -1)
-    SIGNALS+=("📄 Doc gap: new route $FIRST_ROUTE — run /edikt:docs to review.")
+    SIGNALS+=("📄 Doc gap: new route $FIRST_ROUTE — run /edikt:docs:review to review.")
 elif [ -n "$NEW_ENV" ]; then
     ENV_VAR=$(echo "$NEW_ENV" | grep -oE '[A-Z][A-Z0-9_]{3,}[A-Z0-9]' | grep -v 'ADR\|ARCH\|HTTP\|API\|JSON\|HTML\|CSS' | head -1)
     if [ -n "$ENV_VAR" ]; then
-        SIGNALS+=("📄 Doc gap: new env var $ENV_VAR — run /edikt:docs to review.")
+        SIGNALS+=("📄 Doc gap: new env var $ENV_VAR — run /edikt:docs:review to review.")
     fi
 fi
 

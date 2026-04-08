@@ -2,7 +2,7 @@
 # edikt: SessionStart hook — git-aware session summary
 # Surfaces what changed since last session and which specialist agents are relevant.
 
-set -euo pipefail
+set -uo pipefail
 
 # Only run in edikt projects
 if [ ! -f '.edikt/config.yaml' ]; then exit 0; fi

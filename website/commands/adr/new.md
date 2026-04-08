@@ -1,0 +1,75 @@
+# /edikt:adr:new
+
+Capture an Architecture Decision Record — from scratch or extracted from the current conversation.
+
+## Usage
+
+```bash
+/edikt:adr:new use postgres for persistence
+/edikt:adr:new                                  ← extracts from current conversation
+```
+
+## What is an ADR?
+
+An Architecture Decision Record captures a significant technical choice with its context, reasoning, alternatives considered, and consequences. Unlike comments in code, ADRs survive refactoring and give future teammates (and Claude) the "why" behind decisions.
+
+## Two modes
+
+### With argument — define from scratch
+
+```bash
+/edikt:adr:new use postgres for persistence
+```
+
+edikt opens a structured conversation to work through the decision:
+- What problem does this solve?
+- What alternatives were considered?
+- Why was this chosen?
+- What are the consequences?
+
+Creates: `docs/decisions/{NNN}-use-postgres-for-persistence.md`
+
+### No argument — extract from conversation
+
+```bash
+/edikt:adr:new
+```
+
+edikt reads the current conversation, extracts the last significant technical decision discussed, and creates an ADR from it. Useful when you've been discussing trade-offs and realize it's worth capturing.
+
+## Proactive suggestions
+
+You don't need to remember to run this. The `Stop` hook installed by `/edikt:init` watches every Claude response for significant technical choices with trade-offs. When it detects one, Claude ends its response with:
+
+```text
+💡 This looks like an ADR — run `/edikt:adr:new` to capture it.
+```
+
+## Output
+
+```text
+docs/decisions/
+└── 003-use-postgres-for-persistence.md
+```
+
+File format: title, status (Accepted/Proposed/Deprecated), date, context, decision, rationale, alternatives, consequences.
+
+ADRs are loaded by `/edikt:context` and available to Claude in every future session.
+
+## ADRs are immutable once accepted
+
+Once an ADR is accepted, its content — context, decision, and consequences — must never be edited. This is enforced by INV-002 and compiled into governance directives.
+
+When a decision changes, create a new ADR that supersedes the old one. The old ADR's status is updated to `Superseded by ADR-NNN` — the only permitted mutation after acceptance. Draft ADRs may be freely edited before acceptance.
+
+## What's next
+
+- [/edikt:adr:compile](/commands/adr/compile) — compile all ADRs into governance directives
+- [/edikt:adr:review](/commands/adr/review) — review ADR language quality
+
+## Natural language triggers
+
+- "save this decision"
+- "record this choice"
+- "capture that"
+- "let's write an ADR"

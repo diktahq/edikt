@@ -14,3 +14,15 @@ The project must have zero runtime vendor dependencies. All functionality is imp
 ## Enforcement
 
 - No package.json, requirements.txt, go.mod, or Cargo.toml at the root
+
+## Directives
+
+[edikt:directives:start]: #
+paths:
+  - "**/*"
+scope:
+  - planning
+  - implementation
+directives:
+  - The project MUST have zero runtime vendor dependencies. No npm, pip, cargo, or go modules. (ref: INV-001)
+[edikt:directives:end]: #

@@ -75,7 +75,7 @@ Claude matches intent, not exact words. These are representative examples — an
 |--------|----------|---------|
 | Project status / what's next | "what's our status", "where are we", "what's next", "project status" | `/edikt:status` |
 | Load project context | "load context", "remind yourself", "what's this project", "give me context" | `/edikt:context` |
-| Create an execution plan | "create a plan", "make a plan", "plan for X", "plan this ticket", "help me plan", "how should we approach X" | `/edikt:plan` |
+| Create an execution plan | "create a plan", "make a plan", "plan for X", "plan this ticket", "help me plan", "how should we approach X", "plan to fix these issues", "plan these changes" | `/edikt:plan` |
 | Capture a decision | "save this decision", "record this", "capture that", "write an ADR", "document this decision" | `/edikt:adr` |
 | Add a hard constraint | "add an invariant", "that's a hard rule", "never do X", "this must always be true" | `/edikt:invariant` |
 | Write a PRD | "write a PRD", "document this feature", "requirements for X", "product requirements" | `/edikt:prd` |

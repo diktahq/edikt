@@ -13,15 +13,28 @@ echo ""
 assert_file_exists "$REGISTRY" "Registry file exists"
 assert_valid_yaml "$REGISTRY" "Registry is valid YAML"
 
+# Determine YAML parser: prefer python3+yaml, fall back to yq
+_yaml_parse() {
+    # Usage: _yaml_parse <python3_expr> <yq_expr>
+    # Returns output or empty string; exits 0 always
+    local py_expr="$1"
+    local yq_expr="$2"
+    if python3 -c "import yaml" 2>/dev/null; then
+        python3 -c "$py_expr" 2>/dev/null
+    elif command -v yq &>/dev/null; then
+        yq "$yq_expr" "$REGISTRY" 2>/dev/null
+    fi
+}
+
 # Extract template paths and verify each exists
-templates=$(python3 -c "
-import yaml
+templates=$(_yaml_parse \
+    "import yaml
 with open('$REGISTRY') as f:
     data = yaml.safe_load(f)
 for name, info in data.items():
     if 'template' in info:
-        print(info['template'])
-" 2>/dev/null)
+        print(info['template'])" \
+    '.[] | select(has("template")) | .template')
 
 if [ -z "$templates" ]; then
     fail "Could not parse registry templates"
@@ -42,8 +55,8 @@ else
 fi
 
 # Every registry entry has required fields
-missing_fields=$(python3 -c "
-import yaml
+missing_fields=$(_yaml_parse \
+    "import yaml
 with open('$REGISTRY') as f:
     data = yaml.safe_load(f)
 for name, info in data.items():
@@ -52,8 +65,8 @@ for name, info in data.items():
         if field not in info:
             missing.append(field)
     if missing:
-        print(f'{name}: missing {missing}')
-" 2>/dev/null)
+        print(f'{name}: missing {missing}')" \
+    '.[] | select(has("tier") | not or has("template") | not or has("paths") | not) | key + ": missing fields"')
 
 if [ -z "$missing_fields" ]; then
     pass "All registry entries have required fields (tier, template, paths)"
@@ -62,15 +75,15 @@ else
 fi
 
 # Tier values are valid
-invalid_tiers=$(python3 -c "
-import yaml
+invalid_tiers=$(_yaml_parse \
+    "import yaml
 with open('$REGISTRY') as f:
     data = yaml.safe_load(f)
 valid_tiers = {'base', 'lang', 'framework'}
 for name, info in data.items():
     if info.get('tier') not in valid_tiers:
-        print(f\"{name}: invalid tier '{info.get('tier')}'\")
-" 2>/dev/null)
+        print(f\"{name}: invalid tier '{info.get('tier')}'\") " \
+    '.[] | select(.tier != "base" and .tier != "lang" and .tier != "framework") | key + ": invalid tier"')
 
 if [ -z "$invalid_tiers" ]; then
     pass "All tier values are valid (base, lang, framework)"
@@ -79,14 +92,14 @@ else
 fi
 
 # All entries have version field
-missing_version=$(python3 -c "
-import yaml
+missing_version=$(_yaml_parse \
+    "import yaml
 with open('$REGISTRY') as f:
     data = yaml.safe_load(f)
 for name, info in data.items():
     if 'version' not in info:
-        print(f'{name}: missing version')
-" 2>/dev/null)
+        print(f'{name}: missing version')" \
+    '.[] | select(has("version") | not) | key + ": missing version"')
 
 if [ -z "$missing_version" ]; then
     pass "All registry entries have version field"
@@ -95,7 +108,8 @@ else
 fi
 
 # Registry version matches template frontmatter version
-version_mismatch=$(python3 -c "
+if python3 -c "import yaml" 2>/dev/null; then
+    version_mismatch=$(python3 -c "
 import yaml, re
 with open('$REGISTRY') as f:
     data = yaml.safe_load(f)
@@ -104,7 +118,6 @@ for name, info in data.items():
     tmpl_path = '$PROJECT_ROOT/templates/rules/' + info['template']
     with open(tmpl_path) as t:
         content = t.read()
-    # Extract version from YAML frontmatter
     fm = re.search(r'^---\n(.*?)\n---', content, re.DOTALL)
     if fm:
         tmpl_meta = yaml.safe_load(fm.group(1))
@@ -114,22 +127,24 @@ for name, info in data.items():
     else:
         print(f'{name}: no frontmatter found')
 " 2>/dev/null)
-
-if [ -z "$version_mismatch" ]; then
-    pass "Registry versions match template frontmatter versions"
+    if [ -z "$version_mismatch" ]; then
+        pass "Registry versions match template frontmatter versions"
+    else
+        fail "Version mismatch between registry and templates" "$version_mismatch"
+    fi
 else
-    fail "Version mismatch between registry and templates" "$version_mismatch"
+    echo "  SKIP  Registry versions match template frontmatter versions (no yaml parser)"
 fi
 
 # Framework entries have parent field
-missing_parents=$(python3 -c "
-import yaml
+missing_parents=$(_yaml_parse \
+    "import yaml
 with open('$REGISTRY') as f:
     data = yaml.safe_load(f)
 for name, info in data.items():
     if info.get('tier') == 'framework' and 'parent' not in info:
-        print(f'{name}: framework without parent')
-" 2>/dev/null)
+        print(f'{name}: framework without parent')" \
+    '.[] | select(.tier == "framework" and (has("parent") | not)) | key + ": framework without parent"')
 
 if [ -z "$missing_parents" ]; then
     pass "All framework entries have parent field"

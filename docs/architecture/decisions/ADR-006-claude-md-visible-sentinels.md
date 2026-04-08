@@ -37,3 +37,17 @@ Markdown link reference definitions (`[label]: url`) are:
 - **Claude can see boundaries** — Claude in conversation identifies the edikt block and avoids editing it accidentally
 - **Backward compatible** — old HTML comment format is still detected and auto-migrated, no manual action required for existing projects
 - **Shell tooling unaffected** — grep, sed, and all hook scripts read raw files; neither format causes issues at the shell level
+
+## Directives
+
+[edikt:directives:start]: #
+paths:
+  - "templates/CLAUDE.md.tmpl"
+  - "commands/init.md"
+  - "commands/upgrade.md"
+scope:
+  - implementation
+directives:
+  - CLAUDE.md sentinels use visible markdown link reference definitions: `[edikt:start]: #` and `[edikt:end]: #`. NEVER use HTML comment sentinels. (ref: ADR-006)
+  - Detect both formats (HTML comments and link references) for backward compatibility during init and upgrade. (ref: ADR-006)
+[edikt:directives:end]: #

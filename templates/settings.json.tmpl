@@ -34,6 +34,7 @@
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
+        "if": "Write(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs}) | Edit(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs})",
         "hooks": [
           {
             "type": "command",
@@ -48,6 +49,16 @@
           {
             "type": "command",
             "command": "$HOME/.edikt/hooks/stop-hook.sh"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/stop-failure.sh"
           }
         ]
       }
@@ -84,10 +95,41 @@
     ],
     "InstructionsLoaded": [
       {
+        "if": "Read(.claude/rules/*.md)",
         "hooks": [
           {
             "type": "command",
             "command": "$HOME/.edikt/hooks/instructions-loaded.sh"
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/task-created.sh"
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/cwd-changed.sh"
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$HOME/.edikt/hooks/file-changed.sh"
           }
         ]
       }

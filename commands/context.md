@@ -123,7 +123,7 @@ Read `.edikt/config.yaml` for a `ticket:` section. If configured, note the syste
 ### 9. Output Summary
 
 ```
-Context loaded for: {project name from project-context.md} (depth: {depth})
+✅ Context loaded: {project name from project-context.md} (depth: {depth})
 
   Project:     {one-line summary}
   Plan:        {active plan name and current phase, or "None active"}
@@ -133,6 +133,8 @@ Context loaded for: {project name from project-context.md} (depth: {depth})
   PRDs:        {count} product requirements
   Rules:       {count} rule packs installed
   Tickets:     {system name, or "Not configured"}
+
+  Next: Start building, or run /edikt:status to see governance health.
 ```
 
 Then output each section based on depth:

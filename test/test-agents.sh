@@ -17,47 +17,30 @@ REGISTRY="$AGENTS_DIR/_registry.yaml"
 assert_file_exists "$REGISTRY" "Agent registry exists"
 
 # All slugs in registry must have a corresponding .md file
-python3 -c "
-import yaml, sys, os
-reg = yaml.safe_load(open('$REGISTRY'))
-agents_dir = '$AGENTS_DIR'
-missing = []
-seen = set()
-for category, slugs in reg.items():
-    if not isinstance(slugs, list):
-        continue
-    for slug in slugs:
-        if slug in seen:
-            continue
-        seen.add(slug)
-        path = os.path.join(agents_dir, slug + '.md')
-        if not os.path.exists(path):
-            missing.append(slug)
-if missing:
-    print('Missing agent templates: ' + ', '.join(missing))
-    sys.exit(1)
-" 2>/dev/null \
-    && pass "All registry slugs resolve to existing agent templates" \
-    || fail "All registry slugs resolve to existing agent templates"
+_registry_slugs_ok=true
+while IFS= read -r slug; do
+    [ -z "$slug" ] && continue
+    if [ ! -f "$AGENTS_DIR/${slug}.md" ]; then
+        fail "All registry slugs resolve to existing agent templates" "Missing: ${slug}.md"
+        _registry_slugs_ok=false
+        break
+    fi
+done < <(grep -E '^\s*-\s+\w' "$REGISTRY" | sed 's/^[[:space:]]*-[[:space:]]*//')
+$_registry_slugs_ok && pass "All registry slugs resolve to existing agent templates"
 
 # Required categories exist
-python3 -c "
-import yaml, sys
-reg = yaml.safe_load(open('$REGISTRY'))
-required = ['always', 'common']
-for cat in required:
-    if cat not in reg:
-        print(f'Registry missing required category: {cat}')
-        sys.exit(1)
-# always must include architect and qa
-always = reg.get('always', [])
-for slug in ['architect', 'qa']:
-    if slug not in always:
-        print(f'always category missing: {slug}')
-        sys.exit(1)
-" 2>/dev/null \
-    && pass "Registry has required categories and always-install agents" \
-    || fail "Registry has required categories and always-install agents"
+if grep -q "^always:" "$REGISTRY" && grep -q "^common:" "$REGISTRY"; then
+    _always_ok=true
+    for _slug in architect qa; do
+        if ! grep -A50 "^always:" "$REGISTRY" | grep -q "^\s*-\s*${_slug}$"; then
+            fail "Registry has required categories and always-install agents" "always missing: ${_slug}"
+            _always_ok=false
+        fi
+    done
+    $_always_ok && pass "Registry has required categories and always-install agents"
+else
+    fail "Registry has required categories and always-install agents" "Missing always: or common: category"
+fi
 
 # ============================================================
 # Per-agent template checks
@@ -82,6 +65,7 @@ EXPECTED_AGENTS=(
     mobile
     seo
     gtm
+    evaluator
 )
 
 FOUND=0
@@ -99,23 +83,12 @@ for slug in "${EXPECTED_AGENTS[@]}"; do
         || fail "Has frontmatter: ${slug}.md"
 
     # Has required frontmatter fields (no model: field — ADR-007)
-    python3 -c "
-import sys
-content = open('$FILE').read()
-parts = content.split('---', 2)
-if len(parts) < 3:
-    print('No frontmatter block')
-    sys.exit(1)
-import yaml
-fm = yaml.safe_load(parts[1])
-for field in ['name', 'description', 'tools']:
-    if field not in fm:
-        print(f'Missing frontmatter field: {field}')
-        sys.exit(1)
-if 'model' in fm:
-    print('Agent has model: field — should not per ADR-007')
-    sys.exit(1)
-" 2>/dev/null \
+    _fm_ok=true
+    for _field in name: description: tools:; do
+        grep -q "^${_field}" "$FILE" || { _fm_ok=false; break; }
+    done
+    grep -q "^model:" "$FILE" && _fm_ok=false
+    $_fm_ok \
         && pass "Has required frontmatter (no model): ${slug}.md" \
         || fail "Has required frontmatter (no model): ${slug}.md"
 
@@ -151,17 +124,23 @@ for writer in backend frontend qa mobile; do
     assert_file_contains "$AGENTS_DIR/${writer}.md" "File Formatting" "${writer}.md has File Formatting section"
 done
 
-# Read-only agents should NOT have Write tool
+# Read-only agents should NOT have Write in tools: section (may appear in disallowedTools:)
 for reader in architect dba security api sre platform docs ux data performance compliance seo gtm; do
-    if grep -q "^  - Write$" "$AGENTS_DIR/${reader}.md" 2>/dev/null; then
-        fail "${reader}.md should be read-only but has Write tool"
+    # Extract only the tools: block (between "tools:" and the next frontmatter key or ---)
+    tools_block=$(awk '/^tools:/{found=1; next} found && /^[a-zA-Z]/{exit} found && /^---/{exit} found{print}' "$AGENTS_DIR/${reader}.md" 2>/dev/null)
+    if echo "$tools_block" | grep -q "Write"; then
+        fail "${reader}.md should be read-only but has Write in tools:"
     else
-        pass "${reader}.md is read-only (no Write tool)"
+        pass "${reader}.md is read-only (no Write in tools:)"
     fi
 done
 
-# Description includes "proactively" for auto-routing
+# Description includes "proactively" for auto-routing (evaluator excluded — invoked at phase-end)
 for slug in "${EXPECTED_AGENTS[@]}"; do
+    if [ "$slug" = "evaluator" ]; then
+        assert_file_contains "$AGENTS_DIR/${slug}.md" "phase-end\|phase boundaries" "${slug}.md has phase-end trigger"
+        continue
+    fi
     assert_file_contains "$AGENTS_DIR/${slug}.md" "proactively\|Use proactively" "${slug}.md has proactive routing trigger"
 done
 

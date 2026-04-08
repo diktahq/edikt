@@ -193,6 +193,18 @@ Otherwise, same logic as `/edikt:rules-update`:
 - Only flag as outdated if installed version < template version
 - Skip files without `<!-- edikt:generated -->` marker (manually edited)
 - Skip files not in the registry (custom rules)
+- **Hash comparison:** For files with `edikt:generated` marker, compute content hash and compare against the template. If hashes differ (content was edited but marker kept), flag as modified:
+  ```
+  ⚠ .claude/rules/go.md has edikt:generated marker but content differs from template.
+
+    [1] Overwrite — replace with latest template
+    [2] Keep mine — remove the marker, edikt won't touch this file again
+    [3] Show diff — see what changed before deciding
+  ```
+  If user picks [2], remove the `<!-- edikt:generated -->` marker and report:
+  ```
+  ✅ .claude/rules/go.md is now yours. edikt will never overwrite it again.
+  ```
 
 ### 3. Show Upgrade Summary
 
@@ -357,10 +369,16 @@ Commit to record the version:
 
 Run /edikt:doctor to verify governance health.
 
+{If docs/architecture/assumptions.md exists:}
+💡 Model capabilities may have changed. Review docs/architecture/assumptions.md
+   to re-test harness assumptions.
+
 WHAT'S NEW in {new}
 ─────────────────────────────────────────────────────
 {content of the most recent changelog section from ~/.edikt/CHANGELOG.md}
 ─────────────────────────────────────────────────────
+
+Next: Run /edikt:doctor to verify governance health.
 ```
 
 If changes were applied:
@@ -379,8 +397,14 @@ Commit these changes to share the upgrade with your team:
 
 Run /edikt:doctor to verify governance health.
 
+{If docs/architecture/assumptions.md exists:}
+💡 Model capabilities may have changed. Review docs/architecture/assumptions.md
+   to re-test harness assumptions.
+
 WHAT'S NEW in {new}
 ─────────────────────────────────────────────────────
 {content of the most recent changelog section from ~/.edikt/CHANGELOG.md}
 ─────────────────────────────────────────────────────
+
+Next: Run /edikt:doctor to verify governance health.
 ```

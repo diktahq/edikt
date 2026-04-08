@@ -318,8 +318,8 @@ else
     fail "Stop hook script exists: templates/hooks/stop-hook.sh"
 fi
 
-# Stop hook contains edikt:audit signal
-if grep -q 'edikt:audit' "$STOP_HOOK" 2>/dev/null; then
+# Stop hook contains edikt:audit signal (namespaced as edikt:sdlc:audit or bare edikt:audit)
+if grep -qE 'edikt:(sdlc:)?audit' "$STOP_HOOK" 2>/dev/null; then
     pass "Stop hook script references edikt:audit"
 else
     fail "Stop hook script references edikt:audit"
@@ -346,8 +346,8 @@ else
     fail "Stop hook guards against infinite loops (stop_hook_active check)"
 fi
 
-# Stop hook references ADR signal
-if grep -q 'edikt:adr' "$STOP_HOOK" 2>/dev/null; then
+# Stop hook references ADR signal (namespaced as edikt:adr:new)
+if grep -qE 'edikt:adr(:new)?' "$STOP_HOOK" 2>/dev/null; then
     pass "Stop hook script references edikt:adr"
 else
     fail "Stop hook script references edikt:adr"
@@ -374,7 +374,7 @@ assert_file_exists "$INSTRUCTIONS_HOOK" "Hook script exists: templates/hooks/ins
 # v4.0 — New hooks present in settings.json.tmpl
 # ============================================================
 
-for hook_type in UserPromptSubmit PostCompact SubagentStop InstructionsLoaded; do
+for hook_type in UserPromptSubmit PostCompact SubagentStop InstructionsLoaded StopFailure TaskCreated CwdChanged FileChanged; do
     if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
@@ -387,18 +387,18 @@ if '$hook_type' not in s.get('hooks', {}):
     fi
 done
 
-# Total hook count should be 9
+# Total hook count should be 13
 if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
 count = len(s.get('hooks', {}))
-if count != 9:
-    print(f'Expected 9 hooks, found {count}')
+if count != 13:
+    print(f'Expected 13 hooks, found {count}')
     sys.exit(1)
 " 2>/dev/null; then
-    pass "settings.json.tmpl has exactly 9 hook types"
+    pass "settings.json.tmpl has exactly 13 hook types"
 else
-    fail "settings.json.tmpl has exactly 9 hook types"
+    fail "settings.json.tmpl has exactly 13 hook types"
 fi
 
 # ============================================================
@@ -595,7 +595,7 @@ assert_file_contains "$SUBAGENT_HOOK" "gate" "SubagentStop: has gate logic"
 
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "context: fork" "doctor.md has context: fork"
 assert_file_contains "$PROJECT_ROOT/commands/status.md" "context: fork" "status.md has context: fork"
-assert_file_contains "$PROJECT_ROOT/commands/docs.md" "context: fork" "docs.md has context: fork"
+assert_file_contains "$PROJECT_ROOT/commands/docs/review.md" "context: fork" "docs/review.md has context: fork"
 
 # ============================================================
 # v4.0 — Agent memory: project
@@ -696,104 +696,104 @@ assert_file_contains "$DOCTOR" "State machine" "doctor checks state machine viol
 # ============================================================
 
 # Spec command exists with correct structure
-SPEC_CMD="$PROJECT_ROOT/commands/spec.md"
-assert_file_exists "$SPEC_CMD" "commands/spec.md exists"
-assert_file_contains "$SPEC_CMD" "name: edikt:spec" "spec.md has correct name"
-assert_file_contains "$SPEC_CMD" "implements:" "spec.md references source PRD in template"
-assert_file_contains "$SPEC_CMD" "architecture_source" "spec.md has archway integration field"
-assert_file_contains "$SPEC_CMD" "references:" "spec.md has references field in template"
-assert_file_contains "$SPEC_CMD" "created_at:" "spec.md has created_at in template"
-assert_file_contains "$SPEC_CMD" "status: draft" "spec.md outputs draft status"
-assert_file_contains "$SPEC_CMD" "architect" "spec.md routes to architect"
-assert_file_contains "$SPEC_CMD" "accepted" "spec.md checks PRD acceptance status"
-assert_file_contains "$SPEC_CMD" "Existing Architecture" "spec.md includes Existing Architecture section"
-assert_file_contains "$SPEC_CMD" "Conflict Detection" "spec.md has ADR conflict detection"
-assert_file_contains "$SPEC_CMD" "artifacts" "spec.md suggests spec-artifacts as next step"
+SPEC_CMD="$PROJECT_ROOT/commands/sdlc/spec.md"
+assert_file_exists "$SPEC_CMD" "commands/sdlc/spec.md exists"
+assert_file_contains "$SPEC_CMD" "name: edikt:sdlc:spec" "sdlc/spec.md has correct name"
+assert_file_contains "$SPEC_CMD" "implements:" "sdlc/spec.md references source PRD in template"
+assert_file_contains "$SPEC_CMD" "architecture_source" "sdlc/spec.md has archway integration field"
+assert_file_contains "$SPEC_CMD" "references:" "sdlc/spec.md has references field in template"
+assert_file_contains "$SPEC_CMD" "created_at:" "sdlc/spec.md has created_at in template"
+assert_file_contains "$SPEC_CMD" "status: draft" "sdlc/spec.md outputs draft status"
+assert_file_contains "$SPEC_CMD" "architect" "sdlc/spec.md routes to architect"
+assert_file_contains "$SPEC_CMD" "accepted" "sdlc/spec.md checks PRD acceptance status"
+assert_file_contains "$SPEC_CMD" "Existing Architecture" "sdlc/spec.md includes Existing Architecture section"
+assert_file_contains "$SPEC_CMD" "Conflict Detection" "sdlc/spec.md has ADR conflict detection"
+assert_file_contains "$SPEC_CMD" "artifacts" "sdlc/spec.md suggests spec-artifacts as next step"
 
 # Spec-artifacts command exists with correct structure
-SPECART_CMD="$PROJECT_ROOT/commands/spec-artifacts.md"
-assert_file_exists "$SPECART_CMD" "commands/spec-artifacts.md exists"
-assert_file_contains "$SPECART_CMD" "name: edikt:spec-artifacts" "spec-artifacts.md has correct name"
-assert_file_contains "$SPECART_CMD" "data-model" "spec-artifacts.md generates data model"
-assert_file_contains "$SPECART_CMD" "api-contract\|contracts/api" "spec-artifacts.md generates API contracts"
-assert_file_contains "$SPECART_CMD" "test-strategy" "spec-artifacts.md generates test strategy"
-assert_file_contains "$SPECART_CMD" "migrations" "spec-artifacts.md generates migrations"
-assert_file_contains "$SPECART_CMD" "dba" "spec-artifacts.md routes to dba"
-assert_file_contains "$SPECART_CMD" "api" "spec-artifacts.md routes to api"
-assert_file_contains "$SPECART_CMD" "qa" "spec-artifacts.md routes to qa"
-assert_file_contains "$SPECART_CMD" "accepted" "spec-artifacts.md checks spec acceptance status"
-assert_file_contains "$SPECART_CMD" "reviewed_by" "spec-artifacts.md tracks reviewer in frontmatter"
+SPECART_CMD="$PROJECT_ROOT/commands/sdlc/artifacts.md"
+assert_file_exists "$SPECART_CMD" "commands/sdlc/artifacts.md exists"
+assert_file_contains "$SPECART_CMD" "name: edikt:sdlc:artifacts" "sdlc/artifacts.md has correct name"
+assert_file_contains "$SPECART_CMD" "data-model" "sdlc/artifacts.md generates data model"
+assert_file_contains "$SPECART_CMD" "api-contract\|contracts/api" "sdlc/artifacts.md generates API contracts"
+assert_file_contains "$SPECART_CMD" "test-strategy" "sdlc/artifacts.md generates test strategy"
+assert_file_contains "$SPECART_CMD" "migrations" "sdlc/artifacts.md generates migrations"
+assert_file_contains "$SPECART_CMD" "dba" "sdlc/artifacts.md routes to dba"
+assert_file_contains "$SPECART_CMD" "api" "sdlc/artifacts.md routes to api"
+assert_file_contains "$SPECART_CMD" "qa" "sdlc/artifacts.md routes to qa"
+assert_file_contains "$SPECART_CMD" "accepted" "sdlc/artifacts.md checks spec acceptance status"
+assert_file_contains "$SPECART_CMD" "reviewed_by" "sdlc/artifacts.md tracks reviewer in frontmatter"
 
-# Artifact status workflow — existing commands updated
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "type: prd" "prd.md has type field in frontmatter template"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "created_at:" "prd.md has created_at in frontmatter template"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "type: adr" "adr.md has type field in frontmatter template"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "created_at:" "adr.md has created_at in frontmatter template"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "type: invariant" "invariant.md has type field in frontmatter template"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "created_at:" "invariant.md has created_at in frontmatter template"
+# Artifact status workflow — existing commands updated (namespaced paths)
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "type: prd" "sdlc/prd.md has type field in frontmatter template"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "created_at:" "sdlc/prd.md has created_at in frontmatter template"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "type: adr" "adr/new.md has type field in frontmatter template"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "created_at:" "adr/new.md has created_at in frontmatter template"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "type: invariant" "invariant/new.md has type field in frontmatter template"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "created_at:" "invariant/new.md has created_at in frontmatter template"
 
 # Plan command has governance chain check
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "governance chain" "plan.md checks governance chain"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "spec-artifacts" "plan.md reads spec-artifacts as context"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "governance chain" "sdlc/plan.md checks governance chain"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "spec-artifacts" "sdlc/plan.md reads spec-artifacts as context"
 
 # Init creates specs directory
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "product/specs" "init.md creates specs directory"
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "specs:" "init.md adds specs config"
 
-# Install includes new commands
-assert_file_contains "$PROJECT_ROOT/install.sh" "spec-artifacts" "install.sh includes spec-artifacts command"
+# Install includes new commands (sdlc namespace covers artifacts)
+assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace"
 
 # ============================================================
 # v4.3 — Drift Detection
 # ============================================================
 
-DRIFT_CMD="$PROJECT_ROOT/commands/drift.md"
-assert_file_exists "$DRIFT_CMD" "commands/drift.md exists"
-assert_file_contains "$DRIFT_CMD" "name: edikt:drift" "drift.md has correct name"
-assert_file_contains "$DRIFT_CMD" "scope" "drift.md supports scoping"
-assert_file_contains "$DRIFT_CMD" "prd" "drift.md checks PRD acceptance criteria"
-assert_file_contains "$DRIFT_CMD" "spec" "drift.md checks spec requirements"
-assert_file_contains "$DRIFT_CMD" "artifact" "drift.md checks artifact contracts"
-assert_file_contains "$DRIFT_CMD" "ADR" "drift.md checks ADR compliance"
-assert_file_contains "$DRIFT_CMD" "invariant" "drift.md checks invariant compliance"
-assert_file_contains "$DRIFT_CMD" "Compliant" "drift.md has compliant severity"
-assert_file_contains "$DRIFT_CMD" "Diverged" "drift.md has diverged severity"
-assert_file_contains "$DRIFT_CMD" "Unknown" "drift.md has unknown severity"
-assert_file_contains "$DRIFT_CMD" "output=json" "drift.md supports JSON output for CI"
-assert_file_contains "$DRIFT_CMD" "Exit code" "drift.md has exit codes for CI"
-assert_file_contains "$DRIFT_CMD" "drift-report" "drift.md persists reports as files"
-assert_file_contains "$DRIFT_CMD" "events.jsonl\|event-log" "drift.md logs drift events"
-assert_file_contains "$DRIFT_CMD" "architect" "drift.md routes to architect"
+DRIFT_CMD="$PROJECT_ROOT/commands/sdlc/drift.md"
+assert_file_exists "$DRIFT_CMD" "commands/sdlc/drift.md exists"
+assert_file_contains "$DRIFT_CMD" "name: edikt:sdlc:drift" "sdlc/drift.md has correct name"
+assert_file_contains "$DRIFT_CMD" "scope" "sdlc/drift.md supports scoping"
+assert_file_contains "$DRIFT_CMD" "prd" "sdlc/drift.md checks PRD acceptance criteria"
+assert_file_contains "$DRIFT_CMD" "spec" "sdlc/drift.md checks spec requirements"
+assert_file_contains "$DRIFT_CMD" "artifact" "sdlc/drift.md checks artifact contracts"
+assert_file_contains "$DRIFT_CMD" "ADR" "sdlc/drift.md checks ADR compliance"
+assert_file_contains "$DRIFT_CMD" "invariant" "sdlc/drift.md checks invariant compliance"
+assert_file_contains "$DRIFT_CMD" "Compliant" "sdlc/drift.md has compliant severity"
+assert_file_contains "$DRIFT_CMD" "Diverged" "sdlc/drift.md has diverged severity"
+assert_file_contains "$DRIFT_CMD" "Unknown" "sdlc/drift.md has unknown severity"
+assert_file_contains "$DRIFT_CMD" "output=json" "sdlc/drift.md supports JSON output for CI"
+assert_file_contains "$DRIFT_CMD" "Exit code" "sdlc/drift.md has exit codes for CI"
+assert_file_contains "$DRIFT_CMD" "drift-report" "sdlc/drift.md persists reports as files"
+assert_file_contains "$DRIFT_CMD" "events.jsonl\|event-log" "sdlc/drift.md logs drift events"
+assert_file_contains "$DRIFT_CMD" "architect" "sdlc/drift.md routes to architect"
 
 # Review integration
-assert_file_contains "$PROJECT_ROOT/commands/review.md" "DRIFT CHECK" "review.md integrates drift detection"
-assert_file_contains "$PROJECT_ROOT/commands/review.md" "edikt:drift" "review.md references drift command"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "DRIFT CHECK" "sdlc/review.md integrates drift detection"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "edikt:sdlc:drift\|edikt:drift" "sdlc/review.md references drift command"
 
-# Install includes drift
-assert_file_contains "$PROJECT_ROOT/install.sh" "drift" "install.sh includes drift command"
+# Install includes drift (via sdlc namespace)
+assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace (covers drift)"
 
 # ============================================================
 # v4.0 — Compile command
 # ============================================================
 
-COMPILE_CMD="$PROJECT_ROOT/commands/compile.md"
-assert_file_exists "$COMPILE_CMD" "commands/compile.md exists"
-assert_file_contains "$COMPILE_CMD" "name: edikt:compile" "compile.md has correct name"
-assert_file_contains "$COMPILE_CMD" "governance.md" "compile.md outputs to governance.md"
-assert_file_contains "$COMPILE_CMD" "accepted" "compile.md filters by accepted status"
-assert_file_contains "$COMPILE_CMD" "superseded" "compile.md handles superseded ADRs"
-assert_file_contains "$COMPILE_CMD" "active" "compile.md filters invariants by active status"
-assert_file_contains "$COMPILE_CMD" "Contradiction" "compile.md detects contradictions"
-assert_file_contains "$COMPILE_CMD" "ref:" "compile.md includes source references"
-assert_file_contains "$COMPILE_CMD" "check" "compile.md supports --check for CI"
-assert_file_contains "$COMPILE_CMD" "edikt:compiled" "compile.md uses sentinel comments"
-assert_file_contains "$COMPILE_CMD" "event_log\|edikt_log_event" "compile.md logs compilation events"
+COMPILE_CMD="$PROJECT_ROOT/commands/gov/compile.md"
+assert_file_exists "$COMPILE_CMD" "commands/gov/compile.md exists"
+assert_file_contains "$COMPILE_CMD" "name: edikt:gov:compile" "gov/compile.md has correct name"
+assert_file_contains "$COMPILE_CMD" "governance.md" "gov/compile.md outputs to governance.md"
+assert_file_contains "$COMPILE_CMD" "accepted" "gov/compile.md filters by accepted status"
+assert_file_contains "$COMPILE_CMD" "superseded" "gov/compile.md handles superseded ADRs"
+assert_file_contains "$COMPILE_CMD" "active" "gov/compile.md filters invariants by active status"
+assert_file_contains "$COMPILE_CMD" "Contradiction" "gov/compile.md detects contradictions"
+assert_file_contains "$COMPILE_CMD" "ref:" "gov/compile.md includes source references"
+assert_file_contains "$COMPILE_CMD" "check" "gov/compile.md supports --check for CI"
+assert_file_contains "$COMPILE_CMD" "edikt:compiled" "gov/compile.md uses sentinel comments"
+assert_file_contains "$COMPILE_CMD" "event_log\|edikt_log_event" "gov/compile.md logs compilation events"
 
-# ADR and invariant suggest compile
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "edikt:compile" "adr.md suggests /edikt:compile after creation"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "edikt:compile" "invariant.md suggests /edikt:compile after creation"
+# ADR and invariant suggest compile (namespaced command reference)
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:gov:compile\|edikt:compile" "adr/new.md suggests /edikt:gov:compile after creation"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:gov:compile\|edikt:compile" "invariant/new.md suggests /edikt:gov:compile after creation"
 
-# Install includes compile
-assert_file_contains "$PROJECT_ROOT/install.sh" "compile" "install.sh includes compile command"
+# Install includes compile (via gov namespace)
+assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers compile)"
 
 test_summary

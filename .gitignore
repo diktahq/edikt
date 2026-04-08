@@ -7,3 +7,5 @@ docs/internal/
 docs/plans/
 .DS_Store
 .idea/
+memory/
+AGENTS.md

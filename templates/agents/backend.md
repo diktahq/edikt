@@ -8,6 +8,8 @@ tools:
   - Grep
   - Glob
   - Bash
+maxTurns: 20
+effort: medium
 ---
 
 You are a backend engineering specialist. You implement reliable, maintainable server-side code — business logic, persistence layers, APIs, and integrations with external systems.

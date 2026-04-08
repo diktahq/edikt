@@ -134,6 +134,12 @@ GOVERNANCE HEALTH
   Decisions:    {n} ADRs, {n} invariants
   Compile:      {last compile date, or "not compiled — run /edikt:compile"}
                 {If stale: "⚠️ stale — {n} ADRs modified since last compile"}
+                {If governance/ dir exists: "{n} topic files"}
+                {If flat format: "⚠️ flat format (v0.1.x) — run /edikt:compile to migrate"}
+  Sentinels:    {n}/{total} documents have directive sentinels ({pct}%)
+                {If pct < 100: "run /edikt:review-governance to generate missing sentinels"}
+  Overrides:    {n} rule overrides, {m} template overrides
+                {If any: list them}
   Plan:         {plan name} Phase {n}/{total} — {status}
 
 {If active spec exists:}
@@ -182,6 +188,8 @@ WARNINGS
   {Or: "All clear — governance is healthy."}
 
 ═══════════════════════════════════════════════
+
+  Next: Run /edikt:plan to continue active work, or /edikt:doctor for a deeper check.
 ```
 
 ### 5. Write STATUS.md

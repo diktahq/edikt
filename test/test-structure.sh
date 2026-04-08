@@ -66,19 +66,29 @@ assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "Write|Edit" "
 assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "PostToolUse" "settings.json.tmpl has PostToolUse hook"
 assert_file_contains "$PROJECT_ROOT/templates/hooks/session-start.sh" "git log" "SessionStart hook is git-aware"
 
-# All edikt commands exist
-for cmd in init context plan status intake doctor rules-update upgrade adr invariant prd agents mcp team docs sync audit review session; do
+# Flat commands exist
+for cmd in init context status doctor upgrade agents mcp team session brainstorm capture; do
     assert_file_exists "$PROJECT_ROOT/commands/${cmd}.md" "commands/${cmd}.md exists"
 done
 
-# Shell preprocessing markers exist in artifact commands
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" '!`' "adr.md has shell preprocessing"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" '!`' "invariant.md has shell preprocessing"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" '!`' "prd.md has shell preprocessing"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" '!`' "plan.md has shell preprocessing"
-assert_file_contains "$PROJECT_ROOT/commands/adr.md" "edikt:live" "adr.md injects live ADR number"
-assert_file_contains "$PROJECT_ROOT/commands/invariant.md" "edikt:live" "invariant.md injects live INV number"
-assert_file_contains "$PROJECT_ROOT/commands/prd.md" "edikt:live" "prd.md injects live PRD number"
+# Namespaced commands exist
+for cmd_path in adr/new invariant/new sdlc/prd sdlc/plan sdlc/spec sdlc/artifacts sdlc/review sdlc/drift sdlc/audit docs/review docs/intake gov/compile gov/review gov/rules-update gov/sync guideline/new guideline/review; do
+    assert_file_exists "$PROJECT_ROOT/commands/${cmd_path}.md" "commands/${cmd_path}.md exists"
+done
+
+# Deprecated stubs exist
+for cmd in adr invariant prd plan review drift audit docs intake rules-update sync compile review-governance spec spec-artifacts; do
+    assert_file_exists "$PROJECT_ROOT/commands/deprecated/${cmd}.md" "commands/deprecated/${cmd}.md exists"
+done
+
+# Shell preprocessing markers exist in artifact commands (namespaced paths)
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" '!`' "adr/new.md has shell preprocessing"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" '!`' "invariant/new.md has shell preprocessing"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" '!`' "sdlc/prd.md has shell preprocessing"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" '!`' "sdlc/plan.md has shell preprocessing"
+assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:live" "adr/new.md injects live ADR number"
+assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:live" "invariant/new.md injects live INV number"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "edikt:live" "sdlc/prd.md injects live PRD number"
 
 # Agent templates directory exists
 assert_dir_exists "$PROJECT_ROOT/templates/agents" "templates/agents/ exists"
@@ -96,14 +106,14 @@ assert_file_contains "$PROJECT_ROOT/templates/hooks/pre-push" "EDIKT_SECURITY_SK
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "single combined view" "init.md uses combined config view"
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "One screen, one confirmation" "init.md confirms in one step"
 
-# plan.md pre-flight review checks
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "PRE-FLIGHT" "plan.md has pre-flight review"
-assert_file_contains "$PROJECT_ROOT/commands/plan.md" "no-review" "plan.md supports --no-review flag"
+# sdlc/plan.md pre-flight review checks
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "PRE-FLIGHT" "sdlc/plan.md has pre-flight review"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "no-review" "sdlc/plan.md supports --no-review flag"
 
 # session.md checks
 assert_file_contains "$PROJECT_ROOT/commands/session.md" "context: fork" "session.md has context: fork"
 assert_file_contains "$PROJECT_ROOT/commands/session.md" "SESSION SUMMARY" "session.md has session summary output"
-assert_file_contains "$PROJECT_ROOT/commands/session.md" "edikt:adr" "session.md suggests artifact capture"
+assert_file_contains "$PROJECT_ROOT/commands/session.md" "edikt:adr\|edikt:capture" "session.md suggests artifact capture"
 
 # upgrade.md checks
 assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "EDIKT UPGRADE" "upgrade.md has upgrade output format"
@@ -124,19 +134,19 @@ assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "~/.edikt/VERSION" "doct
 # init.md writes edikt_version
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "edikt_version" "init.md writes edikt_version to config"
 
-# audit.md checks
-assert_file_contains "$PROJECT_ROOT/commands/audit.md" "context: fork" "audit.md has context: fork"
-assert_file_contains "$PROJECT_ROOT/commands/audit.md" "OWASP" "audit.md covers OWASP"
-assert_file_contains "$PROJECT_ROOT/commands/audit.md" "security" "audit.md routes to security agent"
+# sdlc/audit.md checks
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/audit.md" "context: fork" "sdlc/audit.md has context: fork"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/audit.md" "OWASP" "sdlc/audit.md covers OWASP"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/audit.md" "security" "sdlc/audit.md routes to security agent"
 
-# review.md checks
-assert_file_contains "$PROJECT_ROOT/commands/review.md" "context: fork" "review.md has context: fork"
-assert_file_contains "$PROJECT_ROOT/commands/review.md" "IMPLEMENTATION REVIEW" "review.md has review output format"
-assert_file_contains "$PROJECT_ROOT/commands/review.md" "dba" "review.md routes to dba"
+# sdlc/review.md checks
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "context: fork" "sdlc/review.md has context: fork"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "IMPLEMENTATION REVIEW" "sdlc/review.md has review output format"
+assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "dba" "sdlc/review.md routes to dba"
 
 # website pages exist for all v3 commands
-assert_file_exists "$PROJECT_ROOT/website/commands/review.md" "website/commands/review.md exists"
-assert_file_exists "$PROJECT_ROOT/website/commands/audit.md" "website/commands/audit.md exists"
+assert_file_exists "$PROJECT_ROOT/website/commands/sdlc/review.md" "website/commands/sdlc/review.md exists"
+assert_file_exists "$PROJECT_ROOT/website/commands/sdlc/audit.md" "website/commands/sdlc/audit.md exists"
 assert_file_exists "$PROJECT_ROOT/website/commands/session.md" "website/commands/session.md exists"
 
 test_summary

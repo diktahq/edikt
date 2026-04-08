@@ -26,6 +26,14 @@ Exit plan mode first, then run the command again.
 
 ## Instructions
 
+### Step 0: Config Guard
+
+If `.edikt/config.yaml` does not exist, output:
+```
+No edikt config found. Run /edikt:init to set up this project.
+```
+And stop.
+
 ### Step 1: Determine Context Mode
 
 Check if `--fresh` is in `$ARGUMENTS`. If present, strip it from arguments before passing to later steps.
@@ -77,7 +85,7 @@ Do NOT force structure yet. Let the conversation breathe.
 While the conversation flows, detect domain signals from the user's responses using the Domain Signal Detection table in the Reference section. When a domain is detected for the first time in the conversation, spawn the specialist agent with a brief, non-blocking input:
 
 ```
-🪝 edikt: {agent} has thoughts on this...
+🔀 edikt: routing to {agent}
 ```
 
 Spawn an Agent:
@@ -183,6 +191,8 @@ Output:
   BRAIN-{NNN}: {Title}
   Mode: {grounded | unconstrained}
   Produces: {PRD-NNN | SPEC-NNN | pending}
+
+  Next: Run /edikt:prd or /edikt:spec to formalize this brainstorm.
 ```
 
 ---

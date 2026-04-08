@@ -8,6 +8,8 @@ tools:
   - Grep
   - Glob
   - Bash
+maxTurns: 20
+effort: medium
 ---
 
 You are a mobile engineering specialist. You build production-grade mobile applications that feel native, handle unreliable connectivity, and pass app store review.
