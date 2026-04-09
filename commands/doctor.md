@@ -202,11 +202,18 @@ ls .claude/agents/*.md 2>/dev/null
 **Compiled governance:**
 - Check if `.claude/rules/governance.md` exists and contains `Routing Table`
 - `[ok] Compiled governance — index + {n} topic files` if governance.md + governance/ directory exist
-- `[!!] Compiled governance uses flat format (v0.1.x) — run /edikt:compile to migrate` if governance.md exists but no governance/ directory
-- `[!!] No compiled governance — run /edikt:compile` if governance.md missing
+- `[!!] Compiled governance uses flat format (v0.1.x) — run /edikt:gov:compile to migrate` if governance.md exists but no governance/ directory
+- `[!!] No compiled governance — run /edikt:gov:compile` if governance.md missing
+- **Compile schema version check** (see ADR-007). The current schema is `COMPILE_SCHEMA_VERSION = 2`, declared at the top of `commands/gov/compile.md`. For generated `governance.md`:
+  - Read `compile_schema_version` from YAML frontmatter.
+  - If missing: `[!!] Governance uses legacy version stamp (no compile_schema_version) — run /edikt:gov:compile to regenerate`
+  - If `< 2`: `[!!] Governance compiled with schema v{n} (current: v2) — run /edikt:gov:compile to regenerate`
+  - If `> 2`: `[!!] Governance compiled with schema v{n} — installed edikt only supports v2. Upgrade edikt: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash`
+  - If equal: no output (covered by the `[ok]` line above)
+  - Note: `compiled_by` and `compiled_at` HTML comments are informational only. NEVER check them programmatically or use them to determine staleness.
 - For each topic file in `governance/`, check `paths:` frontmatter exists:
   - `[ok] governance/{topic}.md — paths: {glob summary}`
-  - `[!!] governance/{topic}.md has no paths: frontmatter — run /edikt:compile`
+  - `[!!] governance/{topic}.md has no paths: frontmatter — run /edikt:gov:compile`
 - **Override detection:** For each rule pack in `.claude/rules/`, check if any of its rules conflict with compiled governance directives:
   - `[!!] Rule pack {name}.md may conflict with compiled governance: {brief description}`
 - **Sentinel coverage:** Count source documents (ADRs, invariants) with and without `[edikt:directives:start]` sentinel blocks:

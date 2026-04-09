@@ -25,23 +25,49 @@ for arg in "$@"; do
   esac
 done
 
-# Interactive prompt if no flag provided and stdin is a terminal
+# Detect pre-existing edikt installations in BOTH locations. This powers
+# the install location prompt, duplication warnings, and leftover cleanup.
+HAS_GLOBAL=false
+HAS_PROJECT=false
+[ -f "${HOME}/.edikt/VERSION" ] && HAS_GLOBAL=true
+[ -d "${HOME}/.claude/commands/edikt" ] && HAS_GLOBAL=true
+[ -f ".edikt/VERSION" ] && HAS_PROJECT=true
+[ -d ".claude/commands/edikt" ] && HAS_PROJECT=true
+
+# Interactive prompt if no flag provided.
+#
+# Use /dev/tty for both reading and writing the prompt, so it works
+# correctly even when stdin is a pipe (e.g. `curl ... | bash`). Falls
+# back to the non-interactive default when no TTY is available at all
+# (CI environments, redirected stdin/stdout without --global/--project).
 if [ -z "$INSTALL_MODE" ]; then
-  if [ -t 0 ]; then
-    echo ""
-    echo "  Where should edikt be installed?"
-    echo ""
-    echo "  [1] Global (default) — available in all projects"
-    echo "  [2] Project only     — installed in current directory"
-    echo ""
-    printf "  Choice [1]: "
-    read -r choice
+  if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    {
+      echo ""
+      echo "  Where should edikt be installed?"
+      echo ""
+      echo "  [1] Global (default) — available in all projects"
+      echo "  [2] Project only     — installed in current directory"
+      echo ""
+      if $HAS_GLOBAL; then
+        echo "  Note: a global edikt install already exists (~/.edikt). Choosing [2] will"
+        echo "        cause Claude Code to load commands from BOTH locations — duplicated."
+        echo ""
+      fi
+      if $HAS_PROJECT && [ -z "${INSTALL_MODE}" ]; then
+        echo "  Note: a project-local edikt install already exists (.edikt/ in this directory)."
+        echo "        Choosing [1] will leave those local files in place — also duplicated."
+        echo ""
+      fi
+      printf "  Choice [1]: "
+    } > /dev/tty
+    read -r choice < /dev/tty
     case "$choice" in
       2) INSTALL_MODE="project" ;;
       *) INSTALL_MODE="global" ;;
     esac
   else
-    # Piped install (curl | bash) — default to global, no prompt
+    # No TTY available (e.g. CI, fully redirected) — default to global.
     INSTALL_MODE="global"
   fi
 fi
@@ -54,6 +80,30 @@ else
   EDIKT_HOME="${HOME}/.edikt"
   CLAUDE_COMMANDS="${HOME}/.claude/commands"
   echo -e "\033[1mInstalling edikt (global)...\033[0m"
+fi
+
+# Warn about duplication when the OTHER location already has an install.
+# This catches the case where the user doesn't see the prompt (piped with
+# no TTY, or explicit --global/--project flag) but would end up with
+# commands loaded from both places.
+if [ "$INSTALL_MODE" = "global" ] && $HAS_PROJECT; then
+  echo
+  echo -e "  \033[0;33m!\033[0m Detected project-local edikt files in current directory:"
+  [ -d ".claude/commands/edikt" ] && echo "      .claude/commands/edikt/"
+  [ -d ".edikt" ]                  && echo "      .edikt/"
+  echo "    Claude Code will load commands from BOTH locations when run from here."
+  echo "    To avoid duplication, remove the local files after install:"
+  echo "      rm -rf .claude/commands/edikt .edikt"
+  echo
+fi
+if [ "$INSTALL_MODE" = "project" ] && $HAS_GLOBAL; then
+  echo
+  echo -e "  \033[0;33m!\033[0m A global edikt install already exists at ~/.edikt."
+  echo "    Claude Code will load commands from BOTH the global and project"
+  echo "    locations, causing duplicates. Either:"
+  echo "      - Use only the global install (rm -rf .claude/commands/edikt .edikt)"
+  echo "      - Or remove the global install first (rm -rf ~/.claude/commands/edikt ~/.edikt)"
+  echo
 fi
 
 # Colors

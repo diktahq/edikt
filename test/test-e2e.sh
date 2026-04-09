@@ -727,7 +727,6 @@ echo -e "${BOLD}TEST 9: Version consistency${NC}"
 
 FILE_VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
 CONFIG_VER=$(grep 'edikt_version:' "$PROJECT_ROOT/.edikt/config.yaml" | awk '{print $2}' | tr -d '"')
-GOV_VER=$(grep 'version:' "$PROJECT_ROOT/.claude/rules/governance.md" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '"')
 
 # VERSION must be a valid semver (x.y.z) or a -dev suffix on main
 if echo "$FILE_VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-dev)?$'; then
@@ -742,10 +741,31 @@ else
     fail "Config version ($CONFIG_VER) != VERSION ($FILE_VER)"
 fi
 
-if [ "$GOV_VER" = "$FILE_VER" ]; then
-    pass "Governance version matches VERSION"
+# Governance compile schema — per ADR-007, this is decoupled from edikt VERSION.
+# The file must declare compile_schema_version matching the constant in compile.md.
+SCHEMA_CONST=$(grep -oE 'COMPILE_SCHEMA_VERSION = [0-9]+' "$PROJECT_ROOT/commands/gov/compile.md" | awk '{print $3}' | head -1)
+GOV_SCHEMA=$(grep -oE '^compile_schema_version: [0-9]+' "$PROJECT_ROOT/.claude/rules/governance.md" 2>/dev/null | awk '{print $2}' | head -1)
+
+if [ -n "$SCHEMA_CONST" ]; then
+    pass "commands/gov/compile.md declares COMPILE_SCHEMA_VERSION constant"
 else
-    fail "Governance version ($GOV_VER) != VERSION ($FILE_VER)"
+    fail "commands/gov/compile.md declares COMPILE_SCHEMA_VERSION constant" \
+        "No 'COMPILE_SCHEMA_VERSION = N' found in compile.md"
+fi
+
+if [ -n "$GOV_SCHEMA" ] && [ "$GOV_SCHEMA" = "$SCHEMA_CONST" ]; then
+    pass "Governance compile_schema_version ($GOV_SCHEMA) matches compile.md constant"
+else
+    fail "Governance compile_schema_version matches compile.md constant" \
+        "governance=$GOV_SCHEMA, compile.md=$SCHEMA_CONST"
+fi
+
+# Governance must NOT have the legacy version field (that was the pre-ADR-007 bug)
+if grep -qE '^version: "' "$PROJECT_ROOT/.claude/rules/governance.md" 2>/dev/null; then
+    fail "Governance has no legacy 'version:' field (ADR-007)" \
+        "Legacy version field still present — should be compile_schema_version"
+else
+    pass "Governance has no legacy 'version:' field (ADR-007)"
 fi
 
 # Changelog has v0.2.0 entry

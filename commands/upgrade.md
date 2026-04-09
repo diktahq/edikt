@@ -340,6 +340,22 @@ Note: the `sql.migrations.tool` sub-key is only written by `/edikt:init` when a 
 
 Same as `/edikt:rules-update` logic — replace outdated packs, skip manually edited and custom ones.
 
+#### Compile schema check (ADR-007)
+
+Check if the project's generated governance is stale vs the current compile schema.
+
+1. Read the constant `COMPILE_SCHEMA_VERSION` from `~/.edikt/templates/commands/gov/compile.md` (or `commands/gov/compile.md` in the installed templates).
+2. Read `.claude/rules/governance.md` (if it exists) and extract `compile_schema_version` from its YAML frontmatter.
+3. Compare:
+   - **Missing field** (legacy v0.1.x output): note `governance.md uses legacy version stamp — run /edikt:gov:compile to regenerate with schema v{N}`
+   - **Lower than current**: note `governance.md compiled with schema v{old} (current: v{new}) — run /edikt:gov:compile to regenerate`
+   - **Equal**: no note
+   - **Higher than current**: note `governance.md compiled with schema v{n}, but this edikt only supports v{current}. Upgrade edikt globally first.`
+
+Do NOT auto-run `/edikt:gov:compile`. Surface the recommendation in the upgrade summary and let the user decide. Compile is potentially expensive and may have contradictions that need review.
+
+**Important**: Never enforce `compiled_by` or `compiled_at` equality with the current edikt version. Those fields are informational HTML comments only — they tell humans when/who produced the file, but do not drive any decision.
+
 #### Command reference migration (v0.1.x → v0.2.x)
 
 v0.2.0 renamed 15 flat commands into namespaces. Projects initialized with v0.1.x have hardcoded references to the old flat names in `CLAUDE.md` (the intent table inside the edikt-managed block) and in compiled rule packs. These references still resolve today via deprecated stubs, but they'll break in v0.4.0 when the stubs are removed.

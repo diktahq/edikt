@@ -93,7 +93,13 @@ pass "Mock curl resolves repo files"
 run_install() {
     # Runs install.sh from $PROJECT_ROOT against fake HOME, with mock curl.
     # Returns the install exit code.
-    HOME="$FAKE_HOME" PATH="$BIN_DIR:$PATH" bash "$PROJECT_ROOT/install.sh" --global > "$SANDBOX/install.out" 2>&1
+    # CWD is set to a clean directory so install.sh's duplication-check
+    # doesn't see leftover edikt files from the keel dogfood repo.
+    local mode="${1:---global}"
+    local cwd="${2:-$SANDBOX/clean-cwd}"
+    mkdir -p "$cwd"
+    (cd "$cwd" && HOME="$FAKE_HOME" PATH="$BIN_DIR:$PATH" \
+        bash "$PROJECT_ROOT/install.sh" "$mode") > "$SANDBOX/install.out" 2>&1
 }
 
 rm -rf "$FAKE_HOME"
@@ -260,5 +266,86 @@ fi
 
 # Still have the expected files after two runs
 assert_file_exists "$FAKE_CLAUDE/edikt/adr/new.md" "Scenario 5: adr/new present after two installs"
+
+# ============================================================
+# Scenario 6: Global install warns about pre-existing project-local files
+# ============================================================
+# User ran --project in a directory before, leaving .claude/commands/edikt.
+# Now runs --global (or piped curl) in the same directory. Must warn so
+# the user knows Claude Code will load from both locations and commands
+# will appear duplicated.
+
+rm -rf "$FAKE_HOME"
+mkdir -p "$FAKE_HOME"
+DIRTY_CWD="$SANDBOX/dirty-cwd-global"
+mkdir -p "$DIRTY_CWD/.claude/commands/edikt"
+mkdir -p "$DIRTY_CWD/.edikt"
+echo "leftover" > "$DIRTY_CWD/.edikt/VERSION"
+echo "old content" > "$DIRTY_CWD/.claude/commands/edikt/init.md"
+
+run_install --global "$DIRTY_CWD" || true
+
+if grep -q "Detected project-local edikt files" "$SANDBOX/install.out"; then
+    pass "Scenario 6: global install warns about leftover project-local files"
+else
+    fail "Scenario 6: global install warns about leftover project-local files" \
+        "$(tail -30 "$SANDBOX/install.out")"
+fi
+
+# The warning should mention the actual directories that exist
+if grep -q ".claude/commands/edikt/" "$SANDBOX/install.out" && \
+   grep -q "Claude Code will load commands from BOTH" "$SANDBOX/install.out"; then
+    pass "Scenario 6: warning names the duplication cause"
+else
+    fail "Scenario 6: warning names the duplication cause" \
+        "$(tail -30 "$SANDBOX/install.out")"
+fi
+
+# The leftover project-local files must still be there — install.sh
+# should warn, not auto-delete. (That's a destructive action that belongs
+# to the user.)
+if [ -d "$DIRTY_CWD/.claude/commands/edikt" ]; then
+    pass "Scenario 6: install does not auto-delete project-local files"
+else
+    fail "Scenario 6: install does not auto-delete project-local files" \
+        "install.sh removed the user's local files without asking"
+fi
+
+# ============================================================
+# Scenario 7: Project install warns about pre-existing global install
+# ============================================================
+
+rm -rf "$FAKE_HOME"
+mkdir -p "$FAKE_HOME/.edikt"
+mkdir -p "$FAKE_HOME/.claude/commands/edikt"
+echo "0.2.2" > "$FAKE_HOME/.edikt/VERSION"
+DIRTY_CWD2="$SANDBOX/dirty-cwd-project"
+mkdir -p "$DIRTY_CWD2"
+
+run_install --project "$DIRTY_CWD2" || true
+
+if grep -q "global edikt install already exists" "$SANDBOX/install.out"; then
+    pass "Scenario 7: project install warns about existing global install"
+else
+    fail "Scenario 7: project install warns about existing global install" \
+        "$(tail -30 "$SANDBOX/install.out")"
+fi
+
+# The project-local install should still have completed
+if [ -f "$DIRTY_CWD2/.claude/commands/edikt/init.md" ]; then
+    pass "Scenario 7: project install completes despite warning"
+else
+    fail "Scenario 7: project install completes despite warning" \
+        "No project-local init.md created"
+fi
+
+# The pre-existing global install should NOT have been touched
+if [ -f "$FAKE_HOME/.edikt/VERSION" ] && \
+   [ "$(cat "$FAKE_HOME/.edikt/VERSION")" = "0.2.2" ]; then
+    pass "Scenario 7: pre-existing global install untouched"
+else
+    fail "Scenario 7: pre-existing global install untouched" \
+        "Global VERSION was modified or removed"
+fi
 
 test_summary
