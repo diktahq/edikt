@@ -30,7 +30,7 @@ The governance chain connects edikt's two systems — architecture governance & 
 
 <!-- LEFT: Compile -->
 <rect x="105" y="228" width="170" height="44" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
-<text x="190" y="250" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">/edikt:compile</text>
+<text x="190" y="250" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">/edikt:gov:compile</text>
 
 <line x1="190" y1="272" x2="190" y2="304" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
@@ -198,7 +198,7 @@ The full sequence:
 PRD → spec → artifacts → plan → execute → drift detection
 ```
 
-**Command references:** `/edikt:prd`, `/edikt:spec`, `/edikt:spec-artifacts`, `/edikt:plan`, `/edikt:drift`
+**Command references:** `/edikt:sdlc:prd`, `/edikt:sdlc:spec`, `/edikt:sdlc:artifacts`, `/edikt:sdlc:plan`, `/edikt:sdlc:drift`
 
 ## State machine
 

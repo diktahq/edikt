@@ -15,7 +15,7 @@ hero:
 
 features:
   - title: Architecture governance & compliance
-    details: "Capture architecture decisions, constraints, and team conventions. /edikt:compile reads all three, checks for contradictions, and produces a governance file Claude reads automatically — every session, before writing any code. Update a decision, recompile. One source of truth."
+    details: "Capture architecture decisions, constraints, and team conventions. /edikt:gov:compile reads all three, checks for contradictions, and produces a governance file Claude reads automatically — every session, before writing any code. Update a decision, recompile. One source of truth."
   - title: Correctness guardrails
     details: "20 rule packs install to .claude/rules/ and fire automatically — path-conditional, so Go rules only fire on .go files. Correctness guardrails that catch real bugs: hallucinated APIs, race conditions, placeholder code. The standard is the same whether it's your best engineer or your newest."
   - title: Agentic SDLC governance

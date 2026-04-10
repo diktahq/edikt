@@ -75,7 +75,7 @@ These become ADRs and invariants in `docs/`. Claude reads them in every future s
 
 If you have scattered docs — READMEs, old ADR folders, wiki pages — bring them in:
 ```bash
-/edikt:intake
+/edikt:docs:intake
 ```
 
 edikt scans and organizes them into the standard structure.

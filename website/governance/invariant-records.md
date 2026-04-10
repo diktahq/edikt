@@ -2,13 +2,13 @@
 
 **Invariant Records** (short form `INV`) are edikt's formal artifact type for documenting hard architectural constraints — rules that must hold continuously, independent of any single decision. They're the enforcement counterpart to Architecture Decision Records (ADRs).
 
-The term is coined by edikt in [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md). It's an edikt convention, not an imported external standard.
+edikt formalizes architectural invariants as a governance artifact with a committed template, compile pipeline, and enforcement integration. The template contract is defined in [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md).
 
-## Why coin a new term?
+## Why formalize invariants?
 
-ADRs have been formalized since 2011 (Michael Nygard's original post). The concept of architectural *invariants* has existed in computer science since at least Hoare logic in the 1970s, but the *documentation format* was never standardized. Every team that documents invariants invents their own format.
+ADRs have been formalized since [Michael Nygard's 2011 post](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions). The concept of architectural *invariants* has existed in computer science since at least [Hoare logic](https://en.wikipedia.org/wiki/Hoare_logic) in the 1960s — conditions that must hold before and after every operation. But the *documentation format* for architectural invariants was never standardized. Every team that documents invariants invents their own format.
 
-edikt needs one. Invariant Records are edikt's answer: a committed template contract, a committed terminology, a committed lifecycle, and committed governance integration.
+edikt formalizes them: a committed template contract, a committed lifecycle, and compile pipeline integration that turns invariants into directives Claude follows automatically.
 
 ## How Invariant Records differ from ADRs
 
@@ -26,6 +26,8 @@ edikt needs one. Invariant Records are edikt's answer: a committed template cont
 Most invariants are NOT derived from ADRs. They're cross-cutting architectural principles, regulatory constraints, or foundational product rules that exist independent of any specific decision.
 
 ## The template
+
+The Invariant Record template is defined in [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) and draws from the "constraint, not implementation" principle — the Statement describes what must be true, not how to achieve it. The template is customizable via `.edikt/templates/invariant.md` (see [Extensibility](extensibility)).
 
 Every Invariant Record has six body sections (two optional) plus a directives block.
 
@@ -91,15 +93,38 @@ UUIDv7 is today's implementation choice. The underlying constraint (time-orderab
 
 Invariant Records contain a directive sentinel block at the bottom, populated by `/edikt:invariant:compile`. The block uses the three-list schema from [ADR-008](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-008-deterministic-compile-and-three-list-schema.md):
 
-- **`directives:`** — auto-generated from the Statement and Enforcement sections
+- **`directives:`** — auto-generated from the Statement and Enforcement sections. Uses MUST/NEVER language with literal code tokens. Statements with absolute quantifiers ("every", "all", "total") get "No exceptions." appended automatically.
+- **`reminders:`** — pre-action interrupts generated from each directive. Format: "Before writing SQL -> MUST include tenant_id." These fire at the moment Claude is about to write a specific kind of code.
+- **`verification:`** — grep-verifiable checklist items Claude checks before finishing. Only directives that can be verified mechanically get a checklist item.
 - **`manual_directives:`** — user-added rules compile missed
 - **`suppressed_directives:`** — auto directives the user rejected
 
-`/edikt:gov:compile` reads all three lists from every Invariant Record and merges them into `.claude/rules/governance.md`, which Claude Code loads as context in every session. Your invariants become rules Claude must follow literally when generating code.
+`/edikt:gov:compile` reads all five lists from every Invariant Record and merges them into `.claude/rules/governance.md`. The governance file has four sections Claude reads every session:
+
+1. **Non-Negotiable Constraints** — invariant directives at the top (primacy bias)
+2. **Reminders** — pre-action interrupts aggregated from all sources
+3. **Verification Checklist** — self-audit items Claude checks before finishing
+4. **Reminder: Non-Negotiable Constraints** — invariant directives restated at the bottom (recency bias)
+
+## Why directive language matters
+
+Experiments showed that *how* the directive is phrased changes whether Claude follows it. The compile pipeline produces directives optimized for LLM compliance:
+
+```
+Prose (low compliance):
+  "Log calls should include the tenant identifier"
+
+Compiled directive (high compliance):
+  "Every slog.Error call MUST include "tenant_id", tid. No exceptions. (ref: INV-012)"
+```
+
+The difference: literal code tokens (`slog.Error`, `"tenant_id"`, `tid`), MUST/NEVER language, and "No exceptions." reinforcement. Pre-registered experiments on Claude Opus 4.6 confirmed that the compiled format prevents violations the prose format misses — particularly on greenfield code and new domains where there are no existing patterns to copy.
+
+Use `/edikt:gov:score` to measure how well your governance follows these patterns.
 
 ## Next steps
 
 - **Read the canonical examples:** [tenant isolation](canonical-invariants/tenant-isolation.md) and [money precision](canonical-invariants/money-precision.md). Two worked examples covering different failure axes (security/isolation vs data correctness).
 - **Read the writing guide:** [Writing Invariant Records](writing-invariants.md) — five qualities, seven traps, six bad-to-good rewrites, seven-question self-test, annotated canonical examples.
-- **Read the formal contract:** [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) for the coinage rationale and template contract, and [ADR-008](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-008-deterministic-compile-and-three-list-schema.md) for the directive schema.
+- **Read the formal contract:** [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) for the template contract, and [ADR-008](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-008-deterministic-compile-and-three-list-schema.md) for the directive schema.
 - **Create your first one:** `/edikt:invariant:new "your constraint here"` after running `/edikt:init` to set up templates.

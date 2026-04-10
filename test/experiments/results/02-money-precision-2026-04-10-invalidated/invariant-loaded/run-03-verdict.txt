@@ -1,4 +1,0 @@
-exit: 1
-verdict: VIOLATION
-details:
-ASSERTION: calculate_discount function not found in app/pricing.py

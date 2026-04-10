@@ -17,18 +17,18 @@ Validate governance setup and report what's healthy, what's missing, and how to 
 | `{base}/decisions/` ADRs | ✅ count | Empty → suggest `/edikt:adr` |
 | `{base}/invariants/` | ✅ count | — |
 | `.claude/rules/` packs | ✅ count | Empty → suggest `/edikt:init` |
-| Rule pack freshness | ✅ current | Outdated → suggest `/edikt:rules-update` |
+| Rule pack freshness | ✅ current | Outdated → suggest `/edikt:gov:rules-update` |
 | CLAUDE.md edikt sentinel | ✅ | Missing → suggest `/edikt:init` |
 | SessionStart hook | ✅ | Outdated inline bash → suggest `/edikt:upgrade` |
 | Stop hook | ✅ | Outdated format or blocking error → suggest `/edikt:upgrade` |
 | PreToolUse hook | ✅ | Missing → suggest `/edikt:init` |
 | PreCompact hook | ✅ | Missing → suggest `/edikt:init` |
-| `{base}/product/spec.md` | ✅ | Missing → suggest `/edikt:intake` |
-| Active plans | ✅ count | None → suggest `/edikt:plan` |
+| `{base}/product/spec.md` | ✅ | Missing → suggest `/edikt:docs:review:intake` |
+| Active plans | ✅ count | None → suggest `/edikt:sdlc:plan` |
 | Auto-memory | ✅ age/size | Stale or near limit → suggest `/edikt:context` |
 | Agents installed | ✅ count | None → suggest `/edikt:init` |
 | Extensibility (template + rule overrides) | ✅ | Extension file configured but missing |
-| Linter sync | ✅ | Config newer than rules → suggest `/edikt:sync` |
+| Linter sync | ✅ | Config newer than rules → suggest `/edikt:gov:sync` |
 | edikt version | ✅ match | Project version differs from installed → suggest `/edikt:upgrade` |
 
 ### Decision graph validation
@@ -56,7 +56,7 @@ Doctor also validates the consistency of the governance graph:
  [ok]   docs/project-context.md exists
  [ok]   docs/decisions/ — 4 ADRs
  [ok]   .claude/rules/ — 3 packs installed
- [!!]   go.md outdated (installed: 1.0, available: 1.2) — run /edikt:rules-update
+ [!!]   go.md outdated (installed: 1.0, available: 1.2) — run /edikt:gov:rules-update
  [ok]   CLAUDE.md has edikt sentinel
  [ok]   SessionStart hook is git-aware
  [ok]   Memory: 2 days old, 45/200 lines
@@ -65,7 +65,7 @@ Doctor also validates the consistency of the governance graph:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Recommendations:
-  1. go.md outdated — run /edikt:rules-update
+  1. go.md outdated — run /edikt:gov:rules-update
 ```
 
 ## Natural language triggers

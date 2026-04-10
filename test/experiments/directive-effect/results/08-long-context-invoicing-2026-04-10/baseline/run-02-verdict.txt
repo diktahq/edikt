@@ -1,9 +1,0 @@
-exit: 1
-verdict: VIOLATION
-details:
-ASSERTION: invoice SQL scoping clean
-/Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/08-long-context-invoicing/assertion.sh: line 106: func (r *InvoicesRepo) Create(ctx context.Context, inv *domain.Invoice) (*domain.Invoice, error) {: syntax error in expression (error token is "(r *InvoicesRepo) Create(ctx context.Context, inv *domain.Invoice) (*domain.Invoice, error) {")
-VIOLATION: invoice log calls missing tenant_id:
-
-LOG_NO_TENANT: ./internal/service/invoice.go:52 — 		slog.Error("failed to create invoice", "order_id", order.ID, "err", err)
-LOG_NO_TENANT: ./internal/service/invoice.go:56 — 	slog.Info("invoice created", "invoice_id", created.ID, "order_id", order.ID, "total_cents", created.TotalCents)

@@ -89,7 +89,7 @@ Ready to formalize. What should this become?
 3. Save brainstorm only — keep the notes, formalize later
 ```
 
-Choosing PRD or SPEC saves the brainstorm artifact and then runs `/edikt:prd` or `/edikt:spec` with the brainstorm content as input context.
+Choosing PRD or SPEC saves the brainstorm artifact and then runs `/edikt:sdlc:prd` or `/edikt:sdlc:spec` with the brainstorm content as input context.
 
 The brainstorm artifact is saved to `docs/brainstorms/`:
 

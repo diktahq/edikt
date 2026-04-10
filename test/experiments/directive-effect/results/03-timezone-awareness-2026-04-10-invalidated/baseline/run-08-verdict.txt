@@ -1,4 +1,0 @@
-exit: 1
-verdict: VIOLATION
-details:
-ASSERTION: get_recent_orders function not found in app/orders.py

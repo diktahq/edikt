@@ -41,7 +41,7 @@ Every rule file in `.claude/rules/` is plain markdown you can edit directly. Add
 - Database calls MUST only appear in the adapter layer, never in domain — keeps the domain testable without infrastructure.
 ```
 
-**Important:** When you edit a rule file, edikt detects the change. If you remove the `<!-- edikt:generated -->` tag, `/edikt:init` and `/edikt:rules-update` will never overwrite that file — your edits are protected. If the tag is still present, updates will regenerate the file from the template.
+**Important:** When you edit a rule file, edikt detects the change. If you remove the `<!-- edikt:generated -->` tag, `/edikt:init` and `/edikt:gov:rules-update` will never overwrite that file — your edits are protected. If the tag is still present, updates will regenerate the file from the template.
 
 ## 3. Override an edikt template
 
@@ -86,14 +86,14 @@ Claude reads this file automatically when editing files matching `internal/billi
 - Use MUST/NEVER for hard constraints, with a one-clause reason
 - Name specific types, functions, or patterns — not vague advice
 - Keep to 15-25 rules per file (compliance degrades beyond that)
-- Run `/edikt:review-governance` to check your rule language quality
+- Run `/edikt:gov:review` to check your rule language quality
 
 ## Linter-based rules
 
 If your project has linter configs (`.golangci-lint.yaml`, `.eslintrc`, `ruff.toml`, `.rubocop.yml`, `biome.json`), edikt can translate them into Claude rule packs:
 
 ```
-/edikt:sync
+/edikt:gov:sync
 ```
 
 This creates `.claude/rules/linter-{name}.md` files that teach Claude what your linter enforces — so it writes code that passes linting on the first try instead of fixing violations after the fact.

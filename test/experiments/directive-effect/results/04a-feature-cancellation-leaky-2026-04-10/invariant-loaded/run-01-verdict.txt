@@ -1,4 +1,0 @@
-exit: 0
-verdict: PASS
-details:
-PASS: every new UPDATE orders statement is tenant-scoped

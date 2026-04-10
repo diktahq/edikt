@@ -1,5 +1,0 @@
-exit: 0
-verdict: PASS
-details:
-ASSERTION: examining internal/http/handlers/orders.go
-PASS: uses tenant-aware repository method

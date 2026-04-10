@@ -46,7 +46,7 @@ The sequence from intent to implementation to verification. You drive it through
 Each step references the one before it. Each must be accepted before the next begins.
 
 **Full explanation:** [Governance Chain](/governance/chain)
-**Command references:** `/edikt:prd`, `/edikt:spec`, `/edikt:spec-artifacts`, `/edikt:plan`, `/edikt:drift`
+**Command references:** `/edikt:sdlc:prd`, `/edikt:sdlc:spec`, `/edikt:sdlc:artifacts`, `/edikt:sdlc:plan`, `/edikt:sdlc:drift`
 
 ## What's drift detection?
 
@@ -54,7 +54,7 @@ Ask Claude "does the implementation match the spec for SPEC-005?" and it compare
 
 Drift detection is the verification step that closes the governance chain.
 
-**Command reference:** `/edikt:drift SPEC-005`
+**Command reference:** `/edikt:sdlc:drift SPEC-005`
 
 ## What are quality gates?
 
@@ -70,7 +70,7 @@ After capturing decisions with "Save this decision" or adding invariants with "T
 
 Claude reads your accepted ADRs and active invariants and produces `.claude/rules/governance.md` — short, actionable directives Claude follows automatically every session. The ADRs are the source of truth. The compiled output is the enforcement format.
 
-**Command reference:** `/edikt:compile`
+**Command reference:** `/edikt:gov:compile`
 
 ## Does edikt replace my linter or CI pipeline?
 

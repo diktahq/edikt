@@ -10,11 +10,11 @@ Add these steps to your CI pipeline:
 # GitHub Actions example
 - name: Compile check
   run: |
-    EDIKT_HEADLESS=1 claude --bare -p "/edikt:compile --check"
+    EDIKT_HEADLESS=1 claude --bare -p "/edikt:gov:compile --check"
 
 - name: Drift check
   run: |
-    EDIKT_HEADLESS=1 claude --bare -p "/edikt:drift"
+    EDIKT_HEADLESS=1 claude --bare -p "/edikt:sdlc:drift"
 ```
 
 ## Recommended CI settings
@@ -42,7 +42,7 @@ Key settings:
 Use `--bare` for CI runs. It skips hooks, LSP, plugin sync, and skill directory walks — faster startup, cleaner execution.
 
 ```bash
-claude --bare -p "/edikt:compile --check"
+claude --bare -p "/edikt:gov:compile --check"
 ```
 
 Requires `ANTHROPIC_API_KEY` or an `apiKeyHelper` via `--settings`. OAuth and keychain auth are disabled in bare mode.
@@ -69,9 +69,9 @@ headless:
 
 | Check | Command | What it catches |
 |---|---|---|
-| Compile | `/edikt:compile --check` | ADR contradictions, guideline conflicts, missing sentinels |
-| Drift | `/edikt:drift` | Implementation diverging from spec |
-| Audit | `/edikt:audit` | Security vulnerabilities, OWASP gaps |
+| Compile | `/edikt:gov:compile --check` | ADR contradictions, guideline conflicts, missing sentinels |
+| Drift | `/edikt:sdlc:drift` | Implementation diverging from spec |
+| Audit | `/edikt:sdlc:audit` | Security vulnerabilities, OWASP gaps |
 | Doctor | `/edikt:doctor` | Stale rules, missing hooks, config issues |
 
 ## Environment variables
@@ -103,11 +103,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EDIKT_HEADLESS: "1"
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
-        run: claude --bare -p "/edikt:compile --check"
+        run: claude --bare -p "/edikt:gov:compile --check"
 
       - name: Drift check
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           EDIKT_HEADLESS: "1"
-        run: claude --bare -p "/edikt:drift"
+        run: claude --bare -p "/edikt:sdlc:drift"
 ```

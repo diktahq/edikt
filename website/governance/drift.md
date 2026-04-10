@@ -16,7 +16,7 @@ Or to narrow the scope:
 
 Claude runs the check and returns a structured report.
 
-**Command reference:** `/edikt:drift SPEC-005`
+**Command reference:** `/edikt:sdlc:drift SPEC-005`
 
 ## What it checks
 
@@ -35,11 +35,11 @@ A full drift check runs five layers in sequence:
 Not every drift check needs to run all five layers. Narrow the scope when you need a faster check during implementation:
 
 ```bash
-/edikt:drift SPEC-005                   # full chain (default)
-/edikt:drift SPEC-005 --scope=prd       # PRD acceptance criteria only
-/edikt:drift SPEC-005 --scope=spec      # spec requirements only
-/edikt:drift SPEC-005 --scope=artifacts # artifact contracts only
-/edikt:drift SPEC-005 --scope=adrs      # ADR compliance only
+/edikt:sdlc:drift SPEC-005                   # full chain (default)
+/edikt:sdlc:drift SPEC-005 --scope=prd       # PRD acceptance criteria only
+/edikt:sdlc:drift SPEC-005 --scope=spec      # spec requirements only
+/edikt:sdlc:drift SPEC-005 --scope=artifacts # artifact contracts only
+/edikt:sdlc:drift SPEC-005 --scope=adrs      # ADR compliance only
 ```
 
 Run `--scope=spec` frequently during implementation. Run the full chain before marking a feature complete.
@@ -102,7 +102,7 @@ INVARIANT COMPLIANCE
 Report saved: docs/reports/drift-SPEC-005-2026-03-20.md
 
 2 diverged finding(s) need attention.
-Fix the divergences and run /edikt:drift again.
+Fix the divergences and run /edikt:sdlc:drift again.
 ```
 
 ## Persisted reports
@@ -121,7 +121,7 @@ The filename format is `drift-{SPEC-NNN}-{YYYY-MM-DD}.md`. The report is version
 Run with `--output=json` for machine-readable output:
 
 ```bash
-/edikt:drift SPEC-005 --output=json
+/edikt:sdlc:drift SPEC-005 --output=json
 ```
 
 Exit code:
@@ -132,6 +132,6 @@ Wire this into CI to catch regressions. A spec-passing implementation that regre
 
 ## Integration with review
 
-When `/edikt:review` runs and an active spec exists, it automatically runs a scoped drift check (`--scope=spec`) and appends the findings under a "DRIFT CHECK" section. You don't need to run both separately during a review cycle.
+When `/edikt:sdlc:review` runs and an active spec exists, it automatically runs a scoped drift check (`--scope=spec`) and appends the findings under a "DRIFT CHECK" section. You don't need to run both separately during a review cycle.
 
 See [/edikt:sdlc:drift](/commands/sdlc/drift) for full command reference.

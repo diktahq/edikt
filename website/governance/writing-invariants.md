@@ -1,6 +1,6 @@
 # Writing Invariant Records — a guide
 
-This guide teaches you how to write effective Invariant Records. Read the [ADR-009 coinage doc](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) for the formal terminology and [invariant-records.md](invariant-records.md) for the template structure. This guide is about **how to write good ones**.
+This guide teaches you how to write effective Invariant Records. Read [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) and [invariant-records.md](invariant-records.md) for the template structure. This guide is about **how to write good ones**.
 
 ---
 
@@ -272,10 +272,66 @@ Everything else is polish.
 
 ---
 
+## Writing for LLM compliance
+
+The invariant you write is for humans. The directive the compile pipeline produces is for Claude. Both matter, but they fail differently — a well-written invariant with poorly compiled directives won't be followed. These rules help the compile pipeline produce effective directives from your invariant.
+
+### Use absolute language in the Statement
+
+The compile pipeline detects absolute quantifiers in your Statement ("every", "all", "total", "no ... exception") and appends "No exceptions." to the generated directive. This prevents Claude from rationalizing edge cases.
+
+```
+Statement that triggers reinforcement:
+  "Every data access is scoped to the authenticated tenant."
+  → Directive: "Every data access MUST be tenant-scoped. No exceptions. (ref: INV-012)"
+
+Statement that doesn't trigger:
+  "Data access should generally be tenant-scoped."
+  → Directive: "Data access MUST be tenant-scoped. (ref: INV-012)"
+  → No "No exceptions." suffix — the Statement hedged, so compile can't assert absoluteness.
+```
+
+Write absolutes when you mean absolutes. "Every" and "all" in the Statement are not just prose choices — they're compile signals.
+
+### Name specific code tokens in Enforcement
+
+The Enforcement section is where literal code tokens should appear. Compile lifts them into directives:
+
+```
+Weak enforcement:
+  "Log calls should include tenant context."
+  → Directive: "Log calls MUST include tenant context. (ref: INV-012)"
+  → Claude doesn't know WHAT to type.
+
+Strong enforcement:
+  "Every slog.Info, slog.Warn, slog.Error call includes \"tenant_id\", tid."
+  → Directive: "Every slog.Info, slog.Warn, slog.Error call MUST include \"tenant_id\", tid. (ref: INV-012)"
+  → Claude knows exactly what to type.
+```
+
+Pre-registered experiments on Claude Opus 4.6 showed that literal code tokens in directives produce measurably higher compliance than abstract descriptions — especially on greenfield code and new domains where Claude has no existing patterns to copy.
+
+### Provide grep-verifiable checks
+
+The compile pipeline generates verification checklist items from your Enforcement section. If you name a concrete check, it becomes a self-audit item Claude runs before finishing:
+
+```
+Enforcement: "grep -rn tenant_id internal/repository/ — every query must match"
+→ Checklist: "[ ] Every SQL query in internal/repository/ references tenant_id (ref: INV-012)"
+```
+
+Invariants with grep-verifiable enforcement produce higher compliance because Claude can check its own work mechanically.
+
+### Check directive quality with `/edikt:gov:score`
+
+After writing and compiling an invariant, run `/edikt:invariant:review` for per-directive LLM compliance scoring, or `/edikt:gov:score` for the aggregate governance quality report. Both score directives on token specificity, MUST/NEVER usage, grep-ability, and ambiguity. Directives scoring below 5/10 get concrete rewrite suggestions.
+
+---
+
 ## See also
 
 - [ADR-008](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-008-deterministic-compile-and-three-list-schema.md) — The three-list directive schema and hash caching contract
-- [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) — The formal coinage of "Invariant Record"
+- [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) — The Invariant Record template contract
 - [invariant-records.md](invariant-records.md) — The authoritative template
 - [`canonical-invariants/tenant-isolation.md`](canonical-invariants/tenant-isolation.md) — Full annotated example 1
 - [`canonical-invariants/money-precision.md`](canonical-invariants/money-precision.md) — Full annotated example 2

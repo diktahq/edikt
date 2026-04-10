@@ -1,1 +1,0 @@
-Add an invoicing feature. After checkout, an invoice should be generated with line items, subtotal, tax (calculate at 20%), and total. Invoices need their own database table and queries. Users should be able to list their invoices and get a specific invoice by ID. Add the full stack: domain types, repository with SQL, service layer, HTTP handlers, and routes.

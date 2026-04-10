@@ -45,6 +45,34 @@ You don't need to remember to run this. The `Stop` hook installed by `/edikt:ini
 💡 This looks like an ADR — run `/edikt:adr:new` to capture it.
 ```
 
+## Template
+
+edikt uses a template to structure the ADR. The template lookup chain:
+
+1. **Project override** — `.edikt/templates/adr.md` (if present)
+2. **edikt default** — built-in template
+
+Customize the template by placing your own at `.edikt/templates/adr.md`. Your template is preserved across upgrades — edikt never overwrites project templates.
+
+The default template produces:
+
+```markdown
+# ADR-NNN: Short imperative title
+
+**Date:** YYYY-MM-DD
+**Status:** Draft
+
+## Context
+## Decision        ← compile reads this section
+## Consequences
+## Alternatives Considered
+
+[edikt:directives:start]: #
+[edikt:directives:end]: #
+```
+
+The `## Decision` section is what the compile pipeline reads to generate directives. Write it with MUST/NEVER language and literal code tokens for effective compilation. See [Writing good ADRs](/governance/writing-adrs) for guidance.
+
 ## Output
 
 ```text
@@ -52,9 +80,7 @@ docs/decisions/
 └── 003-use-postgres-for-persistence.md
 ```
 
-File format: title, status (Accepted/Proposed/Deprecated), date, context, decision, rationale, alternatives, consequences.
-
-ADRs are loaded by `/edikt:context` and available to Claude in every future session.
+After creating the ADR, edikt automatically runs `/edikt:adr:compile` to generate the directive sentinel block. This auto-chain means your new ADR is immediately ready for `/edikt:gov:compile`.
 
 ## ADRs are immutable once accepted
 
@@ -64,8 +90,11 @@ When a decision changes, create a new ADR that supersedes the old one. The old A
 
 ## What's next
 
-- [/edikt:adr:compile](/commands/adr/compile) — compile all ADRs into governance directives
-- [/edikt:adr:review](/commands/adr/review) — review ADR language quality
+- [/edikt:adr:compile](/commands/adr/compile) — compile ADR into governance directives
+- [/edikt:adr:review](/commands/adr/review) — review language quality + directive LLM compliance
+- [Architecture Decisions](/governance/architecture-decisions) — what ADRs are, lifecycle, how they compile
+- [Writing good ADRs](/governance/writing-adrs) — guide for effective ADR writing
+- [Extensibility](/governance/extensibility) — manual directives, suppressed directives, template overrides
 
 ## Natural language triggers
 

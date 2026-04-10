@@ -1,7 +1,0 @@
-exit: 0
-verdict: PASS
-details:
-ASSERTION: invoice SQL scoping clean
-ASSERTION: invoice repo params clean
-ASSERTION: invoice log tenant clean
-PASS: invoicing domain enforces tenant isolation — SQL scoped, repo params explicit, logs carry tenant

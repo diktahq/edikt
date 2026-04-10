@@ -55,7 +55,7 @@ When you install a new version of edikt (`curl ... | bash`), your global templat
 - Never touches user-created agents (no matching edikt template)
 
 **Rule packs** (`.claude/rules/`)
-- Updates outdated rule packs (same logic as `/edikt:rules-update`)
+- Updates outdated rule packs (same logic as `/edikt:gov:rules-update`)
 - Never touches manually edited files (no `<!-- edikt:generated -->` marker)
 - Never touches custom rules not in the edikt registry
 

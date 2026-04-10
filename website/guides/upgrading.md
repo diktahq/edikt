@@ -116,7 +116,7 @@ agents:
 
 v0.2.0 changes how governance is compiled. The flat `governance.md` is replaced by topic-grouped rule files. Here's what to expect:
 
-**Compile migration** — running `/edikt:compile` automatically migrates from the old flat format to topic-grouped files:
+**Compile migration** — running `/edikt:gov:compile` automatically migrates from the old flat format to topic-grouped files:
 
 ```text
 📦 Migrated from flat governance.md to topic-grouped rule files.
@@ -124,7 +124,7 @@ v0.2.0 changes how governance is compiled. The flat `governance.md` is replaced 
    New format: 3 topic files + index
 ```
 
-**Directive sentinels** — for full-fidelity compilation, run `/edikt:review-governance` to generate directive sentinel blocks in your ADRs and invariants. Without sentinels, compile falls back to extraction (same quality as v0.1.x).
+**Directive sentinels** — for full-fidelity compilation, run `/edikt:gov:review` to generate directive sentinel blocks in your ADRs and invariants. Without sentinels, compile falls back to extraction (same quality as v0.1.x).
 
 **Agent governance** — all agent templates now have `maxTurns`, `disallowedTools`, and `effort`. The new `evaluator` agent is installed automatically.
 
@@ -137,9 +137,37 @@ v0.2.0 changes how governance is compiled. The flat `governance.md` is replaced 
 ```text
 1. Update global:    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
 2. Upgrade project:  /edikt:upgrade
-3. Generate sentinels: /edikt:review-governance
-4. Recompile:        /edikt:compile
+3. Generate sentinels: /edikt:gov:review
+4. Recompile:        /edikt:gov:compile
 5. Commit:           git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.2.0"
+```
+
+---
+
+## Upgrading to v0.3.0
+
+v0.3.0 introduces the three-list directive schema, Invariant Records, and compile improvements. Here's what to expect:
+
+**Three-list schema (ADR-008)** — sentinel blocks now carry `directives:`, `manual_directives:`, and `suppressed_directives:`. Existing v0.2.x blocks with only `directives:` continue to work — the missing lists are treated as empty. Run `/edikt:invariant:compile` and `/edikt:adr:compile` to upgrade blocks to the new schema.
+
+**Reminders and verification checklist** — compile now generates `reminders:` and `verification:` lists inside sentinel blocks. These aggregate into `## Reminders` and `## Verification Checklist` sections in governance.md. Recompile to generate them.
+
+**"No exceptions." reinforcement** — invariant directives derived from absolute-language Statements get "No exceptions." appended. This is automatic on recompile.
+
+**New command: `/edikt:gov:score`** — scores your compiled governance for LLM compliance. Run after recompiling to check directive quality.
+
+**Project templates** — v0.3.0 projects can override ADR/invariant/guideline templates in `.edikt/templates/`. If your project doesn't have them, edikt uses built-in defaults. No action needed.
+
+**Recommended upgrade steps:**
+
+```text
+1. Update global:       curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+2. Upgrade project:     /edikt:upgrade
+3. Compile invariants:  /edikt:invariant:compile
+4. Compile ADRs:        /edikt:adr:compile
+5. Compile governance:  /edikt:gov:compile
+6. Score quality:       /edikt:gov:score
+7. Commit:              git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.3.0"
 ```
 
 ---

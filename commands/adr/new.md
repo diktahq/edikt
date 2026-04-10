@@ -68,7 +68,7 @@ edikt v0.3.0+ supports project-level template overrides per [ADR-005](../../docs
    Or create .edikt/templates/adr.md manually with the required
    [edikt:directives:start]: # / [edikt:directives:end]: # sentinel block.
 
-   See docs/architecture/proposals/PROPOSAL-001-spec/invariant-record-template.md
+   See docs/internal/product/prds/PRD-001-spec/invariant-record-template.md
    for the template contract (the ADR template follows the same pattern).
    ```
    Do NOT fall back to the inline template. Do NOT write the ADR. Exit.

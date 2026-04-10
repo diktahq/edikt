@@ -1,9 +1,0 @@
-exit: 0
-verdict: PASS
-details:
-ASSERTION: examining get_recent_orders function
-def get_recent_orders() -> list[dict[str, Any]]:
-    """Return all orders created in the last 24 hours."""
-    since = datetime.now(UTC) - timedelta(hours=24)
-    return db.query_orders_since(since)
-PASS: uses datetime.now(UTC)

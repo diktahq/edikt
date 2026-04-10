@@ -112,7 +112,7 @@ Notice question 5. Claude read your codebase. It found the existing port and ask
 
 The requirements survive context compaction. They're in `docs/product/prds/`. Tomorrow's session can reference them without you re-explaining what you're building.
 
-**Command reference:** `/edikt:prd`
+**Command reference:** `/edikt:sdlc:prd`
 
 ---
 
@@ -157,7 +157,7 @@ Every question references something real in your codebase. The migration tool. T
 <T>SPEC-003 accepted.</T>
 </Terminal>
 
-**Command reference:** `/edikt:spec PRD-003`
+**Command reference:** `/edikt:sdlc:spec PRD-003`
 
 ---
 
@@ -203,7 +203,7 @@ The DBA caught the missing rollback migration. The security agent caught a secre
 
 Five minutes to catch a migration without a rollback. After implementation, that's an hour of work and a risky production deploy.
 
-**Command reference:** `/edikt:plan SPEC-003`
+**Command reference:** `/edikt:sdlc:plan SPEC-003`
 
 ---
 
@@ -259,7 +259,7 @@ One divergence. The retry scheduler uses exponential backoff but forgot the jitt
 
 Zero drift. What was decided is what got built.
 
-**Command reference:** `/edikt:drift SPEC-003`
+**Command reference:** `/edikt:sdlc:drift SPEC-003`
 
 ---
 
@@ -296,7 +296,7 @@ During implementation, you made a choice: transactional outbox over event-driven
 
 The decision you made today is now enforcement tomorrow. Not a doc someone might read. A directive Claude loads automatically, every session, before writing code.
 
-**Command references:** `/edikt:adr`, `/edikt:compile`
+**Command references:** `/edikt:adr`, `/edikt:gov:compile`
 
 ---
 

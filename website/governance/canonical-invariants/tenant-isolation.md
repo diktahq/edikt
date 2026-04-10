@@ -4,7 +4,7 @@
 **Status:** Active
 
 <!--
-Writing guidance (edikt convention — see ADR-009):
+Writing guidance (see ADR-009 for the template contract):
 
 1. Describe the CONSTRAINT, not the IMPLEMENTATION.
    Good: "Primary identifiers are time-orderable."
@@ -44,9 +44,10 @@ The constraint must be **total**. Any phrasing like "scoped by tenant except in 
 ## Implementation
 
 - **Request authentication middleware** extracts the authoritative tenant ID from the signed session/JWT and binds it to the request context. The tenant ID from the request body or query parameters is never trusted.
-- **Repository layer** is the sole path to the database. Every repository method accepts a tenant ID (or reads it from the request context) and injects `WHERE tenant_id = $tenant` as a non-negotiable filter on every query. Raw SQL that bypasses the repository is forbidden.
-- **Structured logger** automatically includes `tenant_id` in every log event by reading it from the request context. Loggers without the tenant ID cannot be instantiated.
-- **Background jobs** are always spawned with an explicit tenant context. On pickup, workers re-establish that context before processing. There are no "global" background jobs that iterate across all tenants in a single pass without re-scoping between each.
+- **Service layer** reads the authoritative tenant from context at the top of every method and passes it explicitly to every downstream call — repository, audit, events, logs. The service layer is where the context-to-argument translation happens.
+- **Repository layer** is the sole path to the database. Every repository method takes `tenantID` as an explicit string parameter and injects `WHERE tenant_id = $tenant` on every query. The repository does not read context — tenant scope is a service-layer responsibility passed in explicitly. Raw SQL that bypasses the repository is forbidden.
+- **Structured log calls** include `"tenant_id", tid` on every `slog.Info`, `slog.Warn`, `slog.Error` call. The logger does not add it automatically — the caller passes it explicitly. Fields that travel for free are fields that get forgotten on the paths where they matter most.
+- **Background jobs** are always spawned with an explicit tenant context. On pickup, workers re-establish that context from the job record before processing. There are no "global" background jobs that iterate across all tenants in a single pass without re-scoping between each.
 - **Tests** have a dedicated test tenant per fixture, never share tenant IDs across tests, and verify tenant scoping is respected in every database access path.
 
 ## Anti-patterns
@@ -71,4 +72,30 @@ Five enforcement mechanisms. Defense in depth. A single mistake in any one layer
 
 <!-- Directives for edikt governance. Populated by /edikt:invariant:compile. -->
 [edikt:directives:start]: #
+source_hash: "e4f2a1..."
+directives_hash: "7c3b9d..."
+compiler_version: "0.3.0"
+paths:
+  - "**/*.go"
+  - "**/repository/**"
+  - "**/service/**"
+  - "**/handler/**"
+scope:
+  - planning
+  - design
+  - review
+  - implementation
+directives:
+  - "Every SQL query MUST include `tenant_id` in the WHERE clause. No exceptions. (ref: INV-012)"
+  - "Tenant ID MUST be read only from the verified session context. NEVER from request body, URL, or query string. No exceptions. (ref: INV-012)"
+  - "Every repository method MUST take `tenantID string` as an explicit parameter. NEVER read context inside the repository. (ref: INV-012)"
+  - "Every `slog.Info`, `slog.Warn`, `slog.Error` call MUST include `\"tenant_id\", tid`. No exceptions. (ref: INV-012)"
+  - "Background job workers MUST re-establish tenant context from the job record before processing. (ref: INV-012)"
+reminders:
+  - "Before writing SQL → MUST include `tenant_id` in WHERE clause (ref: INV-012)"
+  - "Before adding a log call → MUST include `\"tenant_id\", tid` (ref: INV-012)"
+verification:
+  - "[ ] Every SQL query references `tenant_id` (ref: INV-012)"
+  - "[ ] Every `slog.*` call includes `\"tenant_id\"` (ref: INV-012)"
+  - "[ ] No raw SQL outside `internal/repository/` (ref: INV-012)"
 [edikt:directives:end]: #

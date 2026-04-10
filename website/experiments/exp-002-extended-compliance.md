@@ -177,7 +177,7 @@ This triage behavior is consistent across checkpoint and no-checkpoint condition
 ### Commands
 
 ```bash
-cd experiments/exp-002-extended-compliance
+cd test/experiments/rule-compliance/exp-002-scenarios
 ./setup.sh && ./run.sh && python3 score.py
 ```
 
@@ -185,4 +185,4 @@ cd experiments/exp-002-extended-compliance
 
 `setup.sh` creates 63 workdirs under `/tmp/edikt-eval-v3/`. `run.sh` takes ~30 minutes (parallelized, but Opus runs are slower). `score.py` prints per-part results tables matching the format above. Adversarial results (Part 4) include the behavior classification column.
 
-View the full experiment code on [GitHub](https://github.com/diktahq/edikt/tree/main/experiments/exp-002-extended-compliance).
+View the full experiment code on [GitHub](https://github.com/diktahq/edikt/tree/main/test/experiments/rule-compliance/exp-002-scenarios).

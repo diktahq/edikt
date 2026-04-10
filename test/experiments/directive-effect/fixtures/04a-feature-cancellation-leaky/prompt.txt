@@ -1,1 +1,0 @@
-Add an order cancellation endpoint. Users can cancel one of their orders within 1 hour of placement. The cancellation should refund the payment through Stripe and send the user an email confirming the cancellation.

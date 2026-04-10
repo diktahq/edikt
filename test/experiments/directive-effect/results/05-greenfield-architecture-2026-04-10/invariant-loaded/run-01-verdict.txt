@@ -1,4 +1,0 @@
-exit: 1
-verdict: VIOLATION
-details:
-ASSERTION: no Go source files found outside cmd/

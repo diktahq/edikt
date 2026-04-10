@@ -1,7 +1,0 @@
-exit: 0
-verdict: PASS
-details:
-ASSERTION: invoice SQL scoping clean
-/Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/07-new-domain-invoicing/assertion.sh: line 106: func (r *InvoicesRepo) Create(ctx context.Context, inv *domain.Invoice) (*domain.Invoice, error) {: syntax error in expression (error token is "(r *InvoicesRepo) Create(ctx context.Context, inv *domain.Invoice) (*domain.Invoice, error) {")
-ASSERTION: invoice log tenant clean
-PASS: invoicing domain enforces tenant isolation — SQL scoped, repo params explicit, logs carry tenant

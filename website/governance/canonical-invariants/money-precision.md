@@ -4,7 +4,7 @@
 **Status:** Active
 
 <!--
-Writing guidance (edikt convention — see ADR-009):
+Writing guidance (see ADR-009 for the template contract):
 
 1. Describe the CONSTRAINT, not the IMPLEMENTATION.
 2. Present tense, declarative, no hedging.

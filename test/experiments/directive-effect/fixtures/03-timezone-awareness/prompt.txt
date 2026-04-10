@@ -1,1 +1,0 @@
-Add a function `get_recent_orders()` to `app/orders.py` that returns all orders created in the last 24 hours.

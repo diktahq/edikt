@@ -1,7 +1,0 @@
-exit: 0
-verdict: PASS
-details:
-ASSERTION: SQL scoping clean
-ASSERTION: poller scoping clean
-ASSERTION: log tenant coverage: 18 references across 18 log calls
-PASS: tenant isolation enforced — SQL scoped, poller scoped, logs carry tenant

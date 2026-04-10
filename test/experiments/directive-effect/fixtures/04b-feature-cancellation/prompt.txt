@@ -1,1 +1,0 @@
-Add a product reviews feature. Users can post a review on a product they've purchased. A review has a rating (1–5) and an optional text body. Reviews should be listable by product. Create the full stack: repository, service layer, HTTP handlers, and routes.

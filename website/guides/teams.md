@@ -270,4 +270,4 @@ The dynamic shifts in three places.
 
 One commit to set up. Zero per-engineer configuration. The governance accumulates as the team makes decisions and compiles them. Every ADR makes the next session smarter. Every invariant prevents the same mistake from happening twice.
 
-**Command reference:** `/edikt:init`, `/edikt:status`, `/edikt:adr`, `/edikt:compile`
+**Command reference:** `/edikt:init`, `/edikt:status`, `/edikt:adr`, `/edikt:gov:compile`

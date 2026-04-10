@@ -7,7 +7,7 @@ edikt provides security coverage at three points in your workflow: while you bui
 ```text
 Building → Stop hook flags security domains
 Pushing  → Pre-push hook scans for obvious patterns
-On demand → /edikt:audit for deliberate security passes
+On demand → /edikt:sdlc:audit for deliberate security passes
 ```
 
 These layers are complementary — lightweight and continuous early, thorough and deliberate before shipping.
@@ -19,7 +19,7 @@ These layers are complementary — lightweight and continuous early, thorough an
 The `Stop` hook watches every Claude response for security-sensitive domains. When it detects one, Claude ends its response with:
 
 ```text
-🔒 Security-sensitive domain — run `/edikt:audit` before shipping this feature.
+🔒 Security-sensitive domain — run `/edikt:sdlc:audit` before shipping this feature.
 ```
 
 This fires when the response involves: authentication, authorization, payment processing, PII handling, cryptography, token management, or access control.
@@ -43,7 +43,7 @@ If patterns are found, it warns before the push completes:
    • api_key = "sk-..." — src/config.go
    • TODO: validate input — src/api/users.go
 
-   Run /edikt:audit to review. Pushing anyway.
+   Run /edikt:sdlc:audit to review. Pushing anyway.
    To skip: EDIKT_SECURITY_SKIP=1 git push
 ```
 
@@ -77,15 +77,15 @@ hooks:
 
 ---
 
-## Layer 3 — /edikt:audit (deliberate security pass)
+## Layer 3 — /edikt:sdlc:audit (deliberate security pass)
 
 For features that touch security-sensitive domains, run a full audit before shipping:
 
 ```bash
-/edikt:audit              ← full codebase
-/edikt:audit api          ← routes and handlers only
-/edikt:audit auth         ← authentication and authorization code
-/edikt:audit src/payments/ ← specific directory
+/edikt:sdlc:audit              ← full codebase
+/edikt:sdlc:audit api          ← routes and handlers only
+/edikt:sdlc:audit auth         ← authentication and authorization code
+/edikt:sdlc:audit src/payments/ ← specific directory
 ```
 
 This invokes the `security` agent for a thorough review:
@@ -140,15 +140,15 @@ OWASP Checklist:
 |-----------|--------|
 | Building auth, payments, or PII features | Watch for 🔒 Stop hook signals |
 | Before every push | Pre-push hook runs automatically |
-| Finishing a security-sensitive feature | `/edikt:audit auth` or `/edikt:audit api` |
-| Full security review before release | `/edikt:audit` (full codebase) |
-| Post-implementation review of any feature | `/edikt:review` (includes security domain if relevant files changed) |
+| Finishing a security-sensitive feature | `/edikt:sdlc:audit auth` or `/edikt:sdlc:audit api` |
+| Full security review before release | `/edikt:sdlc:audit` (full codebase) |
+| Post-implementation review of any feature | `/edikt:sdlc:review` (includes security domain if relevant files changed) |
 
 ---
 
 ## Pre-flight security review in plans
 
-When you run `/edikt:plan` and the plan mentions auth, payments, tokens, RBAC, or similar, the `security` agent automatically reviews the plan before execution:
+When you run `/edikt:sdlc:plan` and the plan mentions auth, payments, tokens, RBAC, or similar, the `security` agent automatically reviews the plan before execution:
 
 ```text
 SECURITY
