@@ -50,9 +50,11 @@ CRITICAL: NEVER spawn agents for domains not detected from the changed files —
    ```
    If a spec exists, run drift detection using `/edikt:sdlc:drift` logic with `--scope=spec` and append findings under a "DRIFT CHECK" section. If no spec exists, skip silently.
 
-11. Display progress: `Step 3/3: Consolidating findings...`
+11. Display progress: `Step 3/3: Collecting and consolidating findings...`
 
-12. Consolidate all agent findings and output using the Output Format in the Reference section.
+12. For EACH agent that returned findings, output the agent's FULL findings immediately — not just a summary. Each agent's output must be visible to the user before consolidation. Format each agent's section using the Output Format (agent name, severity counts, numbered findings with file references).
+
+13. After ALL individual agent sections are output, add the consolidated footer with total critical/warning counts across all agents and the action prompt.
 
 ## Reference
 
@@ -163,7 +165,7 @@ Domains: {detected domains}
 
 If a relevant agent is not installed:
 ```
-PRINCIPAL DBA — not installed (run /edikt:agents add dba)
+DBA — not installed (run /edikt:agents add dba)
 ```
 
 ### Drift Check Output Format

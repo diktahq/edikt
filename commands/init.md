@@ -323,6 +323,49 @@ Choice [1]:
 
 **Critical:** whichever choice is made, the generated `.edikt/config.yaml` MUST reflect the actual location of the ADRs. Never leave the default path in config when ADRs live elsewhere. Otherwise `/edikt:gov:compile` and `/edikt:status` will report zero ADRs despite them existing.
 
+### 2a.2 Detected guidelines — Adopt / Migrate / Skip
+
+**If existing guidelines or convention docs were detected** (e.g., files with naming patterns, coding standards, style guides, best practices — often in `docs/`, `guides/`, `conventions/`, or `standards/`), capture the detected path as `$DETECTED_GUIDELINES_PATH`.
+
+If the detected path differs from edikt's default (`docs/guidelines/`), prompt:
+```
+Found {n} existing guidelines/conventions in {path}.
+
+How should edikt handle them?
+  [1] Adopt   — keep them at {path} and configure edikt to use that path (default)
+  [2] Migrate — move them to docs/guidelines/ (edikt's default layout)
+  [3] Skip    — ignore them, don't import
+Choice [1]:
+```
+
+**If the user chooses [1] Adopt:**
+- Write `paths.guidelines: {detected_path}` to `.edikt/config.yaml`
+- Do NOT move or copy files
+- After: "Configured edikt to use {path} for guidelines. Run `/edikt:guideline:compile` to compile them into governance directives."
+
+**If the user chooses [2] Migrate:**
+- Read each guideline file
+- Move to `docs/guidelines/`
+- If the file doesn't follow guideline format (missing `## Rules` section), convert it: extract rules as MUST/NEVER bullets, add a `## Purpose` section from existing content
+- Write `paths.guidelines: docs/guidelines` to config
+- After: "Migrated {n} guidelines to docs/guidelines/. Run `/edikt:guideline:compile` to compile them into governance directives."
+
+**If the user chooses [3] Skip:**
+- Continue with edikt's default paths
+- Remind them they can import later with `/edikt:docs:intake`
+
+**After adoption or migration**, prompt to compile:
+```
+Would you like to compile these guidelines into governance directives now?
+  [1] Yes — run /edikt:guideline:compile (recommended)
+  [2] No  — I'll compile later
+Choice [1]:
+```
+
+If yes, run `/edikt:guideline:compile` to generate sentinel blocks. Then remind: "Run `/edikt:gov:compile` to include these in the governance index."
+
+**Critical:** the generated `.edikt/config.yaml` MUST reflect the actual location of guidelines. Same rule as ADRs — never leave the default path when guidelines live elsewhere.
+
 ### 2b. Project Templates (v0.3.0 Adapt mode)
 
 This step runs once per artifact type (ADRs, Invariant Records, guidelines) and generates `.edikt/templates/<artifact>.md` files that future `/edikt:adr:new`, `/edikt:invariant:new`, and `/edikt:guideline:new` commands will use via the lookup chain documented in each `new.md` file.

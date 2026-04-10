@@ -46,6 +46,14 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
 
 1. Display progress: `Step 1/5: Reading source documents...`
 
+1b. Read the edikt version from `~/.edikt/VERSION`. If this file doesn't exist, fall back to `edikt_version:` in `.edikt/config.yaml`. If BOTH differ (e.g., VERSION says 0.2.3 but config says 0.3.0), warn:
+   ```
+   ⚠ ~/.edikt/VERSION (0.2.3) differs from .edikt/config.yaml edikt_version (0.3.0).
+     The compiled_by stamp will use ~/.edikt/VERSION. To update, re-run the installer:
+     curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+   ```
+   Use `~/.edikt/VERSION` as the authoritative version for the `compiled_by` stamp.
+
 2. Read `.edikt/config.yaml`. Resolve paths from the `paths:` section using the Path Defaults in the Reference section.
 
 3. Read source documents:
