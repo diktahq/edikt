@@ -73,7 +73,7 @@ After displaying the dashboard, `/edikt:status` writes the same output to `docs/
 
 ## No active plan?
 
-If there's no plan in progress, `/edikt:status` still shows your installed rules and governance health, and suggests running `/edikt:plan` to start one.
+If there's no plan in progress, `/edikt:status` still shows your installed rules and governance health, and suggests running `/edikt:sdlc:plan` to start one.
 
 ## Natural language triggers
 

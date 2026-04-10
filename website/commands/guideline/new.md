@@ -39,6 +39,29 @@ Creates: `docs/guidelines/guideline-{slug}.md`
 
 Extracts the last team standard or coding convention discussed in the current conversation.
 
+## Template
+
+edikt uses a template to structure the guideline. The template lookup chain:
+
+1. **Project override** — `.edikt/templates/guideline.md` (if present)
+2. **edikt default** — built-in template
+
+The default template produces:
+
+```markdown
+# {topic-name}
+
+## Purpose
+## Rules            ← compile reads this (MUST/NEVER language)
+## Examples
+## When NOT to apply
+
+[edikt:directives:start]: #
+[edikt:directives:end]: #
+```
+
+The `## Rules` section is what compile reads. Each bullet must use MUST or NEVER — soft language ("should", "prefer") is rejected by compile with a warning. See [Guidelines](/governance/guidelines) for details.
+
 ## Output
 
 ```text
@@ -46,7 +69,7 @@ docs/guidelines/
 └── guideline-api-response-casing.md
 ```
 
-Guidelines are compiled into topic rule files by [`/edikt:gov:compile`](/commands/gov/compile) and become part of Claude's active governance.
+After creating the guideline, edikt automatically runs `/edikt:guideline:compile` to generate the directive sentinel block. Your new guideline is immediately ready for `/edikt:gov:compile`.
 
 ## Natural language triggers
 
@@ -57,5 +80,8 @@ Guidelines are compiled into topic rule files by [`/edikt:gov:compile`](/command
 
 ## What's next
 
-- [/edikt:guideline:review](/commands/guideline/review) — review guideline language quality
-- [/edikt:gov:compile](/commands/gov/compile) — compile guidelines into governance directives
+- [/edikt:guideline:compile](/commands/guideline/compile) — compile into governance directives
+- [/edikt:guideline:review](/commands/guideline/review) — review language quality + directive LLM compliance
+- [Guidelines](/governance/guidelines) — what they are, when to use, vs ADRs vs invariants
+- [Extensibility](/governance/extensibility) — manual directives, suppressed directives, template overrides
+- [/edikt:gov:compile](/commands/gov/compile) — compile all governance into enforcement files

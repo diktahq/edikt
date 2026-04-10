@@ -100,7 +100,7 @@ PRD → spec → artifacts → plan → execute → drift detection
 
 Each step feeds the next. Each must be accepted before the next begins.
 
-**Command references:** `/edikt:prd`, `/edikt:spec`, `/edikt:spec-artifacts`, `/edikt:plan`, `/edikt:drift`
+**Command references:** `/edikt:sdlc:prd`, `/edikt:sdlc:spec`, `/edikt:sdlc:artifacts`, `/edikt:sdlc:plan`, `/edikt:sdlc:drift`
 
 ## The governance loop
 
@@ -130,13 +130,13 @@ edikt reads your accepted ADRs, active invariants, and team guidelines, produces
 
 ```text
 ADRs (accepted) + Invariants (active) + Guidelines
-        ↓ /edikt:compile
+        ↓ /edikt:gov:compile
 .claude/rules/governance.md (auto-loaded every session)
 ```
 
 Update an ADR, recompile. One source of truth, one enforcement point.
 
-**Command reference:** `/edikt:compile`
+**Command reference:** `/edikt:gov:compile`
 
 ### Correctness guardrails — `.claude/rules/`
 

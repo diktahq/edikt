@@ -1,5 +1,54 @@
 # edikt changelog
 
+## v0.3.0 (2026-04-10)
+
+### Project Adaptation (ADR-008, ADR-009)
+
+edikt can now adapt to existing projects. The compile pipeline supports a **three-list directive schema** (ADR-008) with hash-based caching, and introduces **Invariant Records** as the formal governance artifact for hard constraints (ADR-009).
+
+- **Three-list schema:** every compiled sentinel block now carries `directives:` (auto-generated), `manual_directives:` (user-authored), and `suppressed_directives:` (user-rejected). The merge formula `effective = (directives - suppressed) ∪ manual` gives users full control over what ships without losing compile automation. Hash-based caching (`source_hash` + `directives_hash`) skips Claude calls when nothing changed.
+- **Invariant Records (ADR-009):** formalized the governance artifact for non-negotiable constraints. Formalized "Invariant Records" as the governance artifact for hard constraints (short form: INV). Template follows Statement/Rationale/Enforcement structure. Compile extracts directives from the Statement section, preserving declarative absolute language.
+- **Extensibility plumbing:** template lookup chain (`project .edikt/templates/` → inline fallback), `/edikt:guideline:compile` command, auto-chain (`<artifact>:new` runs `<artifact>:compile`).
+- **Init style detection:** detects project style (flat, layered, monorepo) during init. Adapt mode for existing `.edikt/` directories. Template-less refusal for v0.3.0+ projects.
+- **Flexible prose input:** ADR/invariant/guideline creation accepts natural language with automatic reference extraction to existing governance.
+- **Doctor + upgrade integration:** doctor reports template overrides and stale hashes. Upgrade respects project templates.
+
+### Compile Improvements
+
+Experiment-driven improvements to the compile output format. These changes improve how well Claude follows governance directives.
+
+- **"No exceptions." reinforcement:** invariant directives derived from absolute-language Statements ("every", "all", "total") now get "No exceptions." appended. Experiments showed this phrase prevents Claude from rationalizing edge cases.
+- **Reminders sentinel (`[edikt:reminders:start/end]`):** compile now generates pre-action interrupts: "Before writing SQL → MUST include tenant_id." Aggregated into a `## Reminders` section in governance.md. Capped at 10.
+- **Verification checklist:** compile generates a `## Verification Checklist` section with grep-verifiable items Claude checks before finishing. Capped at 15 items.
+- **Per-directive LLM compliance scoring** in `/edikt:invariant:review`, `/edikt:adr:review`, `/edikt:guideline:review`: scores each compiled directive on token specificity, MUST/NEVER usage, grep-ability, ambiguity, and friction risk. Manual directives held to the same standard.
+- **New `/edikt:gov:score` command:** aggregate governance quality report — context budget, compliance metrics, manual directive health. JSON output for CI.
+
+### Pre-flight Criteria Validation
+
+The evaluator agent now supports a **pre-flight mode** that validates acceptance criteria BEFORE the generator starts. Classifies each criterion as TESTABLE/VAGUE/SUBJECTIVE/BLOCKED and proposes verification commands. The plan command (step 11) invokes pre-flight automatically, preventing wasted iterations on untestable criteria.
+
+### Experiments
+
+Pre-registered experiments measuring whether governance directives change Claude's output on real coding tasks. 8 experiments across 4 scenario types.
+
+| Scenario | Baseline | Governance | Effect |
+|---|---|---|---|
+| Existing codebase (EXP 01-04) | PASS | PASS | Absent — code patterns self-teach |
+| Greenfield (EXP 05-06) | VIOLATION | PASS | **Present** — governance prevents architecture/tenant violations |
+| New domain on existing (EXP 07) | VIOLATION | PASS | **Present** — governance catches log/SQL misses |
+| Long context (EXP 08, N=2) | 1/2 VIOLATION | 0/2 PASS | **Present** — governance stabilizes under context pressure |
+
+Key findings: governance has measurable effect on greenfield and new-domain code. Directive format matters — MUST/NEVER with literal code tokens outperforms prose. Long context degrades convention compliance; governance in `.claude/rules/` survives because it's loaded separately from the conversation. Full methodology and results in `test/experiments/`.
+
+### New commands
+
+- `/edikt:gov:score` — aggregate governance quality scoring for CI
+
+### Architecture Decisions
+
+- **ADR-008:** Deterministic compile and three-list schema
+- **ADR-009:** Invariant Record template formalization
+
 ## v0.2.3 (2026-04-09)
 
 ### Compile schema version (ADR-007)
@@ -340,7 +389,7 @@ edikt governs your architecture and compiles your engineering decisions into aut
 - 123 eval runs across 2 experiments proving rule compliance mechanism
 - EXP-001: 15/15 compliance with rules vs 0/15 without on invented conventions
 - EXP-002: holds under multi-rule conflict, multi-file sessions, Opus vs Sonnet, adversarial prompts
-- Reproducible: `experiments/exp-001-rule-compliance/` and `experiments/exp-002-extended-compliance/`
+- Reproducible: `test/experiments/rule-compliance/exp-001-scenarios/` and `test/experiments/rule-compliance/exp-002-scenarios/`
 
 **Website**
 - Full documentation at edikt.dev

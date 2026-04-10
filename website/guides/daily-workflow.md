@@ -45,7 +45,7 @@ This loads your project context, active plan, decisions, invariants, and install
 
 **With edikt:**
 ```bash
-/edikt:plan add webhook delivery with retry logic
+/edikt:sdlc:plan add webhook delivery with retry logic
 ```
 
 edikt interviews you (3–6 focused questions), scans the codebase for relevant patterns, breaks work into phases, then runs a pre-flight specialist review before execution:
@@ -69,7 +69,7 @@ Fix the migration gap now. It takes 5 minutes. After implementation it takes an 
 
 Skip pre-flight for simple tasks:
 ```bash
-/edikt:plan --no-review fix typo in error message
+/edikt:sdlc:plan --no-review fix typo in error message
 ```
 
 ---
@@ -84,8 +84,8 @@ Just build. edikt works in the background:
 
 ```text
 💡 ADR candidate — run /edikt:adr to capture it.
-📄 Doc gap: new /webhooks/retry endpoint — run /edikt:docs to review.
-🔒 Security-sensitive domain — run /edikt:audit before shipping.
+📄 Doc gap: new /webhooks/retry endpoint — run /edikt:docs:review to review.
+🔒 Security-sensitive domain — run /edikt:sdlc:audit before shipping.
 ```
 
 When you see one of these, run the command. That decision becomes a permanent record, not a conversation that gets lost.
@@ -131,7 +131,7 @@ API
 
 For security-sensitive features (auth, payments, PII), also run:
 ```bash
-/edikt:audit
+/edikt:sdlc:audit
 ```
 
 ---
@@ -165,7 +165,7 @@ Possible captures:
      → Run /edikt:adr to capture
 
   📄 Doc gap: POST /webhooks/retry — new endpoint
-     → Run /edikt:docs to review
+     → Run /edikt:docs:review to review
 ─────────────────────────────────────────────────────
 ```
 
@@ -178,9 +178,9 @@ Capture what matters. What you save in `docs/decisions/` is available to Claude 
 | Step | Automatic | Explicit |
 |------|-----------|---------|
 | Session start | SessionStart hook surfaces git changes | `/edikt:context` |
-| Planning | — | `/edikt:plan` |
-| Pre-flight | Runs at end of `/edikt:plan` | `--no-review` to skip |
+| Planning | — | `/edikt:sdlc:plan` |
+| Pre-flight | Runs at end of `/edikt:sdlc:plan` | `--no-review` to skip |
 | Building | PostToolUse formats, Stop hook flags signals | `/edikt:adr`, `/edikt:invariant` |
 | Review | — | `/edikt:review` |
-| Security | Pre-push hook scans on push | `/edikt:audit` |
+| Security | Pre-push hook scans on push | `/edikt:sdlc:audit` |
 | End of session | PreCompact reminds you | `/edikt:session` |

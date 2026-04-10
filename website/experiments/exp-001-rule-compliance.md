@@ -185,7 +185,7 @@ All 4 phrasings produced tests (12/12 vs 0/3 baseline). Test-before-code orderin
 ### Commands
 
 ```bash
-cd experiments/exp-001-rule-compliance
+cd test/experiments/rule-compliance/exp-001-scenarios
 ./setup.sh && ./run.sh && python3 score.py
 ```
 
@@ -193,4 +193,4 @@ cd experiments/exp-001-rule-compliance
 
 `setup.sh` creates 60 workdirs under `/tmp/edikt-eval-v2/`. `run.sh` invokes Claude Code once per workdir — takes ~20 minutes for all 60 runs (parallelized at 6 concurrent). `score.py` reads each workdir's output files and prints a per-convention, per-condition results table matching the format above. A successful run shows 15/15 in both rule conditions and 0/15 in the no-rule condition.
 
-View the full experiment code on [GitHub](https://github.com/diktahq/edikt/tree/main/experiments/exp-001-rule-compliance).
+View the full experiment code on [GitHub](https://github.com/diktahq/edikt/tree/main/test/experiments/rule-compliance/exp-001-scenarios).

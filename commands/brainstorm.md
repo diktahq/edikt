@@ -178,7 +178,7 @@ Create the directory if it doesn't exist.
 
 Count existing brainstorm files to determine the next number:
 ```bash
-COUNT=$(ls docs/brainstorms/BRAIN-*.md 2>/dev/null | wc -l | tr -d ' ')
+COUNT=$(ls {brainstorms_path}/BRAIN-*.md 2>/dev/null | wc -l | tr -d ' ')
 NEXT=$(printf "%03d" $((COUNT + 1)))
 ```
 

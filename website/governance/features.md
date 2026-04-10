@@ -77,9 +77,9 @@ These are not configurable — they're the governance core:
 | Feature | Why it's always on |
 |---------|-------------------|
 | **Rule loading** | Rules in `.claude/rules/` load automatically — this is Claude Code's behavior, not edikt's |
-| **Compiled directives** | `/edikt:compile` output loads as a rule file — same mechanism |
-| **Drift detection** | `/edikt:drift` is a command you run explicitly, not a background behavior |
-| **Review-governance** | `/edikt:review-governance` is a command you run explicitly |
+| **Compiled directives** | `/edikt:gov:compile` output loads as a rule file — same mechanism |
+| **Drift detection** | `/edikt:sdlc:drift` is a command you run explicitly, not a background behavior |
+| **Review-governance** | `/edikt:gov:review` is a command you run explicitly |
 | **PreToolUse check** | Warns if `docs/project-context.md` is missing — a safety net, not a behavior toggle |
 | **Context recovery** | PreCompact + PostCompact preserve plan state across compaction — disabling this would lose data |
 

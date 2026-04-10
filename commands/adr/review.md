@@ -101,6 +101,22 @@ For each ADR:
 | Weak | Requires subjective judgment to verify |
 | Vague | Cannot be verified |
 
+### 3b. Review Compiled Directives (LLM Compliance)
+
+If the ADR has a `[edikt:directives:start]: #` sentinel block, score each compiled directive for LLM compliance. For each directive in `directives:` AND `manual_directives:`, score on:
+
+- **Token specificity** — 0 backtick tokens = Low, 1-2 = Medium, 3+ = High
+- **Length** — <10w flag, 10-30w good, 30-50w check splittable, >50w split
+- **MUST/NEVER** — present = pass; absent = flag
+- **Grep-ability** — can compliance be checked with a shell command? Propose it if yes.
+- **Ambiguity** — could two engineers disagree? Flag if yes.
+
+Each directive gets a 1-10 score. Score <5 gets a rewrite suggestion.
+
+Score manual directives to the same standard. Flag soft language, missing `(ref:)`, and conflicts with auto-generated directives.
+
+**Friction risk:** flag directives contradicting common language/framework patterns with a suggested alternative.
+
 ### 4. Check Sentinel Staleness
 
 Display progress: `Step 2/3: Checking sentinel staleness...`

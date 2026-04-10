@@ -2,62 +2,54 @@
 
 **The governance layer for agentic engineering.**
 
-edikt governs your architecture and compiles your engineering decisions into automatic enforcement. It governs the Agentic SDLC from requirements to verification.
+edikt compiles your engineering decisions into directives Claude follows automatically — every session, every engineer, every project.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
 ```
 
-Then open any project in Claude Code and run `/edikt:init`.
+Then open any project in Claude Code and say "initialize edikt" or run `/edikt:init`.
 
-## What it does
+## The problem
 
-Without edikt, every Claude Code session starts from scratch. Standards live in your head. Decisions get forgotten between sessions. Each engineer's Claude drifts differently.
+Without governance, every Claude Code session starts from scratch. Architecture decisions live in your head. Conventions drift between sessions. Each engineer's Claude produces different code for the same standards.
 
-edikt fixes this with two systems that reinforce each other:
+## What edikt does
 
-**Architecture governance & compliance.** Capture architecture decisions (ADRs), constraints (invariants), and conventions (guidelines). `/edikt:compile` reads all three, checks for contradictions, and produces a governance file Claude reads automatically — every session, before writing code. Rule packs add correctness guardrails to the same enforcement surface.
+**Capture decisions.** Architecture Decision Records (ADRs), Invariant Records (hard constraints), and guidelines — all plain markdown.
 
-**Agentic SDLC governance.** PRD → spec → artifacts → plan → execute → drift detection. Status-gated transitions. Specialist agents review at every critical step. Drift detection verifies what was built matches what was decided.
+**Compile into enforcement.** `/edikt:gov:compile` reads your decisions and produces directives Claude reads automatically. MUST/NEVER language with literal code tokens, pre-action reminders, and a verification checklist Claude self-audits against before finishing.
 
-The lifecycle produces new engineering decisions. Compiled decisions govern the lifecycle. Decisions compound rather than decay.
+**Govern the lifecycle.** PRD → spec → artifacts → plan → execute → drift detection. Status-gated transitions with specialist agent review at every step.
 
-## The full cycle
+## What gets installed
 
-```
-/edikt:prd             → requirements and acceptance criteria
-/edikt:spec            → technical specification
-/edikt:spec-artifacts  → data model, API contracts, test strategy
-/edikt:plan            → phased execution with specialist review
-  execute             → Claude builds with enforced standards
-/edikt:drift           → verify implementation matches the spec
-```
-
-## What edikt installs
-
-- **20 rule packs** — path-conditional standards (Go, TypeScript, Python, Next.js, Django, and more)
-- **18 specialist agents** — architect, dba, security, api, qa, sre, and others
-- **9 lifecycle hooks** — auto-format, plan injection, compaction recovery, quality gates
-- **Compiled governance** — engineering decisions (ADRs, invariants, guidelines) compile into directives Claude follows automatically every session
-- **24 commands** — from init through drift detection
-
-## Research
-
-123 eval runs across 2 experiments prove the enforcement mechanism works. Rules in `.claude/rules/` drive 100% compliance on conventions Claude has never seen in training data (15/15 with rules, 0/15 without). Fully reproducible — see [experiments/](experiments/).
+- Compiled governance directives Claude reads every session
+- 20 rule packs (Go, TypeScript, Python, Next.js, Django, and more)
+- 18 specialist agents (architect, dba, security, api, qa, sre, and others)
+- 9 lifecycle hooks (plan injection, compaction recovery, quality gates)
+- 25+ commands from init through drift detection
 
 ## Documentation
 
 Full documentation, guides, and examples at **[edikt.dev](https://edikt.dev)**.
 
 - [Getting Started](https://edikt.dev/getting-started) — install and init in 5 minutes
-- [How It Works](https://edikt.dev/governance/chain) — the governance chain
-- [Commands](https://edikt.dev/commands/) — all 24 commands
-- [Rule Packs](https://edikt.dev/rules/) — what gets enforced
+- [What is edikt](https://edikt.dev/what-is-edikt) — the full picture
+- [How Governance Compiles](https://edikt.dev/governance/compile) — from decisions to enforcement
+- [Invariant Records](https://edikt.dev/governance/invariant-records) — hard constraints that compile into non-negotiable directives
+- [Writing Invariants](https://edikt.dev/governance/writing-invariants) — guide for writing effective constraints
+- [Commands](https://edikt.dev/commands/) — all commands
+- [Governance Quality](https://edikt.dev/commands/gov/score) — score your governance for LLM compliance
+
+## Plain markdown. No build step. No dependencies.
+
+Every file is `.md` or `.yaml` you can read, edit, and version-control.
 
 ## Claude Code only
 
-edikt uses Claude Code's platform primitives — path-conditional rules, lifecycle hooks, slash commands, specialist agents, quality gates. Other tools don't have them. The knowledge base (project-context.md, ADRs, specs) is plain markdown that works anywhere. The governance loop only works in Claude Code.
+edikt uses Claude Code's platform primitives — path-conditional rules, lifecycle hooks, slash commands, specialist agents. The governance loop only works in Claude Code. The knowledge base (ADRs, specs, invariants) is plain markdown that works anywhere.
 
-## No build step. No runtime. No magic.
+---
 
-Every file is `.md` or `.yaml` you can read, edit, and version-control. Plain markdown, no dependencies.
+[License](LICENSE) · [Changelog](CHANGELOG.md) · [edikt.dev](https://edikt.dev)

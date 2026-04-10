@@ -21,13 +21,13 @@ Rules installed in `.claude/rules/` are enforced automatically. Hooks fire witho
 
 Trusting that Claude followed the spec is not the same as verifying it. edikt's governance chain — PRD → spec → artifacts → plan → execute → drift detection — creates a traceability path from intent to implementation.
 
-Every decision in the chain is captured. Every step references the one before it. When `/edikt:drift` runs, it doesn't check whether Claude "feels right" — it checks whether the implementation matches the spec and the PRD.
+Every decision in the chain is captured. Every step references the one before it. When `/edikt:sdlc:drift` runs, it doesn't check whether Claude "feels right" — it checks whether the implementation matches the spec and the PRD.
 
 ## Decisions compile into enforcement
 
 Architectural decisions shouldn't live in documents Claude might read. They should compile into directives Claude follows automatically.
 
-`/edikt:compile` reads your accepted ADRs and active invariants and produces `.claude/rules/governance.md`. Update the ADR, recompile. The source of truth is the decision record. The enforcement format is the compiled output.
+`/edikt:gov:compile` reads your accepted ADRs and active invariants and produces `.claude/rules/governance.md`. Update the ADR, recompile. The source of truth is the decision record. The enforcement format is the compiled output.
 
 ## Infer, don't interrogate
 

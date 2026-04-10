@@ -9,3 +9,6 @@ docs/plans/
 .idea/
 memory/
 AGENTS.md
+docs/brainstorms/
+test/experiments/directive-effect/
+test/experiments/long-running/

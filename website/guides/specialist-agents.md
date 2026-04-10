@@ -85,15 +85,15 @@ Three routing paths:
 | You say | What happens |
 |---------|-------------|
 | "review this" | `/edikt:review` detects changed file domains, routes to matching agents |
-| "audit the codebase" | `/edikt:audit` routes to `security` and `sre` agents |
-| "create a plan" | `/edikt:plan` assigns reviewers to each phase based on domain |
-| "generate spec artifacts" | `/edikt:spec-artifacts` routes each artifact to its domain specialist |
+| "audit the codebase" | `/edikt:sdlc:audit` routes to `security` and `sre` agents |
+| "create a plan" | `/edikt:sdlc:plan` assigns reviewers to each phase based on domain |
+| "generate spec artifacts" | `/edikt:sdlc:artifacts` routes each artifact to its domain specialist |
 
 **Direct delegation** — ask by name: "have the dba review this migration"
 
 ### Plan pre-flight review
 
-When you run `/edikt:plan`, edikt scans the plan content for domain signals and invokes the relevant advisors before execution begins:
+When you run `/edikt:sdlc:plan`, edikt scans the plan content for domain signals and invokes the relevant advisors before execution begins:
 
 | Plan mentions... | Agent invoked |
 |-----------------|--------------|

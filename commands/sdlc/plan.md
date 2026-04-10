@@ -155,6 +155,14 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review â€
     - Output the consolidated pre-flight review using the Pre-Flight Output Format in the Reference section.
     - If user provides updates, incorporate them into the plan file. If user skips, add a `## Known Risks` section listing outstanding findings.
 
+11. Run pre-flight criteria validation on every phase's acceptance criteria:
+    - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
+    - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
+    - For TESTABLE criteria, the evaluator proposes a verification command. Add these to a `### Verification Commands` section in each phase.
+    - If any criteria are VAGUE or SUBJECTIVE, surface the evaluator's rewrites inline â€” ask the user to accept or edit before finalizing the plan.
+    - If the evaluator verdict is ABORT (50%+ criteria untestable), flag: "Phase {N} has untestable acceptance criteria. Rewrite before implementing."
+    - This step prevents wasted iterations on criteria the evaluator cannot judge at phase end.
+
 ## Reference
 
 ### Interview Guidance

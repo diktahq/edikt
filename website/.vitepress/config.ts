@@ -72,12 +72,35 @@ export default withMermaid(defineConfig({
         text: 'How It Works',
         items: [
           { text: 'Governance Chain', link: '/governance/chain' },
+          { text: 'How Governance Compiles', link: '/governance/compile' },
+          { text: 'Sentinel Blocks', link: '/governance/sentinels' },
+          { text: 'Extensibility', link: '/governance/extensibility' },
           { text: 'Agents', link: '/agents' },
           { text: 'Quality Gates', link: '/governance/gates' },
-          { text: 'Compiled Directives', link: '/governance/compile' },
           { text: 'Drift Detection', link: '/governance/drift' },
-          { text: 'Governance Review', link: '/commands/gov/review' },
           { text: 'Configurable Features', link: '/governance/features' },
+        ],
+      },
+      {
+        text: 'Architecture Decisions',
+        items: [
+          { text: 'What they are', link: '/governance/architecture-decisions' },
+          { text: 'Writing good ADRs', link: '/governance/writing-adrs' },
+        ],
+      },
+      {
+        text: 'Invariant Records',
+        items: [
+          { text: 'What they are', link: '/governance/invariant-records' },
+          { text: 'Writing good invariants', link: '/governance/writing-invariants' },
+          { text: 'Example: tenant isolation', link: '/governance/canonical-invariants/tenant-isolation' },
+          { text: 'Example: money precision', link: '/governance/canonical-invariants/money-precision' },
+        ],
+      },
+      {
+        text: 'Guidelines',
+        items: [
+          { text: 'What they are', link: '/governance/guidelines' },
         ],
       },
       {
@@ -110,6 +133,7 @@ export default withMermaid(defineConfig({
             items: [
               { text: 'gov:compile', link: '/commands/gov/compile' },
               { text: 'gov:review', link: '/commands/gov/review' },
+              { text: 'gov:score', link: '/commands/gov/score' },
               { text: 'gov:rules-update', link: '/commands/gov/rules-update' },
               { text: 'gov:sync', link: '/commands/gov/sync' },
             ],

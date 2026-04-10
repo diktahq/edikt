@@ -89,10 +89,10 @@ Gates are checked at three points:
 
 3. **Explicit audit** — ask Claude to run a security and quality audit. All relevant agents scan the current implementation.
 
-**Command reference:** `/edikt:audit`
+**Command reference:** `/edikt:sdlc:audit`
 
 ## CI integration
 
-For CI pipelines, run `/edikt:drift --output=json`. Exit code `1` if any diverged findings exist. This integrates with any CI system that checks exit codes.
+For CI pipelines, run `/edikt:sdlc:drift --output=json`. Exit code `1` if any diverged findings exist. This integrates with any CI system that checks exit codes.
 
 Quality gates during development prevent CI failures from being the first signal of a problem. The gate fires while the engineer is still in the session — not after a push.

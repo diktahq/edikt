@@ -184,6 +184,60 @@ Note each missing key with a description:
 
 Do NOT flag keys that exist but have unexpected values — those may be intentional user customizations.
 
+#### 2e-bis. Project templates check (v0.3.0+)
+
+Check whether the project has the three per-artifact project templates that v0.3.0 requires for new artifact creation via the lookup chain (see ADR-005, ADR-009, and commands/<artifact>/new.md Section 1a).
+
+```bash
+HAS_ADR_TEMPLATE=$([ -f .edikt/templates/adr.md ] && echo "yes" || echo "no")
+HAS_INVARIANT_TEMPLATE=$([ -f .edikt/templates/invariant.md ] && echo "yes" || echo "no")
+HAS_GUIDELINE_TEMPLATE=$([ -f .edikt/templates/guideline.md ] && echo "yes" || echo "no")
+```
+
+**Classify the project:**
+
+- **All three present** → mark project templates as "up to date, skip". Report nothing in the upgrade summary.
+- **At least one missing AND `edikt_version >= 0.3.0`** → mark as "templates partially configured — /edikt:init will complete setup". Note in the summary:
+  ```
+  ⬆  Project templates — {n}/3 missing
+     Missing: {list of missing templates}
+     Fix: run /edikt:init --reset-templates to complete setup
+  ```
+- **All three missing AND `edikt_version < 0.3.0`** (v0.2.x legacy upgrading to v0.3.0) → this is the **grandfather flow**. Note in the summary:
+  ```
+  ⬆  Project templates — v0.3.0 introduces per-artifact project templates
+     This project is on v{old_version} — templates have never been configured.
+     v0.3.0+ requires explicit templates for /edikt:adr:new, /edikt:invariant:new,
+     and /edikt:guideline:new. edikt doesn't ship a default — your project owns it.
+
+     After upgrade: run /edikt:init to set up project templates interactively.
+     You'll pick Adapt (generate from existing artifacts), Start fresh (pick a
+     reference template), or Write my own for each artifact type.
+  ```
+- **All three missing AND `edikt_version >= 0.3.0`** (broken state — v0.3.0+ project with no templates) → note:
+  ```
+  ⬆  Project templates — broken state detected
+     Project is on v{version} but no templates are configured.
+     Fix: run /edikt:init --reset-templates immediately.
+     Until then, /edikt:<artifact>:new commands will refuse per ADR-005.
+  ```
+
+**Never overwrite existing templates.** If `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` already exist, `/edikt:upgrade` must NOT touch them. They are user-owned content committed to the project's git. The only way to regenerate them is `/edikt:init --reset-templates`, which the user invokes explicitly.
+
+**Never auto-run init.** Even when templates are missing, `/edikt:upgrade` does NOT invoke `/edikt:init` on the user's behalf. It reports the state in the summary and leaves the user in control. Init is interactive; upgrade should not drag the user through another interactive flow without consent.
+
+**Detect the three-list schema migration opportunity** (informational only):
+
+If any artifact files exist under `{paths.decisions}`, `{paths.invariants}`, or `{paths.guidelines}` that have a legacy `content_hash:` field in their directive sentinel block (v0.2.x schema), note:
+```
+ℹ Directive sentinel schema — {n} artifacts are on the v0.2.x schema
+   These will migrate to the v0.3.0 three-list schema on their next
+   /edikt:<artifact>:compile run. No action required — backward
+   compatibility works seamlessly. Informational only.
+```
+
+This is NOT a blocking issue or a required upgrade step. The three-list schema is additive and `gov:compile` reads both the old and new formats. Users can migrate at their own pace by running `/edikt:<artifact>:compile --regenerate` when they want to.
+
 #### 2e. Rule packs check
 
 If `.claude/rules/` does not exist or contains no `.md` files → mark rule packs as "nothing installed, skip" (not outdated).
@@ -356,6 +410,88 @@ Do NOT auto-run `/edikt:gov:compile`. Surface the recommendation in the upgrade 
 
 **Important**: Never enforce `compiled_by` or `compiled_at` equality with the current edikt version. Those fields are informational HTML comments only — they tell humans when/who produced the file, but do not drive any decision.
 
+#### Project templates (v0.3.0+, ADR-005 + ADR-009)
+
+**Never overwrite project templates under `.edikt/templates/`.** This is a hard contract from ADR-005:
+
+- Existing `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` MUST NOT be touched by `/edikt:upgrade`. They are user-owned, team-shared, committed to git. The only way to modify them is direct user edit or `/edikt:init --reset-templates` (which the user invokes explicitly).
+- If any of the three exists, skip it in this step. Do NOT even verify its contents — trust the user.
+
+**When templates are missing**, the behavior depends on the grandfather state detected in Step 2e-bis:
+
+- **Grandfather flow** (`edikt_version < 0.3.0` → upgrading to v0.3.0+): print a clear migration notice:
+  ```
+  📋 v0.3.0 introduces per-artifact project templates
+
+  v0.3.0+ requires .edikt/templates/adr.md, .edikt/templates/invariant.md,
+  and .edikt/templates/guideline.md for /edikt:<artifact>:new to work.
+  Your project is being upgraded from v{old} and doesn't have them yet.
+
+  This upgrade does NOT create templates automatically. Templates are a
+  choice your team makes: adapt from existing artifacts, pick a reference,
+  or write your own.
+
+  Next step after upgrade:
+    /edikt:init    (interactive — pick Adapt / Start fresh / Write my own
+                    for each artifact type)
+
+  Until you run init, /edikt:<artifact>:new will continue to use the
+  legacy inline fallback template with a one-time warning per invocation
+  (v0.2.x behavior preserved). You can migrate at your own pace.
+  ```
+
+- **Broken state** (`edikt_version >= 0.3.0` but templates missing — shouldn't happen in normal workflows but may occur if the user deleted `.edikt/templates/*`): print an error-grade notice:
+  ```
+  ⚠ Project templates are missing but project is on v{version}
+
+  edikt v0.3.0+ requires project templates for new artifact creation.
+  This is a broken state — until you fix it, /edikt:<artifact>:new
+  commands will HARD REFUSE with an error message.
+
+  Fix: run /edikt:init --reset-templates immediately.
+  ```
+
+- **Partially configured** (`edikt_version >= 0.3.0`, some templates present, some missing): print:
+  ```
+  ⚠ Some project templates are missing
+
+  Missing: {list of missing templates}
+  Fix: run /edikt:init --reset-templates to complete the setup.
+
+  The existing templates ({list of existing}) are preserved — init
+  only regenerates the missing ones.
+  ```
+
+**Bump `edikt_version` in config** after the upgrade completes successfully, so subsequent `<artifact>:new` invocations can distinguish "recently upgraded, templates not yet set up" from "legacy project on v0.2.x". Do this as the final step of the upgrade, not before — if the upgrade fails midway, the version stays at the old value so the user can retry.
+
+**Do not run `/edikt:init` automatically.** Always leave the user in control. Upgrade reports the state; init is the next action the user takes when they're ready.
+
+#### Directive sentinel schema migration (v0.2.x → v0.3.0, ADR-008)
+
+Similar to the project template handling: **never auto-migrate directive sentinel blocks.** Files with the legacy `content_hash:` field continue to work via gov:compile's backward compatibility path. The migration to the v0.3.0 three-list schema happens on the next `/edikt:<artifact>:compile` run for that specific file.
+
+If the upgrade summary noted legacy directive blocks in Step 2e-bis, reinforce in the apply step:
+```
+ℹ Directive sentinel schema migration
+
+{n} artifact files still use the v0.2.x directive schema (single
+content_hash field). They continue to work — /edikt:gov:compile reads
+both old and new formats transparently.
+
+To migrate at your own pace:
+  /edikt:adr:compile --regenerate       (migrate all ADRs)
+  /edikt:invariant:compile --regenerate (migrate all Invariant Records)
+  /edikt:guideline:compile --regenerate (migrate all guidelines)
+
+Or migrate individual files:
+  /edikt:adr:compile ADR-NNN
+
+There's no rush. Legacy and new schemas coexist indefinitely until
+edikt v0.4.0 at the earliest (no deprecation planned in v0.3.x).
+```
+
+Do NOT run `--regenerate` automatically. Users should migrate at their own pace.
+
 #### Command reference migration (v0.1.x → v0.2.x)
 
 v0.2.0 renamed 15 flat commands into namespaces. Projects initialized with v0.1.x have hardcoded references to the old flat names in `CLAUDE.md` (the intent table inside the edikt-managed block) and in compiled rule packs. These references still resolve today via deprecated stubs, but they'll break in v0.4.0 when the stubs are removed.
@@ -424,7 +560,29 @@ After applying:
    Linter configs found. Run /edikt:sync to regenerate linter rules.
    ```
 
-3. Output results:
+3. **Check project templates (v0.3.0+, ADR-005 + ADR-009)**: if any of `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` is missing, surface a prominent next-step prompt in the post-upgrade output:
+   ```
+   📋 Project templates — /edikt:init required
+
+   v0.3.0+ requires per-artifact project templates. This project
+   doesn't have all three yet:
+     Missing: {list of missing templates}
+
+   Next step: /edikt:init (interactive setup)
+     You'll pick Adapt, Start fresh, or Write my own for each
+     artifact type. Existing artifacts are not touched.
+
+   Until templates are set up, /edikt:<artifact>:new will:
+     - Use the legacy inline fallback + warning (for v0.2.x-era projects
+       whose edikt_version is still < 0.3.0)
+     - HARD REFUSE with an error pointing at /edikt:init (for projects
+       whose edikt_version is now >= 0.3.0 after this upgrade)
+   ```
+   This notice fires AFTER the `edikt_version` bump in step 1, so the user sees it with the correct version context.
+
+   **This is advisory only.** Do not auto-run `/edikt:init`. Leave the user in control.
+
+4. Output results:
 
 If only `edikt_version` was added (everything else was already current):
 ```

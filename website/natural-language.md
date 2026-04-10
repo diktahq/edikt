@@ -62,7 +62,7 @@ You want to start planning a new feature:
 
 > **You:** help me plan the export to CSV feature
 
-> **Claude:** *(runs `/edikt:plan`)*
+> **Claude:** *(runs `/edikt:sdlc:plan`)*
 > Great, let me ask a few questions to scope this out...
 
 ---
@@ -75,23 +75,23 @@ Claude matches intent, not exact words. These are representative examples — an
 |--------|----------|---------|
 | Project status / what's next | "what's our status", "where are we", "what's next", "project status" | `/edikt:status` |
 | Load project context | "load context", "remind yourself", "what's this project", "give me context" | `/edikt:context` |
-| Create an execution plan | "create a plan", "make a plan", "plan for X", "plan this ticket", "help me plan", "how should we approach X", "plan to fix these issues", "plan these changes" | `/edikt:plan` |
+| Create an execution plan | "create a plan", "make a plan", "plan for X", "plan this ticket", "help me plan", "how should we approach X", "plan to fix these issues", "plan these changes" | `/edikt:sdlc:plan` |
 | Capture a decision | "save this decision", "record this", "capture that", "write an ADR", "document this decision" | `/edikt:adr` |
 | Add a hard constraint | "add an invariant", "that's a hard rule", "never do X", "this must always be true" | `/edikt:invariant` |
-| Write a PRD | "write a PRD", "document this feature", "requirements for X", "product requirements" | `/edikt:prd` |
-| Write a technical spec | "write a spec", "technical spec for X", "spec this out", "design doc for X" | `/edikt:spec` |
-| Generate spec artifacts | "generate artifacts", "create the data model", "generate the contracts" | `/edikt:spec-artifacts` |
-| Check implementation drift | "check drift", "did we build what we decided", "verify the implementation", "are we on track" | `/edikt:drift` |
-| Compile governance | "compile governance", "update directives", "update the rules" | `/edikt:compile` |
-| Review governance quality | "review governance", "are our ADRs well written", "check governance quality" | `/edikt:review-governance` |
+| Write a PRD | "write a PRD", "document this feature", "requirements for X", "product requirements" | `/edikt:sdlc:prd` |
+| Write a technical spec | "write a spec", "technical spec for X", "spec this out", "design doc for X" | `/edikt:sdlc:spec` |
+| Generate spec artifacts | "generate artifacts", "create the data model", "generate the contracts" | `/edikt:sdlc:artifacts` |
+| Check implementation drift | "check drift", "did we build what we decided", "verify the implementation", "are we on track" | `/edikt:sdlc:drift` |
+| Compile governance | "compile governance", "update directives", "update the rules" | `/edikt:gov:compile` |
+| Review governance quality | "review governance", "are our ADRs well written", "check governance quality" | `/edikt:gov:review` |
 | Review implementation | "review what we built", "post-implementation review", "review this code" | `/edikt:review` |
-| Security audit | "run a security audit", "check for vulnerabilities", "security check" | `/edikt:audit` |
-| Check documentation gaps | "check for doc gaps", "what docs are outdated", "audit documentation" | `/edikt:docs` |
+| Security audit | "run a security audit", "check for vulnerabilities", "security check" | `/edikt:sdlc:audit` |
+| Check documentation gaps | "check for doc gaps", "what docs are outdated", "audit documentation" | `/edikt:docs:review` |
 | Validate setup | "check my setup", "is everything configured right", "health check" | `/edikt:doctor` |
 | Initialize project | "set up edikt", "initialize this project", "onboard this repo" | `/edikt:init` |
-| Import existing docs | "import existing docs", "onboard these docs", "intake our documentation" | `/edikt:intake` |
-| Update rule packs | "check for rule updates", "are my rules outdated", "update rules" | `/edikt:rules-update` |
-| Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:sync` |
+| Import existing docs | "import existing docs", "onboard these docs", "intake our documentation" | `/edikt:docs:intake` |
+| Update rule packs | "check for rule updates", "are my rules outdated", "update rules" | `/edikt:gov:rules-update` |
+| Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:gov:sync` |
 | End-of-session sweep | "wrap up this session", "end of session", "session summary" | `/edikt:session` |
 | Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
 | List or manage agents | "what agents do we have", "add the security agent" | `/edikt:agents` |

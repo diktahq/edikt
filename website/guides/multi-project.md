@@ -80,7 +80,7 @@ Ravi captures the client-specific constraints immediately:
 
 Ravi commits and pushes. Every engineer assigned to this project gets the full governance from their first session.
 
-**Command references:** `/edikt:init`, `/edikt:adr`, `/edikt:invariant`, `/edikt:compile`
+**Command references:** `/edikt:init`, `/edikt:adr`, `/edikt:invariant`, `/edikt:gov:compile`
 
 ---
 
@@ -213,7 +213,7 @@ Anya is mid-implementation. She needs to decide how to handle WebSocket disconne
 
 Anya commits. Tomorrow, when Kai opens the project, his Claude session knows about the stale data pattern. When the next engineer builds the portfolio positions widget, Claude will implement the same disconnection handling without being told. The decision Anya made today is enforcement for every engineer from this point forward.
 
-**Command references:** `/edikt:adr`, `/edikt:compile`
+**Command references:** `/edikt:adr`, `/edikt:gov:compile`
 
 ---
 
@@ -300,4 +300,4 @@ When an engineer rotates, they carry the methodology — not the client-specific
 
 One command per project. The framework is immediate. The specifics accumulate as the engagement progresses. The next engineer who joins gets everything the last one built.
 
-**Command reference:** `/edikt:init`, `/edikt:status`, `/edikt:adr`, `/edikt:invariant`, `/edikt:compile`
+**Command reference:** `/edikt:init`, `/edikt:status`, `/edikt:adr`, `/edikt:invariant`, `/edikt:gov:compile`

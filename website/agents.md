@@ -23,7 +23,7 @@ Plan phases                     → assign agents + model to each phase
 
 **Agents** activate in three ways:
 1. **Auto-routing** — Claude reads the agent's description and delegates when the task matches
-2. **Command routing** — `/edikt:review`, `/edikt:audit`, `/edikt:plan` route to the right specialists
+2. **Command routing** — `/edikt:sdlc:review`, `/edikt:sdlc:audit`, `/edikt:sdlc:plan` route to the right specialists
 3. **You ask** — "have the dba review this migration"
 
 **Plan phases** assign specific agents as reviewers and suggest a model based on complexity:
@@ -86,9 +86,9 @@ For explicit routing, edikt's commands handle it:
 
 | You say | What happens |
 |---|---|
-| "review this" | `/edikt:review` detects changed file domains, routes to matching agents |
-| "audit the codebase" | `/edikt:audit` routes to security + sre agents |
-| "create a plan" | `/edikt:plan` assigns reviewers to each phase based on domain |
+| "review this" | `/edikt:sdlc:review` detects changed file domains, routes to matching agents |
+| "audit the codebase" | `/edikt:sdlc:audit` routes to security + sre agents |
+| "create a plan" | `/edikt:sdlc:plan` assigns reviewers to each phase based on domain |
 | "have dba review this" | Claude routes directly to the dba agent |
 
 ## Agent governance

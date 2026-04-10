@@ -10,8 +10,10 @@
 
 | Phase | Status | Updated |
 |-------|--------|---------|
-| 1     | -      | -       |
-| 2     | -      | -       |
+| 1     | done   | 2026-03-28 |
+| 2     | done   | 2026-03-28 |
+
+**Note:** Shipped in v0.1.4 (2026-03-28). Progress table updated retroactively on 2026-04-10 during plan audit.
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
