@@ -147,6 +147,14 @@ Overall: {x}/10
 }
 ```
 
+### 8. Confirm
+
+```
+✅ Governance scored: {overall}/10
+
+Next: Run /edikt:gov:review to review language quality, or /edikt:invariant:review for per-artifact scoring.
+```
+
 ---
 
 REMEMBER: This command scores the COMPILED output, not source documents. It answers: "How well will Claude follow our governance?" Run per-artifact reviews for source quality. Run this for the aggregate picture. Designed for CI — the `--json` output can be parsed by any CI tool.

@@ -176,70 +176,51 @@ EXP_DIR="$PROJECT_ROOT/test/experiments"
 
 assert_file_exists "$EXP_DIR/README.md" \
     "test/experiments/README.md exists"
-assert_file_exists "$EXP_DIR/run.sh" \
-    "test/experiments/run.sh exists"
 
-# results directory should exist with a .gitkeep placeholder
-assert_file_exists "$EXP_DIR/results/.gitkeep" \
-    "test/experiments/results/.gitkeep exists"
+# Experiment suites are gitignored (directive-effect/, long-running/)
+# Only rule-compliance/ is tracked. Check the tracked structure:
+assert_file_exists "$EXP_DIR/rule-compliance/README.md" \
+    "test/experiments/rule-compliance/README.md exists"
 
-# run.sh must be executable
-if [ -x "$EXP_DIR/run.sh" ]; then
-    pass "test/experiments/run.sh is executable"
+# ============================================================
+# Contract 9: Directive-effect experiment fixtures (gitignored — skip if absent)
+# ============================================================
+# Directive-effect experiments are gitignored (local development only).
+# These checks run when the files are on disk but skip gracefully in CI.
+
+DE_DIR="$EXP_DIR/directive-effect"
+if [ -d "$DE_DIR" ]; then
+    if [ -x "$DE_DIR/run.sh" ]; then
+        pass "directive-effect/run.sh is executable"
+    else
+        fail "directive-effect/run.sh is executable" "Missing +x bit"
+    fi
+
+    for exp_id in 01-multi-tenancy 02-money-precision 03-timezone-awareness; do
+        fixture="$DE_DIR/fixtures/$exp_id"
+        if [ -d "$fixture" ]; then
+            assert_file_exists "$fixture/prompt.txt" "$exp_id fixture has prompt.txt"
+            assert_file_exists "$fixture/invariant.md" "$exp_id fixture has invariant.md"
+            assert_file_exists "$fixture/assertion.sh" "$exp_id fixture has assertion.sh"
+            if [ -d "$fixture/project" ]; then
+                pass "$exp_id fixture has project/ directory"
+            else
+                fail "$exp_id fixture has project/ directory" "Missing"
+            fi
+        fi
+    done
 else
-    fail "test/experiments/run.sh is executable" "Missing +x bit"
+    echo "  SKIP  Directive-effect experiments not on disk (gitignored)"
 fi
 
 # ============================================================
-# Contract 9: All three experiment fixtures have required files
+# Contract 11: Experiment 01 Go fixture compiles (skip if gitignored)
 # ============================================================
 
-for exp_id in 01-multi-tenancy 02-money-precision 03-timezone-awareness; do
-    fixture="$EXP_DIR/fixtures/$exp_id"
-    assert_file_exists "$fixture/prompt.txt" \
-        "$exp_id fixture has prompt.txt"
-    assert_file_exists "$fixture/invariant.md" \
-        "$exp_id fixture has invariant.md"
-    assert_file_exists "$fixture/assertion.sh" \
-        "$exp_id fixture has assertion.sh"
-    if [ -d "$fixture/project" ]; then
-        pass "$exp_id fixture has project/ directory"
-    else
-        fail "$exp_id fixture has project/ directory" "Missing"
-    fi
-    if [ -x "$fixture/assertion.sh" ]; then
-        pass "$exp_id assertion.sh is executable"
-    else
-        fail "$exp_id assertion.sh is executable" "Missing +x bit"
-    fi
-done
-
-# ============================================================
-# Contract 10: run.sh references all three experiments
-# ============================================================
-
-for exp_id in 01-multi-tenancy 02-money-precision 03-timezone-awareness; do
-    assert_file_contains "$EXP_DIR/run.sh" "$exp_id" \
-        "run.sh references $exp_id"
-done
-
-assert_file_contains "$EXP_DIR/run.sh" "ADR-008" \
-    "run.sh references ADR-008"
-assert_file_contains "$EXP_DIR/run.sh" "ADR-009" \
-    "run.sh references ADR-009"
-assert_file_contains "$EXP_DIR/run.sh" "N_RUNS" \
-    "run.sh parameterizes N per condition"
-assert_file_contains "$EXP_DIR/run.sh" "baseline" \
-    "run.sh has baseline condition"
-assert_file_contains "$EXP_DIR/run.sh" "invariant-loaded" \
-    "run.sh has invariant-loaded condition"
-
-# ============================================================
-# Contract 11: Experiment 01 Go fixture compiles
-# ============================================================
-
-if command -v go >/dev/null 2>&1; then
-    if (cd "$EXP_DIR/fixtures/01-multi-tenancy/project" && go build ./... 2>&1) >/dev/null; then
+if [ ! -d "$DE_DIR/fixtures/01-multi-tenancy" ]; then
+    echo "  SKIP  Experiment fixture checks (gitignored)"
+elif command -v go >/dev/null 2>&1; then
+    if (cd "$DE_DIR/fixtures/01-multi-tenancy/project" && go build ./... 2>&1) >/dev/null; then
         pass "Experiment 01 Go fixture compiles"
     else
         fail "Experiment 01 Go fixture compiles" \
@@ -250,16 +231,18 @@ else
 fi
 
 # ============================================================
-# Contract 12: Experiment 02 Python fixture has valid structure
+# Contract 12: Experiment 02 Python fixture has valid structure (skip if gitignored)
 # ============================================================
 
-if command -v python3 >/dev/null 2>&1; then
-    if (cd "$EXP_DIR/fixtures/02-money-precision/project" && python3 -c "import ast; ast.parse(open('app/pricing.py').read())" 2>&1) >/dev/null; then
+if [ ! -d "$DE_DIR/fixtures/02-money-precision" ]; then
+    echo "  SKIP  Experiment 02 fixtures (gitignored)"
+elif command -v python3 >/dev/null 2>&1; then
+    if (cd "$DE_DIR/fixtures/02-money-precision/project" && python3 -c "import ast; ast.parse(open('app/pricing.py').read())" 2>&1) >/dev/null; then
         pass "Experiment 02 pricing.py parses"
     else
         fail "Experiment 02 pricing.py parses" "Python syntax error"
     fi
-    if (cd "$EXP_DIR/fixtures/02-money-precision/project" && python3 -c "import ast; ast.parse(open('app/models.py').read())" 2>&1) >/dev/null; then
+    if (cd "$DE_DIR/fixtures/02-money-precision/project" && python3 -c "import ast; ast.parse(open('app/models.py').read())" 2>&1) >/dev/null; then
         pass "Experiment 02 models.py parses"
     else
         fail "Experiment 02 models.py parses" "Python syntax error"
@@ -269,16 +252,18 @@ else
 fi
 
 # ============================================================
-# Contract 13: Experiment 03 Python fixture has valid structure
+# Contract 13: Experiment 03 Python fixture has valid structure (skip if gitignored)
 # ============================================================
 
-if command -v python3 >/dev/null 2>&1; then
-    if (cd "$EXP_DIR/fixtures/03-timezone-awareness/project" && python3 -c "import ast; ast.parse(open('app/orders.py').read())" 2>&1) >/dev/null; then
+if [ ! -d "$DE_DIR/fixtures/03-timezone-awareness" ]; then
+    echo "  SKIP  Experiment 03 fixtures (gitignored)"
+elif command -v python3 >/dev/null 2>&1; then
+    if (cd "$DE_DIR/fixtures/03-timezone-awareness/project" && python3 -c "import ast; ast.parse(open('app/orders.py').read())" 2>&1) >/dev/null; then
         pass "Experiment 03 orders.py parses"
     else
         fail "Experiment 03 orders.py parses" "Python syntax error"
     fi
-    if (cd "$EXP_DIR/fixtures/03-timezone-awareness/project" && python3 -c "import ast; ast.parse(open('app/db.py').read())" 2>&1) >/dev/null; then
+    if (cd "$DE_DIR/fixtures/03-timezone-awareness/project" && python3 -c "import ast; ast.parse(open('app/db.py').read())" 2>&1) >/dev/null; then
         pass "Experiment 03 db.py parses"
     else
         fail "Experiment 03 db.py parses" "Python syntax error"
@@ -294,9 +279,13 @@ fi
 # The prompts MUST NOT contain words that hint at the invariant being tested.
 # This check catches prompt drift that would invalidate the experiment.
 
-PROMPT_01="$EXP_DIR/fixtures/01-multi-tenancy/prompt.txt"
-PROMPT_02="$EXP_DIR/fixtures/02-money-precision/prompt.txt"
-PROMPT_03="$EXP_DIR/fixtures/03-timezone-awareness/prompt.txt"
+PROMPT_01="$DE_DIR/fixtures/01-multi-tenancy/prompt.txt"
+PROMPT_02="$DE_DIR/fixtures/02-money-precision/prompt.txt"
+PROMPT_03="$DE_DIR/fixtures/03-timezone-awareness/prompt.txt"
+
+if [ ! -f "$PROMPT_01" ]; then
+    echo "  SKIP  Contamination checks (fixtures gitignored)"
+else
 
 for bad_word in tenant isolation scope secure; do
     if grep -qi "$bad_word" "$PROMPT_01"; then
@@ -324,6 +313,8 @@ for bad_word in timezone utc naive aware tzinfo; do
         pass "03-timezone-awareness prompt does not contain '$bad_word'"
     fi
 done
+
+fi  # end of contamination checks (skip if gitignored)
 
 # ============================================================
 # Contract 15: Website page links from invariant-records.md

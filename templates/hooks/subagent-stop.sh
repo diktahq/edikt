@@ -53,7 +53,7 @@ fi
 
 # If no known agent detected, try to extract from "As <Role>" pattern
 if [ -z "$AGENT_NAME" ]; then
-  AGENT_NAME=$(echo "$INPUT" | grep -oiE 'As (Staff|Senior|Principal) [A-Za-z]+' | head -1 | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+  AGENT_NAME=$(echo "$INPUT" | grep -oiE 'As (Staff |Senior |Principal )?[A-Za-z]+' | head -1 | awk '{print $NF}' | tr '[:upper:]' '[:lower:]')
 fi
 
 # If still no agent name, exit silently

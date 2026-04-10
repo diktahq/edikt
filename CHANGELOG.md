@@ -1,5 +1,47 @@
 # edikt changelog
 
+## v0.3.1 (2026-04-11)
+
+### Bug fixes
+
+- **Init: guidelines path.** `/edikt:init` now writes `paths.guidelines` correctly.
+- **VERSION stamp.** `VERSION` file updated to match release tag.
+- **PRINCIPAL prefix.** Compile output no longer prefixes directives with `PRINCIPAL:`.
+- **Review output.** `/edikt:sdlc:review` output formatting fixed.
+- **SubagentStop hook: seniority prefix.** The fallback agent detection pattern matched "As Principal Architect" → `principal-architect` instead of `architect`, breaking slug lookup and gate matching. Now extracts only the role word.
+- **Missing page.** Added `/edikt:guideline:compile` website page (was dead link).
+- **Test fixes.** All 25 suites pass after v0.3.0 regressions.
+
+### Artifact generation: JSONB support and domain class diagram
+
+`/edikt:sdlc:artifacts` now handles projects using JSONB aggregate storage (common DDD pattern in PostgreSQL) and generates a domain class diagram alongside the data model.
+
+- **Storage strategy detection.** When DB type is `sql` or `mixed`, the command scans spec content and migrations for JSONB signals (`jsonb`, `json column`, `aggregate storage`, `embedded entity`, `nested entity`, etc.). Detected strategy is shown in the state checkpoint and routing output.
+- **Three entity modes in `data-model.mmd`.** When storage strategy is `jsonb-aggregate`, the ERD distinguishes physical tables (normal), JSONB-embedded entities (relationship label contains `jsonb`), and reference-only entities from external bounded contexts (relationship label contains `ref`). Makes nested structure visible instead of hiding it in JSONB column comments.
+- **Domain class diagram (`model.mmd`).** New artifact type, always generated alongside the data model regardless of DB type. Mermaid `classDiagram` showing aggregate roots, value objects, entities, inheritance, composition, and domain methods. Reviewed by the architect agent.
+
+### Configurable artifact spec versions
+
+Artifact templates now use configurable spec versions instead of hardcoded values. Defaults updated to latest stable:
+
+| Format | Previous | Now (default) |
+|---|---|---|
+| OpenAPI | 3.0.0 | **3.1.0** |
+| AsyncAPI | 2.6.0 | **3.0.0** |
+| JSON Schema | draft-07 | **2020-12** |
+
+Teams can pin older versions in `.edikt/config.yaml`:
+
+```yaml
+artifacts:
+  versions:
+    openapi: "3.0.0"       # pin for tooling compatibility
+    asyncapi: "2.6.0"      # pin if not ready for 3.0 breaking changes
+    json_schema: "https://json-schema.org/draft/07/schema#"
+```
+
+The AsyncAPI template was updated for the 3.0 structure (separate `channels` and `operations` blocks replacing `publish`/`subscribe`). When pinning `asyncapi: "2.6.0"`, the agent uses the 2.x structure.
+
 ## v0.3.0 (2026-04-10)
 
 ### Project Adaptation (ADR-008, ADR-009)

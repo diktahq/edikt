@@ -70,13 +70,13 @@ done
 
 cp "$PROJECT_ROOT/VERSION" "$INSTALL_HOME/VERSION"
 
-# Verify command count (48 commands: 11 flat + 3 adr + 3 invariant + 3 guideline + 4 gov + 7 sdlc + 2 docs + 15 deprecated)
-# v0.3.0 Phase 1 added commands/guideline/compile.md for parity with adr/invariant compile (ADR-009).
+# Verify command count (49 commands: 11 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated)
+# v0.3.0 added commands/guideline/compile.md + commands/gov/score.md
 CMD_COUNT=$(find "$INSTALL_HOME/commands/edikt/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$CMD_COUNT" -eq 48 ]; then
-    pass "48 commands installed"
+if [ "$CMD_COUNT" -eq 49 ]; then
+    pass "49 commands installed"
 else
-    fail "Expected 48 commands, found $CMD_COUNT"
+    fail "Expected 49 commands, found $CMD_COUNT"
 fi
 
 # Verify agent count (19 agents)

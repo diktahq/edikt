@@ -32,6 +32,16 @@ And stop.
 
 Read `.edikt/config.yaml`. Specs directory from `paths.specs` (default: `docs/product/specs/`). Invariants directory from `paths.invariants` (default: `docs/architecture/invariants/`).
 
+**Artifact versions** — read from `artifacts.versions` in config. Use these defaults when a key is absent:
+
+| Config key | Default | Used in |
+|---|---|---|
+| `artifacts.versions.openapi` | `3.1.0` | `contracts/api.yaml` |
+| `artifacts.versions.asyncapi` | `3.0.0` | `contracts/events.yaml` |
+| `artifacts.versions.json_schema` | `https://json-schema.org/draft/2020-12/schema` | `data-model.schema.yaml` |
+
+Store the resolved values as OPENAPI_VERSION, ASYNCAPI_VERSION, JSON_SCHEMA_URI for use in artifact templates.
+
 ### 2. Resolve Context
 
 Work through this checklist before proceeding. Record each value explicitly.
@@ -71,11 +81,20 @@ Work through this checklist before proceeding. Record each value explicitly.
     ```
 - Build ACTIVE CONSTRAINTS block, or set to `none`
 
+**STORAGE_STRATEGY** — resolve when DB_TYPE is `sql` or `mixed` (sql sub-type):
+1. Scan spec content for JSONB signals: `jsonb`, `json column`, `json field`, `aggregate storage`, `embedded entity`, `nested entity`, `document-in-relational`, `json aggregate`
+2. Scan any referenced migrations (if they exist in the spec folder) for: `jsonb`, `json NOT NULL`, `::json`
+3. If any signal found → `STORAGE_STRATEGY = jsonb-aggregate`. Note matched signals.
+4. If no signal found → `STORAGE_STRATEGY = normalized` (default)
+5. Skip this check entirely for non-sql DB types — set `STORAGE_STRATEGY = n/a`
+
 **State checkpoint — confirm before proceeding:**
 ```
 - [ ] DB_TYPE = {one of: sql | document-mongo | document-dynamo | key-value | mixed}
        source: {spec-frontmatter | config | keyword-scan | user}
        if mixed: list all detected sub-types
+- [ ] STORAGE_STRATEGY = {normalized | jsonb-aggregate | n/a}
+       if jsonb-aggregate: list matched signals
 - [ ] CONSTRAINTS = {ACTIVE CONSTRAINTS block text, or "none"}
 - [ ] Spec status: accepted
 ```
@@ -93,6 +112,7 @@ Apply these detection rules:
 | If the spec mentions... | Artifact | Primary agent | Secondary |
 |---|---|---|---|
 | database, model, schema, entity, table, column, field, relationship | *(see data model lookup table)* | dba | architect |
+| *(auto-triggers when data-model is generated)* | `model.mmd` *(domain class diagram)* | architect | dba |
 | API, endpoint, route, REST, GraphQL, request, response, contract | `contracts/api.yaml` | api | architect |
 | gRPC, protobuf, proto, service definition | `contracts/proto/` | api | engineer |
 | migration, schema change, ALTER, CREATE TABLE | `migrations/` *(sql or mixed only)* | dba | sre |
@@ -127,6 +147,7 @@ Show the list with checkmarks. Include DB_TYPE source warning when applicable:
 
 ```
   ✓ data-model.mmd — sql detected via config (Mermaid ERD)
+  ✓ model.mmd — domain class diagram (auto, alongside data-model)
   ✓ contracts/api.yaml — API endpoint references
   ✓ test-strategy.md — testing strategy section
   ✗ migrations/ — no schema changes
@@ -150,6 +171,7 @@ Each agent receives:
 - The source PRD content (read from `source_prd:` in spec frontmatter)
 - The project-context.md for project context
 - Any referenced ADRs
+- STORAGE_STRATEGY value (when generating data-model or model artifacts)
 - The ACTIVE CONSTRAINTS block (if CONSTRAINTS is not `none`) injected before the artifact-specific instruction, in this format:
 
 ```
@@ -162,9 +184,12 @@ ACTIVE CONSTRAINTS (from governance — these override artifact defaults):
 
 Show routing as it happens. Include constraint count when CONSTRAINTS is not `none`:
 ```
-🔀 edikt: routing to dba (2 active constraints applied) — data-model.mmd
+🔀 edikt: routing to dba (2 active constraints applied) — data-model.mmd [jsonb-aggregate]
+🔀 edikt: routing to architect — model.mmd
 🔀 edikt: routing to api — contracts/api.yaml
 ```
+
+When STORAGE_STRATEGY is `jsonb-aggregate`, include `[jsonb-aggregate]` in the routing line for `data-model.mmd`. When `normalized`, omit the tag.
 
 If CONSTRAINTS is `none`, omit the constraint count entirely.
 
@@ -183,26 +208,60 @@ Each generated artifact gets a design blueprint header. Native-format artifacts 
 **Frontmatter artifacts** (`test-strategy.md`, `config-spec.md`): use YAML frontmatter with `type: artifact`, `artifact_type:`, `status: draft`, `reviewed_by:`.
 
 **data-model.mmd** — Mermaid ERD (when DB_TYPE is `sql`):
+
+The ERD supports three entity modes based on STORAGE_STRATEGY:
+
+| Mode | When | Rendering |
+|---|---|---|
+| Physical table | Entity has its own table (default) | Normal entity block |
+| JSONB-embedded | STORAGE_STRATEGY is `jsonb-aggregate` and entity is stored as JSONB inside another table | Entity block with `%% JSONB-embedded in {ParentTable}` comment. Relationship label MUST include `jsonb` (e.g., `"contains jsonb"`) |
+| Reference-only | Entity belongs to an external bounded context | Entity block with `%% External: {bounded context}` comment. Only PK field shown. Relationship label MUST include `ref` (e.g., `"references ref"`) |
+
+When STORAGE_STRATEGY is `normalized`, all entities are physical tables (standard ERD behavior).
+
+When STORAGE_STRATEGY is `jsonb-aggregate`:
+- The aggregate root is a physical table with a JSONB column
+- Nested entities stored in that JSONB column are JSONB-embedded entities
+- Show the JSONB column in the aggregate root as `jsonb {column_name} "JSONB"` with a comment listing what it contains
+- JSONB-embedded entities still get their own entity block (so the structure is visible) but are marked with the JSONB comment and relationship label
+
 ```
 %% Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
 %% edikt:artifact type=data-model spec=SPEC-{NNN} status=draft reviewed_by=dba
+%% storage_strategy={normalized|jsonb-aggregate}
 %% created_at={ISO8601 timestamp}
 erDiagram
-    {ENTITY} {
+    %% Physical table
+    {AGGREGATE_ROOT} {
         uuid id PK
         {type} {field} "{constraints}"
+        jsonb {column_name} "JSONB"
     }
+
+    %% JSONB-embedded in {AGGREGATE_ROOT}
+    {EMBEDDED_ENTITY} {
+        {type} {field} "{constraints}"
+    }
+    {AGGREGATE_ROOT} ||--o{ {EMBEDDED_ENTITY} : "contains jsonb"
+
+    %% External: {bounded context}
+    {EXTERNAL_ENTITY} {
+        uuid id PK
+    }
+    {AGGREGATE_ROOT} }o--|| {EXTERNAL_ENTITY} : "references ref"
+
+    %% Standard relationship (physical tables)
     {ENTITY} ||--o{ {OTHER_ENTITY} : "{relationship}"
 ```
 
-Include one entity block per entity. Add `PK`, `FK`, `UK` markers on key fields. List all relationships with cardinality. Add `%% Index: {field} — {rationale}` comments for recommended indexes.
+Include one entity block per entity. Add `PK`, `FK`, `UK` markers on key fields. List all relationships with cardinality. Add `%% Index: {field} — {rationale}` comments for recommended indexes. When STORAGE_STRATEGY is `normalized`, omit the `storage_strategy` comment and JSONB-specific elements — produce a standard ERD.
 
 **data-model.schema.yaml** — JSON Schema in YAML (when DB_TYPE is `document-mongo`):
 ```yaml
 # Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
 # edikt:artifact type=data-model spec=SPEC-{NNN} status=draft reviewed_by=dba
 # created_at={ISO8601 timestamp}
-$schema: "https://json-schema.org/draft/07/schema#"
+$schema: "{JSON_SCHEMA_URI}"
 collection: "{collection_name}"
 title: "{EntityName}"
 type: object
@@ -276,12 +335,55 @@ indexes:
 
 For `mixed` DB_TYPE, generate one data model artifact per detected sub-type using the suffix naming convention (`data-model-sql.mmd`, `data-model-mongo.schema.yaml`, `data-model-dynamo.md`, `data-model-kv.md`).
 
-**contracts/api.yaml** — OpenAPI 3.0:
+**model.mmd** — Domain class diagram (always generated alongside data-model, any DB_TYPE):
+
+This artifact shows the domain model independent of storage — entities, value objects, inheritance, and relationships. It complements the data-model artifact (which shows storage structure) by showing domain semantics.
+
+```
+%% Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+%% edikt:artifact type=domain-model spec=SPEC-{NNN} status=draft reviewed_by=architect
+%% created_at={ISO8601 timestamp}
+classDiagram
+    class {EntityName} {
+        +UUID id
+        +{Type} {field}
+        +{method}() {ReturnType}
+    }
+
+    class {ValueObjectName} {
+        <<value object>>
+        +{Type} {field}
+    }
+
+    class {AggregateRoot} {
+        <<aggregate root>>
+        +UUID id
+        +{Type} {field}
+        +{command}() void
+    }
+
+    {AggregateRoot} *-- {ValueObjectName} : "contains"
+    {AggregateRoot} o-- {EntityName} : "has many"
+    {ChildEntity} --|> {ParentEntity} : "extends"
+    {Entity} --> {ExternalEntity} : "references"
+```
+
+Guidelines for the domain class diagram:
+- Mark aggregate roots with `<<aggregate root>>` stereotype
+- Mark value objects with `<<value object>>` stereotype
+- Use composition (`*--`) for owned value objects and entities
+- Use aggregation (`o--`) for collections
+- Use inheritance (`--|>`) for type hierarchies
+- Use dependency (`-->`) for cross-aggregate references
+- Include key domain methods (commands, queries) — not getters/setters
+- Do NOT mirror storage details — this is the domain model, not the database schema
+
+**contracts/api.yaml** — OpenAPI (version from OPENAPI_VERSION):
 ```yaml
 # Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
 # edikt:artifact type=api-contract spec=SPEC-{NNN} status=draft reviewed_by=api
 # created_at={ISO8601 timestamp}
-openapi: "3.0.0"
+openapi: "{OPENAPI_VERSION}"
 info:
   title: "{Feature Name} API"
   version: "0.1.0"
@@ -326,22 +428,20 @@ components:
       type: {http|apiKey|oauth2}
 ```
 
-**contracts/events.yaml** — AsyncAPI 2.6:
+**contracts/events.yaml** — AsyncAPI (version from ASYNCAPI_VERSION):
 ```yaml
 # Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
 # edikt:artifact type=event-contract spec=SPEC-{NNN} status=draft reviewed_by=architect
 # created_at={ISO8601 timestamp}
-asyncapi: "2.6.0"
+asyncapi: "{ASYNCAPI_VERSION}"
 info:
   title: "{Feature Name} Events"
   version: "0.1.0"
 channels:
-  {topic.or.queue.name}:
-    publish:
-      operationId: {EventName}Published
-      summary: "{what triggers this event}"
-      message:
-        name: {EventName}
+  {channelName}:
+    address: "{topic.or.queue.name}"
+    messages:
+      {EventName}:
         payload:
           type: object
           required: [{required_fields}]
@@ -349,6 +449,14 @@ channels:
             {field}:
               type: {type}
               description: "{description}"
+operations:
+  {operationId}:
+    action: send
+    channel:
+      $ref: "#/channels/{channelName}"
+    summary: "{what triggers this event}"
+    messages:
+      - $ref: "#/channels/{channelName}/messages/{EventName}"
     x-producer: "{service/component}"
     x-consumers:
       - "{service/component}"
@@ -487,6 +595,7 @@ REMEMBER: Every artifact must be reviewed by the appropriate specialist agent. N
 ✅ Artifacts created in {spec_folder}/
 
   {data-model file}         — {format}, reviewed by dba
+  model.mmd                 — domain class diagram, reviewed by architect
   contracts/api.yaml        — OpenAPI 3.0, reviewed by api
   contracts/events.yaml     — AsyncAPI 2.6, reviewed by architect
   migrations/001_{name}.sql — SQL migration, reviewed by dba
@@ -530,6 +639,12 @@ Use this for priority-3 keyword scan. First match wins per DB type — if multip
 | document-dynamo | `data-model.md` | Access patterns table → entity prefixes → PK/SK/GSI design |
 | key-value | `data-model.md` | Key schema table — key pattern, value type, TTL, purpose, namespace |
 
+**Domain class diagram (always alongside data-model):**
+
+| DB_TYPE | File | Format |
+|---|---|---|
+| *(any)* | `model.mmd` | Mermaid classDiagram — entities, value objects, aggregate roots, inheritance, domain methods |
+
 **Mixed — suffix per sub-type to avoid collision:**
 
 | Sub-type | File |
@@ -538,6 +653,15 @@ Use this for priority-3 keyword scan. First match wins per DB type — if multip
 | document-mongo | `data-model-mongo.schema.yaml` |
 | document-dynamo | `data-model-dynamo.md` |
 | key-value | `data-model-kv.md` |
+
+### Storage Strategy Detection (sql / mixed only)
+
+| Signal in spec or migrations | STORAGE_STRATEGY |
+|---|---|
+| `jsonb`, `json column`, `json field`, `aggregate storage`, `embedded entity`, `nested entity`, `document-in-relational`, `json aggregate`, `::json` | `jsonb-aggregate` |
+| *(none of the above)* | `normalized` |
+
+When `jsonb-aggregate`: `data-model.mmd` uses three entity modes (physical, JSONB-embedded, reference-only). When `normalized`: standard ERD only.
 
 ### Migration Generation Rules
 

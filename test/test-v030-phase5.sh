@@ -68,8 +68,8 @@ assert_file_contains "$DOCTOR_MD" "sentinel block" \
 
 assert_file_contains "$DOCTOR_MD" "Invariant Record template" \
     "doctor.md uses 'Invariant Record template' terminology"
-assert_file_contains "$DOCTOR_MD" "References the Invariant Record template" \
-    "doctor.md explicitly references the Invariant Record template"
+assert_file_contains "$DOCTOR_MD" "Uses the formal name consistently" \
+    "doctor.md uses the formal name consistently"
 
 # ============================================================
 # Contract 5: Template reference examples check

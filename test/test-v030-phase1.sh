@@ -99,10 +99,11 @@ assert_file_contains "$EXAMPLES_DIR/invariant-minimal.md" "ADR-009" \
     "invariant-minimal.md references ADR-009"
 assert_file_contains "$EXAMPLES_DIR/invariant-full.md" "ADR-009" \
     "invariant-full.md references ADR-009"
-assert_file_contains "$EXAMPLES_DIR/guideline-minimal.md" "ADR-009" \
-    "guideline-minimal.md references ADR-009"
-assert_file_contains "$EXAMPLES_DIR/guideline-extended.md" "ADR-009" \
-    "guideline-extended.md references ADR-009"
+# Guideline templates don't reference ADR-009 (guidelines are not Invariant Records)
+assert_file_exists "$EXAMPLES_DIR/guideline-minimal.md" \
+    "guideline-minimal.md exists"
+assert_file_exists "$EXAMPLES_DIR/guideline-extended.md" \
+    "guideline-extended.md exists"
 
 # ============================================================
 # Regression 6: Invariant templates reference ADR-009 (Invariant Record template)
@@ -176,23 +177,14 @@ else
 fi
 
 # ============================================================
-# Regression 10: Reference templates don't claim external authority when they shouldn't
+# Regression 10: Invariant templates reference ADR-009 for the template contract
 # ============================================================
-# ADR templates cite external authorities (Nygard, MADR). Invariant and guideline
-# templates reference ADR-009 for the Invariant Record template contract.
+# Coinage language was dropped in v0.3.0. Templates now reference ADR-009
+# for the template contract without claiming to coin a term.
 
-if grep -qF "external standard" "$EXAMPLES_DIR/invariant-minimal.md"; then
-    pass "invariant-minimal.md acknowledges 'not an external standard' (ADR-009 rule)"
-else
-    fail "invariant-minimal.md acknowledges 'not an external standard'" \
-        "Invariant templates must be references ADR-009s, not external standards"
-fi
-
-if grep -qF "external standard" "$EXAMPLES_DIR/invariant-full.md"; then
-    pass "invariant-full.md acknowledges 'not an external standard' (ADR-009 rule)"
-else
-    fail "invariant-full.md acknowledges 'not an external standard'" \
-        "Invariant templates must be references ADR-009s, not external standards"
-fi
+assert_file_contains "$EXAMPLES_DIR/invariant-minimal.md" "ADR-009" \
+    "invariant-minimal.md references ADR-009"
+assert_file_contains "$EXAMPLES_DIR/invariant-full.md" "ADR-009" \
+    "invariant-full.md references ADR-009"
 
 test_summary

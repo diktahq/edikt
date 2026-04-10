@@ -800,6 +800,12 @@ artifacts:
     # Values: yaml | json | sql
     format: yaml
 
+  versions:
+    # Spec versions for generated artifacts. Override if your team pins older versions.
+    # openapi: "3.1.0"      # default — OpenAPI spec version for contracts/api.yaml
+    # asyncapi: "3.0.0"     # default — AsyncAPI spec version for contracts/events.yaml
+    # json_schema: "https://json-schema.org/draft/2020-12/schema"  # default — JSON Schema URI for data-model.schema.yaml
+
 sdlc:
   commit-convention: {choice or "none"}
   pr-template: {true/false}

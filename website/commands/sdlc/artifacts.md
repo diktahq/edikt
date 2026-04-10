@@ -32,13 +32,29 @@ Before generating anything, the command works through a checklist and records it
 3. Keyword scan of spec content — last resort; warns you when used
 4. Still unresolved — asks you directly
 
+**Storage strategy** — resolved when DB type is `sql` or `mixed`:
+
+The command scans spec content and any existing migrations for JSONB signals (`jsonb`, `json column`, `aggregate storage`, `embedded entity`, `nested entity`, etc.). If detected, the storage strategy is set to `jsonb-aggregate` — this changes how the ERD renders entities. If no signals are found, the strategy defaults to `normalized`.
+
+This matters for projects using the DDD pattern of storing nested entities as JSONB columns inside aggregate root tables. Without detection, the ERD would show a 2-entity diagram that hides structure in comments.
+
 **Active invariants** — loaded from your governance chain. For each `status: Active` invariant, the body is stripped of frontmatter and injected as a structured constraint into every artifact agent prompt. If an invariant body is empty, you get a warning:
 
 ```text
 ⚠ INV-003 body is empty — constraint not injected. Review docs/architecture/invariants/INV-003-*.md
 ```
 
-The command outputs a state checkpoint before proceeding so you can verify DB type and constraint count before generation begins.
+**Artifact versions** — resolved from `artifacts.versions` in config with sensible defaults:
+
+| Config key | Default | Used in |
+|---|---|---|
+| `artifacts.versions.openapi` | `3.1.0` | `contracts/api.yaml` |
+| `artifacts.versions.asyncapi` | `3.0.0` | `contracts/events.yaml` |
+| `artifacts.versions.json_schema` | `https://json-schema.org/draft/2020-12/schema` | `data-model.schema.yaml` |
+
+Teams pinning older versions (e.g., `openapi: "3.0.0"` for tooling compatibility) set these in `.edikt/config.yaml` and every generated artifact respects the pin.
+
+The command outputs a state checkpoint before proceeding so you can verify DB type, storage strategy, constraint count, and versions before generation begins.
 
 ## What gets generated
 
@@ -47,13 +63,14 @@ The command scans the spec and shows what it will generate:
 ```text
 Based on SPEC-005, these artifacts are relevant:
   ✓ data-model.mmd        — sql detected via config (Mermaid ERD)
+  ✓ model.mmd             — domain class diagram (auto, alongside data-model)
   ✓ contracts/api.yaml    — API endpoint references
   ✓ test-strategy.md      — testing strategy section
   ✗ migrations/           — no schema changes
   ✗ contracts/events.yaml — no messaging patterns
   ✗ config-spec.md        — no config changes
 
-Generate 3 artifacts? (y/n)
+Generate 4 artifacts? (y/n)
 ```
 
 Detection is automatic. Confirm or adjust before generation begins. Migrations are only generated for SQL and mixed database types — document and key-value stores never produce migration files.
@@ -78,11 +95,35 @@ For projects using multiple database types (e.g., Postgres + Redis), both artifa
 | DynamoDB | `data-model-dynamo.md` |
 | Redis / KV | `data-model-kv.md` |
 
+### JSONB aggregate storage
+
+When the storage strategy is `jsonb-aggregate` (detected from spec or migrations), the ERD uses three entity modes:
+
+| Mode | When | How it renders |
+|------|------|---------------|
+| Physical table | Entity has its own table | Normal entity block |
+| JSONB-embedded | Entity stored as JSONB inside another table | Entity block with relationship label containing `jsonb` |
+| Reference-only | Entity from an external bounded context | Entity block with only PK, relationship label containing `ref` |
+
+This makes the structure visible in the diagram instead of hiding nested entities in JSONB column comments.
+
+## Domain class diagram
+
+A domain class diagram (`model.mmd`) is always generated alongside the data model, regardless of database type. It shows the domain model independent of storage:
+
+- Aggregate roots marked with `<<aggregate root>>` stereotype
+- Value objects marked with `<<value object>>` stereotype
+- Composition, aggregation, inheritance, and cross-aggregate references
+- Key domain methods (commands, queries) — not getters/setters
+
+The data model shows *how data is stored*. The domain class diagram shows *what the domain means*. Both are generated so teams can reason about storage and semantics separately.
+
 ## All artifact types
 
 | Artifact | Triggered by | Reviewed by |
 |----------|-------------|-------------|
 | *(see above)* | database, model, schema, entity, table, column, field, relationship | dba |
+| `model.mmd` | *(auto-triggers with data model)* | architect |
 | `contracts/api.yaml` | API, endpoint, route, REST, GraphQL, request, response, contract | api |
 | `contracts/proto/` | gRPC, protobuf, service definition | api |
 | `migrations/` *(SQL and mixed only)* | migration, schema change, ALTER, CREATE TABLE | dba |
@@ -91,17 +132,18 @@ For projects using multiple database types (e.g., Postgres + Redis), both artifa
 | `config-spec.md` | config, environment variable, feature flag, configuration | sre |
 | `fixtures.yaml` | seed, fixture, test data, sample data (also auto-triggers with data model) | qa |
 
-API contracts are OpenAPI 3.0 YAML. Event contracts are AsyncAPI 2.6 YAML. Fixtures are portable YAML — transform to your stack (SQL seeds, Prisma seed.ts, factory definitions) at implementation time.
+API contracts use OpenAPI 3.1.0 YAML (configurable). Event contracts use AsyncAPI 3.0.0 YAML (configurable). JSON Schema for MongoDB models uses the 2020-12 draft (configurable). Fixtures are portable YAML — transform to your stack (SQL seeds, Prisma seed.ts, factory definitions) at implementation time.
 
 ## Invariant injection
 
 When active invariants exist, every agent prompt includes a structured constraint block:
 
 ```text
-🪝 edikt: routing data-model.mmd to dba (2 active constraints applied)...
+🔀 edikt: routing to dba (2 active constraints applied) — data-model.mmd [jsonb-aggregate]
+🔀 edikt: routing to architect — model.mmd
 ```
 
-The constraints are pulled verbatim from your invariant bodies and injected before the artifact instruction. Superseded invariants are excluded automatically.
+The constraints are pulled verbatim from your invariant bodies and injected before the artifact instruction. Superseded invariants are excluded automatically. When storage strategy is `jsonb-aggregate`, the tag appears in the routing line for `data-model.mmd`.
 
 ## Output location
 
@@ -111,6 +153,7 @@ All artifacts live in the spec's folder:
 docs/product/specs/SPEC-005-webhook-delivery/
 ├── spec.md
 ├── data-model.mmd           ← or .schema.yaml / .md depending on DB type
+├── model.mmd                ← domain class diagram
 ├── contracts/
 │   ├── api.yaml
 │   └── events.yaml
@@ -140,9 +183,15 @@ artifacts:
       tool: golang-migrate  # golang-migrate | prisma | alembic | django | rails | etc.
   fixtures:
     format: yaml
+  versions:
+    openapi: "3.1.0"                                          # default
+    asyncapi: "3.0.0"                                         # default
+    json_schema: "https://json-schema.org/draft/2020-12/schema"  # default
 ```
 
 `auto` means the command detects from spec content each time. Use it for greenfield projects or monorepos where each spec sets its own `database_type:` in frontmatter.
+
+Override `versions` to pin older spec versions when your toolchain requires it (e.g., `openapi: "3.0.0"` if your code generator doesn't support 3.1 yet).
 
 ## After generating
 
