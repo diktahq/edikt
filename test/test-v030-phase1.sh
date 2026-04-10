@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: v0.3.0 Phase 1 — extensibility plumbing + guideline:compile
 #
-# Guards the Phase 1 decisions from PROPOSAL-001 / file-changes.md:
+# Guards the Phase 1 decisions from PRD-001 / file-changes.md:
 #   1. commands/guideline/compile.md exists with parity to adr/invariant compile
 #   2. Reference example templates exist under templates/examples/
 #   3. Each reference template contains the directives sentinel block
@@ -92,26 +92,26 @@ assert_file_contains "$EXAMPLES_DIR/adr-madr-extended.md" "MADR" \
     "adr-madr-extended.md cites MADR as the source format"
 
 # ============================================================
-# Regression 5: Invariant and guideline templates label as edikt convention
-# ============================================================
-
-assert_file_contains "$EXAMPLES_DIR/invariant-minimal.md" "edikt convention" \
-    "invariant-minimal.md labels itself as an edikt convention"
-assert_file_contains "$EXAMPLES_DIR/invariant-full.md" "edikt convention" \
-    "invariant-full.md labels itself as an edikt convention"
-assert_file_contains "$EXAMPLES_DIR/guideline-minimal.md" "edikt convention" \
-    "guideline-minimal.md labels itself as an edikt convention"
-assert_file_contains "$EXAMPLES_DIR/guideline-extended.md" "edikt convention" \
-    "guideline-extended.md labels itself as an edikt convention"
-
-# ============================================================
-# Regression 6: Invariant templates reference ADR-009 (Invariant Record coinage)
+# Regression 5: Invariant and guideline templates reference ADR-009
 # ============================================================
 
 assert_file_contains "$EXAMPLES_DIR/invariant-minimal.md" "ADR-009" \
-    "invariant-minimal.md references ADR-009 coinage"
+    "invariant-minimal.md references ADR-009"
 assert_file_contains "$EXAMPLES_DIR/invariant-full.md" "ADR-009" \
-    "invariant-full.md references ADR-009 coinage"
+    "invariant-full.md references ADR-009"
+assert_file_contains "$EXAMPLES_DIR/guideline-minimal.md" "ADR-009" \
+    "guideline-minimal.md references ADR-009"
+assert_file_contains "$EXAMPLES_DIR/guideline-extended.md" "ADR-009" \
+    "guideline-extended.md references ADR-009"
+
+# ============================================================
+# Regression 6: Invariant templates reference ADR-009 (Invariant Record template)
+# ============================================================
+
+assert_file_contains "$EXAMPLES_DIR/invariant-minimal.md" "ADR-009" \
+    "invariant-minimal.md references ADR-009 template"
+assert_file_contains "$EXAMPLES_DIR/invariant-full.md" "ADR-009" \
+    "invariant-full.md references ADR-009 template"
 
 # ============================================================
 # Regression 7: The three `new.md` commands document the lookup chain
@@ -179,20 +179,20 @@ fi
 # Regression 10: Reference templates don't claim external authority when they shouldn't
 # ============================================================
 # ADR templates cite external authorities (Nygard, MADR). Invariant and guideline
-# templates must NOT claim external authority — they're edikt conventions.
+# templates reference ADR-009 for the Invariant Record template contract.
 
 if grep -qF "external standard" "$EXAMPLES_DIR/invariant-minimal.md"; then
     pass "invariant-minimal.md acknowledges 'not an external standard' (ADR-009 rule)"
 else
     fail "invariant-minimal.md acknowledges 'not an external standard'" \
-        "Invariant templates must be labeled as edikt conventions, not external standards"
+        "Invariant templates must be references ADR-009s, not external standards"
 fi
 
 if grep -qF "external standard" "$EXAMPLES_DIR/invariant-full.md"; then
     pass "invariant-full.md acknowledges 'not an external standard' (ADR-009 rule)"
 else
     fail "invariant-full.md acknowledges 'not an external standard'" \
-        "Invariant templates must be labeled as edikt conventions, not external standards"
+        "Invariant templates must be references ADR-009s, not external standards"
 fi
 
 test_summary

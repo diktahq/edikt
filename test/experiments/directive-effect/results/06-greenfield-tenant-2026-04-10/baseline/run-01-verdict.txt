@@ -1,0 +1,6 @@
+exit: 1
+verdict: VIOLATION
+details:
+VIOLATION: SQL on jobs table without tenant scoping:
+
+SQL_NO_TENANT: ./internal/db/db.go:83 — 		`UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2`,

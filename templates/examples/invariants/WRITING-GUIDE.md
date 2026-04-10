@@ -1,6 +1,6 @@
 # Writing Invariant Records — condensed guide
 
-This is the short version. The full guide with annotated examples lives at `edikt.dev/governance/writing-invariants` or in the source tree at `docs/architecture/proposals/PROPOSAL-001-spec/writing-invariants-guide.md`.
+This is the short version. The full guide with annotated examples lives at `edikt.dev/governance/writing-invariants` or in the source tree at `docs/internal/product/prds/PRD-001-spec/writing-invariants-guide.md`.
 
 ## Five qualities of a good invariant
 
@@ -97,9 +97,9 @@ Every Invariant Record has six body sections (two optional) plus a directives bl
 
 - `tenant-isolation.md` and `money-precision.md` in this directory for two worked examples
 - `edikt.dev/governance/writing-invariants` for the full guide with annotated examples
-- ADR-009 for the formal terminology coinage
+- ADR-009 for the template contract
 - ADR-008 for the three-list directive schema contract
 
 ## "Invariant Record" terminology
 
-The term is an edikt convention, not an external standard. Always label your usage transparently — "edikt's Invariant Records" when publishing externally, not as if it were a widely-adopted industry term. See ADR-009 for the rationale.
+See ADR-009 for the template contract.

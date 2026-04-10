@@ -412,7 +412,7 @@ ADR template: using existing .edikt/templates/adr.md
 
 #### 2b.2 Invariant Record template
 
-Per [ADR-009](../../docs/architecture/decisions/ADR-009-invariant-record-terminology.md), invariants in edikt are formally called **Invariant Records** (short form `INV`). The term is an edikt convention, not an external standard.
+Per [ADR-009](../../docs/architecture/decisions/ADR-009-invariant-record-terminology.md), invariants in edikt are formally called **Invariant Records** (short form `INV`).
 
 **If `.edikt/templates/invariant.md` already exists** (and `--reset-templates` was NOT passed) — skip and print:
 ```

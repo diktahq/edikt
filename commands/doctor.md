@@ -218,7 +218,7 @@ For each of the three templates (`.edikt/templates/adr.md`, `.edikt/templates/in
 - **Template absent AND project is v0.2.x legacy** (`edikt_version < 0.3.0` or missing):
   - `[--] Project {artifact} template not set up (v0.2.x legacy mode). Run /edikt:upgrade followed by /edikt:init to opt into the v0.3.0 template adaptation feature.`
 
-For the Invariant Record template specifically (ADR-009 terminology): always refer to it as "Invariant Record template" in doctor output, not just "invariant template". Reinforces the coinage.
+For the Invariant Record template specifically (ADR-009 terminology): always refer to it as "Invariant Record template" in doctor output, not just "invariant template". Uses the formal name consistently.
 
 **Template reference examples (v0.3.0+):**
 

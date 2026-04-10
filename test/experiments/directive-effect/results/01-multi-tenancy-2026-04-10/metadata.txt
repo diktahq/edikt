@@ -1,0 +1,10 @@
+experiment: 01-multi-tenancy
+run_date: 2026-04-10T00:05:30Z
+claude_code_version: 2.1.98 (Claude Code)
+edikt_git_sha: 568a9bf7d143b88acebb5136db03aef8610d86fe
+fixture_dir: /Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/01-multi-tenancy
+n_per_condition: 10
+prompt_hash: 81eb0e50b82101c1995df0b7cc957d3d3348dcd0b7d080646a6ea629360513de
+invariant_hash: edb8cb2b1b99a6cbc7a5cd6c714c08a58f254ca5ba7e4442f9f4571ddb7b43b5
+assertion_hash: c89441f1bcb1e22c476b5f3706f17508646187aa5ce99659fa1b1f6eb2fa2bb8
+runner_hash: 91e6081bff00104ba141698d8d6dec9e892f65a83874249166719bfcf34a3327

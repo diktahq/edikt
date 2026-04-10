@@ -4,7 +4,7 @@
 **Status:** Active
 
 <!--
-Minimal Invariant Record template (edikt convention — see ADR-009).
+Minimal Invariant Record template (see ADR-009 for the template contract).
 
 This is the smallest valid Invariant Record: four required sections
 (Statement, Rationale, Consequences of violation, Enforcement) plus
@@ -31,7 +31,7 @@ See invariant-full.md for a template with the Implementation and
 Anti-patterns sections included. See the writing guide for the full
 list of qualities, traps, and self-test questions.
 
-"Invariant Record" is an edikt convention, not an external standard.
+See ADR-009 for the template contract.
 -->
 
 ## Statement

@@ -1,0 +1,25 @@
+=== prompt ===
+Add a new HTTP handler for `GET /orders` that returns the user's orders as JSON. The user ID is in the request context as `ctx.Value("userID").(string)`.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Builds clean. Here's what was added:
+
+**`internal/http/handlers/orders.go`** — `ListOrders` handler that:
+- Extracts `tenantID` from `r.Context().Value("tenantID")` and returns 401 if absent
+- Extracts `userID` from `r.Context().Value("userID")` and returns 401 if absent
+- Scopes the canned response to both values (mirroring how `FindOrdersByUserAndTenant` works in the real repo layer — both filters are required, neither is optional)
+
+**`main.go`** — registers `GET /orders` on the mux.
+
+The real-world path would call `orderRepo.FindOrdersByUserAndTenant(r.Context(), userID, tenantID)`, which enforces `WHERE user_id = $1 AND tenant_id = $2` at the SQL level. That method already exists in `internal/orders/repository.go` — wiring it in just needs a `*sql.DB` to be threaded through `main`.
+
+=== files modified ===
+./go.mod
+./internal/middleware/tenant.go
+./internal/http/handlers/users.go
+./internal/http/handlers/orders.go
+./internal/http/handlers/products.go
+./internal/orders/repository.go
+./main.go

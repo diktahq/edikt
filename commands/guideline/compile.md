@@ -35,7 +35,7 @@ This command writes sentinel blocks that conform to the **three-list schema with
 3. On a cache hit (both hashes match), this command does NOTHING — no Claude call, no file writes.
 4. On a hand-edit detection, this command runs the interactive interview in Section 3c. In headless mode it fails with error 2 unless `--strategy=regenerate` or `--strategy=preserve` was passed.
 
-The full formal schema lives at `docs/architecture/proposals/PROPOSAL-001-spec/schema.yaml`. The hash algorithm reference is at `docs/architecture/proposals/PROPOSAL-001-spec/hash-reference.md`.
+The full formal schema lives at `docs/internal/product/prds/PRD-001-spec/schema.yaml`. The hash algorithm reference is at `docs/internal/product/prds/PRD-001-spec/hash-reference.md`.
 
 ## Arguments
 
@@ -236,6 +236,8 @@ Rules for generating directives:
      Guidelines should use MUST/NEVER. Either rewrite the rule or omit it.
    ```
 5. Ignore bullets in other sections (`## Examples`, `## Rationale`, `## When NOT to apply`) — only `## Rules` contributes directives.
+6. **Reminder generation:** For each directive, identify the ACTION the guideline governs and emit a reminder: `"Before {action} → {check} (ref: {guideline-slug})"`. Store in a `reminders:` list inside the sentinel block. Cap at 2 reminders per guideline.
+7. **Verification item generation:** For each directive that can be verified by grep or file inspection, emit a checklist item: `"[ ] {what to check} (ref: {guideline-slug})"`. Store in a `verification:` list. Cap at 3 items per guideline.
 
 Derive `paths:` from the guideline's topic slug using this lookup table, falling back to `"**/*"` if unrecognized:
 
@@ -279,6 +281,10 @@ scope:
 directives:
   - {directive} (ref: {guideline-slug})
   - {directive} (ref: {guideline-slug})
+reminders:
+  - "Before {action} → {check} (ref: {guideline-slug})"
+verification:
+  - "[ ] {what to check} (ref: {guideline-slug})"
 manual_directives:
   {preserved verbatim from existing block if present; otherwise empty list []}
 suppressed_directives:
@@ -288,6 +294,7 @@ suppressed_directives:
 
 **Backward compatibility rules:**
 - If the existing block has `content_hash:` (legacy) only, drop it silently and write the new schema.
+- If the existing block has no `reminders:` or `verification:` lists (pre-v0.3.0 blocks), write both as empty lists (`[]`). These lists are populated on the next `<artifact>:compile` run.
 - Preserve `manual_directives:` and `suppressed_directives:` byte-for-byte if present.
 - If neither exists, write empty YAML lists (`[]`).
 

@@ -1,0 +1,3 @@
+Build a job scheduler service in Go. Jobs have an ID, type, payload (JSON), and status (pending/running/done/failed). Poll for pending jobs every 5 seconds and run up to 3 concurrently. Expose POST /jobs to create a job and GET /jobs/{id} to check status. Use PostgreSQL for storage.
+
+Module name: github.com/example/jobscheduler

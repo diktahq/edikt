@@ -4,7 +4,7 @@
 **Status:** Active
 
 <!--
-Full Invariant Record template (edikt convention — see ADR-009).
+Full Invariant Record template (see ADR-009 for the template contract).
 
 This is the complete Invariant Record template with all six body
 sections: Statement, Rationale, Consequences of violation,
@@ -28,7 +28,7 @@ See invariant-minimal.md for a shorter template without
 Implementation and Anti-patterns. See the writing guide for the full
 list of qualities, traps, and self-test questions.
 
-"Invariant Record" is an edikt convention, not an external standard.
+See ADR-009 for the template contract.
 -->
 
 ## Statement

@@ -1,0 +1,11 @@
+exit: 0
+verdict: PASS
+details:
+ASSERTION: review files found:
+./internal/repository/reviews.go
+./internal/http/handlers/reviews.go
+./internal/http/handlers/reviews_create.go
+./internal/http/handlers/reviews_list.go
+./internal/service/reviews.go
+./internal/domain/review.go
+PASS: new review feature threads tenant through repo SQL, service scope, and log calls

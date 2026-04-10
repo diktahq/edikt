@@ -1,0 +1,1 @@
+Add a function `calculate_discount(price, percentage)` to `app/pricing.py` that returns the discounted amount. For example, calculate_discount(100, 10) should return 90.

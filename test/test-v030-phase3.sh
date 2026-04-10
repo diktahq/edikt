@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: v0.3.0 Phase 3 — init style detection + Adapt mode
 #
-# Guards the Phase 3 decisions from PROPOSAL-001 / file-changes.md:
+# Guards the Phase 3 decisions from PRD-001 / file-changes.md:
 #   1. init.md documents the Adapt mode flow for all three artifact types
 #   2. Three-choice prompt (Adapt / Start fresh / Write my own) documented per type
 #   3. Inconsistent style fallback documented (team template / draft from majority / pick reference)
@@ -35,7 +35,7 @@ assert_file_contains "$INIT_MD" "Adapt mode" \
 assert_file_contains "$INIT_MD" "ADR-005" \
     "init.md references ADR-005 for the extensibility model"
 assert_file_contains "$INIT_MD" "ADR-009" \
-    "init.md references ADR-009 for Invariant Record coinage"
+    "init.md references ADR-009 for Invariant Record template"
 
 # ============================================================
 # Contract 2: Three sub-sections for ADR, Invariant Record, Guideline

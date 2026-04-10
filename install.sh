@@ -266,7 +266,7 @@ for cmd in new compile review; do
 done
 
 # gov namespace
-for cmd in compile review rules-update sync; do
+for cmd in compile review score rules-update sync; do
   _install_ns_cmd gov "$cmd"
 done
 
@@ -334,7 +334,7 @@ done
 # Reference example templates for ADRs, Invariant Records, and guidelines (v0.3.0).
 # These are NOT auto-loaded as defaults — they're starting points offered during
 # /edikt:init when the user picks "Start fresh". See ADR-009 for the Invariant
-# Record coinage and PROPOSAL-001-spec for the full design.
+# Record template contract and PRD-001-spec for the full design.
 for example in \
   adr-nygard-minimal.md \
   adr-madr-extended.md \

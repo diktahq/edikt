@@ -65,7 +65,7 @@ edikt v0.3.0+ supports project-level template overrides per [ADR-005](../../docs
 
 **No global default**: edikt does NOT ship a "default guideline template" that is auto-installed. Projects explicitly pick a template during init, write their own, or fall back to the inline template in v0.2.x legacy mode only.
 
-**On terminology**: unlike ADRs and Invariant Records, guidelines do NOT receive a coined short-form term in v0.3.0 — "guideline" is already established English and does not need formalization. See ADR-009 for rationale.
+**On terminology**: unlike ADRs and Invariant Records, guidelines use the standard term "guideline" — no formal short form needed.
 
 **Checking the project edikt_version**: extract it from `.edikt/config.yaml`:
 ```bash

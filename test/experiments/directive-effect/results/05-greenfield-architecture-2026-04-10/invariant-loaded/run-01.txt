@@ -1,0 +1,34 @@
+=== prompt ===
+Build a job scheduler service in Go. Jobs have an ID, type, payload (JSON), and status (pending/running/done/failed). Poll for pending jobs every 5 seconds and run up to 3 concurrently. Expose POST /jobs to create a job and GET /jobs/{id} to check status. Use PostgreSQL for storage.
+
+Module name: github.com/example/jobscheduler
+
+=== claude exit: 0 ===
+
+=== claude output ===
+**Plan: Job Scheduler Service**
+
+**File structure** (9 files, greenfield):
+
+```
+go.mod + schema.sql
+domain/job.go          — Job struct, Status constants
+domain/errors.go       — ErrNotFound sentinel
+repository/repository.go — JobRepository interface
+repository/postgres.go — SQL impl (lib/pq, parameterized queries)
+service/scheduler.go   — 5s polling loop, atomic concurrency counter, Runner func
+handler/job.go         — POST /jobs, GET /jobs/{id} (thin: decode→call→encode)
+cmd/server/main.go     — wire-up, default runner, graceful shutdown
+```
+
+**Key decisions:**
+- `ClaimPending` uses `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` — atomic, safe for multiple instances
+- Concurrency tracked with `atomic.Int32`; scheduler computes available slots (`3 − running`) before each claim
+- Go 1.22 `r.PathValue("id")` for path params — no router dependency
+- `domain.ErrNotFound` keeps handler decoupled from `database/sql`
+- All governance rules satisfied (no SQL in handlers/services, no `init()`, no package-level mutable state)
+
+Approve to proceed with implementation?
+
+=== files modified ===
+./go.mod

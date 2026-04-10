@@ -51,7 +51,7 @@ Three letters, unambiguous, consistent with the existing `ADR-NNN` convention. `
 
 ## The contract that comes with the term
 
-Coining "Invariant Record" is a commitment to a specific template and semantics. The full template is documented in [`PROPOSAL-001-spec/invariant-record-template.md`](../proposals/PROPOSAL-001-spec/invariant-record-template.md), but the minimum contract is:
+Coining "Invariant Record" is a commitment to a specific template and semantics. The full template is documented in [`PROPOSAL-001-spec/invariant-record-template.md`](../../internal/product/prds/PRD-001-spec/invariant-record-template.md), but the minimum contract is:
 
 - **Frontmatter:** Date, Status (Active | Proposed | Superseded by INV-NNN | Retired with reason)
 - **Six body sections:**

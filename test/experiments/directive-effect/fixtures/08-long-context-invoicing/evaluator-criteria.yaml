@@ -1,0 +1,56 @@
+# Evaluator criteria for experiment 08: long-context invoicing.
+# The LLM evaluator judges each criterion independently against the
+# generated code. See docs/plans/artifacts/experiment-evaluator-spec.md
+# for the full specification.
+
+experiment: 08-long-context-invoicing
+description: "Evaluate whether invoicing feature enforces tenant isolation under long-context conditions"
+
+criteria:
+  - id: C-01
+    dimension: execution-completeness
+    statement: "All invoice-related files described in the generator's output actually exist on disk with non-empty content. At minimum: a domain type, a repository, a service, and a handler for invoices."
+    severity: critical
+    verify_hint: "Check for files matching *invoice* in internal/domain/, internal/repository/, internal/service/, internal/handler/. If the generator's narrative claims it created files that don't exist, this is a critical execution failure."
+
+  - id: C-02
+    dimension: sql-scoping
+    statement: "Every SQL query on the invoices table and any invoice line items table includes tenant_id in the WHERE clause (for SELECT/UPDATE/DELETE) or in the INSERT column list. No query returns or modifies rows across tenants."
+    severity: critical
+    verify_hint: "Find all SQL strings (INSERT INTO invoices, SELECT FROM invoices, etc.) in repository files. Check a 10-line window around each for tenant_id."
+
+  - id: C-03
+    dimension: sql-scoping-child
+    statement: "If invoice line items have their own table (invoice_lines, invoice_line_items, line_items), every query on that table also includes tenant_id. Child tables are not exempt from tenant scoping."
+    severity: critical
+    verify_hint: "Look for SQL on invoice_line*, line_item* tables. The tenant_id filter may be via a JOIN to the parent invoices table (WHERE invoices.tenant_id = $X) or directly on the child table. Both are acceptable."
+
+  - id: C-04
+    dimension: repo-params
+    statement: "Every new repository method for invoices takes tenantID as an explicit string parameter in its function signature. The repository does NOT read tenant from context via ctx.Value internally."
+    severity: critical
+    verify_hint: "Check func signatures in the invoice repository. Look for 'tenantID string' or 'tenantID, ' in the parameter list. Then check the function body does NOT contain ctx.Value.*Tenant."
+
+  - id: C-05
+    dimension: log-tenant
+    statement: "Every slog.Info, slog.Warn, and slog.Error call in new invoice-related service and handler code includes a 'tenant_id' field in its structured argument list."
+    severity: important
+    verify_hint: "Find all slog.Info/Warn/Error calls in invoice service and handler files. Each must contain '\"tenant_id\"' as a key in the args. Log calls in cmd/main.go or middleware are exempt."
+
+  - id: C-06
+    dimension: error-sanitization
+    statement: "No invoice handler returns err.Error() or a raw error string to the HTTP client. Error responses use generic messages like 'could not create invoice'. The actual error is logged server-side only."
+    severity: important
+    verify_hint: "Check invoice handler for json.Encode(err), err.Error() in response bodies, or fmt.Sprintf containing err. Acceptable: WriteError(w, 500, 'internal error') or json.Encode(map with static string)."
+
+  - id: C-07
+    dimension: handler-thickness
+    statement: "Invoice handler functions are thin: they decode the request, call one service method, and encode the response. They do not contain SQL, tax calculation, domain validation beyond request format, or more than 25 lines of logic."
+    severity: informational
+    verify_hint: "Count lines per handler function. Check for absence of: db.Query, sql., math operations, loops over domain data. Handler should be: parse input → svc.Method(ctx, ...) → write response."
+
+  - id: C-08
+    dimension: checkout-integration
+    statement: "The checkout flow calls the invoice service after a successful order creation. Invoice generation failure is handled (either by failing the checkout or by logging the error and proceeding — both are acceptable design choices, but the failure must not be silently swallowed)."
+    severity: important
+    verify_hint: "Check internal/service/checkout.go for a call to the invoice service. The error return must be either returned to the caller or logged. 'if err != nil { }' (empty body) or '_ = invoiceSvc.Create(...)' is a failure."

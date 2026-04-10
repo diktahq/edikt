@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: v0.3.0 Phase 2 — three-list schema + hash-based caching (ADR-008)
 #
-# Guards the Phase 2 decisions from PROPOSAL-001 / file-changes.md + ADR-008:
+# Guards the Phase 2 decisions from PRD-001 / file-changes.md + ADR-008:
 #   1. All three <artifact>:compile.md commands document the three-list schema
 #   2. All three <artifact>:compile.md commands document the hash algorithm
 #      (SHA-256, normalization steps, block exclusion)

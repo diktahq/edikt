@@ -1,0 +1,10 @@
+experiment: 03-timezone-awareness
+run_date: 2026-04-10T00:48:38Z
+claude_code_version: 2.1.98 (Claude Code)
+edikt_git_sha: 568a9bf7d143b88acebb5136db03aef8610d86fe
+fixture_dir: /Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/03-timezone-awareness
+n_per_condition: 10
+prompt_hash: 7e647ecaddff6e05b43ff0cabd76bc36d1de557fdad3f8e84f8f9806c7f33c2d
+invariant_hash: 336571f6d8b8bb64dbae7e5228ce08bef8fa713008d44a308c25de78c4bc0b93
+assertion_hash: 5895d600e54e7b1f840630847a8e3685646a06b6dc40dec95cf035f68258bfd3
+runner_hash: 91e6081bff00104ba141698d8d6dec9e892f65a83874249166719bfcf34a3327

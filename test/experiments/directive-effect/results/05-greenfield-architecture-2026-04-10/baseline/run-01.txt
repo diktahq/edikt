@@ -1,0 +1,67 @@
+=== prompt ===
+Build a job scheduler service in Go. Jobs have an ID, type, payload (JSON), and status (pending/running/done/failed). Poll for pending jobs every 5 seconds and run up to 3 concurrently. Expose POST /jobs to create a job and GET /jobs/{id} to check status. Use PostgreSQL for storage.
+
+Module name: github.com/example/jobscheduler
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Clean build. Here's what was built:
+
+---
+
+**File structure**
+
+```
+.
+├── go.mod
+├── go.sum
+├── job.go        — Job struct and Status constants
+├── db.go         — DB connection, migration, and all SQL queries
+├── scheduler.go  — Polling loop and worker pool
+├── handler.go    — HTTP handlers
+└── main.go       — Wiring + graceful shutdown
+```
+
+---
+
+**Key design decisions**
+
+**Concurrency (scheduler.go)**
+A buffered channel `sem` of capacity 3 acts as a counting semaphore. Before polling, `cap(s.sem) - len(s.sem)` determines free slots so we only claim as many jobs from the DB as we can immediately run — no goroutine pile-up between polls.
+
+**Atomic job claiming (db.go:54)**
+`UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` is a single atomic operation. Multiple scheduler instances or rapid polls can never double-claim the same job — Postgres skips rows already locked by another transaction.
+
+**HTTP routing (main.go)**
+Uses Go 1.22's built-in method+path pattern matching (`GET /jobs/{id}`), so `r.PathValue("id")` works with no external router.
+
+**Job type registration**
+Call `sched.Register("your-type", fn)` before `sched.Run`. Unknown types are immediately marked `failed`.
+
+---
+
+**Running it**
+
+```bash
+# start postgres, then:
+DATABASE_URL="postgres://user:pass@localhost:5432/jobscheduler?sslmode=disable" go run .
+
+# create a job
+curl -X POST http://localhost:8080/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{"type":"example","payload":{"key":"value"}}'
+
+# check status
+curl http://localhost:8080/jobs/<id>
+```
+
+=== files modified ===
+./handler.go
+./go.mod
+./db.go
+./go.sum
+./job.go
+./jobscheduler
+./main.go
+./scheduler.go

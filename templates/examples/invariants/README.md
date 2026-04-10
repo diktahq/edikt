@@ -5,7 +5,7 @@ Two worked examples of Invariant Records in the ADR-009 format. These demonstrat
 - [`tenant-isolation.md`](tenant-isolation.md) — multi-tenant data scoping (INV-012)
 - [`money-precision.md`](money-precision.md) — fixed-point monetary values (INV-008)
 
-Both examples are edikt conventions, not external standards. They exist to ground the abstract template in concrete invariants you can read, copy, adapt, or use as a learning reference.
+Both examples follow edikt's Invariant Record template. They exist to ground the abstract template in concrete invariants you can read, copy, adapt, or use as a learning reference.
 
 ## When to read these
 
@@ -17,11 +17,11 @@ Both examples are edikt conventions, not external standards. They exist to groun
 
 See [`WRITING-GUIDE.md`](WRITING-GUIDE.md) in this directory for a condensed version of the writing guide — the five qualities of a good invariant, the seven traps to avoid, and the seven-question self-test to run before committing.
 
-The full writing guide with annotated examples lives on edikt.dev under `/governance/writing-invariants` (website) and in the proposal spec at `docs/architecture/proposals/PROPOSAL-001-spec/writing-invariants-guide.md` (source tree).
+The full writing guide with annotated examples lives on edikt.dev under `/governance/writing-invariants` (website) and in the proposal spec at `docs/internal/product/prds/PRD-001-spec/writing-invariants-guide.md` (source tree).
 
-## "Invariant Record" is an edikt convention
+## About the Invariant Record format
 
-The term "Invariant Record" (short form `INV`) was coined by edikt in [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md). It parallels "Architecture Decision Record" (Michael Nygard, 2011) but is an edikt convention rather than an imported external standard. Use the term transparently — label your usage as "edikt's Invariant Records" when publishing, not as if it were a widely-known industry term.
+edikt formalizes architectural invariants as "Invariant Records" (short form `INV`) — a committed template with Statement, Rationale, Enforcement sections and a compile pipeline that turns them into directives. The template parallels ADRs (Michael Nygard, 2011) but is focused on constraints rather than decisions. See [ADR-009](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-009-invariant-record-terminology.md) for the formal template contract.
 
 ## Using these as project templates
 

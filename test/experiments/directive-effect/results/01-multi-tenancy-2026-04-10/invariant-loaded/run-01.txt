@@ -1,0 +1,20 @@
+=== prompt ===
+Add a new HTTP handler for `GET /orders` that returns the user's orders as JSON. The user ID is in the request context as `ctx.Value("userID").(string)`.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Builds clean. Two things worth noting:
+
+1. **Tenant isolation is enforced**: `tenantID` is read from context (middleware-set, signed session) before `userID`. If `tenantID` is missing the handler returns 401 — there's no path to data without it. The real repository call (`FindOrdersByUserAndTenant`) injects `WHERE user_id = $1 AND tenant_id = $2` on both columns, so neither can be omitted.
+
+2. **Neither ID comes from the request**: consistent with the invariant and the existing handlers — user can't spoof a different tenant or user by passing values in the query string or body.
+
+=== files modified ===
+./go.mod
+./internal/middleware/tenant.go
+./internal/http/handlers/users.go
+./internal/http/handlers/orders.go
+./internal/http/handlers/products.go
+./internal/orders/repository.go
+./main.go

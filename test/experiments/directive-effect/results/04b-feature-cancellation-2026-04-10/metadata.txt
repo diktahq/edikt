@@ -1,0 +1,12 @@
+experiment: 04b-feature-cancellation
+run_date: 2026-04-10T08:55:49Z
+claude_code_version: 2.1.100 (Claude Code)
+edikt_git_sha: cd6c09a52f16cafc0736bee4bb8e3c5099002eb5
+fixture_dir: /Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/04b-feature-cancellation
+n_per_condition: 1
+prompt_hash: bb95125bf2dbe206604428d42b0279abb5a619f0a6017d2e325a4c48deef2b8c
+invariant_hash: a1beabfc3b47c890a1e22133fd9ceaddb39fa8884bab81de7bbca1d42e38bf24
+directives_hash: 02377ad13d7811ac47bd8c592fb954bbbd538165d2be0edd7c696159c20e4573
+loaded_as: directives.md (edikt compiled format)
+assertion_hash: 6022fd10c6bef19fc812a997ae96673e420fd72b113fea895ff0899dc9fc8862
+runner_hash: 72f8d002ba82997e534a904b20de4df0e2b1b41e99174dfd49d50778937a74f6

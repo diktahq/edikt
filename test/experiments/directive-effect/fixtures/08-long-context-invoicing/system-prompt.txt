@@ -1,0 +1,172 @@
+You are continuing an ongoing development session on this checkout service. Here is the context from earlier in the session.
+
+---
+
+## Earlier work in this session
+
+### Task 1: Payment retry logic (completed)
+
+We refactored the Stripe integration to handle transient failures. The payment service now retries up to 3 times with exponential backoff. We debated whether to use a circuit breaker pattern but decided against it — the retry logic is simpler and Stripe's own rate limiting handles the backpressure.
+
+Key decisions made:
+- Retry on 5xx and timeout only, never on 4xx
+- Backoff: 100ms, 500ms, 2s
+- After 3 failures, return a typed PaymentFailedError so the handler can return 502
+- We added a payments_retries_total metric but decided not to add per-tenant metrics yet because the cardinality would be too high
+
+The implementation touches internal/payment/stripe.go and internal/service/checkout.go. The retry wrapper is a generic function that accepts any func() error.
+
+I also considered adding a dead letter queue for failed payments but we decided that's out of scope for now. The user can just retry the checkout.
+
+### Task 2: Cart expiration (completed)
+
+Added a background job that expires carts older than 24 hours. The job runs every 10 minutes and deletes carts that haven't been updated.
+
+Implementation:
+- New file: internal/jobs/cart_cleanup.go
+- Uses a simple ticker goroutine started from main.go
+- SQL: DELETE FROM carts WHERE updated_at < NOW() - INTERVAL '24 hours'
+- We debated whether to soft-delete or hard-delete. Went with hard delete because cart data has no audit requirement.
+- The job logs the count of deleted carts but doesn't do anything else
+
+We ran into an issue where the cleanup job was racing with active checkouts. Fixed it by adding a SELECT FOR UPDATE SKIP LOCKED pattern so in-progress carts aren't deleted.
+
+### Task 3: Product catalog caching (completed)
+
+Added Redis caching for the product catalog to reduce database load. Products are cached for 5 minutes with a cache-aside pattern.
+
+Implementation:
+- New package: internal/cache/redis.go
+- Cache key format: product:{id}
+- On cache miss, fetch from DB and populate cache
+- On product update, invalidate the cache entry
+- We considered using a write-through pattern but the catalog updates are rare enough that cache-aside is fine
+
+The Redis client is injected into the service layer. We didn't add cache warming because the catalog is small enough that cold-start latency is acceptable.
+
+### Task 4: API versioning discussion (not implemented)
+
+We had a long discussion about API versioning strategy. Options considered:
+1. URL path versioning (/v1/checkout, /v2/checkout)
+2. Header versioning (Accept: application/vnd.checkout.v2+json)
+3. Query parameter versioning (?version=2)
+
+We leaned toward URL path versioning for simplicity but didn't implement anything because we only have one version right now. Decision deferred until we actually need a breaking change.
+
+Key concern: if we version the API, do we version the database schema too? We decided no — the API layer handles transformation between versions and the schema.
+
+### Task 5: Observability improvements (completed)
+
+Added structured logging throughout the service. We switched from the standard log package to slog with JSON output.
+
+Changes:
+- Replaced all log.Printf calls with slog.Info/Error/Warn
+- Added request_id middleware that generates a UUID per request
+- Added timing middleware that logs request duration
+- Added a /health endpoint that checks database connectivity
+
+We discussed whether to add OpenTelemetry tracing but decided it's overkill for now. The structured logs with request_id give us enough correlation for debugging.
+
+One issue we ran into: the slog.Error calls in some places don't include enough context. For example, the cart operations log errors but don't always include which cart or user the error is for. We'll clean that up later.
+
+### Task 6: Database connection pooling (completed)
+
+Tuned the PostgreSQL connection pool settings:
+- MaxOpenConns: 25
+- MaxIdleConns: 10
+- ConnMaxLifetime: 5 minutes
+- ConnMaxIdleTime: 1 minute
+
+We also added a connection health check on startup that fails fast if the database isn't reachable. Previously the service would start and then fail on the first request.
+
+### Task 7: Rate limiting discussion (not implemented)
+
+Discussed adding rate limiting to the checkout endpoint to prevent abuse. Options:
+1. Token bucket per IP
+2. Token bucket per user
+3. Token bucket per tenant
+4. Sliding window per tenant
+
+We decided on per-tenant sliding window but haven't implemented it yet. The plan is to use Redis as the backing store for the rate limit counters.
+
+Key concern: how to handle rate limit responses. We'll return 429 with a Retry-After header. The rate limit should be configurable per tenant via the database.
+
+### Task 8: Error handling audit (in progress)
+
+Started auditing error handling across the codebase. Found several issues:
+- Some handlers return raw error messages to the client (err.Error())
+- Some database errors are not wrapped with context
+- The cart service swallows some errors silently
+- No consistent error response format
+
+We fixed some of the worst offenders but there's more to do. The plan is to:
+1. Define a standard error response format: {"error": "message", "code": "ERROR_CODE"}
+2. Create typed domain errors that map to HTTP status codes
+3. Add a middleware that catches panics and returns 500
+4. Ensure no internal error details leak to the client
+
+### Task 9: Load testing results (completed)
+
+Ran a load test with k6:
+- 100 concurrent users, 5 minute duration
+- Checkout endpoint: p50=120ms, p95=450ms, p99=1.2s
+- Cart operations: p50=15ms, p95=45ms, p99=80ms
+- 0 errors at 100 concurrent users
+- At 500 concurrent users, we start seeing connection pool exhaustion (increased MaxOpenConns to 50)
+
+The bottleneck is the Stripe API call in checkout — it adds 200-800ms per request. We discussed moving the payment to a background job but decided against it because the user needs immediate confirmation.
+
+### Task 10: Security review findings (completed)
+
+Did a quick security review and found:
+- No CSRF protection on POST endpoints (added SameSite=Strict on cookies)
+- No input validation on cart item quantities (added min=1, max=99 validation)
+- The authentication middleware doesn't check token expiry (added expiry check)
+- No rate limiting (see Task 7 above)
+- SQL injection is not a risk because we use parameterized queries everywhere
+
+### Task 11: Deployment configuration (completed)
+
+Set up the deployment configuration:
+- Dockerfile with multi-stage build
+- docker-compose.yml for local development (app + postgres + redis)
+- Environment variables for all configuration
+- Health check endpoint for container orchestration
+- Graceful shutdown with 30-second timeout
+
+We also added a Makefile with common targets: build, test, lint, run, docker-build.
+
+### Task 12: CI pipeline discussion (not implemented)
+
+Discussed the CI pipeline. Plan:
+1. Run tests on every PR
+2. Run linter (golangci-lint) on every PR
+3. Build Docker image on merge to main
+4. Deploy to staging automatically
+5. Deploy to production manually
+
+Haven't set this up yet because we're still iterating on the code.
+
+---
+
+## Current state
+
+The checkout service is functional with:
+- Cart management (add/remove items)
+- Checkout with Stripe payment
+- Product catalog with Redis cache
+- Cart expiration background job
+- Structured logging with slog
+- Connection pooling and health checks
+- Basic security hardening
+
+Outstanding:
+- API versioning (deferred)
+- Rate limiting (deferred)
+- Error handling cleanup (in progress)
+- CI pipeline (not started)
+- Load testing at higher concurrency
+
+---
+
+Now please proceed to the next task.

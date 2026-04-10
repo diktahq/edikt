@@ -212,13 +212,13 @@ Exiting with error (2).
 
 ## Schema formal specification
 
-See `docs/architecture/proposals/PROPOSAL-001-spec/schema.yaml` for the machine-readable schema.
+See `docs/internal/product/prds/PRD-001-spec/schema.yaml` for the machine-readable schema.
 
-See `docs/architecture/proposals/PROPOSAL-001-spec/fixtures/` for concrete examples of every block state.
+See `docs/internal/product/prds/PRD-001-spec/fixtures/` for concrete examples of every block state.
 
-See `docs/architecture/proposals/PROPOSAL-001-spec/hash-reference.md` for reference hash algorithm and test vectors.
+See `docs/internal/product/prds/PRD-001-spec/hash-reference.md` for reference hash algorithm and test vectors.
 
-See `docs/architecture/proposals/PROPOSAL-001-spec/glossary.md` for terminology.
+See `docs/internal/product/prds/PRD-001-spec/glossary.md` for terminology.
 
 ## Migration from v0.2.x
 

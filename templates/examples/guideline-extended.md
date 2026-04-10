@@ -3,7 +3,7 @@
 **Purpose:** {One sentence — what problem this guideline prevents.}
 
 <!--
-Extended guideline template (edikt convention).
+Extended guideline template (edikt).
 
 Extends the minimal guideline with Rationale, Examples (correct and
 incorrect), and a When-NOT-to-apply section. Use when the rules

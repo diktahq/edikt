@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: v0.3.0 Phase 6 — Invariant Record canonical examples + website + experiments
 #
-# Guards the Phase 6 deliverables from PROPOSAL-001 / file-changes.md:
+# Guards the Phase 6 deliverables from PRD-001 / file-changes.md:
 #   1. Canonical invariant examples shipped under templates/examples/invariants/
 #   2. Condensed WRITING-GUIDE shipped alongside the canonical examples
 #   3. README shipped in templates/examples/invariants/
@@ -65,9 +65,9 @@ for example in tenant-isolation.md money-precision.md; do
     # Directives sentinel block
     assert_file_contains "$file" "edikt:directives:start" \
         "$example has directives sentinel block"
-    # Must be labeled edikt convention
-    assert_file_contains "$file" "edikt convention" \
-        "$example labeled as edikt convention"
+    # Must reference ADR-009
+    assert_file_contains "$file" "ADR-009" \
+        "$example references ADR-009"
 done
 
 # ============================================================
@@ -78,8 +78,8 @@ assert_file_contains "$INV_EXAMPLES_DIR/README.md" "Canonical Invariant Record e
     "README has correct title"
 assert_file_contains "$INV_EXAMPLES_DIR/README.md" "ADR-009" \
     "README references ADR-009"
-assert_file_contains "$INV_EXAMPLES_DIR/README.md" "edikt convention" \
-    "README states invariants are an edikt convention"
+assert_file_contains "$INV_EXAMPLES_DIR/README.md" "ADR-009" \
+    "README references ADR-009"
 
 assert_file_contains "$INV_EXAMPLES_DIR/WRITING-GUIDE.md" "Five qualities" \
     "WRITING-GUIDE has Five qualities section"
@@ -132,8 +132,8 @@ assert_file_contains "$WEBSITE_GOV/invariant-records.md" "ADR-009" \
     "invariant-records.md references ADR-009"
 assert_file_contains "$WEBSITE_GOV/invariant-records.md" "ADR-008" \
     "invariant-records.md references ADR-008"
-assert_file_contains "$WEBSITE_GOV/invariant-records.md" "edikt convention" \
-    "invariant-records.md labels terminology as edikt convention"
+assert_file_contains "$WEBSITE_GOV/invariant-records.md" "ADR-009" \
+    "invariant-records.md references ADR-009"
 
 # writing-invariants.md should have no broken relative links to decisions/
 if grep -qF '../../decisions/' "$WEBSITE_GOV/writing-invariants.md"; then

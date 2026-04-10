@@ -16,7 +16,7 @@ allowed-tools:
 
 Generate or regenerate directive sentinel blocks (`[edikt:directives:start/end]: #`) for Invariant Records. Sentinels are what `/edikt:gov:compile` reads — without them, compile falls back to extraction, which is slower and less accurate.
 
-See [ADR-009](../../docs/architecture/decisions/ADR-009-invariant-record-terminology.md) for the "Invariant Record" terminology coinage. Invariant Records are edikt's formalized name for the governance artifact documenting a hard architectural constraint.
+See [ADR-009](../../docs/architecture/decisions/ADR-009-invariant-record-terminology.md) for the Invariant Record template contract. Invariant Records are edikt's formal artifact type for the governance artifact documenting a hard architectural constraint.
 
 ## Compile Schema (ADR-008)
 
@@ -35,7 +35,7 @@ This command writes sentinel blocks that conform to the **three-list schema with
 3. On a cache hit (both hashes match), this command does NOTHING — no Claude call, no file writes.
 4. On a hand-edit detection (`source_hash` matches, `directives_hash` does not), this command runs the interactive interview in Section 3c. In headless mode it fails with error code 2 unless `--strategy=regenerate` or `--strategy=preserve` was passed.
 
-The full formal schema lives at `docs/architecture/proposals/PROPOSAL-001-spec/schema.yaml`. The hash algorithm reference is at `docs/architecture/proposals/PROPOSAL-001-spec/hash-reference.md`.
+The full formal schema lives at `docs/internal/product/prds/PRD-001-spec/schema.yaml`. The hash algorithm reference is at `docs/internal/product/prds/PRD-001-spec/hash-reference.md`.
 
 ## Arguments
 
@@ -246,6 +246,9 @@ Rules for generating directives:
 5. Do NOT include rationale prose from `## Rationale` as directives.
 6. Each directive ends with `(ref: {INV-ID})`.
 7. If the legacy `## Rule` section is used (v0.2.x), it already uses MUST/NEVER language — preserve it exactly.
+8. **"No exceptions." reinforcement:** If the invariant's `## Statement` section uses absolute quantifiers — "every", "all", "total", "no ... path", "no ... exception", "never" — append "No exceptions." to the generated directive text, before the `(ref:)` suffix. Example: `"Every data access MUST be tenant-scoped. No exceptions. (ref: INV-012)"`. This phrase acts as absolute reinforcement that prevents Claude from rationalizing edge cases. Only apply to invariant directives — ADRs and guidelines may legitimately have exceptions.
+9. **Reminder generation:** For each generated directive, identify the ACTION the constraint governs (writing SQL, creating files, returning errors, logging, starting goroutines, etc.) and emit a reminder line in the format: `"Before {action} → {check} (ref: {INV-ID})"`. Store these in a `reminders:` list inside the sentinel block, alongside `directives:`. Example: `"Before writing SQL → MUST include tenant_id in WHERE clause (ref: INV-012)"`. Cap at 2 reminders per invariant.
+10. **Verification item generation:** For each generated directive that can be expressed as a grep command or file inspection, emit a checklist item in the format: `"[ ] {what to check} (ref: {INV-ID})"`. Store in a `verification:` list inside the sentinel block. Only include items that are mechanically verifiable — skip directives that require reading logic. Cap at 3 items per invariant.
 
 Derive `paths:` from any path globs declared in the invariant's metadata or from the `## Implementation` section if it names specific file patterns. Default to `"**/*"` for universal constraints.
 
@@ -280,6 +283,10 @@ scope:
 directives:
   - {directive} (ref: {INV-ID})
   - {directive} (ref: {INV-ID})
+reminders:
+  - "Before {action} → {check} (ref: {INV-ID})"
+verification:
+  - "[ ] {what to check} (ref: {INV-ID})"
 manual_directives:
   {preserved verbatim from existing block if present; otherwise empty list []}
 suppressed_directives:
@@ -344,4 +351,4 @@ You are reading these instructions and MUST execute them literally:
 
 ---
 
-REMEMBER: Invariant Records compile into the Non-Negotiable Constraints section of the governance index — they appear at the top and bottom of every governance file to exploit primacy and recency bias. The `## Statement` section is the source of truth — preserve declarative language exactly. Invariants scope to all activities by default because they cannot be violated under any circumstances. This command is the ONLY writer of the `directives:` list. `manual_directives:` and `suppressed_directives:` belong to the user. Contract locked in ADR-008 and ADR-009.
+REMEMBER: Invariant Records compile into the Non-Negotiable Constraints section of the governance index — they appear at the top and bottom of every governance file to exploit primacy and recency bias. The `## Statement` section is the source of truth — preserve declarative language exactly. Invariants scope to all activities by default because they cannot be violated under any circumstances. This command is the ONLY writer of the `directives:`, `reminders:`, and `verification:` lists. `manual_directives:` and `suppressed_directives:` belong to the user. Append "No exceptions." to directives derived from absolute-language Statements. Contract locked in ADR-008 and ADR-009.

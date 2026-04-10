@@ -1,100 +1,57 @@
-# edikt experiments
+# edikt Experiments
 
-Pre-registered engineering validation experiments for v0.3.0. Tests whether loading an Invariant Record into Claude's context actually reduces the rate at which Claude violates the rule.
+Three experiment suites measuring how governance affects AI agent output.
 
-**Full methodology, pre-registration, and hypothesis:** see [`docs/architecture/proposals/PROPOSAL-001-spec/experiments/`](../../docs/architecture/proposals/PROPOSAL-001-spec/experiments/) in the source tree.
+## Suites
 
-## Quick start
+### [rule-compliance/](rule-compliance/) — "Does the rule get followed?"
+
+v0.1.x era. Tests whether rule packs in `.claude/rules/` cause Claude to follow conventions it wouldn't follow without them. 123 eval runs across two experiments. Result: rules drive 100% compliance on conventions Claude has never seen in training.
+
+- **exp-001** — 60 runs across 5 scenarios (security, Go errors, architecture layers, testing, Next.js). 15/15 with rules, 0/15 without.
+- **exp-002** — 63 runs across 4 stress conditions (contradictory rules, multi-file, Opus vs Sonnet, adversarial prompts). Near-100% compliance held.
+
+### [directive-effect/](directive-effect/) — "Does the directive change the output?"
+
+v0.3.0 era. Tests whether compiled governance directives (MUST/NEVER language, sentinel blocks) change what Claude builds on greenfield, new-domain, and long-context tasks.
+
+8 experiments, 4 scenario types:
+
+| Scenario | Experiments | Finding |
+|---|---|---|
+| Existing codebase | 01-04b | Effect absent — code patterns self-teach |
+| Greenfield | 05-06 | **Effect present** — governance prevents architecture/tenant violations |
+| New domain on existing | 07 | **Effect present** — governance catches log/SQL misses |
+| Long context | 08 (N=2) | **Effect present** — governance stabilizes under context pressure |
+
+Key finding: directive format matters. MUST/NEVER + literal code tokens outperforms prose.
+
+### [long-running/](long-running/) — "Does governance help across sessions?"
+
+Designed, not yet run. Tests multi-turn compliance, context compaction recovery, multi-rule load, and real-world conventions. Requires harness improvements (LLM evaluator, structured criteria) from [PLAN-long-running-harness](../../docs/plans/PLAN-long-running-harness.md).
+
+Four hypotheses from the original v0.1.x exp-003 BRIEF, evolved with v0.3.0 findings:
+- H1: Multi-rule compliance (14+ rules loaded)
+- H2: Compaction recovery (PostCompact re-injection)
+- H3: Multi-turn compliance (5+ turns)
+- H4: Real conventions (from actual codebases)
+
+## Methodology
+
+All experiments follow pre-registration discipline:
+- Design committed before running
+- Human-natural prompts (no contamination words)
+- Committed assertions (can't change after seeing results)
+- Honest negative results published (experiments 01-04b all showed "effect absent")
+- Invalidated runs preserved with audit notes (never silently deleted)
+
+## Running experiments
 
 ```bash
-# Run a single experiment (N=10 per condition by default)
-./test/experiments/run.sh 01-multi-tenancy
+# Directive-effect suite
+EDIKT_EXP_N=2 ./test/experiments/directive-effect/run.sh 06-greenfield-tenant
 
-# Run all experiments sequentially
-./test/experiments/run.sh all
-
-# Dry run — show what would execute without actually calling Claude
-./test/experiments/run.sh 01-multi-tenancy --dry-run
+# Rule-compliance suite (manual — see rule-compliance/README.md)
+cd test/experiments/rule-compliance/exp-001-scenarios
+bash run.sh
 ```
-
-## Requirements
-
-- `claude` CLI installed locally (Claude Code headless)
-- Active Claude Code subscription (the experiments use the user's subscription — no API billing)
-- `sha256sum` or `shasum` for deterministic run IDs
-- `jq` for parsing Claude Code's output
-
-## What this is (and isn't)
-
-**What this is:**
-- Engineering validation — "does this feature I built actually work?"
-- Publication-grade discipline as a shield against self-deception (pre-registration, human-natural prompts, committed assertions, honest negative results)
-- A one-time-ish measurement to ship with the v0.3.0 release notes
-- Reusable infrastructure for v0.4.0+ if we decide to build a fuller Tier 2 suite later
-
-**What this is NOT:**
-- A formal research paper (methodology is publication-grade; presentation is informal notebook-style)
-- A CI gate (experiments never block commits, pushes, or releases)
-- An LLM-as-judge rubric system (we use grep-based assertions, not evaluator-scored rubrics)
-- Automated (experiments are user-invoked, not nightly or pre-push)
-
-## Cost model
-
-**Zero API spending.** Experiments run locally via `claude -p` using the user's Claude Code subscription. Each experiment is N=10 runs per condition × 2 conditions = 20 Claude invocations. At ~20-60 seconds per invocation, a single experiment takes 10-20 minutes of wall time.
-
-All three experiments together: ~30-60 minutes of wall time, still zero API cost.
-
-## Three pre-registered experiments
-
-| # | Invariant | Language | Fixture |
-|---|---|---|---|
-| [01](fixtures/01-multi-tenancy/) | INV-012 Tenant isolation | Go | Minimal HTTP server with order repository + existing tenant-aware handlers |
-| [02](fixtures/02-money-precision/) | INV-008 Money precision | Python | Module with existing Decimal-based pricing functions |
-| [03](fixtures/03-timezone-awareness/) | INV-016 Timezone awareness | Python | Module with existing `datetime.now(UTC)` usage and a naive-hostile mock DB |
-
-Each fixture has:
-
-- `project/` — the working source code Claude operates on
-- `prompt.txt` — the innocent human-natural task prompt (committed before running)
-- `invariant.md` — the Invariant Record loaded in condition B (committed before running)
-- `assertion.sh` — pass/fail check on Claude's output (committed before running)
-
-## Methodology summary
-
-See the full methodology at [`docs/architecture/proposals/PROPOSAL-001-spec/experiments/README.md`](../../docs/architecture/proposals/PROPOSAL-001-spec/experiments/README.md). Key commitments:
-
-1. **Pre-registration before running** — fixture + prompt + assertion committed to git before any run
-2. **Human-natural prompts** — reviewed for contamination, no hints at the invariant
-3. **Committed assertion logic** — written before running, not post-hoc
-4. **N=10 per condition** — baseline vs invariant-loaded
-5. **Model version pinned and recorded** — every run captures Claude Code version and model
-6. **Full transcripts preserved** — committed alongside summaries
-7. **No quiet deletions** — failed experiments stay in the results directory
-8. **Negative results honestly reported** — if the hypothesis is wrong, we publish that
-
-## Results
-
-Results live in `results/{experiment-id}-{date}/`. See `runner-spec.md` in the PROPOSAL-001-spec for the reporting format.
-
-After running, the results summary is human-readable markdown. The full transcripts and per-run verdicts are committed alongside the summary for auditability.
-
-## Running an experiment
-
-1. Verify `claude` is installed: `which claude`
-2. Verify the fixture is clean (no uncommitted modifications)
-3. Run: `./test/experiments/run.sh {experiment-id}`
-4. Review the generated `results/{experiment-id}-{date}/summary.md`
-5. Commit results: `git add test/experiments/results/{experiment-id}-{date}/`
-
-## Interpreting results
-
-See the "Possible outcomes and responses" table in the full methodology doc. Short version:
-
-| Outcome | What it means |
-|---|---|
-| Strong effect (baseline ≥5/10, invariant-loaded ≤1/10) | Hypothesis confirmed, invariant dramatically reduces the failure rate |
-| Weak effect (baseline ≥5/10, invariant-loaded < baseline but > 1/10) | Hypothesis partially confirmed, worth investigating further |
-| No effect (baseline ≤2/10) | Modern Claude is already good at this — hypothesis not supported for this invariant on this model |
-| Inverted effect (invariant-loaded > baseline) | Invariant made things worse — investigate, may indicate a problem with the invariant wording |
-
-In all cases, v0.3.0 ships the feature regardless. Experiments inform the release notes framing, they don't gate the release.

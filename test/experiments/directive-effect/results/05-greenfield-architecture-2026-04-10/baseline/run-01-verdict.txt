@@ -1,0 +1,17 @@
+exit: 1
+verdict: VIOLATION
+details:
+ASSERTION: no domain/ directory found — architecture not layered
+VIOLATION: SQL found outside data-access layer:
+./db.go:22:	_, err := db.Exec(`
+./db.go:36:	return db.QueryRowContext(ctx, `
+./db.go:37:		INSERT INTO jobs (id, type, payload, status)
+./db.go:45:	err := db.QueryRowContext(ctx, `
+./db.go:46:		SELECT id, type, payload, status, created_at, updated_at
+./db.go:56:// FOR UPDATE SKIP LOCKED ensures multiple scheduler instances never double-claim the same job.
+./db.go:58:	rows, err := db.QueryContext(ctx, `
+./db.go:59:		UPDATE jobs SET status = 'running', updated_at = NOW()
+./db.go:61:			SELECT id FROM jobs
+./db.go:65:			FOR UPDATE SKIP LOCKED
+./db.go:86:	_, err := db.ExecContext(ctx, `
+./db.go:87:		UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2

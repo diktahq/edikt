@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: v0.3.0 Phase 5 — doctor + upgrade integration for project templates
 #
-# Guards the Phase 5 decisions from PROPOSAL-001 / file-changes.md:
+# Guards the Phase 5 decisions from PRD-001 / file-changes.md:
 #   1. doctor.md documents the Project templates check for all three types
 #   2. doctor.md reports present/absent/broken states per ADR-005 contract
 #   3. doctor.md reports on Reference templates shipped at ~/.edikt/templates/examples/
@@ -68,8 +68,8 @@ assert_file_contains "$DOCTOR_MD" "sentinel block" \
 
 assert_file_contains "$DOCTOR_MD" "Invariant Record template" \
     "doctor.md uses 'Invariant Record template' terminology"
-assert_file_contains "$DOCTOR_MD" "Reinforces the coinage" \
-    "doctor.md explicitly reinforces the Invariant Record coinage"
+assert_file_contains "$DOCTOR_MD" "References the Invariant Record template" \
+    "doctor.md explicitly references the Invariant Record template"
 
 # ============================================================
 # Contract 5: Template reference examples check

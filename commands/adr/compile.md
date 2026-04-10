@@ -33,7 +33,7 @@ This command writes sentinel blocks that conform to the **three-list schema with
 3. On a cache hit (both hashes match), this command does NOTHING — no Claude call, no file writes.
 4. On a hand-edit detection (`source_hash` matches, `directives_hash` does not), this command runs the interactive interview in Section 3c. In headless mode it fails with error code 2 unless `--strategy=regenerate` or `--strategy=preserve` was passed.
 
-The full formal schema lives at `docs/architecture/proposals/PROPOSAL-001-spec/schema.yaml`. The hash algorithm reference implementation is at `docs/architecture/proposals/PROPOSAL-001-spec/hash-reference.md`.
+The full formal schema lives at `docs/internal/product/prds/PRD-001-spec/schema.yaml`. The hash algorithm reference implementation is at `docs/internal/product/prds/PRD-001-spec/hash-reference.md`.
 
 ## Arguments
 
@@ -244,6 +244,8 @@ Rules for generating directives:
 3. One directive per line.
 4. Each directive ends with `(ref: {ADR-ID})`.
 5. Drop rationale prose, context, and alternatives — directives only.
+6. **Reminder generation:** For each directive, identify the ACTION the decision governs (creating files, choosing patterns, importing packages, etc.) and emit a reminder: `"Before {action} → {check} (ref: {ADR-ID})"`. Store in a `reminders:` list inside the sentinel block. Cap at 2 reminders per ADR.
+7. **Verification item generation:** For each directive that can be verified by grep or file inspection, emit a checklist item: `"[ ] {what to check} (ref: {ADR-ID})"`. Store in a `verification:` list. Cap at 3 items per ADR. Skip directives that require reading logic.
 
 Derive `paths:` by scanning the project directory for file types and locations relevant to the decision's topic.
 
@@ -270,6 +272,10 @@ scope:
 directives:
   - {directive} (ref: {ADR-ID})
   - {directive} (ref: {ADR-ID})
+reminders:
+  - "Before {action} → {check} (ref: {ADR-ID})"
+verification:
+  - "[ ] {what to check} (ref: {ADR-ID})"
 manual_directives:
   {preserved verbatim from the existing block if present; otherwise empty list []}
 suppressed_directives:

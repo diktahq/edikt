@@ -1,0 +1,59 @@
+=== prompt ===
+Add a product reviews feature. Users can post a review on a product they've purchased. A review has a rating (1–5) and an optional text body. Reviews should be listable by product. Create the full stack: repository, service layer, HTTP handlers, and routes.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Clean build. Here's a summary of everything added:
+
+---
+
+**`internal/domain/review.go`** — `Review` struct: `ID`, `ProductID`, `UserID`, `TenantID`, `Rating` (int), `Body` (string), timestamps.
+
+**`internal/repository/reviews.go`** — `ReviewsRepo` with four methods:
+- `HasPurchased` — checks `order_items JOIN orders` for a paid/fulfilled order containing the product
+- `Insert` — creates a new review (unique constraint on `product_id, user_id, tenant_id` enforces one-review-per-user)
+- `ListByProduct` — paged list ordered newest first
+- `GetByProductAndUser` — look up a specific user's review
+
+**`internal/repository/repository.go`** — `Reviews *ReviewsRepo` added to `Repos` and wired in `New`.
+
+**`internal/service/reviews.go`** — `ReviewsService` with:
+- `Create` — validates rating, calls `HasPurchased` (returns `ErrForbidden` if not purchased), inserts, records audit entry, publishes `review.created` event
+- `ListByProduct` — tenant-scoped list, no ownership filter (reviews are public within a tenant)
+
+**`internal/service/errors.go`** — `ErrInvalidInput` added.
+
+**`internal/service/service.go`** — `Reviews *ReviewsService` added to `Services` and constructed in `New`.
+
+**`internal/http/handlers/reviews*.go`** — `ReviewsHandler` with `CreateReview` and `ListReviews`, mapping `ErrInvalidInput → 400`, `ErrForbidden → 403`.
+
+**`internal/http/router.go`** — two new routes:
+```
+POST /products/{id}/reviews
+GET  /products/{id}/reviews
+```
+
+**Note on schema**: `HasPurchased` expects an `order_items(order_id, product_id)` table joined to the existing `orders` table. You'll need a migration that creates `reviews` and `order_items` (if it doesn't exist).
+
+=== files modified ===
+./go.mod
+./internal/middleware/auth.go
+./internal/middleware/logging.go
+./internal/middleware/errors.go
+./internal/repository/users.go
+./internal/repository/reviews.go
+./internal/repository/orders.go
+./internal/repository/repository.go
+./internal/repository/errors.go
+./internal/web/response.go
+./internal/payment/stripe.go
+./internal/audit/audit.go
+./internal/http/doc.go
+./internal/http/handlers/handler.go
+./internal/http/handlers/reviews.go
+./internal/http/handlers/reviews_create.go
+./internal/http/handlers/orders_get.go
+./internal/http/handlers/orders_list.go
+./internal/http/handlers/health.go
+./internal/http/handlers/reviews_list.go

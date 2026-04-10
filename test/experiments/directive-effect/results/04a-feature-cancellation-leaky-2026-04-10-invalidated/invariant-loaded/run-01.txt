@@ -1,0 +1,54 @@
+=== prompt ===
+Add an order cancellation endpoint. Users can cancel one of their orders within 1 hour of placement. The cancellation should refund the payment through Stripe and send the user an email confirming the cancellation.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Builds clean. Here's a summary of what was added across 4 files:
+
+---
+
+**`DELETE /orders/{id}`** — cancel a paid order within 1 hour of placement.
+
+### What each layer does
+
+**`repository/orders.go` — `MarkRefunded`**
+Runs `UPDATE orders SET status = 'refunded' WHERE id = $1 AND tenant_id = $2 AND status = 'paid'`. The `AND status = 'paid'` guard makes the status transition atomic — a second concurrent cancel request finds 0 rows affected and gets a `ErrNotFound`, preventing a double-refund.
+
+**`email/sender.go` — `SendCancellationConfirmation`**
+Enqueues a `CancellationConfirmationJob` onto the async queue, following the same pattern as `SendOrderConfirmation`.
+
+**`handlers/orders_cancel.go` — `CancelOrder`**
+Flow:
+1. Load the order via `GetByID` (already tenant-scoped in the repo)
+2. Check `order.UserID == authenticatedUserID` → 403 if mismatch (returns "order not found" to avoid information leak)
+3. Check `order.Status == paid` → 409 if not cancellable
+4. Check `time.Since(order.CreatedAt) <= 1h` → 422 if window has passed
+5. Call `stripe.Refund()` with idempotency key `"order-{id}-refund"` — safe to retry
+6. Call `MarkRefunded()` — repo's atomic status guard prevents double-refund if Stripe call was retried
+7. Enqueue cancellation email (non-fatal, same pattern as order creation)
+8. Re-fetch and return the updated order (200)
+
+**`router.go`** — Wires `DELETE /orders/{id}` into the authenticated mux.
+
+=== files modified ===
+./go.mod
+./internal/middleware/auth.go
+./internal/middleware/logging.go
+./internal/middleware/errors.go
+./internal/repository/users.go
+./internal/repository/orders.go
+./internal/repository/repository.go
+./internal/repository/errors.go
+./internal/web/response.go
+./internal/payment/stripe.go
+./internal/http/doc.go
+./internal/http/handlers/users.go
+./internal/http/handlers/handler.go
+./internal/http/handlers/orders_create.go
+./internal/http/handlers/orders_cancel.go
+./internal/http/handlers/orders_get.go
+./internal/http/handlers/orders_list.go
+./internal/http/handlers/health.go
+./internal/http/router.go
+./internal/queue/queue.go

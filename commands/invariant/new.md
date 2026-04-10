@@ -80,16 +80,16 @@ edikt v0.3.0+ supports project-level template overrides per [ADR-005](../../docs
    sections (Statement, Rationale, Consequences of violation, Enforcement)
    and the [edikt:directives:start]: # / [edikt:directives:end]: # sentinel block.
 
-   See docs/architecture/proposals/PROPOSAL-001-spec/invariant-record-template.md
+   See docs/internal/product/prds/PRD-001-spec/invariant-record-template.md
    for the authoritative Invariant Record template and
-   docs/architecture/proposals/PROPOSAL-001-spec/writing-invariants-guide.md
+   docs/internal/product/prds/PRD-001-spec/writing-invariants-guide.md
    for the full writing guide.
    ```
    Do NOT fall back to inline. Do NOT write the invariant. Exit.
 
 **No global default**: edikt does NOT ship a "default invariant template" that is auto-installed. Projects either explicitly pick a template during init, write their own, or fall back to the inline template in v0.2.x legacy mode only.
 
-**"Invariant Record" terminology**: as of ADR-009, edikt coins the term "Invariant Record" (short form `INV`) for this artifact type. The term is an edikt convention, not imported from an external standard. See the writing guide at `docs/architecture/proposals/PROPOSAL-001-spec/writing-invariants-guide.md` for guidance on writing good Invariant Records.
+**"Invariant Record" terminology**: as of ADR-009, edikt formalizes "Invariant Record" (short form `INV`) as the governance artifact for hard architectural constraints. See the writing guide at `docs/internal/product/prds/PRD-001-spec/writing-invariants-guide.md` for guidance on writing good Invariant Records.
 
 **Checking the project edikt_version**: extract it from `.edikt/config.yaml`:
 ```bash
@@ -315,7 +315,7 @@ If the compile succeeds, the directive block is populated with:
   - Add rules compile missed → edit manual_directives: in the block
   - Reject wrong auto rules → add to suppressed_directives: in the block
   - Re-read ADR-008 for the three-list schema contract
-  - Re-read ADR-009 for the Invariant Record terminology coinage
+  - Re-read ADR-009 for the Invariant Record template contract
 
   Next: Run /edikt:gov:compile to update governance directives.
 

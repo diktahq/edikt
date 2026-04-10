@@ -1,0 +1,12 @@
+experiment: 06-greenfield-tenant
+run_date: 2026-04-10T13:19:46Z
+claude_code_version: 2.1.100 (Claude Code)
+edikt_git_sha: cd6c09a52f16cafc0736bee4bb8e3c5099002eb5
+fixture_dir: /Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/06-greenfield-tenant
+n_per_condition: 1
+prompt_hash: 088508160ed7d50612418ff6e8d25817986ab182c145e2a55443266d1ffa460c
+invariant_hash: 5cdeeb529a5df22cdfc5277ada2d52d1993e2d12bb88d78dba5061d9ef74208e
+directives_hash: c092a49f10e7bc49a7927710513336d5c5f62bbc29c65db90c5ec382fd0a5c8b
+loaded_as: directives.md (edikt compiled format)
+assertion_hash: 7d99eb4f72af1d7df7140049a7ee1cb52e97473f1874585a0e3680eb7b21ca66
+runner_hash: bc4d622777efe0ac5f20c3373dfe1314d0c05d86ca1b14d42f96c7f4275679d4

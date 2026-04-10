@@ -105,6 +105,41 @@ Also check the `## Verification` section:
 | Weak | Requires subjective judgment to verify |
 | Vague | Cannot be verified |
 
+### 3b. Review Compiled Directives (LLM Compliance)
+
+If the invariant has a `[edikt:directives:start]: #` sentinel block, also score the compiled directives for LLM compliance. This is separate from the human-side quality check in step 3 — it measures how well Claude will follow the directive, not how well a human wrote it.
+
+For each directive in the `directives:` list AND each in `manual_directives:`, score on:
+
+**Token specificity** — count backtick-wrapped code tokens (function names, parameter syntax, file paths, types):
+- 0 tokens = Low, 1-2 = Medium, 3+ = High
+
+**Length** — word count:
+- <10 = too short (flag), 10-30 = good, 30-50 = check if splittable, >50 = split (flag)
+
+**MUST/NEVER** — does the directive use uppercase MUST or NEVER?
+- Present = pass. Absent on an invariant directive = flag (invariants are non-negotiable, they MUST use hard language).
+
+**Grep-ability** — can compliance be checked with a shell command?
+- If yes, propose the command. If no, flag.
+
+**Ambiguity** — could two engineers disagree about whether this directive was followed?
+- If yes, flag with explanation.
+
+**"No exceptions." suffix** — does the directive end with "No exceptions." before the `(ref:)` tag?
+- If the source Statement uses absolute language and the directive lacks "No exceptions.", flag.
+
+Each directive gets a 1-10 score. Directives scoring <5 get a concrete rewrite suggestion.
+
+**Manual directive scoring:** manual directives are user-written and bypass compile quality checks. Hold them to the SAME standard. Flag:
+- Soft language ("should", "prefer", "try to")
+- Missing `(ref:)` suffix
+- Conflicts with auto-generated directives
+
+**Friction risk:** flag directives that contradict common language/framework patterns:
+- "NEVER use goroutines" in a Go project → high friction, suggest naming the alternative
+- "NEVER use global state" with a `var db *sql.DB` in cmd/ → clarify scope (cmd/ exempt)
+
 ### 4. Check Sentinel Staleness
 
 Display progress: `Step 2/3: Checking sentinel staleness...`
@@ -155,6 +190,23 @@ INV-{NNN}: {Title}
 
   Sentinel: current
 
+  Directive Quality (LLM compliance):
+    1. "Every SQL query MUST include tenant_id... No exceptions."
+       Specificity: High (3 tokens) | Length: 18w | MUST: ✓ | Grep: ✓ grep -r tenant_id
+       Score: 9/10
+
+    2. "Logging should include context"
+       Specificity: Low (0 tokens) | Length: 4w (too short) | MUST: ✗ | Grep: ✗
+       Score: 2/10
+       ⚠ Rewrite: "Every slog.Error call MUST include \"tenant_id\", tid. No exceptions."
+
+    Manual directives:
+    1. "Custom rule about X"
+       Specificity: Low | MUST: ✗ uses "should" | (ref:) missing
+       Score: 2/10 — ⚠ needs rewrite
+
+    Directive score: 7.5/10
+
 {next invariant}
   ...
 
@@ -163,8 +215,18 @@ INV-{NNN}: {Title}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   Invariants reviewed: {n}
-  Statements analyzed: {n}
-  Strong: {n} | Adequate: {n} | Weak: {n} | Vague: {n}
+
+  Human-side (statement quality):
+    Statements analyzed: {n}
+    Strong: {n} | Adequate: {n} | Weak: {n} | Vague: {n}
+
+  Directive-side (LLM compliance):
+    Directives scored: {n} auto + {m} manual
+    Token specificity: {h} high, {m} medium, {l} low
+    MUST/NEVER: {n}/{total} ({pct}%)
+    Grep-able: {n}/{total} ({pct}%)
+    "No exceptions.": {n}/{total_absolute}
+    Average score: {x}/10
 
   Sentinels:
     Current:  {n}

@@ -1,0 +1,63 @@
+=== prompt ===
+Add an invoicing feature. After checkout, an invoice should be generated with line items, subtotal, tax (calculate at 20%), and total. Invoices need their own database table and queries. Users should be able to list their invoices and get a specific invoice by ID. Add the full stack: domain types, repository with SQL, service layer, HTTP handlers, and routes.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Clean build. All seven tasks done.
+
+---
+
+Here's a summary of everything that was added and why each decision was made.
+
+## What was built
+
+### New files
+
+**`internal/domain/invoice.go`**  
+Two types: `InvoiceLineItem` (one row per cart item, with `UnitCents` and `TotalCents`) and `Invoice` (header with `SubtotalCents`, `TaxCents` at 20%, and `TotalCents`). Pure data — no logic.
+
+**`internal/repository/invoices.go`**  
+Three methods following the governance directive (explicit `tenantID string` parameter, context never read inside the repo):
+- `Create` — wraps the invoice insert and all line item inserts in a single transaction, so you never end up with an invoice header and no items
+- `GetByID` — fetches header + line items in two queries (a join would work too, but two queries are cleaner to scan)
+- `ListByUser` — headers only, newest first; line items omitted to keep list payloads small
+
+The SQL DDL for both tables is included as a doc comment at the bottom of the file.
+
+**`internal/service/invoicing.go`**  
+Three methods. `CreateForOrder` builds line items from the raw `[]CartItem` slice, computes tax as `subtotal * 20 / 100` (integer arithmetic, no floating point), then calls the repo. `GetByID` maps `sql.ErrNoRows` to the exported `ErrInvoiceNotFound` sentinel so handlers can return 404 cleanly without coupling to the database package. Every `slog` call carries `"tenant_id", tid`.
+
+### Modified files
+
+**`internal/service/checkout.go`**  
+`InvoicingService` injected as a third constructor argument. `Checkout` now returns `(*domain.Invoice, error)` instead of just `error` — the handler surfaces the `invoice_id` immediately in the response so the caller doesn't need a follow-up request to discover it. The log on success now includes `invoice_id`.
+
+**`internal/handler/checkout.go`**  
+Updated to unpack the two-value return from `Checkout`. Also fixed a pre-existing governance violation: the old code sent `err.Error()` to the client — it now returns the generic string `"checkout failed"`.
+
+**`internal/handler/invoicing.go`**  
+Two handlers (`List`, `Get`). Both are thin wrappers. `Get` uses Go 1.22's `r.PathValue("id")` for path parameter extraction. List responses omit `line_items` via `omitempty`; the detail response includes them.
+
+**`cmd/main.go`**  
+Wired: `InvoicesRepo` → `InvoicingService` → both `CheckoutService` and `InvoicingHandler`. Routes added:
+```
+GET  /invoices        → invoicingH.List
+GET  /invoices/{id}   → invoicingH.Get
+```
+Both sit behind the existing `middleware.Auth` wrapper.
+
+=== files modified ===
+./cmd/main.go
+./go.mod
+./internal/handler/checkout.go
+./internal/handler/invoicing.go
+./internal/middleware/auth.go
+./internal/repository/carts.go
+./internal/repository/orders.go
+./internal/repository/invoices.go
+./internal/service/checkout.go
+./internal/service/invoicing.go
+./internal/domain/cart.go
+./internal/domain/order.go
+./internal/domain/invoice.go

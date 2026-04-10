@@ -3,7 +3,7 @@
 **Purpose:** {One sentence — what problem this guideline prevents.}
 
 <!--
-Minimal guideline template (edikt convention).
+Minimal guideline template (edikt).
 
 Guidelines are softer than Invariant Records but still enforceable.
 Every rule in the Rules section must use MUST or NEVER language —

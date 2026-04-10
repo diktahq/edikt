@@ -1,0 +1,6 @@
+exit: 1
+verdict: VIOLATION
+details:
+VIOLATION: raw UPDATE on orders outside internal/repository
+./internal/repository/orders.go:112:		UPDATE orders
+./internal/repository/orders.go:136:		UPDATE orders

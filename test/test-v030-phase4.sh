@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test: v0.3.0 Phase 4 — flexible prose input with reference extraction
 #
-# Guards the Phase 4 decisions from PROPOSAL-001 / file-changes.md:
+# Guards the Phase 4 decisions from PRD-001 / file-changes.md:
 #   1. All three <artifact>:new commands document the prose-first dispatch
 #   2. Reference extraction for paths, identifiers, branches documented
 #   3. Mixed input handling (prose with embedded refs) documented

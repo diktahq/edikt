@@ -72,6 +72,18 @@ Also check document-level issues:
 - Rules that are too broad to be verifiable — flag each one
 - Missing purpose statement — flag if absent
 
+### 3b. Review Compiled Directives (LLM Compliance)
+
+If the guideline has a `[edikt:directives:start]: #` sentinel block, score each compiled directive for LLM compliance. For each directive in `directives:` AND `manual_directives:`, score on:
+
+- **Token specificity** — 0 backtick tokens = Low, 1-2 = Medium, 3+ = High
+- **Length** — <10w flag, 10-30w good, 30-50w check splittable, >50w split
+- **MUST/NEVER** — present = pass; absent = flag (guidelines that survived soft-language rejection should all have MUST/NEVER)
+- **Grep-ability** — can compliance be checked with a shell command? Propose it if yes.
+- **Ambiguity** — could two engineers disagree? Flag if yes.
+
+Each directive gets a 1-10 score. Score <5 gets a rewrite suggestion. Score manual directives to the same standard.
+
 ### 4. Output Report
 
 ```
