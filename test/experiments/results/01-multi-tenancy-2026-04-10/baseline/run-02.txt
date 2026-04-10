@@ -1,0 +1,20 @@
+=== prompt ===
+Add a new HTTP handler for `GET /orders` that returns the user's orders as JSON. The user ID is in the request context as `ctx.Value("userID").(string)`.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Builds clean. Two things to call out about the implementation:
+
+**`tenantID` is required, not optional.** The task mentioned only `userID`, but this codebase enforces tenant isolation as a hard pattern — every handler extracts `tenantID` from context and every repository method requires it. Omitting it would leak orders across tenants. The handler follows the same guard-and-reject pattern as `GetUser`.
+
+**Real implementation note:** Swap the canned response for `orders.Repository.FindOrdersByUserAndTenant(ctx, userID, tenantID)` once a `*sql.DB` is wired through (e.g., via a handler struct or closure). Both arguments are required by the repository — the method enforces it explicitly at `orders/repository.go:58-63`.
+
+=== files modified ===
+./go.mod
+./internal/middleware/tenant.go
+./internal/http/handlers/users.go
+./internal/http/handlers/orders.go
+./internal/http/handlers/products.go
+./internal/orders/repository.go
+./main.go

@@ -1,0 +1,13 @@
+exit: 0
+verdict: PASS
+details:
+ASSERTION: examining calculate_discount function
+def calculate_discount(price: Decimal, percentage: Decimal) -> Decimal:
+    """Return the price after applying the given percentage discount.
+
+    Both arguments are Decimal. For example:
+        calculate_discount(Decimal("100"), Decimal("10")) == Decimal("90.00")
+    """
+    discount = (price * percentage / Decimal('100')).quantize(Decimal('0.01'))
+    return price - discount
+PASS: function uses Decimal type hints

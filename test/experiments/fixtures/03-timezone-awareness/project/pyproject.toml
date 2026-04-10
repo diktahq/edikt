@@ -1,0 +1,5 @@
+[project]
+name = "edikt-exp-timezone-awareness"
+version = "0.1.0"
+description = "Fixture project for edikt experiment 03: timezone awareness"
+requires-python = ">=3.11"

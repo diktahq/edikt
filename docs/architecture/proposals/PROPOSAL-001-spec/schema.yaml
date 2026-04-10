@@ -1,0 +1,194 @@
+# Formal schema for the directives sentinel block in compiled artifacts
+# (ADRs, invariants, guidelines). Locked in ADR-008.
+#
+# This is a JSON Schema–style specification expressed in YAML for readability.
+# It describes the content BETWEEN the [edikt:directives:start]: # and
+# [edikt:directives:end]: # sentinel lines. The sentinels themselves are not
+# part of the schema — they delimit where the schema-validated content lives.
+#
+# Any implementation of /edikt:adr:compile, /edikt:invariant:compile, or
+# /edikt:guideline:compile MUST produce output that validates against this schema.
+#
+# Any implementation of /edikt:gov:compile MUST read input conforming to this
+# schema.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "edikt://schemas/directive-block.v1"
+title: "Edikt directive sentinel block"
+type: object
+required:
+  - paths
+  - scope
+  - directives
+
+# NOTE on required fields:
+#
+# - source_hash, directives_hash, compiler_version are REQUIRED after the first
+#   compile. They are absent only in legacy (v0.2.x) blocks that predate ADR-008.
+#   Any artifact with these fields absent MUST be treated as legacy and regenerated
+#   on the next compile.
+#
+# - manual_directives and suppressed_directives are OPTIONAL. Absent means empty.
+#   Backward compatibility guarantee for v0.2.x artifacts.
+
+properties:
+  source_hash:
+    type: string
+    pattern: "^[a-f0-9]{64}$"
+    description: |
+      SHA-256 hex digest of the artifact body with the directives block excluded
+      and normalized (CRLF→LF, trailing whitespace stripped per line). Lowercase
+      hex, 64 characters. See hash-reference.md for the exact algorithm.
+
+      REQUIRED after first compile. ABSENT only in v0.2.x legacy artifacts.
+
+  directives_hash:
+    type: string
+    pattern: "^[a-f0-9]{64}$"
+    description: |
+      SHA-256 hex digest of the canonicalized `directives:` list.
+      Canonicalization: join list items with `\n` (LF only), compute SHA-256.
+      ONLY the auto `directives:` list is hashed — `manual_directives:` and
+      `suppressed_directives:` are NEVER included in this hash.
+
+      REQUIRED after first compile. ABSENT only in v0.2.x legacy artifacts.
+
+  compiler_version:
+    type: string
+    pattern: '^\d+\.\d+\.\d+(-[a-z0-9]+)?$'
+    description: |
+      Semver string matching the edikt_version at compile time (e.g., "0.3.0",
+      "0.4.1", "1.0.0-rc1"). Used to detect algorithm drift across edikt versions.
+
+      REQUIRED after first compile. ABSENT only in v0.2.x legacy artifacts.
+
+      Default behavior on version mismatch: warn, do not auto-regenerate.
+      User opts in with /edikt:<artifact>:compile --regenerate.
+
+  paths:
+    type: array
+    items:
+      type: string
+    minItems: 1
+    description: |
+      Glob patterns specifying which source files this artifact's directives
+      apply to. Used by gov:compile to route directives into topic files.
+
+      Examples:
+        - "**/*"                        (applies everywhere)
+        - "**/*.go"                     (Go files only)
+        - "**/adapters/postgres/**"     (specific subtree)
+
+      REQUIRED. At least one glob pattern.
+
+  scope:
+    type: array
+    items:
+      type: string
+      enum:
+        - design
+        - implementation
+        - review
+        - testing
+        - planning
+        - security
+        - performance
+    description: |
+      Activity tags indicating when these directives should activate. Used by
+      gov:compile to route directives to the appropriate governance topic files.
+
+      REQUIRED. At least one scope tag.
+
+      The enum is extensible — new scope tags can be added without breaking
+      existing artifacts, but existing artifacts should only use the values
+      listed here unless a new tag has been formally added via ADR.
+
+  directives:
+    type: array
+    items:
+      type: string
+    description: |
+      Auto-generated enforcement rules, one per list item. Written by
+      /edikt:<artifact>:compile from the artifact body. Rewritten on every
+      body change.
+
+      Format of each item:
+        - Imperative rule text ending with "(ref: <artifact-id>)"
+        - Examples:
+            - "Always use transactions for multi-table writes (ref: ADR-007)"
+            - "Never modify ADRs after status: accepted (ref: INV-002)"
+
+      REQUIRED. May be empty (no auto directives generated from body).
+
+      IMPORTANT: /edikt:<artifact>:compile is the ONLY writer of this list.
+      Hand-edits to this list are detected via directives_hash mismatch and
+      trigger the interactive interview to resolve.
+
+  manual_directives:
+    type: array
+    items:
+      type: string
+    default: []
+    description: |
+      User-authored enforcement rules. Preserved across /edikt:<artifact>:compile
+      regenerations. Used for rules that compile missed, couldn't infer from the
+      body, or that the user added to complement the auto list.
+
+      Format: same as `directives:` — imperative rule text with `(ref: ...)`.
+
+      OPTIONAL. Absent means empty list. Backward compatible with v0.2.x.
+
+      IMPORTANT: /edikt:<artifact>:compile NEVER reads or modifies this list.
+      Only /edikt:gov:compile reads it, and only to union it into the effective
+      rule set when building governance.md.
+
+  suppressed_directives:
+    type: array
+    items:
+      type: string
+    default: []
+    description: |
+      Auto directives that the user rejects. /edikt:gov:compile filters these
+      out of the effective rule set before writing governance.md. They remain
+      in the artifact's `directives:` list (so /edikt:<artifact>:compile's
+      cache stays valid), but they never reach the final governance output.
+
+      Format: exact string match against lines in `directives:`. Must match
+      byte-for-byte including the `(ref: ...)` suffix.
+
+      OPTIONAL. Absent means empty list. Backward compatible with v0.2.x.
+
+      IMPORTANT: /edikt:<artifact>:compile NEVER reads or modifies this list.
+      Filtering happens at /edikt:gov:compile time only.
+
+# ---------- Required contracts that can't be expressed purely in JSON Schema ----------
+
+# CONTRACT 1: The three lists have strict ownership
+#   - `directives:` is owned by /edikt:<artifact>:compile (write-authoritative)
+#   - `manual_directives:` is owned by the user (read-only to compile commands)
+#   - `suppressed_directives:` is owned by the user (read-only to compile commands)
+
+# CONTRACT 2: /edikt:gov:compile merge formula
+#   effective_rules = (directives - suppressed_directives) ∪ manual_directives
+#   where - is set difference by exact string match
+#   and   ∪ is set union preserving document order
+
+# CONTRACT 3: Hash stability
+#   - source_hash excludes the directives block to remain stable across directive edits
+#   - directives_hash covers only the auto `directives:` list, not manual_ or suppressed_
+#   - Both hashes are recomputed on every write; stored values must match computed
+
+# CONTRACT 4: Auto-chain
+#   - /edikt:<artifact>:new MUST call /edikt:<artifact>:compile <ID> at the end
+#     of its workflow. The user never has to remember to compile after new.
+
+# CONTRACT 5: Interview on hand-edit
+#   - If source_hash matches but directives_hash does not, the user hand-edited
+#     directives:. Interactive mode triggers the interview (one question per edit).
+#     Headless mode fails loud with --strategy= override flags.
+
+# CONTRACT 6: Backward compatibility with v0.2.x
+#   - Artifacts missing source_hash, directives_hash, compiler_version, manual_directives,
+#     or suppressed_directives MUST be accepted as valid input by /edikt:gov:compile.
+#   - First /edikt:<artifact>:compile run after v0.3.0 upgrade writes the new fields
+#     without user intervention.

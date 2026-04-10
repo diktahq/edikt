@@ -176,6 +176,8 @@ if ! $DRY_RUN; then
   mkdir -p "${EDIKT_HOME}/templates/rules/framework"
   mkdir -p "${EDIKT_HOME}/templates/agents"
   mkdir -p "${EDIKT_HOME}/templates/sdlc"
+  mkdir -p "${EDIKT_HOME}/templates/examples"
+  mkdir -p "${EDIKT_HOME}/templates/examples/invariants"
   mkdir -p "${CLAUDE_COMMANDS}/edikt"
   mkdir -p "${CLAUDE_COMMANDS}/edikt/adr"
   mkdir -p "${CLAUDE_COMMANDS}/edikt/invariant"
@@ -258,8 +260,8 @@ for cmd in new compile review; do
   _install_ns_cmd invariant "$cmd"
 done
 
-# guideline namespace
-for cmd in new review; do
+# guideline namespace (v0.3.0: added `compile` for parity with adr/invariant)
+for cmd in new compile review; do
   _install_ns_cmd guideline "$cmd"
 done
 
@@ -327,6 +329,41 @@ for tmpl in CLAUDE.md.tmpl project-context.md.tmpl product-spec.md.tmpl prd.md.t
     _fetch "${BASE_URL}/templates/${tmpl}" "${EDIKT_HOME}/templates/${tmpl}"
   fi
   dim "${tmpl}"
+done
+
+# Reference example templates for ADRs, Invariant Records, and guidelines (v0.3.0).
+# These are NOT auto-loaded as defaults — they're starting points offered during
+# /edikt:init when the user picks "Start fresh". See ADR-009 for the Invariant
+# Record coinage and PROPOSAL-001-spec for the full design.
+for example in \
+  adr-nygard-minimal.md \
+  adr-madr-extended.md \
+  invariant-minimal.md \
+  invariant-full.md \
+  guideline-minimal.md \
+  guideline-extended.md; do
+  install_file "${EDIKT_HOME}/templates/examples/${example}"
+  if ! $DRY_RUN; then
+    _fetch "${BASE_URL}/templates/examples/${example}" "${EDIKT_HOME}/templates/examples/${example}"
+  fi
+  dim "examples/${example}"
+done
+
+# Canonical Invariant Record examples (v0.3.0 / ADR-009). Worked examples that
+# ground the abstract template in concrete production-grade invariants. Shipped
+# to ~/.edikt/templates/examples/invariants/ so users can browse locally without
+# visiting the website. See templates/examples/invariants/README.md for context.
+for invariant_example in \
+  README.md \
+  WRITING-GUIDE.md \
+  tenant-isolation.md \
+  money-precision.md; do
+  install_file "${EDIKT_HOME}/templates/examples/invariants/${invariant_example}"
+  if ! $DRY_RUN; then
+    _fetch "${BASE_URL}/templates/examples/invariants/${invariant_example}" \
+           "${EDIKT_HOME}/templates/examples/invariants/${invariant_example}"
+  fi
+  dim "examples/invariants/${invariant_example}"
 done
 
 # Agent templates

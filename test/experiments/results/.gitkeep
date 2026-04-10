@@ -1,0 +1,15 @@
+# Results directory placeholder
+#
+# Experiment runs write their output here in subdirectories named
+# {experiment-id}-{YYYY-MM-DD}/. Each subdirectory contains:
+#
+#   - metadata.txt         — run metadata (Claude Code version, hashes, etc.)
+#   - baseline/            — transcripts and verdicts for baseline condition
+#   - invariant-loaded/    — transcripts and verdicts for invariant-loaded condition
+#   - summary.md           — human-readable summary with hypothesis verdict
+#
+# See test/experiments/README.md and test/experiments/run.sh for the runner
+# contract, and docs/architecture/proposals/PROPOSAL-001-spec/experiments/
+# for the full pre-registration methodology.
+#
+# Commit results after running: git add test/experiments/results/

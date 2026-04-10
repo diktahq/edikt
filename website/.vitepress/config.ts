@@ -81,6 +81,15 @@ export default withMermaid(defineConfig({
         ],
       },
       {
+        text: 'Invariant Records',
+        items: [
+          { text: 'What they are', link: '/governance/invariant-records' },
+          { text: 'Writing good invariants', link: '/governance/writing-invariants' },
+          { text: 'Example: tenant isolation', link: '/governance/canonical-invariants/tenant-isolation' },
+          { text: 'Example: money precision', link: '/governance/canonical-invariants/money-precision' },
+        ],
+      },
+      {
         text: 'Project Setup',
         items: [
           { text: 'Greenfield Projects', link: '/guides/greenfield' },

@@ -30,7 +30,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 3. Run all checks in parallel where possible. Use the check definitions in the Reference section below. For each check, report `[ok]`, `[!!]`, or `[FAIL]` as defined there.
 
-4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Linter sync, edikt version.
+4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Directive sentinel schema, Linter sync, edikt version.
 
 5. Run the Decision Graph checks from the Reference section. Report findings inline with the other checks.
 
@@ -199,6 +199,43 @@ ls .claude/agents/*.md 2>/dev/null
   - `[ok] Rule extension: {name} + {extend_file}`
   - `[!!] Rule extension configured but file missing: {extend_file}`
 
+**Project templates (ADR-009 + Phase 3 of v0.3.0):**
+
+Check the state of the three per-artifact project templates that `/edikt:<artifact>:new` consults via the lookup chain. Reports differ based on the project's `edikt_version` because v0.2.x legacy projects are allowed to run without project templates (they fall through to the inline fallback with a warning).
+
+```bash
+PROJECT_EDIKT_VERSION=$(grep '^edikt_version:' .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"')
+```
+
+For each of the three templates (`.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, `.edikt/templates/guideline.md`):
+
+- **Template present** (`.edikt/templates/<artifact>.md` exists):
+  - Verify the file has the mandatory `[edikt:directives:start]: #` / `[edikt:directives:end]: #` sentinel block.
+  - If sentinel block is present: `[ok] Project {artifact} template: .edikt/templates/{artifact}.md ({kind})` where `{kind}` is derived from a marker comment in the template (`Adapted`, `Nygard-minimal`, `MADR-extended`, `Minimal`, `Full`, `Extended`, or `Custom` if no marker).
+  - If sentinel block is missing: `[!!] Project {artifact} template has no directives sentinel block — run /edikt:init --reset-templates to regenerate`
+- **Template absent AND project is v0.3.0+** (`edikt_version >= 0.3.0`):
+  - `[!!] Project {artifact} template missing (.edikt/templates/{artifact}.md) — required for v0.3.0+. Run /edikt:init or /edikt:init --reset-templates to set up.`
+- **Template absent AND project is v0.2.x legacy** (`edikt_version < 0.3.0` or missing):
+  - `[--] Project {artifact} template not set up (v0.2.x legacy mode). Run /edikt:upgrade followed by /edikt:init to opt into the v0.3.0 template adaptation feature.`
+
+For the Invariant Record template specifically (ADR-009 terminology): always refer to it as "Invariant Record template" in doctor output, not just "invariant template". Reinforces the coinage.
+
+**Template reference examples (v0.3.0+):**
+
+Check that the shipped reference examples exist in `~/.edikt/templates/examples/`:
+```bash
+for example in adr-nygard-minimal adr-madr-extended invariant-minimal invariant-full guideline-minimal guideline-extended; do
+    if [ -f "$HOME/.edikt/templates/examples/${example}.md" ]; then
+        echo "ok: $example"
+    else
+        echo "missing: $example"
+    fi
+done
+```
+
+- `[ok] Reference templates installed ({n}/6)` if all six are present.
+- `[!!] Reference templates incomplete ({n}/6 found) — run curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash to reinstall` if any are missing.
+
 **Compiled governance:**
 - Check if `.claude/rules/governance.md` exists and contains `Routing Table`
 - `[ok] Compiled governance — index + {n} topic files` if governance.md + governance/ directory exist
@@ -228,6 +265,39 @@ ls .claude/rules/linter-*.md 2>/dev/null
 - For each linter config found with no corresponding `.claude/rules/linter-*.md`: `[!!] {config} found but no linter rules installed — run /edikt:sync`
 - For each `.claude/rules/linter-*.md`: compare its mtime to source config mtime. If config is newer: `[!!] Linter config changed since last sync — run /edikt:sync`
 - If no linter configs found: skip silently
+
+**Directive sentinel schema (ADR-008):**
+
+For each compiled artifact (ADRs, invariants, guidelines) that has a `[edikt:directives:start]: #` block, check whether the block conforms to the v0.3.0 three-list schema from ADR-008. This is informational — the block is still processed correctly via the backward-compatibility path, but reporting which files are on which schema lets the user decide whether to run `<artifact>:compile --regenerate` to migrate.
+
+For each artifact file (iterate across `{paths.decisions}/*.md`, `{paths.invariants}/*.md`, and `{paths.guidelines}/*.md`):
+
+1. Check if a directives sentinel block exists. If not, skip (doctor's sentinel-coverage check above already reports missing sentinels).
+2. Parse the YAML block and check for the presence of these fields:
+   - `source_hash` (required in v0.3.0 schema)
+   - `directives_hash` (required in v0.3.0 schema)
+   - `compiler_version` (required in v0.3.0 schema)
+   - `manual_directives:` (optional but should be present as empty list in v0.3.0 blocks)
+   - `suppressed_directives:` (optional but should be present as empty list in v0.3.0 blocks)
+   - `content_hash` (v0.2.x legacy field — should be absent in v0.3.0 blocks)
+
+Classify each artifact:
+
+- **v0.3.0 current**: has all three hash fields AND `manual_directives:` + `suppressed_directives:` present (even if empty). Report silently — this is the expected state.
+- **v0.3.0 partial**: has hash fields but missing `manual_directives:` or `suppressed_directives:` keys entirely. Report: `[--] {file}: three-list schema partial (missing manual_directives/suppressed_directives keys) — next /edikt:<artifact>:compile run will normalize`
+- **v0.2.x legacy**: has `content_hash:` but none of the new hash fields. Report: `[--] {file}: v0.2.x legacy directive block — run /edikt:<artifact>:compile to migrate to the v0.3.0 three-list schema`
+- **Unknown**: sentinel block exists but has neither `content_hash:` nor `source_hash:`. Report: `[!!] {file}: unrecognized directive block format — inspect manually`
+
+Summarize at the top:
+```
+Directive sentinel schema:
+  ✓ v0.3.0 current:  {n} artifacts
+  ⚪ v0.3.0 partial:  {m} artifacts (will normalize on next compile)
+  ⚪ v0.2.x legacy:   {k} artifacts (run compile to migrate)
+  ✗ unrecognized:    {j} artifacts
+```
+
+Migrations are never urgent — legacy blocks continue to work via gov:compile's backward compatibility path. The report exists so users know which files haven't been touched since v0.2.x.
 
 **edikt version:**
 ```bash

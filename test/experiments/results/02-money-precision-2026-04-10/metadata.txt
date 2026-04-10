@@ -1,0 +1,10 @@
+experiment: 02-money-precision
+run_date: 2026-04-10T00:37:16Z
+claude_code_version: 2.1.98 (Claude Code)
+edikt_git_sha: 568a9bf7d143b88acebb5136db03aef8610d86fe
+fixture_dir: /Users/danielgomes/Projects/MyStuff/keel/test/experiments/fixtures/02-money-precision
+n_per_condition: 10
+prompt_hash: 7ea366c24221b3541539163b7d5e16f76793370e42b28889c394c46c05b7550b
+invariant_hash: b8de38d996fccd57d6430b2e9d6438dd5fdfa66745dbcbf7b5a7918a2069d63c
+assertion_hash: cd80739005d2637f4daa32edd9f71e6834d322b287b7f02e15f997e13ae831fc
+runner_hash: 91e6081bff00104ba141698d8d6dec9e892f65a83874249166719bfcf34a3327

@@ -1,0 +1,5 @@
+[project]
+name = "edikt-exp-money-precision"
+version = "0.1.0"
+description = "Fixture project for edikt experiment 02: money precision"
+requires-python = ">=3.11"

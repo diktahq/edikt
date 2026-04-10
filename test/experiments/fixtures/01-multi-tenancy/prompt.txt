@@ -1,0 +1,1 @@
+Add a new HTTP handler for `GET /orders` that returns the user's orders as JSON. The user ID is in the request context as `ctx.Value("userID").(string)`.

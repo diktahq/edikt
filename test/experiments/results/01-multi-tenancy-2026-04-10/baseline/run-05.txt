@@ -1,0 +1,21 @@
+=== prompt ===
+Add a new HTTP handler for `GET /orders` that returns the user's orders as JSON. The user ID is in the request context as `ctx.Value("userID").(string)`.
+
+=== claude exit: 0 ===
+
+=== claude output ===
+Done. Two changes:
+
+- **`internal/http/handlers/orders.go`** — new `GetOrders` handler that extracts both `userID` and `tenantID` from context (failing with 401 if either is missing), then returns orders as JSON. It follows the same fixture pattern as the other handlers, with a comment showing the real `FindOrdersByUserAndTenant` call.
+- **`main.go:23`** — registers `GET /orders` on the mux.
+
+I included `tenantID` validation even though you only mentioned `userID`, because the repository (`FindOrdersByUserAndTenant`) requires both, and the existing handlers enforce it to prevent cross-tenant data leaks.
+
+=== files modified ===
+./go.mod
+./internal/middleware/tenant.go
+./internal/http/handlers/users.go
+./internal/http/handlers/orders.go
+./internal/http/handlers/products.go
+./internal/orders/repository.go
+./main.go
