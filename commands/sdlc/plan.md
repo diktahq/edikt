@@ -77,6 +77,12 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 6. Generate phases. For each phase, assign a model, write a detailed prompt, set a completion promise, max iterations, and dependencies. Use the Phase Structure and Model Assignment guide in the Reference section.
 
+   When generating each phase, populate the `Context Needed:` field by:
+   - Scanning spec artifacts referenced by the phase (from the inventory built in step 3)
+   - Identifying files produced by dependency phases (from the Artifact Flow Table)
+   - Including any ADRs referenced in the spec frontmatter or phase objectives
+   Each entry must be a specific file path with a brief description of why it's needed.
+
 6b. **Artifact coverage check** — only when a SPEC was resolved and artifacts were inventoried in step 3:
 
    For each artifact in the inventory, verify it maps to at least one plan phase. Use the Artifact Coverage Table in the Reference section.
@@ -197,6 +203,15 @@ Each phase requires:
 - Evaluate flag (true/false — whether phase-end evaluation runs)
 - Max iterations (based on complexity)
 - Dependencies (which phases must complete first)
+- Context Needed (list of file paths the generator must read before starting this phase — spec artifacts, outputs from dependency phases, referenced ADRs)
+
+### Phase Startup Directive
+
+Before implementing any plan phase:
+1. Read every file listed in that phase's Context Needed section.
+2. If a listed file does not exist, check the progress table — the producing phase may not be complete.
+3. Do not proceed until all context files have been read.
+4. After reading, confirm you understand the relevant decisions and constraints before writing code.
 
 ### Acceptance Criteria Rules
 
@@ -364,6 +379,12 @@ Domains detected: {list} ({n} of 6 checked)
 | 2     | None      | 1             |
 | 3     | 1, 2      | -             |
 
+## Artifact Flow
+
+| Producing Phase | Artifact | Consuming Phase(s) |
+|-----------------|----------|---------------------|
+| {n} | `{file path}` | {phase numbers} |
+
 ## Phase 1: {Title}
 
 **Objective:** {brief description}
@@ -372,6 +393,10 @@ Domains detected: {list} ({n} of 6 checked)
 **Completion Promise:** `{SHELL SAFE PROMISE}`
 **Evaluate:** {true | false}
 **Dependencies:** {None or phase numbers}
+**Context Needed:**
+- `docs/product/specs/SPEC-NNN/contracts/api-orders.yaml` — API contract from spec artifacts
+- `internal/repository/orders.go` — repository created in Phase 2
+- `docs/architecture/decisions/ADR-012.md` — error handling decision
 
 **Acceptance Criteria:**
 - [ ] {Binary assertion — e.g., "Cache adapter implements get/set/delete with TTL parameter"}
