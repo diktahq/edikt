@@ -70,8 +70,9 @@ done
 
 cp "$PROJECT_ROOT/VERSION" "$INSTALL_HOME/VERSION"
 
-# Verify command count (50 commands: 11 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 16 deprecated)
-# v0.3.1: team moved flat→deprecated, config added as flat, net +1 deprecated
+# Verify command count (50 commands: 12 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated)
+# v0.3.0 added commands/guideline/compile.md + commands/gov/score.md
+# v0.4.0 added commands/config.md
 CMD_COUNT=$(find "$INSTALL_HOME/commands/edikt/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$CMD_COUNT" -eq 50 ]; then
     pass "50 commands installed"
@@ -79,12 +80,13 @@ else
     fail "Expected 50 commands, found $CMD_COUNT"
 fi
 
-# Verify agent count (19 agents)
+# Verify agent count (20 agents: 19 original + evaluator-headless)
+# v0.4.0 added evaluator-headless.md (headless system prompt — no frontmatter)
 AGENT_COUNT=$(ls "$INSTALL_HOME/templates/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
-if [ "$AGENT_COUNT" -eq 19 ]; then
-    pass "19 agent templates installed"
+if [ "$AGENT_COUNT" -eq 20 ]; then
+    pass "20 agent templates installed"
 else
-    fail "Expected 19 agents, found $AGENT_COUNT"
+    fail "Expected 20 agents, found $AGENT_COUNT"
 fi
 
 # Verify hook count (14 hooks including headless-ask)
@@ -663,7 +665,7 @@ assert_file_contains "$TEMPLATE" "plan these changes" "Plan trigger: plan change
 assert_file_contains "$TEMPLATE" "plan this work" "Plan trigger: plan work"
 
 # All commands have triggers (flat and namespaced)
-for cmd in status context doctor init upgrade brainstorm session config agents mcp capture; do
+for cmd in status context doctor init upgrade brainstorm session team agents mcp capture; do
     assert_file_contains "$TEMPLATE" "edikt:${cmd}" "Trigger exists: ${cmd}"
 done
 for cmd in adr:new adr:compile adr:review invariant:new invariant:compile invariant:review guideline:new guideline:review gov:compile gov:review gov:rules-update gov:sync sdlc:prd sdlc:spec sdlc:artifacts sdlc:plan sdlc:review sdlc:drift sdlc:audit docs:review docs:intake; do

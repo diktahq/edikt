@@ -195,6 +195,8 @@ Run /edikt:config to see all available keys.
 | `evaluator.preflight` | `true` | `true`, `false` | plan (step 11) | Pre-flight criteria validation before phases start |
 | `evaluator.phase-end` | `true` | `true`, `false` | plan (phase evaluation) | Phase-end evaluation after phases complete |
 | `evaluator.mode` | `headless` | `headless`, `subagent` | plan, evaluator agent | Execution mode — headless (separate claude -p) or subagent (forked in session) |
+| `evaluator.max-attempts` | `5` | positive integer | plan | Max phase retries before marking phase as stuck |
+| `evaluator.model` | `sonnet` | `sonnet`, `opus`, `haiku` | plan (headless mode) | Model for headless evaluator invocation |
 | `agents.custom` | `[]` | list of agent slugs | upgrade | Agents to skip on upgrade |
 
 ---

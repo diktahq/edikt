@@ -291,15 +291,17 @@ assert_file_contains "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" "quality-g
 
 AGENTS_DIR="$PROJECT_ROOT/templates/agents"
 
-# All agents must have maxTurns
+# All agents must have maxTurns (evaluator-headless is a headless system prompt — no frontmatter)
 for agent in "$AGENTS_DIR"/*.md; do
     name=$(basename "$agent" .md)
+    [ "$name" = "evaluator-headless" ] && continue
     assert_file_contains "$agent" "maxTurns:" "$name has maxTurns"
 done
 
-# All agents must have effort
+# All agents must have effort (evaluator-headless is a headless system prompt — no frontmatter)
 for agent in "$AGENTS_DIR"/*.md; do
     name=$(basename "$agent" .md)
+    [ "$name" = "evaluator-headless" ] && continue
     assert_file_contains "$agent" "effort:" "$name has effort"
 done
 
