@@ -127,9 +127,22 @@ When invoked as subagents by edikt commands, the parent command provides the con
 
 When a specialist agent stops (after completing a review or hitting its turn limit), it can be resumed with `SendMessage`. Claude Code auto-resumes stopped background agents instead of returning an error. This means edikt commands that spawn specialist agents can safely re-engage them later without checking state — useful when a review produces follow-up questions.
 
-### Phase-end evaluator
+### Evaluator
 
-The `evaluator` agent is a special agent that runs at phase boundaries during plan execution. It verifies completed work against acceptance criteria with no shared context from the generator. It's skeptical by default — assuming work is incomplete until proven otherwise.
+The `evaluator` is a protected internal agent that runs at two points in the SDLC chain:
+
+- **Pre-flight** — before a phase starts, validates acceptance criteria are testable (TESTABLE/VAGUE/SUBJECTIVE/BLOCKED)
+- **Phase-end** — after a phase completes, verifies each criterion with evidence (file:line citations)
+
+It's skeptical by default — assuming work is incomplete until proven otherwise. Every PASS requires evidence. Every FAIL requires a citation.
+
+The evaluator runs in two modes:
+- **Headless** (default) — separate `claude -p` invocation with zero shared context. Eliminates self-evaluation bias. Works in CI.
+- **Subagent** — forked agent within the session. Faster but partial context isolation.
+
+Both modes are configurable via `evaluator.*` in `.edikt/config.yaml`. The evaluator is not user-overridable — `/edikt:upgrade` always overwrites it, and `/edikt:doctor` warns if it's been modified.
+
+See [Evaluator](/governance/evaluator) for the full comparison table and configuration reference.
 
 ## Model selection — per phase, not per agent
 
