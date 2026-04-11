@@ -34,7 +34,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 ## Instructions
 
-1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules.
+1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read `evaluator.max-attempts` from `.edikt/config.yaml` — default to `5` if not set. Store as `MAX_ATTEMPTS` for use in the progress table and stuck detection.
 
 2. Determine the task from `$ARGUMENTS`. Check in order — use first match:
    - **SPEC identifier** (e.g., `SPEC-005`): find the spec folder, use spec + accepted artifacts as primary context
@@ -215,13 +215,49 @@ Each phase has an `evaluate:` flag:
 - `false` (default for `effort: low` phases) — skip evaluation, go straight to context reset guidance
 - Author can override in either direction
 
+### Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Not started |
+| `in-progress` | Generator is working |
+| `evaluating` | Phase-end evaluator is running |
+| `done` | All acceptance criteria PASS |
+| `stuck` | Max attempts reached — human decision needed |
+| `skipped` | Explicitly skipped by user |
+
 ### Phase-End Flow
 
 When a phase completes (generator outputs the completion promise):
 
 1. **If `evaluate: true`:** Spawn the evaluator agent with the phase's acceptance criteria, code changes, and test results. Wait for PASS/FAIL verdict.
    - If PASS: proceed to context reset guidance
-   - If FAIL: report failures, ask the user to fix before proceeding
+   - If FAIL: report failures, then:
+
+     a. **Increment the Attempt column** in the progress table (e.g., `1/{max}` → `2/{max}`).
+
+     b. **Check criteria sidecar** — read `PLAN-{slug}-criteria.yaml` if it exists. For each failing criterion, check `fail_count`. If `fail_count >= 3`:
+        ```
+        ⚠️ AC-{id} has failed 3 consecutive times.
+           Last reason: {fail_reason}
+           Consider: rewrite the criterion, adjust the approach, or ask for help.
+        ```
+
+     c. **Forward failures** — before retrying, include the failing criteria in the generator prompt:
+        ```
+        Previous attempt failed. Fix these: {list of failing AC IDs and reasons}
+        ```
+
+     d. **Stuck detection** — if the Attempt value has reached `MAX_ATTEMPTS` (e.g., `5/5`), set the phase status to `stuck` and output:
+        ```
+        Phase {n} is stuck after {max} attempts.
+        Options:
+          1. Continue trying (increase max)
+          2. Skip this phase
+          3. Rewrite failing criteria
+          4. Stop and review
+        ```
+        Wait for the user's choice before proceeding.
 
 2. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
    ```
@@ -309,10 +345,10 @@ Domains detected: {list} ({n} of 6 checked)
 
 ## Progress
 
-| Phase | Status | Updated |
-|-------|--------|---------|
-| 1     | -      | -       |
-| 2     | -      | -       |
+| Phase | Status | Attempt | Updated |
+|-------|--------|---------|---------|
+| 1     | pending | 0/{max} | -      |
+| 2     | pending | 0/{max} | -      |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
