@@ -403,7 +403,7 @@ assert_file_contains "$PROJECT_ROOT/website/agents.md" "auto-resumes" "Website e
 
 # Website documents evaluator agent
 assert_file_contains "$PROJECT_ROOT/website/agents.md" "evaluator" "Website documents evaluator agent"
-assert_file_contains "$PROJECT_ROOT/website/agents.md" "phase boundaries" "Website explains phase-end evaluation"
+assert_file_contains "$PROJECT_ROOT/website/agents.md" "Phase-end" "Website explains phase-end evaluation"
 
 # ============================================================
 # Headless & CI foundations (v0.2.0)

@@ -9,7 +9,7 @@ allowed-tools:
   - Bash
   - Glob
 ---
-!`BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); COUNT=$(ls "${BASE}/decisions/"*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${BASE}/decisions/"*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext ADR number: ADR-%s\nExisting ADRs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`ADR_DIR=$(grep "^  decisions:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$ADR_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); for d in "${BASE}/architecture/decisions" "${BASE}/decisions"; do [ -d "$d" ] && ADR_DIR="$d" && break; done; [ -z "$ADR_DIR" ] && ADR_DIR="${BASE}/architecture/decisions"; fi; COUNT=$(ls "${ADR_DIR}/"*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${ADR_DIR}/"*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext ADR number: ADR-%s\nExisting ADRs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
 
 # edikt:adr:new
 

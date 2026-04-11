@@ -12,7 +12,7 @@ allowed-tools:
   - Agent
   - AskUserQuestion
 ---
-!`PLAN=$(ls -t docs/product/plans/*.md docs/plans/*.md 2>/dev/null | head -1); if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -E "in.progress|In Progress" "$PLAN" 2>/dev/null | head -1 | tr -d '|' | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi`
+!`PLAN_DIR=$(grep "^  plans:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$PLAN_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); PLAN_DIR="${BASE}/plans"; fi; PLAN=$(ls -t "${PLAN_DIR}/"*.md 2>/dev/null | head -1); if [ -z "$PLAN" ]; then PLAN=$(ls -t docs/product/plans/*.md 2>/dev/null | head -1); fi; if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -iE '\|.*in[_ -]progress' "$PLAN" 2>/dev/null | head -1 | tr -d '|' | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi`
 
 # edikt:plan
 
