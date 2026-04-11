@@ -7,6 +7,9 @@ set -uo pipefail
 # Only run in edikt projects
 if [ ! -f '.edikt/config.yaml' ]; then exit 0; fi
 
+# Clear gate overrides from previous session
+> "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null || true
+
 # Rotate session signals log — archive previous session, start fresh
 mkdir -p "$HOME/.edikt" 2>/dev/null || true
 LOG_FILE="$HOME/.edikt/session-signals.log"

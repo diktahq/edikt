@@ -330,6 +330,17 @@ Check the decision graph for consistency. Read all ADRs, invariants, and specs:
 6. **Artifact status stale:** Check for PRDs or specs stuck in `draft` status for more than 7 days (based on file mtime):
    - `[!!] PRD-{NNN} has been in draft for {n} days — accept or archive`
 
+   Also check spec-artifacts for stale drafts. For each spec directory at `{specs_path}/SPEC-*/`:
+   - Scan files in the directory and subdirectories (`contracts/`, `migrations/`) that are NOT `spec.md`
+   - Read status from frontmatter or comment header. Support all formats:
+     - YAML frontmatter: `status: draft` between `---` markers
+     - Mermaid comment: `status=draft` in `%% edikt:artifact` line
+     - YAML comment: `status=draft` in `# edikt:artifact` line
+     - SQL comment: `status=draft` in `-- edikt:artifact` line
+     - HTML comment: `status=draft` in `<!-- edikt:artifact -->` line
+   - If status is `draft` and file mtime > 7 days:
+     - `[!!] SPEC-{NNN}/{artifact filename} has been draft for {n} days — review and accept, or remove`
+
 7. **State machine violations:** Check if any spec references a PRD that is not `accepted`, or if any plan references artifacts that are not `accepted`:
    - `[!!] SPEC-{NNN} references PRD-{NNN} which is still in draft — PRD should be accepted first`
 

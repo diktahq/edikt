@@ -40,7 +40,36 @@ CRITICAL: NEVER assign a severity level without reading the actual code — ever
 
 8. Display progress: `Step 3/4: Comparing against spec...`
 
+8b. **Artifact status filter** — before routing artifacts to validation agents, filter by status:
+
+   For each artifact in the spec directory (excluding `spec.md`):
+   - Read status from frontmatter or comment header (support all 4 formats: `%%` for `.mmd`, `#` for `.yaml`, `--` for `.sql`, frontmatter or `<!-- -->` for `.md`)
+   - Filter by status:
+     - `accepted` → include in validation
+     - `implemented` → include in validation (verify still correct)
+     - `in-progress` → include in validation (check partial work)
+     - `draft` → **SKIP**. Output:
+       `⏭ Skipping {artifact filename} (status: draft) — accept before validating`
+     - `superseded` → **SKIP**. Output:
+       `⏭ Skipping {artifact filename} (status: superseded)`
+
+   Only pass non-skipped artifacts to the validation agents.
+
+   If ALL artifacts are skipped:
+   ```
+   ⚠️ No artifacts to validate — all are draft or superseded.
+   Run /edikt:sdlc:artifacts to review and accept them.
+   ```
+
 9. Route each layer to the appropriate specialist agent via the Agent tool. Pass the reference document, the implementation diff, and relevant codebase context. Use the Layer-to-Agent mapping in the Reference section.
+
+9b. **Auto-promote in-progress → implemented** — after each artifact's drift validation completes:
+   - If the validation found zero violations AND zero divergences for this artifact AND its status is `in-progress`:
+     - Update the artifact's status to `implemented` (using the same format-aware approach as the plan auto-promote)
+     - Output: `✅ {artifact filename} — no drift detected. Status promoted: in-progress → implemented`
+   - If the artifact status is `accepted` and drift is clean: do NOT promote directly to `implemented`
+     - Output: `✅ {artifact filename} — no drift detected.`
+   - If violations or divergences were found: do not change status, report violations as normal
 
 10. Apply the Severity Model from the Reference section to each finding.
 

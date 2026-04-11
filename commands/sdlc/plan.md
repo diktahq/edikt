@@ -62,7 +62,33 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 3. Check the **governance chain** — only when a SPEC was resolved:
    - Read spec frontmatter for `status:`. If not `accepted`, warn the user.
-   - Check for spec-artifacts in the spec folder. If any have `status: draft`, warn and ask to proceed.
+   - Check for spec-artifacts in the spec folder. For each artifact file (excluding `spec.md`), read its status from frontmatter (`status: draft` between `---` markers) or comment header (`status=draft` in `%%`, `#`, `--`, or `<!-- -->` lines).
+
+     If any artifacts have `status: draft`:
+     ```
+     ⚠️ These spec artifacts are still in draft:
+        - {artifact filename} (status: draft)
+        - {artifact filename} (status: draft)
+
+        Draft artifacts haven't been reviewed. Planning against them
+        risks implementing a design that changes after review.
+
+        Options:
+        1. Proceed anyway (plan will note artifacts are unreviewed)
+        2. Stop — review and accept artifacts first
+     ```
+
+     If the user picks 1:
+     - Proceed with plan generation
+     - Add a `## Known Risks` section to the generated plan file:
+       ```markdown
+       ## Known Risks
+       - Planning against draft artifacts: {comma-separated list of draft artifact filenames}
+         These may change after review. Re-plan if they do.
+       ```
+
+     If the user picks 2: stop and output:
+     `Review and accept the draft artifacts, then run /edikt:sdlc:plan again.`
    - If artifacts exist and are accepted, read them as planning context.
    - **Inventory all artifacts** — scan the spec directory for every file (excluding `spec.md` itself). Build an artifact inventory:
      ```bash
@@ -232,6 +258,14 @@ Before implementing any plan phase:
 2. If a listed file does not exist, check the progress table — the producing phase may not be complete.
 3. Do not proceed until all context files have been read.
 4. After reading, confirm you understand the relevant decisions and constraints before writing code.
+5. If the phase references any spec artifacts in its Context Needed section, check their status:
+   - For each referenced artifact with `status: accepted`, update it to `status: in-progress`:
+     - `.mmd` files: change `status=accepted` to `status=in-progress` in the `%% edikt:artifact` comment
+     - `.yaml` files: change `status=accepted` to `status=in-progress` in the `# edikt:artifact` comment
+     - `.sql` files: change `status=accepted` to `status=in-progress` in the `-- edikt:artifact` comment
+     - `.md` files: change `status: accepted` to `status: in-progress` in YAML frontmatter, or `status=accepted` to `status=in-progress` in `<!-- edikt:artifact -->` comment
+   - Output: `Status promoted: {artifact} accepted → in-progress`
+   - Do not update artifacts already `in-progress`, `implemented`, or `superseded`
 
 ### Acceptance Criteria Rules
 

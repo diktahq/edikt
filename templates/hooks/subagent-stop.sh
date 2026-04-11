@@ -98,17 +98,58 @@ if [ "$GATE_CHECK" = "yes" ]; then
   IS_GATE=true
 fi
 
+# Check for existing override in this session
+if [ "$IS_GATE" = true ] && [ "$SEVERITY" = "critical" ]; then
+  FINDING_PREFIX=$(echo "$FINDING" | cut -c1-80)
+  if [ -f "$HOME/.edikt/gate-overrides.jsonl" ]; then
+    if grep -qF "\"agent\":\"${AGENT_NAME}\"" "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null &&
+       grep -qF "\"finding_prefix\":\"${FINDING_PREFIX}\"" "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null; then
+      # Already overridden this session — skip silently
+      printf '{"continue": true}'
+      exit 0
+    fi
+  fi
+fi
+
 # If agent is a gate AND severity is critical, block progression
 if [ "$IS_GATE" = true ] && [ "$SEVERITY" = "critical" ]; then
+  ESCAPED_FINDING=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1])[1:-1])" "$FINDING")
+
   # Log gate event
   if type edikt_log_event >/dev/null 2>&1; then
-    ESCAPED_FINDING=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1])[1:-1])" "$FINDING")
     edikt_log_event "gate_fired" "{\"agent\":\"${AGENT_NAME}\",\"severity\":\"critical\",\"finding\":\"${ESCAPED_FINDING}\"}"
   fi
 
-  # Block with the finding surfaced as a systemMessage
-  # The systemMessage asks Claude to present the gate to the user
-  GATE_MSG="GATE BLOCKED: ${AGENT_NAME} found a critical issue: ${FINDING}. Ask the user if they want to override this gate. If they override, log it. If not, stop and let them fix the issue."
+  # Write to events.jsonl (structured audit log)
+  GATE_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+  mkdir -p "$HOME/.edikt" 2>/dev/null || true
+  echo "{\"ts\":\"${GATE_TIMESTAMP}\",\"event\":\"gate_fired\",\"agent\":\"${AGENT_NAME}\",\"severity\":\"critical\",\"finding\":\"${ESCAPED_FINDING}\"}" >> "$HOME/.edikt/events.jsonl"
+
+  GIT_USER=$(git config user.name 2>/dev/null || echo "unknown")
+  GIT_EMAIL=$(git config user.email 2>/dev/null || echo "unknown")
+
+  GATE_MSG="GATE BLOCKED: ${AGENT_NAME} found a critical issue: ${FINDING}.
+
+Present this to the user:
+
+⛔ GATE: ${AGENT_NAME} — critical finding
+   ${FINDING}
+
+   This gate must be resolved before proceeding.
+   Override this gate? (y/n)
+   Note: override will be logged with your git identity.
+
+If the user says YES:
+1. Run this command to log the override:
+   echo '{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"event\":\"gate_override\",\"agent\":\"${AGENT_NAME}\",\"finding\":\"${ESCAPED_FINDING}\",\"user\":\"${GIT_USER}\",\"email\":\"${GIT_EMAIL}\"}' >> ~/.edikt/events.jsonl
+2. Run this command to prevent re-firing:
+   echo '{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"agent\":\"${AGENT_NAME}\",\"finding_prefix\":\"${FINDING_PREFIX}\"}' >> ~/.edikt/gate-overrides.jsonl
+3. Confirm: Gate overridden. Logged to events.jsonl. Proceeding.
+
+If the user says NO:
+1. Run this command to log the block:
+   echo '{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"event\":\"gate_blocked\",\"agent\":\"${AGENT_NAME}\",\"finding\":\"${ESCAPED_FINDING}\",\"user\":\"${GIT_USER}\",\"email\":\"${GIT_EMAIL}\"}' >> ~/.edikt/events.jsonl
+2. Stop and let the user fix the issue."
   JSON=$(python3 -c "import json,sys; print(json.dumps({'decision':'block','systemMessage':sys.argv[1]}))" "$GATE_MSG")
   echo "$JSON"
   exit 0
