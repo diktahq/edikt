@@ -139,6 +139,19 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 8. Write the plan file to `docs/product/plans/PLAN-{slug}.md` (or `docs/plans/` if product dir doesn't exist). Use the Plan File Template in the Reference section.
 
+8b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory.
+
+   For each phase:
+   - Extract acceptance criteria from the plan text
+   - Assign IDs: `AC-{phase}.{seq}` (e.g., AC-1.1, AC-1.2)
+   - If pre-flight criteria validation ran (step 11), populate `verify` with the proposed commands from the evaluator
+   - Set all `status: pending`, `fail_count: 0`, `fail_reason: null`, `last_evaluated: null`
+
+   Schema must match `docs/product/specs/SPEC-001-plan-harness/plan-criteria-schema.yaml`. Top-level fields: `plan`, `generated`, `last_evaluated: null`, `phases[]`.
+
+   The sidecar file is always a sibling of the plan file:
+   `docs/product/plans/PLAN-foo.md` → `docs/product/plans/PLAN-foo-criteria.yaml`
+
 9. Output next steps:
    ```
    ✅ Plan saved: {path}
@@ -273,6 +286,13 @@ When a phase completes (generator outputs the completion promise):
           4. Stop and review
         ```
         Wait for the user's choice before proceeding.
+
+     e. **Update criteria sidecar** — after evaluation, update `PLAN-{slug}-criteria.yaml`:
+        - Read the sidecar file (skip silently if it doesn't exist)
+        - For each criterion the evaluator judged: update `status` (pass/fail), `last_evaluated` (ISO date), `fail_reason` (if fail)
+        - Increment `fail_count` for each fail (reset to 0 on pass)
+        - Update phase-level `status` and `attempt`
+        - Write back to the same file
 
 2. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
    ```
