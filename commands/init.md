@@ -34,21 +34,124 @@ ls -la .edikt/ 2>/dev/null || echo "No .edikt/ directory"
 
 **If `.edikt/config.yaml` exists**, determine the scenario:
 
-- **Team member joining** (rules, agents, hooks already in `.claude/`): verify local setup matches config. Check for gaps (missing rule files, missing hooks, version mismatch). If everything matches:
-  ```
-  edikt is set up and matches your config. Nothing to do.
+- **Member onboarding** (default — user is joining an existing project):
 
-  Run /edikt:status to see governance dashboard.
+  **Step 0 — edikt version gate (blocking):**
+  ```bash
+  INSTALLED=$(cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]' || echo "unknown")
+  PROJECT=$(grep '^edikt_version:' .edikt/config.yaml | awk '{print $2}' | tr -d '"')
   ```
-  If gaps exist:
-  ```
-  edikt config exists but your local setup needs sync:
-    - 2 rule packs missing from .claude/rules/
-    - Hooks not installed in .claude/settings.json
+  - If `INSTALLED` is a valid version AND `INSTALLED` < `PROJECT`:
+    ```
+    ❌ edikt version mismatch — your install is older than this project requires.
+       Installed: {INSTALLED}
+       Required:  {PROJECT}
 
-  Sync your local setup? (Y/n)
+    Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+    Then re-run /edikt:init.
+    ```
+    Stop here.
+  - If `INSTALLED` == "unknown": warn but don't block:
+    ```
+    ⚠️  Could not detect installed edikt version (~/.edikt/VERSION missing).
+       Proceeding with checks — results may be unreliable.
+    ```
+
+  **Steps 1–6 — Member environment checks:**
+
+  Run these checks and collect results:
+
+  1. **Git identity:**
+     ```bash
+     git config user.name && git config user.email
+     ```
+     - ✅ if both set — show name and email
+     - ⚠️ if missing — "Set with: git config --global user.name/user.email"
+
+  2. **Claude Code:**
+     ```bash
+     claude --version 2>/dev/null
+     ```
+     - ✅ if found — show version
+     - ❌ if missing — "Install Claude Code: https://claude.ai/download"
+
+  3. **edikt config:**
+     - ✅ (already confirmed by reaching this branch)
+
+  4. **MCP environment variables:**
+     Read `.mcp.json` if it exists. For each server entry, check the `env` field for required environment variables. Check each is set:
+     - ✅ `{VAR_NAME}` set
+     - ⚠️ `{VAR_NAME}` not set — show where to get the value if known (e.g., GitHub tokens page)
+     If `.mcp.json` doesn't exist: skip silently.
+
+  5. **Environment hardening:**
+     ```bash
+     echo "$CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"
+     ```
+     - ✅ if set to `1`
+     - ⚠️ if not set — "Add to shell profile: export CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1"
+
+  6. **Git pre-push hook:**
+     ```bash
+     ls .git/hooks/pre-push 2>/dev/null
+     ```
+     - ✅ if exists and executable
+     - ⚠️ if missing — offer to install from `~/.edikt/templates/hooks/pre-push`
+     If `hooks: { pre-push-security: false }` in config: show as "✅ disabled by config"
+
+  **Step 7 — Managed settings detection:**
+  ```bash
+  ls ~/.claude/managed-settings.json ~/.claude/managed-settings.d/*.json 2>/dev/null
   ```
-  Sync only fills gaps — never overwrites existing files.
+  If found:
+  ```
+  Organization policies detected:
+    managed-settings.json — enforced by your organization
+  ```
+  If not found: skip silently.
+
+  **Step 8 — Governance file gap sync:**
+  Check for missing governance files (preserve existing behavior):
+  - Rule packs listed in config but missing from `.claude/rules/`
+  - Hooks configured but not in `.claude/settings.json`
+  - Agents listed but missing from `.claude/agents/`
+  If gaps exist: offer to sync (fills gaps only — never overwrites existing files).
+
+  **Step 9 — Show shared config:**
+  ```bash
+  git ls-files .edikt/config.yaml .claude/rules/ .claude/agents/ .mcp.json .github/ 2>/dev/null
+  ```
+  ```
+  Shared config (committed to git):
+    .edikt/config.yaml     — project config
+    .claude/rules/         — {n} rule packs
+    .claude/agents/        — {n} specialist agents
+    .mcp.json              — {servers} (keys not committed)
+  ```
+
+  **Step 10 — Report:**
+
+  If failures or warnings exist:
+  ```
+  edikt Member Setup — {repo name}
+
+    {all check results with ✅/⚠️/❌}
+
+  {n} items need attention. Fix them, then re-run /edikt:init.
+  ```
+
+  If all green:
+  ```
+  edikt Member Setup — {repo name}
+
+    {all check results with ✅}
+
+  ✅ All checks passed — you're ready to go!
+
+  Run /edikt:context to load project context.
+  ```
+
+  Note: if config contains a `team:` block (legacy from `/edikt:team`), ignore it silently. Do not read, display, or act on it.
 
 - **Reconfigure** (user explicitly wants to change settings): Before any file generation, scan existing `.claude/rules/*.md` for customization:
 

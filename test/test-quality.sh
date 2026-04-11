@@ -392,8 +392,8 @@ assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "assumptions.md" "Upgra
 assert_file_contains "$PROJECT_ROOT/website/guides/security.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Security guide documents env scrub"
 assert_file_contains "$PROJECT_ROOT/website/guides/security.md" "failIfUnavailable" "Security guide documents sandbox enforcement"
 
-# Team command checks env hardening
-assert_file_contains "$PROJECT_ROOT/commands/team.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Team command checks env scrub"
+# Init command checks env hardening (migrated from team)
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Init checks env scrub"
 
 # Website documents SendMessage auto-resume
 assert_file_contains "$PROJECT_ROOT/website/agents.md" "SendMessage" "Website documents agent resumption"
@@ -422,9 +422,9 @@ assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "EDIKT_HEADLESS" "CI g
 assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "failIfUnavailable" "CI guide documents sandbox enforcement"
 assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "GitHub Actions" "CI guide has GitHub Actions example"
 
-# Team command detects managed settings
-assert_file_contains "$PROJECT_ROOT/commands/team.md" "managed-settings" "Team command detects managed settings"
-assert_file_contains "$PROJECT_ROOT/commands/team.md" "managed-settings.d" "Team command detects policy fragments"
+# Init command detects managed settings (migrated from team)
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings" "Init detects managed settings"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings.d" "Init detects policy fragments"
 
 # Install includes headless hook
 if grep -qF "headless-ask" "$PROJECT_ROOT/install.sh" 2>/dev/null; then

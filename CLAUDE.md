@@ -106,7 +106,8 @@ Match the user's intent, not their exact words. These are representative example
 | Security audit | "run a security audit", "check for vulnerabilities", "security check" | `/edikt:sdlc:audit` |
 | Check documentation gaps | "check for doc gaps", "what docs are outdated", "audit documentation" | `/edikt:docs:review` |
 | Validate setup | "check my setup", "is everything configured right", "health check", "run doctor" | `/edikt:doctor` |
-| Initialize project | "set up edikt", "initialize this project", "onboard this repo" | `/edikt:init` |
+| Initialize project or onboard | "set up edikt", "initialize this project", "onboard this repo", "validate my environment", "onboard me", "team setup" | `/edikt:init` |
+| View or change config | "show config", "change config", "disable quality gates", "set database type", "what can I configure" | `/edikt:config` |
 | Import existing docs | "import existing docs", "onboard these docs", "intake our documentation" | `/edikt:docs:intake` |
 | Update rule packs | "check for rule updates", "are my rules outdated", "update rules" | `/edikt:gov:rules-update` |
 | Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:gov:sync` |
@@ -122,7 +123,7 @@ Match the user's intent, not their exact words. These are representative example
 | List or manage agents | "what agents do we have", "list agents", "add the security agent" | `/edikt:agents` |
 | Set up integrations | "setup Linear", "connect Jira", "add MCP server" | `/edikt:mcp` |
 | Brainstorm / explore ideas | "let's brainstorm", "brainstorm this", "explore options for X", "I have an idea", "let's think through X" | `/edikt:brainstorm` |
-| Team onboarding | "validate my environment", "onboard me", "team setup" | `/edikt:team` |
+| Team onboarding *(deprecated)* | "team onboard" | `/edikt:team` *(redirects to init)* |
 
 ### After Compaction
 If context was compacted, the PostCompact hook will re-inject the active plan phase and invariants automatically. If you need full context, run `/edikt:context`.

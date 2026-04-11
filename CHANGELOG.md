@@ -42,6 +42,30 @@ artifacts:
 
 The AsyncAPI template was updated for the 3.0 structure (separate `channels` and `operations` blocks replacing `publish`/`subscribe`). When pinning `asyncapi: "2.6.0"`, the agent uses the 2.x structure.
 
+### New `/edikt:config` command
+
+View, query, and modify `.edikt/config.yaml` with discovery, validation, and natural-language changes.
+
+- **No args** — show all 34 config keys with current values and defaults
+- **`get {key}`** — show a specific key's value, default, valid values, and which commands use it
+- **`set {key} {value}`** — validate and write, with per-key validation rules
+
+Protected keys like `edikt_version` cannot be set directly. Invalid values are rejected with explanation.
+
+### `/edikt:team` deprecated — merged into init + config
+
+`/edikt:team` served two purposes that belong elsewhere:
+- **Member onboarding** → now in `/edikt:init`'s "existing project" path
+- **Config management** → now in `/edikt:config`
+
+When `/edikt:init` detects an existing `.edikt/config.yaml`, it runs member environment validation instead of saying "already initialized":
+1. **Version gate** — blocks if installed edikt < project's `edikt_version`
+2. **Environment checks** — git identity, Claude Code, MCP env vars (read dynamically from `.mcp.json`), `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`, pre-push hook, managed settings
+3. **Governance gap sync** — missing rules/hooks/agents offered for install
+4. **Shared config display** — what's committed to git
+
+The `team:` config block is no longer used. Legacy blocks in existing configs are ignored silently. The deprecated stub redirects to init and will be removed in v0.5.0.
+
 ## v0.3.0 (2026-04-10)
 
 ### Project Adaptation (ADR-008, ADR-009)

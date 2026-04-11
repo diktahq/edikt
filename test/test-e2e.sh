@@ -70,13 +70,13 @@ done
 
 cp "$PROJECT_ROOT/VERSION" "$INSTALL_HOME/VERSION"
 
-# Verify command count (49 commands: 11 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated)
-# v0.3.0 added commands/guideline/compile.md + commands/gov/score.md
+# Verify command count (50 commands: 11 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 16 deprecated)
+# v0.3.1: team moved flat→deprecated, config added as flat, net +1 deprecated
 CMD_COUNT=$(find "$INSTALL_HOME/commands/edikt/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$CMD_COUNT" -eq 49 ]; then
-    pass "49 commands installed"
+if [ "$CMD_COUNT" -eq 50 ]; then
+    pass "50 commands installed"
 else
-    fail "Expected 49 commands, found $CMD_COUNT"
+    fail "Expected 50 commands, found $CMD_COUNT"
 fi
 
 # Verify agent count (19 agents)
@@ -663,7 +663,7 @@ assert_file_contains "$TEMPLATE" "plan these changes" "Plan trigger: plan change
 assert_file_contains "$TEMPLATE" "plan this work" "Plan trigger: plan work"
 
 # All commands have triggers (flat and namespaced)
-for cmd in status context doctor init upgrade brainstorm session team agents mcp capture; do
+for cmd in status context doctor init upgrade brainstorm session config agents mcp capture; do
     assert_file_contains "$TEMPLATE" "edikt:${cmd}" "Trigger exists: ${cmd}"
 done
 for cmd in adr:new adr:compile adr:review invariant:new invariant:compile invariant:review guideline:new guideline:review gov:compile gov:review gov:rules-update gov:sync sdlc:prd sdlc:spec sdlc:artifacts sdlc:plan sdlc:review sdlc:drift sdlc:audit docs:review docs:intake; do

@@ -106,7 +106,7 @@ Environment variables are expanded from your shell at runtime — the actual key
 
 1. Commit `.mcp.json` (you)
 2. Each teammate: add env vars to their `~/.zshrc`
-3. Verify: `/edikt:team setup` shows ✅ for each configured key
+3. Verify: `/edikt:init` shows ✅ for each configured key
 
 ## Natural language triggers
 

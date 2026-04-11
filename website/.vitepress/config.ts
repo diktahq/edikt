@@ -183,7 +183,7 @@ export default withMermaid(defineConfig({
               { text: 'upgrade', link: '/commands/upgrade' },
               { text: 'agents', link: '/commands/agents' },
               { text: 'mcp', link: '/commands/mcp' },
-              { text: 'team', link: '/commands/team' },
+              { text: 'config', link: '/commands/config' },
             ],
           },
         ],
