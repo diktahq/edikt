@@ -192,6 +192,9 @@ Run /edikt:config to see all available keys.
 | `sdlc.commit-convention` | `conventional` | `conventional`, `none` | plan, session | Commit convention |
 | `sdlc.pr-template` | `false` | `true`, `false` | init | PR template enabled |
 | `hooks.pre-push-security` | `true` | `true`, `false` | pre-push hook | Pre-push secret scanning |
+| `evaluator.preflight` | `true` | `true`, `false` | plan (step 11) | Pre-flight criteria validation before phases start |
+| `evaluator.phase-end` | `true` | `true`, `false` | plan (phase evaluation) | Phase-end evaluation after phases complete |
+| `evaluator.mode` | `headless` | `headless`, `subagent` | plan, evaluator agent | Execution mode — headless (separate claude -p) or subagent (forked in session) |
 | `agents.custom` | `[]` | list of agent slugs | upgrade | Agents to skip on upgrade |
 
 ---

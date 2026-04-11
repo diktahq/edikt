@@ -77,6 +77,7 @@ export default withMermaid(defineConfig({
           { text: 'Extensibility', link: '/governance/extensibility' },
           { text: 'Agents', link: '/agents' },
           { text: 'Quality Gates', link: '/governance/gates' },
+          { text: 'Evaluator', link: '/governance/evaluator' },
           { text: 'Drift Detection', link: '/governance/drift' },
           { text: 'Configurable Features', link: '/governance/features' },
         ],

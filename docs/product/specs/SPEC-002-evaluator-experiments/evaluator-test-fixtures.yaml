@@ -1,0 +1,160 @@
+# Evaluator Test Fixtures — Edge Case Scenarios
+#
+# These fixtures validate the evaluator's verdict logic for SPEC-002.
+# Each scenario defines a minimal set of criteria and expected outcomes.
+# Implementation: create actual fixture directories under
+# test/experiments/directive-effect/fixtures/ at build time.
+
+scenarios:
+
+  # --- Scenario 1: Grep PASS, LLM FAIL → final verdict FAIL ---
+  # Validates AC-018 (LLM overrides grep)
+  - name: grep-pass-llm-fail
+    description: "Code has the pattern grep looks for but the intent is wrong"
+    criteria:
+      - id: C-01
+        dimension: sql-scoping
+        statement: "Every SQL query on the orders table includes tenant_id in the WHERE clause"
+        severity: critical
+        verify_hint: "tenant_id appears in query but as a comment, not in WHERE"
+    grep_assertion: "grep -q tenant_id orders_repo.go"  # passes — word exists
+    expected_grep_verdict: PASS
+    expected_llm_verdict: FAIL  # tenant_id is in a comment, not WHERE clause
+    expected_final_verdict: FAIL
+    fixture_setup:
+      files:
+        - path: orders_repo.go
+          content: |
+            func GetOrders(ctx context.Context) ([]Order, error) {
+                // TODO: add tenant_id filtering
+                rows, err := db.Query("SELECT * FROM orders")
+                return scanOrders(rows)
+            }
+
+  # --- Scenario 2: Grep FAIL, LLM PASS → final verdict PASS ---
+  # Validates AC-018 (LLM overrides grep in both directions)
+  - name: grep-fail-llm-pass
+    description: "Code uses a different pattern than grep expects but satisfies the criterion"
+    criteria:
+      - id: C-01
+        dimension: sql-scoping
+        statement: "Every SQL query on the orders table includes tenant_id in the WHERE clause"
+        severity: critical
+        verify_hint: "Check for tenant_id or tenant scoping in query builder"
+    grep_assertion: "grep -q 'WHERE.*tenant_id' orders_repo.go"  # fails — uses query builder
+    expected_grep_verdict: FAIL
+    expected_llm_verdict: PASS  # query builder scopes by tenant correctly
+    expected_final_verdict: PASS
+    fixture_setup:
+      files:
+        - path: orders_repo.go
+          content: |
+            func GetOrders(ctx context.Context, tenantID string) ([]Order, error) {
+                return db.NewQuery("orders").
+                    Where("tenant_id", tenantID).
+                    All(ctx)
+            }
+
+  # --- Scenario 3: Only informational fails → verdict PASS ---
+  # Validates AC-019
+  - name: informational-only-fail
+    description: "Informational criteria fail but critical and important all pass"
+    criteria:
+      - id: C-01
+        dimension: sql-scoping
+        statement: "Every SQL query includes tenant_id"
+        severity: critical
+        verify_hint: "Check WHERE clauses"
+      - id: C-02
+        dimension: naming
+        statement: "All new files follow snake_case naming"
+        severity: informational
+        verify_hint: "Check file names"
+    expected_c01: PASS
+    expected_c02: FAIL  # file is camelCase
+    expected_verdict: PASS
+    expected_informational_note: "C-02 failed but does not affect verdict"
+    fixture_setup:
+      files:
+        - path: orderRepo.go  # camelCase — informational violation
+          content: |
+            func GetOrders(ctx context.Context, tenantID string) ([]Order, error) {
+                rows, err := db.Query("SELECT * FROM orders WHERE tenant_id = $1", tenantID)
+                return scanOrders(rows)
+            }
+
+  # --- Scenario 4: Important fails, critical passes → WEAK PASS ---
+  # Validates AC-020
+  - name: weak-pass
+    description: "All critical pass but one important criterion fails"
+    criteria:
+      - id: C-01
+        dimension: sql-scoping
+        statement: "Every SQL query includes tenant_id"
+        severity: critical
+        verify_hint: "Check WHERE clauses"
+      - id: C-02
+        dimension: logging
+        statement: "Every slog call includes tenant_id field"
+        severity: important
+        verify_hint: "Check slog arguments"
+      - id: C-03
+        dimension: naming
+        statement: "Handler functions are under 25 lines"
+        severity: informational
+        verify_hint: "Count lines"
+    expected_c01: PASS
+    expected_c02: FAIL  # missing tenant_id in slog
+    expected_c03: PASS
+    expected_verdict: WEAK PASS
+    fixture_setup:
+      files:
+        - path: orders_handler.go
+          content: |
+            func HandleGetOrders(w http.ResponseWriter, r *http.Request) {
+                tenantID := r.Header.Get("X-Tenant-ID")
+                orders, err := repo.GetOrders(r.Context(), tenantID)
+                if err != nil {
+                    slog.Error("failed to get orders", "error", err)
+                    http.Error(w, "internal error", 500)
+                    return
+                }
+                json.NewEncoder(w).Encode(orders)
+            }
+
+  # --- Scenario 5: Critical fails → FAIL regardless of others ---
+  # Validates verdict logic completeness
+  - name: critical-fail
+    description: "One critical criterion fails — verdict is FAIL even if important passes"
+    criteria:
+      - id: C-01
+        dimension: sql-scoping
+        statement: "Every SQL query includes tenant_id"
+        severity: critical
+        verify_hint: "Check WHERE clauses"
+      - id: C-02
+        dimension: logging
+        statement: "Every slog call includes tenant_id field"
+        severity: important
+        verify_hint: "Check slog arguments"
+    expected_c01: FAIL  # no tenant_id in query
+    expected_c02: PASS  # logging is fine
+    expected_verdict: FAIL
+    fixture_setup:
+      files:
+        - path: orders_repo.go
+          content: |
+            func GetOrders(ctx context.Context) ([]Order, error) {
+                rows, err := db.Query("SELECT * FROM orders")
+                return scanOrders(rows)
+            }
+        - path: orders_handler.go
+          content: |
+            func HandleGetOrders(w http.ResponseWriter, r *http.Request) {
+                tenantID := r.Header.Get("X-Tenant-ID")
+                orders, err := repo.GetOrders(r.Context())
+                if err != nil {
+                    slog.Error("failed", "error", err, "tenant_id", tenantID)
+                    return
+                }
+            }
