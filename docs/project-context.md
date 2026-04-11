@@ -27,7 +27,7 @@ edikt fixes this by:
 1. **Governing architecture and compiling into enforcement** — ADRs, invariants, and guidelines are captured, managed, and compiled into directives Claude follows automatically every session
 2. **Governing the Agentic SDLC** — PRD → spec → artifacts → plan → execute → drift detection, with status enforcement at each transition
 3. **Enforcing through hooks** — 9 lifecycle hooks: auto-format, plan injection, compaction recovery, signal detection, quality gates
-4. **Specialist review** — 18 domain agents (DBA, security, SRE, architect) review plans and implementations
+4. **Specialist review** — 20 domain agents (DBA, security, SRE, architect) review plans and implementations
 5. **Detecting drift** — Verifies implementation matches the spec, PRD, and ADRs with confidence-based severity
 
 ## Who Uses It

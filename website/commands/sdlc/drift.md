@@ -109,6 +109,31 @@ JSON output contains all findings in structured format. Wire the exit code into 
 
 When `/edikt:sdlc:review` runs and an active spec exists, it automatically appends a scoped drift check (`--scope=spec`) to the review output. You don't need to run both separately during a review cycle.
 
+## Status filtering
+
+Before validating, drift filters artifacts by status:
+
+| Status | Action |
+|--------|--------|
+| `accepted` | Validate |
+| `implemented` | Validate (verify still correct) |
+| `in-progress` | Validate (check partial work) |
+| `draft` | Skip — `⏭ Skipping data-model.mmd (status: draft)` |
+| `superseded` | Skip — `⏭ Skipping api-v1.yaml (status: superseded)` |
+
+Draft artifacts haven't been reviewed — validating against them produces unreliable results. Accept them first.
+
+## Auto-promote
+
+When drift finds zero violations for an artifact with status `in-progress`, it automatically promotes the status to `implemented`:
+
+```text
+✅ contracts/api.yaml — no drift detected
+   Status promoted: in-progress → implemented
+```
+
+Only `in-progress → implemented` is auto-promoted. Artifacts at `accepted` must go through `in-progress` first (triggered by the plan command when a phase starts).
+
 ## What's next
 
 - Fix diverged findings and run `/edikt:sdlc:drift` again

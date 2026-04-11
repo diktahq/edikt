@@ -32,6 +32,8 @@ evaluator:
   preflight: true          # pre-flight criteria validation (default: true)
   phase-end: true          # phase-end evaluation (default: true)
   mode: headless           # headless | subagent (default: headless)
+  max-attempts: 5          # max retries before stuck (default: 5)
+  model: sonnet            # sonnet | opus | haiku (default: sonnet)
 ```
 
 | Key | Default | What it controls |
@@ -39,6 +41,8 @@ evaluator:
 | `evaluator.preflight` | `true` | Validates acceptance criteria are testable before a phase starts |
 | `evaluator.phase-end` | `true` | Verifies completed work meets acceptance criteria after a phase ends |
 | `evaluator.mode` | `headless` | Execution mode — `headless` (separate `claude -p`) or `subagent` (forked agent in session) |
+| `evaluator.max-attempts` | `5` | Max phase retries before marking the phase as `stuck` |
+| `evaluator.model` | `sonnet` | Model used for headless evaluator invocation (`sonnet`, `opus`, or `haiku`) |
 
 When both `preflight` and `phase-end` are `false`, the evaluator is effectively disabled. The criteria sidecar (`PLAN-{slug}-criteria.yaml`) is still emitted — it's useful as documentation even without automated evaluation.
 

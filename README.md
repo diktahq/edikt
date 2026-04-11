@@ -26,9 +26,9 @@ Without governance, every Claude Code session starts from scratch. Architecture 
 
 - Compiled governance directives Claude reads every session
 - 20 rule packs (Go, TypeScript, Python, Next.js, Django, and more)
-- 18 specialist agents (architect, dba, security, api, qa, sre, and others)
-- 9 lifecycle hooks (plan injection, compaction recovery, quality gates)
-- 25+ commands from init through drift detection
+- 20 specialist agents (architect, dba, security, api, qa, sre, and others)
+- 15 lifecycle hooks (plan injection, compaction recovery, quality gates)
+- 34 commands from init through drift detection
 
 ## Documentation
 

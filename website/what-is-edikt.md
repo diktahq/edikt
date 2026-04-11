@@ -180,7 +180,7 @@ Nine hooks govern the session lifecycle — ensuring governance stays present th
 
 ### Specialist agents — `.claude/agents/`
 
-18 domain agents matched to your stack. Each applies a specific domain lens.
+20 domain agents matched to your stack. Each applies a specific domain lens.
 
 ```text
 architect    ← system design, ADRs, bounded contexts

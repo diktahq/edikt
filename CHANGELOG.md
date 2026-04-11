@@ -1,5 +1,52 @@
 # edikt changelog
 
+## v0.4.0 (2026-04-11)
+
+### Plan Harness: Iteration Tracking, Context Handoff, Criteria Sidecar
+
+The plan command now tracks failure history, carries context across phase boundaries, and emits a machine-readable criteria sidecar.
+
+- **Iteration tracking:** progress table with Attempt column (`N/max`), 6 statuses (`pending`, `in-progress`, `evaluating`, `done`, `stuck`, `skipped`). After each evaluation failure, fail reasons are forwarded to the next attempt. Escalation warning at 3 consecutive failures on the same criterion. Phase goes `stuck` at max attempts (configurable, default 5) with human decision prompt.
+- **Context handoff:** each phase has a `Context Needed` field listing files to read before starting. Artifact Flow Table maps producing phases to consuming phases. PostCompact hook re-injects context files, attempt count, and failing criteria after compaction.
+- **Criteria sidecar:** `PLAN-{slug}-criteria.yaml` emitted alongside plan markdown. Per-criterion status tracking (pending/pass/fail), verification commands, fail counts. Evaluator reads and updates the sidecar — no markdown parsing needed.
+
+### Evaluator: Headless Execution and Configuration
+
+The evaluator now runs as a separate `claude -p` invocation with zero shared context from the generator session.
+
+- **Evaluator config:** new `evaluator` section in `.edikt/config.yaml` with 5 keys: `preflight` (toggle pre-flight), `phase-end` (toggle evaluation), `mode` (headless or subagent), `max-attempts` (stuck threshold), `model` (sonnet/opus/haiku).
+- **Headless mode (default):** evaluator runs via `claude -p --bare` with `--disallowedTools "Write,Edit"`. Fresh process, no shared context, no self-evaluation bias. Falls back to subagent when headless unavailable.
+- **Protected agent:** evaluator templates are not user-overridable. Upgrade always overwrites them. Doctor warns on modifications. Plan blocks if template is missing.
+- **LLM evaluator in experiments:** `--llm-eval` flag in experiment runner. Dual-mode: grep pre-check + LLM evaluation. LLM verdict is authoritative when both run. Three verdicts: PASS, WEAK PASS (all critical pass but important fails), FAIL. Severity tiers: critical (blocks), important (degrades), informational (logged only).
+
+### Enforcement: Quality Gate UX and Artifact Lifecycle
+
+Quality gates now log overrides with accountability, and artifact lifecycle is enforced uniformly across the SDLC chain.
+
+- **Gate override logging:** overrides written to `~/.edikt/events.jsonl` with git identity (name + email). Three event types: `gate_fired`, `gate_override`, `gate_blocked`.
+- **Re-fire prevention:** overridden findings don't fire again within the same session. Overrides cleared at session start.
+- **Artifact lifecycle:** full status chain `draft → accepted → in-progress → implemented → superseded`. Plan auto-promotes `accepted → in-progress` when phase starts. Drift auto-promotes `in-progress → implemented` when no violations found.
+- **Plan draft warning:** lists specific draft artifacts by name, offers proceed (with Known Risks) or stop.
+- **Drift status filter:** skips `draft` and `superseded` artifacts, validates the rest.
+- **Doctor:** flags spec-artifacts stuck in draft > 7 days. Parses both YAML frontmatter and comment header status formats.
+
+### Documentation
+
+- Fixed 12 pre-existing documentation gaps (stale agent/hook/command counts, old command names in AGENTS.md, missing index entries)
+- Updated website: plan, gates, chain, features, doctor, drift pages with v0.4.0 features
+- Removed stale AGENTS.md (Codex convention — edikt is Claude Code only per ADR-001)
+
+### New config keys
+
+```yaml
+evaluator:
+  preflight: true       # pre-flight criteria validation
+  phase-end: true       # phase-end evaluation
+  mode: headless        # headless | subagent
+  max-attempts: 5       # max retries before stuck
+  model: sonnet         # model for headless evaluator
+```
+
 ## v0.3.1 (2026-04-11)
 
 ### Bug fixes

@@ -127,6 +127,80 @@ At phase boundaries, edikt recommends starting a fresh session. Context resets o
 
 Plans survive context compaction. The progress table in the plan file is the persistent state. When context gets compacted in a long session, Claude re-reads the plan and knows exactly where things stand — without losing progress.
 
+## Iteration tracking
+
+Plans track how many times each phase has been attempted. The progress table includes an Attempt column:
+
+| Phase | Status | Attempt | Updated |
+|-------|--------|---------|---------|
+| 1     | done   | 1/5     | 2026-04-11 |
+| 2     | in-progress | 2/5 | 2026-04-11 |
+| 3     | pending | 0/5   | — |
+
+Six statuses: `pending`, `in-progress`, `evaluating`, `done`, `stuck`, `skipped`.
+
+After each evaluation failure, the attempt count increments and the failing criteria are forwarded to the next attempt. If the same criterion fails 3 consecutive times, an escalation warning surfaces. At max attempts (configurable via `evaluator.max-attempts`, default 5), the phase goes `stuck` with four options: continue trying, skip, rewrite criteria, or stop.
+
+## Context handoff
+
+Each phase declares a **Context Needed** field — the files the generator must read before starting:
+
+```text
+**Context Needed:**
+- docs/product/specs/SPEC-005/contracts/api-orders.yaml — API contract
+- internal/repository/orders.go — repository from Phase 2
+- docs/architecture/decisions/ADR-012.md — error handling decision
+```
+
+An Artifact Flow Table shows which phases produce files consumed by other phases:
+
+```text
+┌─────────────────┬───────────────────────────────┬────────────────────┐
+│ Producing Phase │           Artifact            │ Consuming Phase(s) │
+├─────────────────┼───────────────────────────────┼────────────────────┤
+│ 1               │ internal/domain/order.go      │ 2, 3               │
+├─────────────────┼───────────────────────────────┼────────────────────┤
+│ 2               │ internal/repository/orders.go │ 3                  │
+└─────────────────┴───────────────────────────────┴────────────────────┘
+```
+
+After context compaction, the PostCompact hook re-injects the active phase, attempt count, last failing criteria, and context file list — so you never lose track of where you are or what to read.
+
+## Criteria sidecar
+
+Plans emit a `PLAN-{slug}-criteria.yaml` file alongside the plan markdown. This is a machine-readable companion that tracks per-criterion status:
+
+```yaml
+phases:
+  - phase: 1
+    title: "Domain model"
+    status: pending
+    attempt: "0/5"
+    criteria:
+      - id: AC-1.1
+        status: pending
+        verify: "grep -c 'type Order struct' internal/domain/order.go"
+        fail_reason: null
+        fail_count: 0
+```
+
+The evaluator reads and updates this file after each evaluation — no markdown parsing needed. Pre-flight validation populates the `verify` field with proposed shell commands.
+
+## Evaluator configuration
+
+The evaluator's behavior is configurable in `.edikt/config.yaml`:
+
+```yaml
+evaluator:
+  preflight: true          # pre-flight criteria validation (default: true)
+  phase-end: true          # phase-end evaluation (default: true)
+  mode: headless           # headless | subagent (default: headless)
+  max-attempts: 5          # max retries before stuck (default: 5)
+  model: sonnet            # sonnet | opus | haiku (default: sonnet)
+```
+
+See [Evaluator](/governance/evaluator) for details on headless vs subagent mode.
+
 ## Natural language triggers
 
 - "let's plan this"

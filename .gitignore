@@ -14,3 +14,4 @@ test/experiments/directive-effect/
 !test/experiments/directive-effect/run.sh
 test/experiments/long-running/
 !test/experiments/long-running/run.sh
+AGENTS.md

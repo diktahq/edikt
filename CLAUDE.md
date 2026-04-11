@@ -13,7 +13,7 @@ All commands are `.md` files — no build step, no compiled code, no runtime dep
 **Repo structure:**
 ```
 edikt/
-├── commands/                 # 5 edikt slash commands
+├── commands/                 # 11 edikt slash commands
 ├── templates/
 │   ├── rules/
 │   │   ├── _registry.yaml   # maps rules to templates + metadata

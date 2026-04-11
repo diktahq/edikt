@@ -125,7 +125,7 @@ The governance chain connects edikt's two systems — architecture governance & 
 <text x="472" y="726" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Lifecycle surfaces new decisions</text>
 
 <text x="120" y="758" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">⬡ = specialist agent</text>
-<text x="250" y="758" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">18 agents: architect, dba, security, sre, api, qa, pm, and more</text>
+<text x="250" y="758" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">20 agents: architect, dba, security, sre, api, qa, pm, and more</text>
 </svg>
 </div>
 
@@ -272,6 +272,26 @@ When drift detection runs, it follows these references backward through the chai
 Without the chain, the engineering cycle is scattered: requirements in Notion, decisions in Slack, specs in someone's head, verification by hope. The chain creates a single, version-controlled, machine-readable path from "what we decided to build" to "what we actually built."
 
 The drift check closes the loop. It's not optional ceremony — it's the mechanism that makes the governance chain a governance chain rather than a documentation exercise.
+
+## Artifact lifecycle
+
+Every artifact in the chain follows a status lifecycle:
+
+```
+draft → accepted → in-progress → implemented → superseded
+```
+
+| Transition | Trigger | Who |
+|-----------|---------|-----|
+| draft → accepted | Change `status:` in frontmatter | Manual |
+| accepted → in-progress | Plan starts a phase referencing this artifact | Auto |
+| in-progress → implemented | Drift finds no violations | Auto |
+| any → superseded | Create replacement artifact | Manual |
+
+**Enforcement across commands:**
+- `/edikt:sdlc:plan` warns when artifacts are still draft — lists them by name and offers to proceed with Known Risks or stop
+- `/edikt:sdlc:drift` skips draft and superseded artifacts, validates the rest
+- `/edikt:doctor` flags artifacts stuck in draft for more than 7 days
 
 ## When to use it
 
