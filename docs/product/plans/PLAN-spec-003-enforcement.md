@@ -13,7 +13,7 @@
 |-------|--------|---------|---------|
 | 1     | done    | 1/3    | 2026-04-11 |
 | 2     | done    | 1/3    | 2026-04-11 |
-| 3     | pending | 0/3    | -       |
+| 3     | done    | 1/3    | 2026-04-11 |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
