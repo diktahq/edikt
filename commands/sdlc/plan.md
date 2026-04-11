@@ -34,7 +34,13 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 ## Instructions
 
-1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read `evaluator.max-attempts` from `.edikt/config.yaml` — default to `5` if not set. Store as `MAX_ATTEMPTS` for use in the progress table and stuck detection.
+1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read evaluator configuration from `.edikt/config.yaml`:
+   - `evaluator.preflight` (default: `true`) — whether to run pre-flight criteria validation
+   - `evaluator.phase-end` (default: `true`) — whether to run phase-end evaluation
+   - `evaluator.mode` (default: `headless`) — `"headless"` for separate `claude -p`, `"subagent"` for Agent tool
+   - `evaluator.max-attempts` (default: `5`) — max retries before stuck. Store as `MAX_ATTEMPTS` for use in the progress table and stuck detection.
+   - `evaluator.model` (default: `sonnet`) — model for headless evaluator
+   If the `evaluator` section is absent in config, use all defaults.
 
 2. Determine the task from `$ARGUMENTS`. Check in order — use first match:
    - **SPEC identifier** (e.g., `SPEC-005`): find the spec folder, use spec + accepted artifacts as primary context
@@ -175,6 +181,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
     - If user provides updates, incorporate them into the plan file. If user skips, add a `## Known Risks` section listing outstanding findings.
 
 11. Run pre-flight criteria validation on every phase's acceptance criteria:
+    - If `evaluator.preflight` is false, skip this step entirely. Output: "Pre-flight validation skipped (evaluator.preflight: false in config)." Proceed to plan output.
     - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
     - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
     - For TESTABLE criteria, the evaluator proposes a verification command. Add these to a `### Verification Commands` section in each phase.
@@ -258,25 +265,58 @@ Each phase has an `evaluate:` flag:
 
 When a phase completes (generator outputs the completion promise):
 
-1. **If `evaluate: true`:** Spawn the evaluator agent with the phase's acceptance criteria, code changes, and test results. Wait for PASS/FAIL verdict.
+1. **If `evaluate: true` AND `evaluator.phase-end` is true:**
+
+   **a. EVALUATOR FILE CHECK** — before invoking, verify the template exists:
+   - If `evaluator.mode` is `"headless"`: check that `templates/agents/evaluator-headless.md` exists (also check `~/.edikt/templates/agents/evaluator-headless.md` for global install)
+   - If `evaluator.mode` is `"subagent"`: check that `templates/agents/evaluator.md` exists (also check `.claude/agents/evaluator.md`)
+   - If the required file is missing:
+     ```
+     ❌ Evaluator template missing — cannot run evaluation.
+        Expected: {path}
+        Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+        Or disable evaluation: /edikt:config set evaluator.phase-end false
+     ```
+     Do NOT silently skip evaluation. This is a hard failure.
+
+   **b. HEADLESS MODE** (`evaluator.mode: "headless"`): Invoke via Bash tool:
+   ```bash
+   claude -p "{evaluation prompt with criteria + file list}" \
+     --system-prompt "$(cat {path to evaluator-headless.md})" \
+     --allowedTools "Read,Grep,Glob,Bash" \
+     --disallowedTools "Write,Edit" \
+     --model {evaluator.model} \
+     --output-format json \
+     --bare
+   ```
+   The evaluation prompt (user message) must include:
+   - The phase's acceptance criteria (from criteria sidecar if available, or from plan markdown)
+   - The list of files modified during the phase (from `git diff --name-only` or phase output)
+   - The project's test command if available
+
+   Parse the evaluator's JSON output to extract per-criterion PASS/FAIL verdicts.
+
+   **c. SUBAGENT MODE** (`evaluator.mode: "subagent"`): Spawn the evaluator agent via the Agent tool with the phase's acceptance criteria, code changes, and test results. (This is the current behavior — no change needed.)
+
+   **d. Process the verdict:** Wait for PASS/FAIL verdict.
    - If PASS: proceed to context reset guidance
    - If FAIL: report failures, then:
 
-     a. **Increment the Attempt column** in the progress table (e.g., `1/{max}` → `2/{max}`).
+     i. **Increment the Attempt column** in the progress table (e.g., `1/{max}` → `2/{max}`).
 
-     b. **Check criteria sidecar** — read `PLAN-{slug}-criteria.yaml` if it exists. For each failing criterion, check `fail_count`. If `fail_count >= 3`:
+     ii. **Check criteria sidecar** — read `PLAN-{slug}-criteria.yaml` if it exists. For each failing criterion, check `fail_count`. If `fail_count >= 3`:
         ```
         ⚠️ AC-{id} has failed 3 consecutive times.
            Last reason: {fail_reason}
            Consider: rewrite the criterion, adjust the approach, or ask for help.
         ```
 
-     c. **Forward failures** — before retrying, include the failing criteria in the generator prompt:
+     iii. **Forward failures** — before retrying, include the failing criteria in the generator prompt:
         ```
         Previous attempt failed. Fix these: {list of failing AC IDs and reasons}
         ```
 
-     d. **Stuck detection** — if the Attempt value has reached `MAX_ATTEMPTS` (e.g., `5/5`), set the phase status to `stuck` and output:
+     iv. **Stuck detection** — if the Attempt value has reached `MAX_ATTEMPTS` (e.g., `5/5`), set the phase status to `stuck` and output:
         ```
         Phase {n} is stuck after {max} attempts.
         Options:
@@ -287,14 +327,19 @@ When a phase completes (generator outputs the completion promise):
         ```
         Wait for the user's choice before proceeding.
 
-     e. **Update criteria sidecar** — after evaluation, update `PLAN-{slug}-criteria.yaml`:
+     v. **Update criteria sidecar** — after evaluation, update `PLAN-{slug}-criteria.yaml`:
         - Read the sidecar file (skip silently if it doesn't exist)
         - For each criterion the evaluator judged: update `status` (pass/fail), `last_evaluated` (ISO date), `fail_reason` (if fail)
         - Increment `fail_count` for each fail (reset to 0 on pass)
         - Update phase-level `status` and `attempt`
         - Write back to the same file
 
-2. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
+2. **If `evaluate: true` AND `evaluator.phase-end` is false:**
+   Skip evaluation. Output: "Phase-end evaluation skipped (evaluator.phase-end: false in config)."
+   The criteria sidecar is still updated with criteria status remaining as `pending` (not evaluated).
+   Proceed directly to context reset guidance.
+
+3. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
    ```
    Phase {n} complete. For best results on Phase {n+1}:
      1. Start a new session
