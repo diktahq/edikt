@@ -9,7 +9,7 @@ allowed-tools:
   - Bash
   - Glob
 ---
-!`INV_DIR=$(grep "^  invariants:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$INV_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); for d in "${BASE}/architecture/invariants" "${BASE}/invariants"; do [ -d "$d" ] && INV_DIR="$d" && break; done; [ -z "$INV_DIR" ] && INV_DIR="${BASE}/architecture/invariants"; fi; COUNT=$(ls "${INV_DIR}/"*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${INV_DIR}/"*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext INV number: INV-%s\nExisting invariants: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`INV_DIR=$(grep "^  invariants:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$INV_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); for d in "${BASE}/architecture/invariants" "${BASE}/invariants"; do [ -d "$d" ] && INV_DIR="$d" && break; done; [ -z "$INV_DIR" ] && INV_DIR="${BASE}/architecture/invariants"; fi; COUNT=$(ls "${INV_DIR}/"INV-*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${INV_DIR}/"INV-*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext INV number: INV-%s\nExisting invariants: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
 
 # edikt:invariant:new
 
