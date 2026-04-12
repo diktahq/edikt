@@ -276,7 +276,7 @@ Invariants (2): INV-001, INV-012.
 | Risk | Impact | Likelihood | Mitigation | Rollback |
 |---|---|---|---|---|
 | PostCompact regex breaks on new table format | Lost plan context after compaction | Medium | Test regex against multiple table formats. Include fallback to current format if new columns not found. | Revert hook to current format |
-| Criteria sidecar gets out of sync with plan markdown | Evaluator judges stale criteria | Low | Sidecar is always regenerated from plan markdown. Manual edits to plan criteria should trigger sidecar regeneration. | Delete sidecar, regenerate from plan |
+| Criteria sidecar gets out of sync with plan markdown | Evaluator judges stale criteria | Low | Sidecar is generated from plan markdown at plan creation. After each evaluation, the sidecar is updated in-place (fail_count, fail_reason persist). Manual edits to plan criteria should trigger sidecar regeneration. | Delete sidecar, regenerate from plan |
 | Context Needed lists become stale as phases modify files | Generator reads wrong files | Low | Context Needed is generated at plan creation, not maintained dynamically. Engineers can update it. | Generator reads the plan as a whole |
 
 ## Security Considerations

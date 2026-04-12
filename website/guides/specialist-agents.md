@@ -1,6 +1,6 @@
 # Specialist Agents
 
-edikt ships 20 specialist agent templates covering domain review and implementation. This guide explains what agents are, how routing works, how they interact with rule packs, and how model selection works per phase.
+edikt ships 18 specialist agent templates covering domain review and implementation. This guide explains what agents are, how routing works, how they interact with rule packs, and how model selection works per phase.
 
 ## What agents are
 
@@ -23,7 +23,7 @@ Agents don't replace Claude — they add specialist focus. Claude is the enginee
 | Advisory | `architect`, `dba`, `security`, `api`, `sre`, `platform`, `docs`, `pm`, `ux`, `data`, `performance`, `compliance`, `seo`, `gtm` |
 | Implementation | `backend`, `frontend`, `qa`, `mobile` |
 
-## The 20 agents
+## The 18 agents
 
 ### Always installed
 

@@ -235,7 +235,7 @@ format exactly. Do not add commentary outside the format.
 The evaluator's output is parsed and written to the verdict file:
 
 ```
-exit: {0 if PASS, 1 if FAIL or WEAK PASS}
+exit: {0 if PASS or WEAK PASS, 1 if FAIL}
 verdict: {PASS | WEAK PASS | FAIL}
 evaluator: llm
 critical_pass: {n}/{total_critical}
@@ -252,7 +252,7 @@ if echo "$eval_output" | grep -q 'Verdict:.*FAIL'; then
     echo "exit: 1"
     echo "verdict: FAIL"
 elif echo "$eval_output" | grep -q 'Verdict:.*WEAK PASS'; then
-    echo "exit: 1"
+    echo "exit: 0"
     echo "verdict: WEAK PASS"
 else
     echo "exit: 0"

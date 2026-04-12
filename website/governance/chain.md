@@ -151,7 +151,7 @@ The governance chain connects edikt's two systems — architecture governance & 
 <text x="482" y="898" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Brainstorm feeds SDLC or decisions</text>
 
 <text x="120" y="930" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">⬡ = specialist agent</text>
-<text x="250" y="930" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">20 agents: architect, dba, security, sre, api, qa, pm, evaluator, and more</text>
+<text x="250" y="930" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">18 agents: architect, dba, security, sre, api, qa, pm, evaluator, and more</text>
 </svg>
 </div>
 

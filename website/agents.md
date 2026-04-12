@@ -1,11 +1,11 @@
 ---
 title: "Agents — Specialist Review and Implementation"
-description: "20 domain agents that review plans, audit code, and implement features. How they work with rule packs, how routing works, how to customize."
+description: "18 domain agents that review plans, audit code, and implement features. How they work with rule packs, how routing works, how to customize."
 ---
 
 # Agents
 
-edikt ships 20 specialist agents. Each covers one domain — architecture, database, security, API design, and more. Claude routes to them automatically based on what you're working on.
+edikt ships 18 specialist agents. Each covers one domain — architecture, database, security, API design, and more. Claude routes to them automatically based on what you're working on.
 
 Agents don't replace Claude — they add domain-specific focus. Claude is the engineer. Agents are the specialists who review before you ship.
 

@@ -13,11 +13,11 @@ echo ""
 
 echo -e "${BOLD}TEST 1: Stale count fixes${NC}"
 
-STALE=$(grep -rl "18 specialist" "$PROJECT_ROOT/website/" "$PROJECT_ROOT/docs/project-context.md" "$PROJECT_ROOT/README.md" 2>/dev/null | wc -l | tr -d ' ')
+STALE=$(grep -rl "20 specialist" "$PROJECT_ROOT/website/" "$PROJECT_ROOT/docs/project-context.md" "$PROJECT_ROOT/README.md" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$STALE" -eq 0 ]; then
-    pass "No stale '18 specialist agents' references"
+    pass "No stale '20 specialist agents' references"
 else
-    fail "Found $STALE files still referencing '18 specialist agents'"
+    fail "Found $STALE files still referencing '20 specialist agents'"
 fi
 
 assert_file_not_contains "$PROJECT_ROOT/README.md" "25+ commands" "README command count updated"
@@ -102,7 +102,7 @@ echo -e "${BOLD}TEST 6: Website gates page${NC}"
 assert_file_contains "$PROJECT_ROOT/website/governance/gates.md" "events.jsonl" "Gates page has events.jsonl"
 assert_file_contains "$PROJECT_ROOT/website/governance/gates.md" "override" "Gates page has override docs"
 
-if grep -qE "re-fire|Re-fire|session" "$PROJECT_ROOT/website/governance/gates.md" 2>/dev/null; then
+if grep -qiE "re-fire|re.fire prevention|override.*session|session.*override" "$PROJECT_ROOT/website/governance/gates.md" 2>/dev/null; then
     pass "Gates page has re-fire prevention"
 else
     fail "Gates page missing re-fire prevention"

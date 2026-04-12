@@ -10,7 +10,7 @@ docs/plans/
 memory/
 AGENTS.md
 docs/brainstorms/
-test/experiments/directive-effect/
+test/experiments/directive-effect/*
 !test/experiments/directive-effect/run.sh
-test/experiments/long-running/
+test/experiments/long-running/*
 !test/experiments/long-running/run.sh

@@ -20,7 +20,7 @@ When Claude sees a task that matches an agent's domain, it delegates automatical
 
 ## Available agents
 
-edikt ships 20 specialist agents organized in four tiers.
+edikt ships 18 specialist agents organized in four tiers.
 
 ### Always installed
 

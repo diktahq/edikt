@@ -186,7 +186,7 @@ Severity is assigned by the fixture author in `evaluator-criteria.yaml` via the 
 | Verdict | Condition | Exit code |
 |---------|-----------|-----------|
 | **PASS** | All critical pass AND all important pass | 0 |
-| **WEAK PASS** | All critical pass, 1+ important fail | 1 |
+| **WEAK PASS** | All critical pass, 1+ important fail | 0 |
 | **FAIL** | Any critical fails | 1 |
 
 Informational findings are logged but NEVER affect the verdict.

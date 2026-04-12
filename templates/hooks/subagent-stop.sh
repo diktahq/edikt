@@ -102,8 +102,7 @@ fi
 if [ "$IS_GATE" = true ] && [ "$SEVERITY" = "critical" ]; then
   FINDING_PREFIX=$(echo "$FINDING" | cut -c1-80)
   if [ -f "$HOME/.edikt/gate-overrides.jsonl" ]; then
-    if grep -qF "\"agent\":\"${AGENT_NAME}\"" "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null &&
-       grep -qF "\"finding_prefix\":\"${FINDING_PREFIX}\"" "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null; then
+    if grep -F "\"agent\":\"${AGENT_NAME}\"" "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null | grep -qF "\"finding_prefix\":\"${FINDING_PREFIX}\""; then
       # Already overridden this session — skip silently
       printf '{"continue": true}'
       exit 0

@@ -92,13 +92,11 @@ Before firing a gate, the hook MUST check if the same finding was already overri
 
 ```bash
 # Check for existing override (session = current Claude invocation)
-SESSION_START=$(stat -f%m ~/.edikt/gate-overrides.jsonl 2>/dev/null || echo "0")
 FINDING_PREFIX=$(echo "$FINDING" | cut -c1-80)
 
 if [ -f ~/.edikt/gate-overrides.jsonl ]; then
   # Match: same agent + finding prefix starts with the stored prefix
-  if grep -q "\"agent\":\"${AGENT_NAME}\"" ~/.edikt/gate-overrides.jsonl 2>/dev/null &&
-     grep -q "\"finding_prefix\":\"${FINDING_PREFIX}\"" ~/.edikt/gate-overrides.jsonl 2>/dev/null; then
+  if grep -F "\"agent\":\"${AGENT_NAME}\"" ~/.edikt/gate-overrides.jsonl 2>/dev/null | grep -qF "\"finding_prefix\":\"${FINDING_PREFIX}\""; then
     # Already overridden — skip silently
     printf '{"continue": true}'
     exit 0
