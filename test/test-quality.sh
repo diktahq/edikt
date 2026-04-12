@@ -227,6 +227,7 @@ assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "prds:" "Config has prds
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "guidelines:" "Config has guidelines path"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "reports:" "Config has reports path"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "project-context:" "Config has project-context path"
+assert_file_not_contains "$PROJECT_ROOT/.edikt/config.yaml" "  soul:" "Config does not use deprecated soul key"
 
 # Config has features section
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "features:" "Config has features: section"
@@ -235,6 +236,20 @@ assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "session-summary:" "Conf
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "signal-detection:" "Config has signal-detection feature"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "plan-injection:" "Config has plan-injection feature"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "quality-gates:" "Config has quality-gates feature"
+
+# ============================================================
+# Config key migration: soul → project-context (v0.4.0)
+# ============================================================
+
+# Commands reference project-context, not soul
+assert_file_not_contains "$PROJECT_ROOT/commands/config.md" "paths.soul" "config.md uses project-context not soul"
+assert_file_not_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "paths.soul" "prd.md uses project-context not soul"
+assert_file_not_contains "$PROJECT_ROOT/commands/brainstorm.md" "paths.soul" "brainstorm.md uses project-context not soul"
+assert_file_not_contains "$PROJECT_ROOT/commands/init.md" "  soul:" "init.md config template uses project-context not soul"
+
+# Upgrade command has migration path
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "paths.soul" "Upgrade command documents soul migration"
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "paths.project-context" "Upgrade command documents project-context target"
 
 # ============================================================
 # Hook modernization (v0.2.0)
