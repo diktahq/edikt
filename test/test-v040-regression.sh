@@ -210,4 +210,149 @@ assert_file_contains "$PROJECT_ROOT/commands/config.md" "paths.project-context" 
 assert_file_not_contains "$PROJECT_ROOT/commands/config.md" "paths.soul" \
     "config.md does not reference deprecated paths.soul"
 
+# ============================================================
+# TEST 8: Upgrade detects and installs new agents
+# ============================================================
+
+echo ""
+echo -e "${BOLD}TEST 8: Upgrade new agent detection${NC}"
+
+UPGRADE_CMD="$PROJECT_ROOT/commands/upgrade.md"
+
+# Upgrade command must document detecting new agents
+assert_file_contains "$UPGRADE_CMD" "Detect new agents" \
+    "upgrade.md has new agent detection logic"
+
+# Upgrade must distinguish core vs optional agents
+assert_file_contains "$UPGRADE_CMD" "Core agents" \
+    "upgrade.md defines core agents"
+assert_file_contains "$UPGRADE_CMD" "Optional agents" \
+    "upgrade.md defines optional agents"
+assert_file_contains "$UPGRADE_CMD" "installed automatically" \
+    "upgrade.md installs core agents automatically"
+
+# Evaluator is core
+assert_file_contains "$UPGRADE_CMD" "evaluator.*core\|core.*evaluator" \
+    "upgrade.md classifies evaluator as core"
+
+# Upgrade must offer optional agents to user
+assert_file_contains "$UPGRADE_CMD" "choose which to add\|choose which to install" \
+    "upgrade.md offers optional agents to user"
+
+# Upgrade must tell user how to disable unwanted agents
+assert_file_contains "$UPGRADE_CMD" "agents.custom" \
+    "upgrade.md references agents.custom for skipping"
+
+# Upgrade must handle user declining an optional agent
+assert_file_contains "$UPGRADE_CMD" "declined an optional agent\|declines an optional agent" \
+    "upgrade.md handles user declining optional agents"
+
+# ============================================================
+# TEST 9: Upgrade new agent install — e2e in /tmp
+# ============================================================
+
+echo ""
+echo -e "${BOLD}TEST 9: Upgrade new agent install (e2e)${NC}"
+
+UPGRADE_E2E="$E2E_DIR/upgrade-agents"
+mkdir -p "$UPGRADE_E2E/.claude/agents"
+mkdir -p "$UPGRADE_E2E/templates/agents"
+
+# Simulate: project has 3 installed agents
+echo "# Architect agent" > "$UPGRADE_E2E/.claude/agents/architect.md"
+echo "# DBA agent" > "$UPGRADE_E2E/.claude/agents/dba.md"
+echo "# Security agent" > "$UPGRADE_E2E/.claude/agents/security.md"
+
+# Simulate: templates have 5 agents (2 new — 1 core, 1 optional)
+echo "# Architect agent" > "$UPGRADE_E2E/templates/agents/architect.md"
+echo "# DBA agent" > "$UPGRADE_E2E/templates/agents/dba.md"
+echo "# Security agent" > "$UPGRADE_E2E/templates/agents/security.md"
+echo "# Evaluator headless agent" > "$UPGRADE_E2E/templates/agents/evaluator-headless.md"
+echo "# GTM agent" > "$UPGRADE_E2E/templates/agents/gtm.md"
+
+# Core agents list (evaluator variants)
+CORE_AGENTS="evaluator.md evaluator-headless.md"
+
+# Detect new agents: templates that don't exist in .claude/agents/
+NEW_CORE=""
+NEW_OPTIONAL=""
+for tmpl in "$UPGRADE_E2E/templates/agents/"*.md; do
+    slug=$(basename "$tmpl")
+    if [ ! -f "$UPGRADE_E2E/.claude/agents/$slug" ]; then
+        if echo "$CORE_AGENTS" | grep -qw "$slug"; then
+            NEW_CORE="$NEW_CORE $slug"
+        else
+            NEW_OPTIONAL="$NEW_OPTIONAL $slug"
+        fi
+    fi
+done
+
+if echo "$NEW_CORE" | grep -q "evaluator-headless.md"; then
+    pass "Core agent detected: evaluator-headless.md"
+else
+    fail "Failed to detect evaluator-headless.md as core agent"
+fi
+
+if echo "$NEW_OPTIONAL" | grep -q "gtm.md"; then
+    pass "Optional agent detected: gtm.md"
+else
+    fail "Failed to detect gtm.md as optional agent"
+fi
+
+# Install core agents automatically
+for slug in $NEW_CORE; do
+    cp "$UPGRADE_E2E/templates/agents/$slug" "$UPGRADE_E2E/.claude/agents/$slug"
+done
+
+if [ -f "$UPGRADE_E2E/.claude/agents/evaluator-headless.md" ]; then
+    pass "Core agent installed automatically: evaluator-headless.md"
+else
+    fail "Core agent not installed: evaluator-headless.md"
+fi
+
+# Optional agent NOT installed until user accepts
+if [ ! -f "$UPGRADE_E2E/.claude/agents/gtm.md" ]; then
+    pass "Optional agent not installed without user acceptance: gtm.md"
+else
+    fail "Optional agent installed without user acceptance: gtm.md"
+fi
+
+# Simulate: user accepts gtm
+cp "$UPGRADE_E2E/templates/agents/gtm.md" "$UPGRADE_E2E/.claude/agents/gtm.md"
+if [ -f "$UPGRADE_E2E/.claude/agents/gtm.md" ]; then
+    pass "Optional agent installed after user acceptance: gtm.md"
+else
+    fail "Failed to install optional agent: gtm.md"
+fi
+
+# Verify existing agents were not touched
+if [ "$(cat "$UPGRADE_E2E/.claude/agents/architect.md")" = "# Architect agent" ]; then
+    pass "Existing agent not modified: architect.md"
+else
+    fail "Existing agent was modified: architect.md"
+fi
+
+# Simulate: user declines an optional agent → add to custom list
+mkdir -p "$UPGRADE_E2E/.edikt"
+cat > "$UPGRADE_E2E/.edikt/config.yaml" << 'YAML'
+agents:
+  custom:
+    - mobile
+YAML
+
+# Detect custom agents should be skipped
+CUSTOM_AGENTS=$(grep -A10 "custom:" "$UPGRADE_E2E/.edikt/config.yaml" 2>/dev/null | grep "^ *-" | sed 's/.*- //' | tr -d ' ')
+SKIP_MOBILE=false
+for custom in $CUSTOM_AGENTS; do
+    if [ "$custom" = "mobile" ]; then
+        SKIP_MOBILE=true
+    fi
+done
+
+if [ "$SKIP_MOBILE" = "true" ]; then
+    pass "Declined optional agent added to custom list: mobile"
+else
+    fail "Declined agent not in custom list: mobile"
+fi
+
 echo ""

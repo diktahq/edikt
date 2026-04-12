@@ -171,12 +171,30 @@ installed_hash=$(md5 -q .claude/agents/{slug}.md 2>/dev/null || md5sum .claude/a
 
 Do NOT touch agents that have no matching template (user-created agents) or that are marked as custom.
 
-**Detect new agents.** List files in `~/.edikt/templates/agents/`. For each template, check if a matching file exists in `.claude/agents/`. If a template has no installed counterpart, it's a new agent added in this version — mark it as "new — will install".
+**Detect new agents.** List files in `~/.edikt/templates/agents/`. For each template, check if a matching file exists in `.claude/agents/`. If a template has no installed counterpart, it's a new agent added in this version.
+
+New agents are classified as **core** or **optional**:
+
+- **Core agents** are installed automatically — they're required for edikt's governance mechanisms to work. The evaluator agents (`evaluator.md`, `evaluator-headless.md`) are core: the plan harness and quality gates depend on them.
+- **Optional agents** (all other specialist agents) are offered to the user with a description of what they do. The user chooses which to install.
 
 ```
-New agents available in v{version}:
-  + evaluator-headless.md (new in v0.4.0)
+New agents in v{version}:
+
+  Installed automatically (core):
+  ✓ evaluator-headless.md — headless phase-end evaluator (required by plan harness)
+
+  Available (choose which to add):
+  [1] gtm.md — go-to-market strategy review
+  [2] mobile.md — mobile platform specialist
+  [a] Install all    [s] Skip all    [1,2] Install selected
 ```
+
+Core agents that the user doesn't want can be disabled after install:
+- Delete `.claude/agents/{slug}.md` to remove
+- Add to `agents.custom` in `.edikt/config.yaml` to skip on future upgrades
+
+If the user declines an optional agent, add it to `agents.custom` in config so future upgrades don't ask again.
 
 #### 2d. Config check
 
@@ -361,9 +379,18 @@ For each outdated agent:
 2. Read the template
 3. Replace the installed file with the template content
 
-For each new agent (template exists, no installed file):
+For each new **core** agent (evaluator, evaluator-headless):
 1. Copy the template to `.claude/agents/{slug}.md`
-2. Note as "installed (new in v{version})"
+2. Report: `✓ Installed evaluator-headless.md — core (required by plan harness)`
+
+For each new **optional** agent the user accepted:
+1. Copy the template to `.claude/agents/{slug}.md`
+2. Report: `✓ Installed gtm.md — go-to-market strategy review`
+
+For each new optional agent the user declined:
+1. Do NOT install
+2. Add slug to `agents.custom` in `.edikt/config.yaml` so future upgrades don't ask again
+3. Report: `— Skipped gtm.md (added to agents.custom)`
 
 Skip agents without a matching template. Skip user-created agents (no matching template slug).
 
