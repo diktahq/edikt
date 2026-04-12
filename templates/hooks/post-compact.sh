@@ -23,9 +23,43 @@ if [ -d "$PLAN_DIR" ]; then
       PHASE_NUM=$(echo "$PHASE" | sed 's/|/\n/g' | sed -n '2p' | tr -d ' ' | grep -oE '[0-9]+')
       PHASE_THEME=$(echo "$PHASE" | sed 's/|/\n/g' | sed -n '3p' | sed 's/^ *//;s/ *$//')
       PLAN_NAME=$(head -5 "$PLAN" | grep '^# ' | head -1 | sed 's/^# //')
+
+      # Extract attempt count from column 4 (4-column table: Phase|Status|Attempt|Updated)
+      ATTEMPT=$(echo "$PHASE" | sed 's/|/\n/g' | sed -n '4p' | sed 's/^ *//;s/ *$//')
+      # Backward compat: only use ATTEMPT if it matches N/N pattern
+      if ! echo "$ATTEMPT" | grep -qE '^[0-9]+/[0-9]+$'; then
+        ATTEMPT=""
+      fi
+
+      # Read criteria sidecar for failing criteria
+      CRITERIA_FILE="${PLAN%.md}-criteria.yaml"
+      FAIL_MSG=""
+      if [ -f "$CRITERIA_FILE" ]; then
+        FAIL_IDS=$(grep -B2 'status: fail' "$CRITERIA_FILE" 2>/dev/null | grep 'id:' | awk '{print $2}' | tr '\n' ',' | sed 's/,$//')
+        FAIL_REASON=$(grep -A1 'status: fail' "$CRITERIA_FILE" 2>/dev/null | grep 'fail_reason:' | sed 's/.*fail_reason: *//' | sed 's/"//g' | head -1)
+        if [ -n "$FAIL_IDS" ]; then
+          FAIL_MSG="Last failing criteria: ${FAIL_IDS}"
+          [ -n "$FAIL_REASON" ] && [ "$FAIL_REASON" != "null" ] && FAIL_MSG="${FAIL_MSG} (${FAIL_REASON})"
+        fi
+      fi
+
+      # Read Context Needed from active phase in plan
+      CONTEXT_MSG=""
+      if [ -n "$PHASE_NUM" ] && [ -f "$PLAN" ]; then
+        CONTEXT_LINES=$(sed -n "/## Phase ${PHASE_NUM}[^0-9]/,/## Phase [0-9]/p" "$PLAN" 2>/dev/null | grep -A20 'Context Needed:' | grep '^ *-' | head -5 | sed 's/^ *//')
+        if [ -n "$CONTEXT_LINES" ]; then
+          CONTEXT_MSG="Before continuing, read:
+  ${CONTEXT_LINES}"
+        fi
+      fi
+
       PLAN_MSG="Active plan: ${PLAN_NAME}. Phase ${PHASE_NUM}"
       [ -n "$PHASE_THEME" ] && PLAN_MSG="${PLAN_MSG} — ${PHASE_THEME}"
-      PLAN_MSG="${PLAN_MSG}. Re-read ${PLAN} for full phase details."
+      [ -n "$ATTEMPT" ] && PLAN_MSG="${PLAN_MSG} (attempt ${ATTEMPT})"
+      PLAN_MSG="${PLAN_MSG}."
+      [ -n "$FAIL_MSG" ] && PLAN_MSG="${PLAN_MSG} ${FAIL_MSG}."
+      [ -n "$CONTEXT_MSG" ] && PLAN_MSG="${PLAN_MSG} ${CONTEXT_MSG}"
+      PLAN_MSG="${PLAN_MSG} Re-read ${PLAN} for full phase details."
     fi
   fi
 fi

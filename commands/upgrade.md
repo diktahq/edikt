@@ -466,6 +466,22 @@ Do NOT auto-run `/edikt:gov:compile`. Surface the recommendation in the upgrade 
 
 **Do not run `/edikt:init` automatically.** Always leave the user in control. Upgrade reports the state; init is the next action the user takes when they're ready.
 
+#### Config key migration: `paths.soul` → `paths.project-context` (v0.4.0)
+
+Check if `.edikt/config.yaml` contains `soul:` under `paths:`. If found, rename the key to `project-context:` — the value stays the same.
+
+```
+ℹ Config migration: paths.soul → paths.project-context
+
+The config key `paths.soul` has been renamed to `paths.project-context`
+in v0.4.0. Your config has been updated automatically.
+
+Old: soul: {value}
+New: project-context: {value}
+```
+
+This is a safe auto-migration — the key name changes, the value and behavior are identical. Commands that read this config check for both `project-context` and `soul` (fallback) so older configs continue to work even without the migration.
+
 #### Directive sentinel schema migration (v0.2.x → v0.3.0, ADR-008)
 
 Similar to the project template handling: **never auto-migrate directive sentinel blocks.** Files with the legacy `content_hash:` field continue to work via gov:compile's backward compatibility path. The migration to the v0.3.0 three-list schema happens on the next `/edikt:<artifact>:compile` run for that specific file.

@@ -12,7 +12,7 @@ allowed-tools:
   - Agent
   - AskUserQuestion
 ---
-!`PLAN=$(ls -t docs/product/plans/*.md docs/plans/*.md 2>/dev/null | head -1); if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -E "in.progress|In Progress" "$PLAN" 2>/dev/null | head -1 | tr -d '|' | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi`
+!`PLAN_DIR=$(grep "^  plans:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$PLAN_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); PLAN_DIR="${BASE}/plans"; fi; PLAN=$(ls -t "${PLAN_DIR}/"*.md 2>/dev/null | head -1); if [ -z "$PLAN" ]; then PLAN=$(ls -t docs/product/plans/*.md 2>/dev/null | head -1); fi; if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -iE '\|.*in[_ -]progress' "$PLAN" 2>/dev/null | head -1 | tr -d '|' | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi`
 
 # edikt:plan
 
@@ -34,7 +34,13 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 ## Instructions
 
-1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules.
+1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read evaluator configuration from `.edikt/config.yaml`:
+   - `evaluator.preflight` (default: `true`) — whether to run pre-flight criteria validation
+   - `evaluator.phase-end` (default: `true`) — whether to run phase-end evaluation
+   - `evaluator.mode` (default: `headless`) — `"headless"` for separate `claude -p`, `"subagent"` for Agent tool
+   - `evaluator.max-attempts` (default: `5`) — max retries before stuck. Store as `MAX_ATTEMPTS` for use in the progress table and stuck detection.
+   - `evaluator.model` (default: `sonnet`) — model for headless evaluator
+   If the `evaluator` section is absent in config, use all defaults.
 
 2. Determine the task from `$ARGUMENTS`. Check in order — use first match:
    - **SPEC identifier** (e.g., `SPEC-005`): find the spec folder, use spec + accepted artifacts as primary context
@@ -56,7 +62,33 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 3. Check the **governance chain** — only when a SPEC was resolved:
    - Read spec frontmatter for `status:`. If not `accepted`, warn the user.
-   - Check for spec-artifacts in the spec folder. If any have `status: draft`, warn and ask to proceed.
+   - Check for spec-artifacts in the spec folder. For each artifact file (excluding `spec.md`), read its status from frontmatter (`status: draft` between `---` markers) or comment header (`status=draft` in `%%`, `#`, `--`, or `<!-- -->` lines).
+
+     If any artifacts have `status: draft`:
+     ```
+     ⚠️ These spec artifacts are still in draft:
+        - {artifact filename} (status: draft)
+        - {artifact filename} (status: draft)
+
+        Draft artifacts haven't been reviewed. Planning against them
+        risks implementing a design that changes after review.
+
+        Options:
+        1. Proceed anyway (plan will note artifacts are unreviewed)
+        2. Stop — review and accept artifacts first
+     ```
+
+     If the user picks 1:
+     - Proceed with plan generation
+     - Add a `## Known Risks` section to the generated plan file:
+       ```markdown
+       ## Known Risks
+       - Planning against draft artifacts: {comma-separated list of draft artifact filenames}
+         These may change after review. Re-plan if they do.
+       ```
+
+     If the user picks 2: stop and output:
+     `Review and accept the draft artifacts, then run /edikt:sdlc:plan again.`
    - If artifacts exist and are accepted, read them as planning context.
    - **Inventory all artifacts** — scan the spec directory for every file (excluding `spec.md` itself). Build an artifact inventory:
      ```bash
@@ -76,6 +108,12 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
    ```
 
 6. Generate phases. For each phase, assign a model, write a detailed prompt, set a completion promise, max iterations, and dependencies. Use the Phase Structure and Model Assignment guide in the Reference section.
+
+   When generating each phase, populate the `Context Needed:` field by:
+   - Scanning spec artifacts referenced by the phase (from the inventory built in step 3)
+   - Identifying files produced by dependency phases (from the Artifact Flow Table)
+   - Including any ADRs referenced in the spec frontmatter or phase objectives
+   Each entry must be a specific file path with a brief description of why it's needed.
 
 6b. **Artifact coverage check** — only when a SPEC was resolved and artifacts were inventoried in step 3:
 
@@ -133,6 +171,19 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 8. Write the plan file to `docs/product/plans/PLAN-{slug}.md` (or `docs/plans/` if product dir doesn't exist). Use the Plan File Template in the Reference section.
 
+8b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory.
+
+   For each phase:
+   - Extract acceptance criteria from the plan text
+   - Assign IDs: `AC-{phase}.{seq}` (e.g., AC-1.1, AC-1.2)
+   - If pre-flight criteria validation ran (step 11), populate `verify` with the proposed commands from the evaluator
+   - Set all `status: pending`, `fail_count: 0`, `fail_reason: null`, `last_evaluated: null`
+
+   Schema must match `docs/product/specs/SPEC-001-plan-harness/plan-criteria-schema.yaml`. Top-level fields: `plan`, `generated`, `last_evaluated: null`, `phases[]`.
+
+   The sidecar file is always a sibling of the plan file:
+   `docs/product/plans/PLAN-foo.md` → `docs/product/plans/PLAN-foo-criteria.yaml`
+
 9. Output next steps:
    ```
    ✅ Plan saved: {path}
@@ -156,6 +207,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
     - If user provides updates, incorporate them into the plan file. If user skips, add a `## Known Risks` section listing outstanding findings.
 
 11. Run pre-flight criteria validation on every phase's acceptance criteria:
+    - If `evaluator.preflight` is false, skip this step entirely. Output: "Pre-flight validation skipped (evaluator.preflight: false in config)." Proceed to plan output.
     - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
     - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
     - For TESTABLE criteria, the evaluator proposes a verification command. Add these to a `### Verification Commands` section in each phase.
@@ -197,6 +249,23 @@ Each phase requires:
 - Evaluate flag (true/false — whether phase-end evaluation runs)
 - Max iterations (based on complexity)
 - Dependencies (which phases must complete first)
+- Context Needed (list of file paths the generator must read before starting this phase — spec artifacts, outputs from dependency phases, referenced ADRs)
+
+### Phase Startup Directive
+
+Before implementing any plan phase:
+1. Read every file listed in that phase's Context Needed section.
+2. If a listed file does not exist, check the progress table — the producing phase may not be complete.
+3. Do not proceed until all context files have been read.
+4. After reading, confirm you understand the relevant decisions and constraints before writing code.
+5. If the phase references any spec artifacts in its Context Needed section, check their status:
+   - For each referenced artifact with `status: accepted`, update it to `status: in-progress`:
+     - `.mmd` files: change `status=accepted` to `status=in-progress` in the `%% edikt:artifact` comment
+     - `.yaml` files: change `status=accepted` to `status=in-progress` in the `# edikt:artifact` comment
+     - `.sql` files: change `status=accepted` to `status=in-progress` in the `-- edikt:artifact` comment
+     - `.md` files: change `status: accepted` to `status: in-progress` in YAML frontmatter, or `status=accepted` to `status=in-progress` in `<!-- edikt:artifact -->` comment
+   - Output: `Status promoted: {artifact} accepted → in-progress`
+   - Do not update artifacts already `in-progress`, `implemented`, or `superseded`
 
 ### Acceptance Criteria Rules
 
@@ -215,15 +284,96 @@ Each phase has an `evaluate:` flag:
 - `false` (default for `effort: low` phases) — skip evaluation, go straight to context reset guidance
 - Author can override in either direction
 
+### Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Not started |
+| `in-progress` | Generator is working |
+| `evaluating` | Phase-end evaluator is running |
+| `done` | All acceptance criteria PASS |
+| `stuck` | Max attempts reached — human decision needed |
+| `skipped` | Explicitly skipped by user |
+
 ### Phase-End Flow
 
 When a phase completes (generator outputs the completion promise):
 
-1. **If `evaluate: true`:** Spawn the evaluator agent with the phase's acceptance criteria, code changes, and test results. Wait for PASS/FAIL verdict.
-   - If PASS: proceed to context reset guidance
-   - If FAIL: report failures, ask the user to fix before proceeding
+1. **If `evaluate: true` AND `evaluator.phase-end` is true:**
 
-2. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
+   **a. EVALUATOR FILE CHECK** — before invoking, verify the template exists:
+   - If `evaluator.mode` is `"headless"`: check that `templates/agents/evaluator-headless.md` exists (also check `~/.edikt/templates/agents/evaluator-headless.md` for global install)
+   - If `evaluator.mode` is `"subagent"`: check that `templates/agents/evaluator.md` exists (also check `.claude/agents/evaluator.md`)
+   - If the required file is missing:
+     ```
+     ❌ Evaluator template missing — cannot run evaluation.
+        Expected: {path}
+        Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+        Or disable evaluation: /edikt:config set evaluator.phase-end false
+     ```
+     Do NOT silently skip evaluation. This is a hard failure.
+
+   **b. HEADLESS MODE** (`evaluator.mode: "headless"`): Invoke via Bash tool:
+   ```bash
+   claude -p "{evaluation prompt with criteria + file list}" \
+     --system-prompt "$(cat {path to evaluator-headless.md})" \
+     --allowedTools "Read,Grep,Glob,Bash" \
+     --disallowedTools "Write,Edit" \
+     --model {evaluator.model} \
+     --output-format json \
+     --bare
+   ```
+   The evaluation prompt (user message) must include:
+   - The phase's acceptance criteria (from criteria sidecar if available, or from plan markdown)
+   - The list of files modified during the phase (from `git diff --name-only` or phase output)
+   - The project's test command if available
+
+   Parse the evaluator's JSON output to extract per-criterion PASS/FAIL verdicts.
+
+   **c. SUBAGENT MODE** (`evaluator.mode: "subagent"`): Spawn the evaluator agent via the Agent tool with the phase's acceptance criteria, code changes, and test results. (This is the current behavior — no change needed.)
+
+   **d. Process the verdict:** Wait for PASS/FAIL verdict.
+   - If PASS: proceed to context reset guidance
+   - If FAIL: report failures, then:
+
+     i. **Increment the Attempt column** in the progress table (e.g., `1/{max}` → `2/{max}`).
+
+     ii. **Check criteria sidecar** — read `PLAN-{slug}-criteria.yaml` if it exists. For each failing criterion, check `fail_count`. If `fail_count >= 3`:
+        ```
+        ⚠️ AC-{id} has failed 3 consecutive times.
+           Last reason: {fail_reason}
+           Consider: rewrite the criterion, adjust the approach, or ask for help.
+        ```
+
+     iii. **Forward failures** — before retrying, include the failing criteria in the generator prompt:
+        ```
+        Previous attempt failed. Fix these: {list of failing AC IDs and reasons}
+        ```
+
+     iv. **Stuck detection** — if the Attempt value has reached `MAX_ATTEMPTS` (e.g., `5/5`), set the phase status to `stuck` and output:
+        ```
+        Phase {n} is stuck after {max} attempts.
+        Options:
+          1. Continue trying (increase max)
+          2. Skip this phase
+          3. Rewrite failing criteria
+          4. Stop and review
+        ```
+        Wait for the user's choice before proceeding.
+
+     v. **Update criteria sidecar** — after evaluation, update `PLAN-{slug}-criteria.yaml`:
+        - Read the sidecar file (skip silently if it doesn't exist)
+        - For each criterion the evaluator judged: update `status` (pass/fail), `last_evaluated` (ISO date), `fail_reason` (if fail)
+        - Increment `fail_count` for each fail (reset to 0 on pass)
+        - Update phase-level `status` and `attempt`
+        - Write back to the same file
+
+2. **If `evaluate: true` AND `evaluator.phase-end` is false:**
+   Skip evaluation. Output: "Phase-end evaluation skipped (evaluator.phase-end: false in config)."
+   The criteria sidecar is still updated with criteria status remaining as `pending` (not evaluated).
+   Proceed directly to context reset guidance.
+
+3. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
    ```
    Phase {n} complete. For best results on Phase {n+1}:
      1. Start a new session
@@ -309,10 +459,10 @@ Domains detected: {list} ({n} of 6 checked)
 
 ## Progress
 
-| Phase | Status | Updated |
-|-------|--------|---------|
-| 1     | -      | -       |
-| 2     | -      | -       |
+| Phase | Status | Attempt | Updated |
+|-------|--------|---------|---------|
+| 1     | pending | 0/{max} | -      |
+| 2     | pending | 0/{max} | -      |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
@@ -328,6 +478,12 @@ Domains detected: {list} ({n} of 6 checked)
 | 2     | None      | 1             |
 | 3     | 1, 2      | -             |
 
+## Artifact Flow
+
+| Producing Phase | Artifact | Consuming Phase(s) |
+|-----------------|----------|---------------------|
+| {n} | `{file path}` | {phase numbers} |
+
 ## Phase 1: {Title}
 
 **Objective:** {brief description}
@@ -336,6 +492,10 @@ Domains detected: {list} ({n} of 6 checked)
 **Completion Promise:** `{SHELL SAFE PROMISE}`
 **Evaluate:** {true | false}
 **Dependencies:** {None or phase numbers}
+**Context Needed:**
+- `docs/product/specs/SPEC-NNN/contracts/api-orders.yaml` — API contract from spec artifacts
+- `internal/repository/orders.go` — repository created in Phase 2
+- `docs/architecture/decisions/ADR-012.md` — error handling decision
 
 **Acceptance Criteria:**
 - [ ] {Binary assertion — e.g., "Cache adapter implements get/set/delete with TTL parameter"}

@@ -88,7 +88,8 @@ Claude matches intent, not exact words. These are representative examples — an
 | Security audit | "run a security audit", "check for vulnerabilities", "security check" | `/edikt:sdlc:audit` |
 | Check documentation gaps | "check for doc gaps", "what docs are outdated", "audit documentation" | `/edikt:docs:review` |
 | Validate setup | "check my setup", "is everything configured right", "health check" | `/edikt:doctor` |
-| Initialize project | "set up edikt", "initialize this project", "onboard this repo" | `/edikt:init` |
+| Initialize project or onboard | "set up edikt", "initialize this project", "onboard this repo", "validate my environment", "onboard me", "team setup" | `/edikt:init` |
+| View or change config | "show config", "change config", "disable quality gates", "what can I configure" | `/edikt:config` |
 | Import existing docs | "import existing docs", "onboard these docs", "intake our documentation" | `/edikt:docs:intake` |
 | Update rule packs | "check for rule updates", "are my rules outdated", "update rules" | `/edikt:gov:rules-update` |
 | Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:gov:sync` |
@@ -96,7 +97,7 @@ Claude matches intent, not exact words. These are representative examples — an
 | Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
 | List or manage agents | "what agents do we have", "add the security agent" | `/edikt:agents` |
 | Set up integrations | "setup Linear", "connect Jira" | `/edikt:mcp` |
-| Team onboarding | "validate my environment", "onboard me" | `/edikt:team` |
+| Team onboarding *(deprecated)* | — | `/edikt:team` *(redirects to init)* |
 
 These are defined in `CLAUDE.md` — you can add your own triggers by editing that file.
 

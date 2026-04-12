@@ -12,6 +12,7 @@ Compile and maintain the rules Claude follows.
 | [`/edikt:gov:review`](/commands/gov/review) | Review governance doc language for enforceability and clarity |
 | [`/edikt:gov:rules-update`](/commands/gov/rules-update) | Check for outdated rule packs and update them |
 | [`/edikt:gov:sync`](/commands/gov/sync) | Translate linter configs into Claude rule packs |
+| [`/edikt:gov:score`](/commands/gov/score) | Aggregate governance quality scoring |
 
 ## SDLC Chain
 
@@ -67,7 +68,8 @@ Everything you'll run session to session.
 | [`/edikt:upgrade`](/commands/upgrade) | Upgrade hooks, agents, and rules to the latest edikt version |
 | [`/edikt:agents`](/commands/agents) | List, install, and manage specialist agent templates |
 | [`/edikt:mcp`](/commands/mcp) | Connect to Linear, GitHub, or Jira via MCP |
-| [`/edikt:team`](/commands/team) | Validate team member setup and show shared config |
+| [`/edikt:config`](/commands/config) | View and modify project configuration |
+| `/edikt:team` (deprecated) | Merged into /edikt:init and /edikt:config |
 
 ## You don't need to remember them
 

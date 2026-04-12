@@ -226,7 +226,8 @@ assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "specs:" "Config has spe
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "prds:" "Config has prds path"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "guidelines:" "Config has guidelines path"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "reports:" "Config has reports path"
-assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "soul:" "Config has soul path"
+assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "project-context:" "Config has project-context path"
+assert_file_not_contains "$PROJECT_ROOT/.edikt/config.yaml" "  soul:" "Config does not use deprecated soul key"
 
 # Config has features section
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "features:" "Config has features: section"
@@ -235,6 +236,20 @@ assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "session-summary:" "Conf
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "signal-detection:" "Config has signal-detection feature"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "plan-injection:" "Config has plan-injection feature"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "quality-gates:" "Config has quality-gates feature"
+
+# ============================================================
+# Config key migration: soul → project-context (v0.4.0)
+# ============================================================
+
+# Commands reference project-context, not soul
+assert_file_not_contains "$PROJECT_ROOT/commands/config.md" "paths.soul" "config.md uses project-context not soul"
+assert_file_not_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "paths.soul" "prd.md uses project-context not soul"
+assert_file_not_contains "$PROJECT_ROOT/commands/brainstorm.md" "paths.soul" "brainstorm.md uses project-context not soul"
+assert_file_not_contains "$PROJECT_ROOT/commands/init.md" "  soul:" "init.md config template uses project-context not soul"
+
+# Upgrade command has migration path
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "paths.soul" "Upgrade command documents soul migration"
+assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "paths.project-context" "Upgrade command documents project-context target"
 
 # ============================================================
 # Hook modernization (v0.2.0)
@@ -291,15 +306,17 @@ assert_file_contains "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" "quality-g
 
 AGENTS_DIR="$PROJECT_ROOT/templates/agents"
 
-# All agents must have maxTurns
+# All agents must have maxTurns (evaluator-headless is a headless system prompt — no frontmatter)
 for agent in "$AGENTS_DIR"/*.md; do
     name=$(basename "$agent" .md)
+    [ "$name" = "evaluator-headless" ] && continue
     assert_file_contains "$agent" "maxTurns:" "$name has maxTurns"
 done
 
-# All agents must have effort
+# All agents must have effort (evaluator-headless is a headless system prompt — no frontmatter)
 for agent in "$AGENTS_DIR"/*.md; do
     name=$(basename "$agent" .md)
+    [ "$name" = "evaluator-headless" ] && continue
     assert_file_contains "$agent" "effort:" "$name has effort"
 done
 
@@ -392,8 +409,8 @@ assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "assumptions.md" "Upgra
 assert_file_contains "$PROJECT_ROOT/website/guides/security.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Security guide documents env scrub"
 assert_file_contains "$PROJECT_ROOT/website/guides/security.md" "failIfUnavailable" "Security guide documents sandbox enforcement"
 
-# Team command checks env hardening
-assert_file_contains "$PROJECT_ROOT/commands/team.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Team command checks env scrub"
+# Init command checks env hardening (migrated from team)
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB" "Init checks env scrub"
 
 # Website documents SendMessage auto-resume
 assert_file_contains "$PROJECT_ROOT/website/agents.md" "SendMessage" "Website documents agent resumption"
@@ -401,7 +418,7 @@ assert_file_contains "$PROJECT_ROOT/website/agents.md" "auto-resumes" "Website e
 
 # Website documents evaluator agent
 assert_file_contains "$PROJECT_ROOT/website/agents.md" "evaluator" "Website documents evaluator agent"
-assert_file_contains "$PROJECT_ROOT/website/agents.md" "phase boundaries" "Website explains phase-end evaluation"
+assert_file_contains "$PROJECT_ROOT/website/agents.md" "Phase-end" "Website explains phase-end evaluation"
 
 # ============================================================
 # Headless & CI foundations (v0.2.0)
@@ -422,9 +439,9 @@ assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "EDIKT_HEADLESS" "CI g
 assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "failIfUnavailable" "CI guide documents sandbox enforcement"
 assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "GitHub Actions" "CI guide has GitHub Actions example"
 
-# Team command detects managed settings
-assert_file_contains "$PROJECT_ROOT/commands/team.md" "managed-settings" "Team command detects managed settings"
-assert_file_contains "$PROJECT_ROOT/commands/team.md" "managed-settings.d" "Team command detects policy fragments"
+# Init command detects managed settings (migrated from team)
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings" "Init detects managed settings"
+assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings.d" "Init detects policy fragments"
 
 # Install includes headless hook
 if grep -qF "headless-ask" "$PROJECT_ROOT/install.sh" 2>/dev/null; then

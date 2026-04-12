@@ -44,6 +44,17 @@ Doctor also validates the consistency of the governance graph:
 | Orphan artifacts | ADRs, PRDs, or specs not referenced by any other artifact |
 | Stale artifacts | PRDs or specs stuck in `draft` for more than 7 days |
 | State machine violations | Specs referencing unaccepted PRDs, or plans referencing draft artifacts |
+| Stale spec-artifact drafts | Spec artifacts (data models, contracts, migrations, fixtures) in `draft` for more than 7 days |
+
+**Spec-artifact stale drafts:**
+For each spec directory, doctor checks all artifacts (data models, contracts, migrations, fixtures) for `status: draft`. If an artifact has been in draft for more than 7 days (by file modification time), doctor flags it:
+
+```text
+[!!] SPEC-005/data-model.mmd has been draft for 12 days — review and accept, or remove
+[!!] SPEC-005/contracts/api.yaml has been draft for 12 days — review and accept, or remove
+```
+
+Doctor parses status from both YAML frontmatter (`status: draft`) and comment headers (`status=draft` in `%%`, `#`, `--`, or `<!-- -->` format).
 
 ## Output
 

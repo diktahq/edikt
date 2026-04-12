@@ -1,0 +1,64 @@
+# Schema: plan-criteria.yaml
+#
+# This is the REFERENCE SCHEMA for the structured criteria sidecar file
+# emitted alongside every plan by /edikt:sdlc:plan. The evaluator agent
+# reads and updates this file after every phase evaluation.
+#
+# File location: same directory as the plan file.
+#   e.g., docs/plans/PLAN-foo.md → docs/plans/PLAN-foo-criteria.yaml
+#
+# Lifecycle:
+#   1. /edikt:sdlc:plan creates it (all criteria status: pending)
+#   2. Phase 1 pre-flight populates verify commands
+#   3. Evaluator updates status, last_evaluated, fail_reason after each eval
+#   4. Human reviews accuracy and updates evaluator-tuning.md
+#   5. /edikt:doctor queries it for plan health dashboard
+
+# --- Schema definition ---
+
+plan: "PLAN-{slug}"            # matches the plan filename
+generated: "YYYY-MM-DD"        # date the criteria file was generated
+last_evaluated: "YYYY-MM-DD"   # date of the most recent evaluation run
+
+phases:
+  - phase: 1                   # phase number (matches plan)
+    title: "Phase title"       # human-readable, matches plan
+    status: "pending"          # phase-level: pending | in-progress | done | stuck | skipped
+    attempt: "0/3"             # current attempt / max iterations
+    criteria:
+      - id: "AC-1.1"          # unique within the plan, format: AC-{phase}.{seq}
+        description: "..."     # exact text from the plan's acceptance criteria
+        status: "pending"      # pending | pass | fail
+        verify: "grep ..."    # shell command that returns exit 0 on pass, non-zero on fail
+                               # populated by pre-flight evaluator (Phase 1 of harness plan)
+                               # null if no mechanical verification is possible
+        last_evaluated: null   # ISO date of last evaluation, null if never
+        fail_reason: null      # evaluator's specific finding on failure, null if pass/pending
+        fail_count: 0          # consecutive failures (for backoff logic)
+
+# --- Example ---
+
+# plan: PLAN-long-running-harness
+# generated: 2026-04-10
+# last_evaluated: null
+#
+# phases:
+#   - phase: 1
+#     title: Pre-flight Criteria Validation
+#     status: pending
+#     attempt: "0/3"
+#     criteria:
+#       - id: AC-1.1
+#         description: "evaluator.md has a Pre-flight Mode section"
+#         status: pending
+#         verify: "grep -c 'Pre-flight Mode' templates/agents/evaluator.md"
+#         last_evaluated: null
+#         fail_reason: null
+#         fail_count: 0
+#       - id: AC-1.2
+#         description: "Pre-flight outputs READY/NEEDS REWRITE/BLOCKED"
+#         status: pending
+#         verify: "grep -cE 'READY|NEEDS REWRITE|BLOCKED' templates/agents/evaluator.md"
+#         last_evaluated: null
+#         fail_reason: null
+#         fail_count: 0

@@ -25,7 +25,7 @@ Beyond the conversational experience, the structural difference:
 - **Governance chain** — PRD → spec → artifacts → plan → execute → drift detection. Every decision is traceable. (You verify instead of trust.)
 - **Compiled directives** — your ADRs and invariants become enforcement rules. Update the decision, recompile. (Decisions persist instead of drift.)
 - **Quality gates** — Critical findings block progression. Overrides are logged. (Standards are enforced, not suggested.)
-- **Specialist agents** — 18 domain agents review plans and implementations. (Expert review without the experts.)
+- **Specialist agents** — 20 domain agents review plans and implementations. (Expert review without the experts.)
 - **Path-conditional rules** — Go rules fire on Go files. No noise. (Precise enforcement, not blanket instructions.)
 
 On a team, the gap widens: a shared CLAUDE.md requires every engineer to read it, remember it, and follow it. edikt's rules fire automatically — no per-engineer discipline required.

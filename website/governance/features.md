@@ -45,7 +45,7 @@ features:
 
 ### signal-detection
 
-After every Claude response, scans for uncaptured architectural decisions and suggests `/edikt:adr` or `/edikt:invariant`. Disable if the suggestions feel noisy or your team captures decisions through a different process.
+After every Claude response, scans for uncaptured architectural decisions and suggests `/edikt:adr:new` or `/edikt:invariant:new`. Disable if the suggestions feel noisy or your team captures decisions through a different process.
 
 ```yaml
 features:
@@ -69,6 +69,31 @@ When a specialist agent configured as a gate (e.g., `security`) finds a critical
 features:
   quality-gates: false
 ```
+
+## Evaluator
+
+The evaluator validates acceptance criteria at two points: pre-flight (before a phase starts) and phase-end (after completion). Both are configurable:
+
+```yaml
+evaluator:
+  preflight: true          # pre-flight criteria validation
+  phase-end: true          # phase-end evaluation
+  mode: headless           # headless | subagent
+  max-attempts: 5          # max retries before stuck
+  model: sonnet            # model for headless evaluator
+```
+
+| Key | Default | What it controls |
+|-----|---------|-----------------|
+| `preflight` | `true` | Validates criteria are testable before the generator starts |
+| `phase-end` | `true` | Verifies completed work meets acceptance criteria |
+| `mode` | `headless` | `headless` runs a separate `claude -p` (zero shared context). `subagent` runs within the session. |
+| `max-attempts` | `5` | Max phase retries before marking as stuck |
+| `model` | `sonnet` | Model used for headless evaluator invocation |
+
+When both `preflight` and `phase-end` are `false`, the evaluator is disabled. The criteria sidecar is still emitted.
+
+See [Evaluator](/governance/evaluator) for the full comparison of headless vs subagent mode.
 
 ## What's always on
 

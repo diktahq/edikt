@@ -221,7 +221,7 @@ _fetch() {
 }
 
 # Flat commands (top-level)
-FLAT_COMMANDS=(init upgrade doctor status context brainstorm session team agents mcp capture)
+FLAT_COMMANDS=(init upgrade doctor status context brainstorm session config agents mcp capture)
 for cmd in "${FLAT_COMMANDS[@]}"; do
   dest="${CLAUDE_COMMANDS}/edikt/${cmd}.md"
   if [ -f "$dest" ] && grep -qF '<!-- edikt:custom -->' "$dest" 2>/dev/null; then
@@ -281,7 +281,7 @@ for cmd in review intake; do
 done
 
 # deprecated namespace
-for cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake; do
+for cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake team; do
   _install_ns_cmd deprecated "$cmd"
 done
 

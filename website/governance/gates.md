@@ -91,6 +91,42 @@ Gates are checked at three points:
 
 **Command reference:** `/edikt:sdlc:audit`
 
+## Override flow
+
+When a gate fires, Claude presents the finding and asks for your decision:
+
+```text
+⛔ GATE: security — critical finding
+   SQL injection risk in orders/handler.go:47
+
+   This gate must be resolved before proceeding.
+   Override this gate? (y/n)
+   Note: override will be logged with your git identity.
+```
+
+If you override, the decision is logged to `~/.edikt/events.jsonl` with your git name and email. If you decline, that's logged too. Engineers can override individual findings — but every override is traceable.
+
+## Re-fire prevention
+
+After you override a finding, it won't fire again for the rest of your session. A session is a single Claude Code invocation — when you close Claude and reopen it, the override expires and the gate fires again (reminding you the issue is still there).
+
+Overrides are stored in `~/.edikt/gate-overrides.jsonl` and cleared by the SessionStart hook at the beginning of each session.
+
+## Audit log
+
+All gate events are logged to `~/.edikt/events.jsonl`:
+
+```jsonl
+{"ts":"2026-04-11T10:30:00Z","event":"gate_fired","agent":"security","severity":"critical","finding":"SQL injection in orders/handler.go:47"}
+{"ts":"2026-04-11T10:31:00Z","event":"gate_override","agent":"security","finding":"SQL injection in orders/handler.go:47","user":"Daniel Gomes","email":"daniel@example.com"}
+```
+
+Three event types: `gate_fired` (hook detected critical finding), `gate_override` (user chose to proceed), `gate_blocked` (user chose to stop and fix). Query with jq:
+
+```bash
+jq 'select(.event == "gate_override")' ~/.edikt/events.jsonl
+```
+
 ## CI integration
 
 For CI pipelines, run `/edikt:sdlc:drift --output=json`. Exit code `1` if any diverged findings exist. This integrates with any CI system that checks exit codes.

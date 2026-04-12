@@ -67,7 +67,7 @@ assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "PostToolUse" 
 assert_file_contains "$PROJECT_ROOT/templates/hooks/session-start.sh" "git log" "SessionStart hook is git-aware"
 
 # Flat commands exist
-for cmd in init context status doctor upgrade agents mcp team session brainstorm capture; do
+for cmd in init context status doctor upgrade agents mcp config session brainstorm capture; do
     assert_file_exists "$PROJECT_ROOT/commands/${cmd}.md" "commands/${cmd}.md exists"
 done
 
@@ -77,7 +77,7 @@ for cmd_path in adr/new invariant/new sdlc/prd sdlc/plan sdlc/spec sdlc/artifact
 done
 
 # Deprecated stubs exist
-for cmd in adr invariant prd plan review drift audit docs intake rules-update sync compile review-governance spec spec-artifacts; do
+for cmd in adr invariant prd plan review drift audit docs intake rules-update sync compile review-governance spec spec-artifacts team; do
     assert_file_exists "$PROJECT_ROOT/commands/deprecated/${cmd}.md" "commands/deprecated/${cmd}.md exists"
 done
 
