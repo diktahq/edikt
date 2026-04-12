@@ -171,6 +171,13 @@ installed_hash=$(md5 -q .claude/agents/{slug}.md 2>/dev/null || md5sum .claude/a
 
 Do NOT touch agents that have no matching template (user-created agents) or that are marked as custom.
 
+**Detect new agents.** List files in `~/.edikt/templates/agents/`. For each template, check if a matching file exists in `.claude/agents/`. If a template has no installed counterpart, it's a new agent added in this version — mark it as "new — will install".
+
+```
+New agents available in v{version}:
+  + evaluator-headless.md (new in v0.4.0)
+```
+
 #### 2d. Config check
 
 Read `.edikt/config.yaml`. Check for missing keys that were added in newer versions:
@@ -276,6 +283,7 @@ Hooks (.claude/settings.json)
 Agents (.claude/agents/)
   ⬆  dba.md   — template updated
   ⬆  security.md  — template updated
+  +  evaluator-headless.md — new in v0.4.0
   ✓  architect.md  — up to date
 
 Rule packs (.claude/rules/)
@@ -352,6 +360,10 @@ For each outdated agent:
 1. Read the installed file
 2. Read the template
 3. Replace the installed file with the template content
+
+For each new agent (template exists, no installed file):
+1. Copy the template to `.claude/agents/{slug}.md`
+2. Note as "installed (new in v{version})"
 
 Skip agents without a matching template. Skip user-created agents (no matching template slug).
 
