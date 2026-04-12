@@ -12,27 +12,28 @@ edikt governs your architecture and compiles your engineering decisions into aut
 
 edikt is the governance layer for agentic engineering. It delivers on the vision through two systems that work independently but reinforce each other.
 
-**Architecture governance & compliance.** Capture architecture decisions (ADRs), hard constraints (invariants), and team conventions (guidelines). `/edikt:compile` reads all three, checks for contradictions, and produces a single governance file Claude reads automatically — every session, before writing any code. Rule packs add correctness guardrails to the same enforcement surface. Signal detection suggests capturing new decisions mid-session. Together, governed decisions and compiled enforcement define everything Claude must follow.
+**Architecture governance & compliance.** Capture architecture decisions (ADRs), hard constraints (invariants), and team conventions (guidelines). `/edikt:gov:compile` reads all three, checks for contradictions, and produces topic-grouped rule files under `.claude/rules/` that Claude reads automatically — every session, before writing any code. Rule packs add correctness guardrails to the same enforcement surface. Signal detection suggests capturing new decisions mid-session. Together, governed decisions and compiled enforcement define everything Claude must follow.
 
-**Agentic SDLC governance.** A status-gated chain — PRD → spec → artifacts → plan → execute → drift detection — where each step is reviewed by specialist agents, constrained by compiled governance, and produces new decisions that feed back into the next compilation.
+**Agentic SDLC governance.** A status-gated chain — PRD → spec → artifacts → plan → execute → drift detection — where each step is reviewed by specialist agents, constrained by compiled governance, and produces new decisions that feed back into the next compilation. Quality gates let specialist agents block completion on critical findings. The plan harness tracks iterations with backoff, hands off context between phases, and carries acceptance criteria as a structured sidecar so the evaluator checks against the criteria you defined.
 
 The two systems create a flywheel: the lifecycle produces engineering decisions, and compiled decisions govern the lifecycle. Decisions compound rather than decay. Every session is more governed than the last.
 
 ## Problem It Solves
 
-Claude Code has memory — but it's local to each engineer, never shared, never consistent across a team. There's no governance: no enforced standards, no persistent decisions, no feedback loop when Claude drifts from what the team agreed on.
+Rules written in CLAUDE.md are context — the model reads them but doesn't enforce them. By mid-session, with a full codebase loaded and multiple tasks completed, guidelines lose weight. Context and enforcement are not the same thing.
 
 edikt fixes this by:
 
-1. **Governing architecture and compiling into enforcement** — ADRs, invariants, and guidelines are captured, managed, and compiled into directives Claude follows automatically every session
+1. **Governing architecture and compiling into enforcement** — ADRs, invariants, and guidelines are captured, managed, and compiled into enforcement-grade directives with primacy/recency attention mechanics
 2. **Governing the Agentic SDLC** — PRD → spec → artifacts → plan → execute → drift detection, with status enforcement at each transition
-3. **Enforcing through hooks** — 9 lifecycle hooks: auto-format, plan injection, compaction recovery, signal detection, quality gates
-4. **Specialist review** — 20 domain agents (DBA, security, SRE, architect) review plans and implementations
-5. **Detecting drift** — Verifies implementation matches the spec, PRD, and ADRs with confidence-based severity
+3. **Enforcing through hooks** — 13 lifecycle hooks: auto-format, plan injection, compaction recovery, signal detection, quality gates, file change detection
+4. **Specialist review** — 19 domain agents (DBA, security, SRE, architect, evaluator, and more) review plans and implementations
+5. **Quality gates** — specialist agents block phase completion on critical findings before work is marked done
+6. **Detecting drift** — Verifies implementation matches the spec, PRD, and ADRs with confidence-based severity
 
 ## Who Uses It
 
-Engineers who own the full spec-to-implementation cycle with Claude Code — solo agentic engineers, team leads standardizing AI across their team, and consultancies applying a repeatable methodology across client projects.
+Engineers who use Claude Code daily and own the full spec-to-implementation cycle. Solo agentic engineers, team leads standardizing AI across their team, and consultancies applying a repeatable methodology across client projects. Teams get the same governance automatically — compiled rules live in the repo, `/edikt:init` onboards a new engineer in one command.
 
 ## Core Principles
 
@@ -63,7 +64,7 @@ Engineers who own the full spec-to-implementation cycle with Claude Code — sol
 
 edikt — an authoritative decree. You capture engineering decisions. edikt compiles them into decrees your AI agent follows automatically.
 
-Part of the K-family: dikta (platform) → edikt (governance) → verikt (architecture validation). All derived from Latin authority words with an engineered K.
+Part of the dikta family: dikta (umbrella) → edikt (governance) → verikt (architecture validation). All derived from Latin authority words with an engineered K.
 
 ## Category
 
