@@ -139,7 +139,7 @@ paths:
   prds: docs/product/prds
   guidelines: docs/guidelines
   reports: docs/reports
-  soul: docs/project-context.md
+  project-context: docs/project-context.md
 
 rules:
   code-quality: { include: all }

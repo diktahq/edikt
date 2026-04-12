@@ -56,7 +56,7 @@ edikt config — {project_name or repo directory name}
  prds:         {value}     (default: docs/product/prds)
  brainstorms:  {value}     (default: docs/brainstorms)
  reports:      {value}     (default: docs/reports)
- soul:         {value}     (default: docs/project-context.md)
+ project-context: {value}  (default: docs/project-context.md)
 
  FEATURES
  ────────
@@ -177,7 +177,7 @@ Run /edikt:config to see all available keys.
 | `paths.prds` | `docs/product/prds` | any path | prd | PRD directory |
 | `paths.brainstorms` | `docs/brainstorms` | any path | brainstorm | Brainstorm artifacts (gitignored by default) |
 | `paths.reports` | `docs/reports` | any path | audit, drift | Drift reports, audits (gitignored by default) |
-| `paths.soul` | `docs/project-context.md` | any file path | context, init | Project identity file |
+| `paths.project-context` | `docs/project-context.md` | any file path | context, init | Project identity file |
 | `features.auto-format` | `true` | `true`, `false` | PostToolUse hook | Format files after edits |
 | `features.session-summary` | `true` | `true`, `false` | SessionStart hook | Show changes since last session |
 | `features.signal-detection` | `true` | `true`, `false` | Stop hook | Detect uncaptured ADR/invariant candidates |

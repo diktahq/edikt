@@ -226,7 +226,7 @@ assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "specs:" "Config has spe
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "prds:" "Config has prds path"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "guidelines:" "Config has guidelines path"
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "reports:" "Config has reports path"
-assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "soul:" "Config has soul path"
+assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "project-context:" "Config has project-context path"
 
 # Config has features section
 assert_file_contains "$PROJECT_ROOT/.edikt/config.yaml" "features:" "Config has features: section"

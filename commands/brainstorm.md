@@ -41,7 +41,7 @@ Check if `--fresh` is in `$ARGUMENTS`. If present, strip it from arguments befor
 - **Grounded mode** (default, no `--fresh`):
   Run `/edikt:context` logic. Load project context, ADRs, invariants, active specs, and config. This grounds the conversation in what exists.
 
-  Read `.edikt/config.yaml` for paths. Read `docs/project-context.md` (or configured `paths.soul`). List ADRs, invariants, and active specs.
+  Read `.edikt/config.yaml` for paths. Read `docs/project-context.md` (or configured `paths.project-context`). List ADRs, invariants, and active specs.
 
   Output:
   ```

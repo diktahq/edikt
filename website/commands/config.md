@@ -93,7 +93,7 @@ All paths are relative to the repo root.
 | `paths.prds` | `docs/product/prds` | PRD directory |
 | `paths.brainstorms` | `docs/brainstorms` | Brainstorm artifacts (gitignored by default) |
 | `paths.reports` | `docs/reports` | Drift reports, audits (gitignored by default) |
-| `paths.soul` | `docs/project-context.md` | Project identity file — read by `/edikt:context` |
+| `paths.project-context` | `docs/project-context.md` | Project identity file — read by `/edikt:context` |
 | `paths.templates` | `.edikt/templates` | Template override directory (per ADR-005) |
 
 ### `features.*` — Optional behaviors

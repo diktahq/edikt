@@ -14,7 +14,7 @@ paths:
   prds: docs/product/prds
   guidelines: docs/guidelines
   reports: docs/reports
-  soul: docs/project-context.md
+  project-context: docs/project-context.md
 
 rules: {}  # no rules needed for a markdown-only project
 
