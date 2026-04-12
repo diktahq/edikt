@@ -30,8 +30,13 @@ Quality gates now log overrides with accountability, and artifact lifecycle is e
 - **Drift status filter:** skips `draft` and `superseded` artifacts, validates the rest.
 - **Doctor:** flags spec-artifacts stuck in draft > 7 days. Parses both YAML frontmatter and comment header status formats.
 
+### Breaking changes
+
+- **Config key rename:** `paths.soul` → `paths.project-context`. `/edikt:upgrade` auto-migrates existing configs. Commands fall back to `soul` if `project-context` is not found.
+
 ### Documentation
 
+- Updated `project-context.md` for v0.4.0: hook count (9→13), agent count (20→19), quality gates, plan harness features, context vs enforcement framing
 - Fixed 12 pre-existing documentation gaps (stale agent/hook/command counts, old command names in AGENTS.md, missing index entries)
 - Updated website: plan, gates, chain, features, doctor, drift pages with v0.4.0 features
 - Removed stale AGENTS.md (Codex convention — edikt is Claude Code only per ADR-001)
