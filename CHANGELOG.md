@@ -1,5 +1,17 @@
 # edikt changelog
 
+## v0.4.1 (2026-04-12)
+
+### Bug fixes
+
+- **Upgrade: new agent detection.** `/edikt:upgrade` now detects agent templates added in newer versions. Core agents (evaluator, evaluator-headless) are installed automatically. Optional agents are offered to the user with a description — declined agents are added to `agents.custom` so future upgrades skip them.
+- **Upgrade: config migration.** `paths.soul` renamed to `paths.project-context`. Upgrade auto-migrates existing configs.
+- **CodeRabbit review fixes.** Subagent-stop override check now matches agent + finding on the same line (was two independent greps). WEAK PASS exit code corrected to 0. .gitignore negation patterns fixed. BSD-only stat removed from SPEC-003. Agent count corrected to 18 across website docs.
+
+### Documentation
+
+- Updated `project-context.md` for v0.4.0: hook count (9→13), agent count, quality gates, plan harness features.
+
 ## v0.4.0 (2026-04-11)
 
 ### Plan Harness: Iteration Tracking, Context Handoff, Criteria Sidecar
