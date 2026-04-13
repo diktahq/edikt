@@ -2,8 +2,8 @@
 name: edikt:sdlc:spec
 description: "Technical specification from an accepted PRD"
 effort: high
+argument-hint: "<PRD identifier, e.g. PRD-005>"
 ---
-
 !`SPEC_DIR=$(grep "^  specs:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$SPEC_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); SPEC_DIR="${BASE}/product/specs"; fi; COUNT=$(ls -d "${SPEC_DIR}/"SPEC-*/spec.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls -d "${SPEC_DIR}/"SPEC-*/spec.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {} | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext SPEC number: SPEC-%s\nExisting specs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
 
 # edikt:spec

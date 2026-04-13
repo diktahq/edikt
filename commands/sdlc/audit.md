@@ -25,7 +25,7 @@ CRITICAL: NEVER skip OWASP categories or secret detection patterns — run every
 
 0. If `--json` is in `$ARGUMENTS`, output only the JSON format at the end — no progress indicators, no emoji, no prose.
 
-1. Check `$ARGUMENTS` for `--no-edikt`. If present, strip it and use remaining text as scope, then jump to step 6 (Inline Audit Mode).
+1. Check `$ARGUMENTS` for `--no-edikt`. If present, strip it and use remaining text as scope, then jump to step 11 (Inline Audit Mode).
 
 2. Display progress: `Step 1/4: Scanning codebase...`
 

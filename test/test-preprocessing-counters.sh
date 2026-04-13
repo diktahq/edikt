@@ -8,7 +8,7 @@
 # - Baked-in static output (missing preprocessing block)
 set -uo pipefail
 
-PROJECT_ROOT="${1:-.}"
+PROJECT_ROOT="$(cd "${1:-.}" && pwd)"
 source "$(dirname "$0")/helpers.sh"
 
 echo ""
@@ -190,5 +190,47 @@ if [ "$INV_NEXT" = "002" ]; then pass "Next INV is INV-002"; else fail "Next INV
 if [ "$SPEC_NEXT" = "003" ]; then pass "Next SPEC is SPEC-003"; else fail "Next SPEC is SPEC-$SPEC_NEXT, expected SPEC-003"; fi
 
 cd "$PROJECT_ROOT"
+
+# ============================================================
+# Preprocessing format regression — no blank line before !` block,
+# argument-hint present on all commands with preprocessing
+# ============================================================
+
+echo ""
+echo -e "${BOLD}Preprocessing format regression${NC}"
+
+PREPROC_CMDS=$(grep -rl '^!`' "$PROJECT_ROOT/commands/" 2>/dev/null)
+
+for cmd in $PREPROC_CMDS; do
+    name=$(basename "$cmd")
+
+    # No blank line between frontmatter closing --- and !` preprocessing
+    # The !` must be on the line immediately after the closing ---
+    line_after_frontmatter=$(awk '/^---$/{c++} c==2{getline; print; exit}' "$cmd")
+    if echo "$line_after_frontmatter" | grep -q '^!`'; then
+        pass "$name: no blank line before preprocessing"
+    else
+        fail "$name: blank line between frontmatter and preprocessing (causes shell corruption)"
+    fi
+
+    # argument-hint must be present in frontmatter
+    if grep -q "argument-hint" "$cmd"; then
+        pass "$name: has argument-hint in frontmatter"
+    else
+        fail "$name: missing argument-hint in frontmatter"
+    fi
+
+    # awk '{print $2}' must be inside single quotes (not corrupted)
+    if grep '^!`' "$cmd" | grep -q "awk '{print \$2}'"; then
+        pass "$name: awk pattern intact"
+    else
+        # Some commands may not use awk — only fail if they have awk at all
+        if grep '^!`' "$cmd" | grep -q "awk"; then
+            fail "$name: awk pattern corrupted in preprocessing"
+        else
+            pass "$name: no awk in preprocessing (ok)"
+        fi
+    fi
+done
 
 test_summary

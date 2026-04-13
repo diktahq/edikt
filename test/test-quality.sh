@@ -252,6 +252,58 @@ assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "paths.soul" "Upgrade c
 assert_file_contains "$PROJECT_ROOT/commands/upgrade.md" "paths.project-context" "Upgrade command documents project-context target"
 
 # ============================================================
+# Command step ordering — prevent premature conclusions
+# ============================================================
+
+# plan.md: pre-flight (step 8) must come BEFORE write plan file (step 10)
+PLAN_CMD="$PROJECT_ROOT/commands/sdlc/plan.md"
+PLAN_PREFLIGHT_LINE=$(grep -n "Run pre-flight specialist review" "$PLAN_CMD" | head -1 | cut -d: -f1)
+PLAN_WRITE_LINE=$(grep -n "Write the plan file" "$PLAN_CMD" | head -1 | cut -d: -f1)
+PLAN_OUTPUT_LINE=$(grep -n "Output next steps" "$PLAN_CMD" | head -1 | cut -d: -f1)
+
+if [ -n "$PLAN_PREFLIGHT_LINE" ] && [ -n "$PLAN_WRITE_LINE" ] && [ "$PLAN_PREFLIGHT_LINE" -lt "$PLAN_WRITE_LINE" ]; then
+    pass "plan.md: pre-flight review before write plan file"
+else
+    fail "plan.md: pre-flight review (line $PLAN_PREFLIGHT_LINE) must come before write plan file (line $PLAN_WRITE_LINE)"
+fi
+
+if [ -n "$PLAN_PREFLIGHT_LINE" ] && [ -n "$PLAN_OUTPUT_LINE" ] && [ "$PLAN_PREFLIGHT_LINE" -lt "$PLAN_OUTPUT_LINE" ]; then
+    pass "plan.md: pre-flight review before output next steps"
+else
+    fail "plan.md: pre-flight review (line $PLAN_PREFLIGHT_LINE) must come before output next steps (line $PLAN_OUTPUT_LINE)"
+fi
+
+# plan.md: "Next: Review the plan" must not appear before pre-flight
+PLAN_NEXT_LINE=$(grep -n "Next:.*execute Phase\|Next:.*Review the plan" "$PLAN_CMD" | head -1 | cut -d: -f1)
+if [ -n "$PLAN_NEXT_LINE" ] && [ -n "$PLAN_PREFLIGHT_LINE" ] && [ "$PLAN_NEXT_LINE" -gt "$PLAN_PREFLIGHT_LINE" ]; then
+    pass "plan.md: conclusion message after pre-flight review"
+else
+    fail "plan.md: conclusion message (line $PLAN_NEXT_LINE) appears before pre-flight review (line $PLAN_PREFLIGHT_LINE)"
+fi
+
+# audit.md: --no-edikt jump target must reference the inline audit step, not agent-spawning
+AUDIT_CMD="$PROJECT_ROOT/commands/sdlc/audit.md"
+AUDIT_JUMP=$(grep "jump to step" "$AUDIT_CMD" | sed 's/.*step \([0-9]*\).*/\1/')
+AUDIT_INLINE_NUM=$(grep "^[0-9].*\*\*Inline Audit Mode" "$AUDIT_CMD" | head -1 | sed 's/\([0-9]*\).*/\1/')
+
+if [ -n "$AUDIT_JUMP" ] && [ -n "$AUDIT_INLINE_NUM" ] && [ "$AUDIT_JUMP" = "$AUDIT_INLINE_NUM" ]; then
+    pass "audit.md: --no-edikt jump target matches inline audit step ($AUDIT_JUMP)"
+else
+    fail "audit.md: --no-edikt jump target (step $AUDIT_JUMP) doesn't match inline audit step ($AUDIT_INLINE_NUM)"
+fi
+
+# gov/review.md: "Next: Run /edikt:gov:compile" must not appear before staleness detection
+REVIEW_CMD="$PROJECT_ROOT/commands/gov/review.md"
+REVIEW_NEXT_LINE=$(grep -n "Next:.*compile" "$REVIEW_CMD" | head -1 | cut -d: -f1)
+REVIEW_STALE_LINE=$(grep -n "Checking sentinel staleness\|Staleness Detection" "$REVIEW_CMD" | head -1 | cut -d: -f1)
+
+if [ -n "$REVIEW_NEXT_LINE" ] && [ -n "$REVIEW_STALE_LINE" ] && [ "$REVIEW_NEXT_LINE" -gt "$REVIEW_STALE_LINE" ]; then
+    pass "gov/review.md: conclusion after staleness detection"
+else
+    fail "gov/review.md: conclusion (line $REVIEW_NEXT_LINE) appears before staleness detection (line $REVIEW_STALE_LINE)"
+fi
+
+# ============================================================
 # Hook modernization (v0.2.0)
 # ============================================================
 

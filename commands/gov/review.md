@@ -79,8 +79,6 @@ CRITICAL: Every finding must cite the specific text that fails the check and pro
 
     {If all strong/adequate}:
     All directives are enforceable. Governance language is production-grade.
-
-    Next: Run /edikt:gov:compile to rebuild governance with updated sentinels.
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
 
@@ -117,6 +115,7 @@ CRITICAL: Every finding must cite the specific text that fails the check and pro
      Stale:    {k} documents — run /edikt:gov:compile to regenerate
      Missing:  {m} documents — run /edikt:gov:compile to generate
 
+     Next: Run /edikt:gov:compile to rebuild governance with updated sentinels.
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     ```
 

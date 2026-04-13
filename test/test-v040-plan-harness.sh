@@ -198,4 +198,116 @@ else
   pass "3-column table (backward compat): ATTEMPT does not match N/N — no crash"
 fi
 
+# ============================================================
+# TEST 6: Pre-flight evaluator flow is mandatory and correctly ordered
+# ============================================================
+
+echo ""
+echo -e "${BOLD}TEST 6: Pre-flight evaluator flow${NC}"
+
+# Pre-flight specialist review must exist as a numbered step
+if grep -qE "^[0-9]+\. Run pre-flight specialist review" "$PLAN_CMD"; then
+    pass "Plan has pre-flight specialist review step"
+else
+    fail "Plan missing pre-flight specialist review step"
+fi
+
+# Pre-flight criteria validation must exist as a numbered step
+if grep -qE "^[0-9]+\. Run pre-flight criteria validation" "$PLAN_CMD"; then
+    pass "Plan has pre-flight criteria validation step"
+else
+    fail "Plan missing pre-flight criteria validation step"
+fi
+
+# Pre-flight must reference evaluator agent
+assert_file_contains "$PLAN_CMD" "evaluator agent in.*pre-flight mode" \
+    "Pre-flight invokes evaluator in pre-flight mode"
+
+# Pre-flight classifies criteria
+for classification in TESTABLE VAGUE SUBJECTIVE BLOCKED; do
+    assert_file_contains "$PLAN_CMD" "$classification" \
+        "Pre-flight has $classification classification"
+done
+
+# ABORT threshold exists
+assert_file_contains "$PLAN_CMD" "ABORT" \
+    "Pre-flight has ABORT verdict for untestable criteria"
+
+# CRITICAL instruction: never write plan without pre-flight
+assert_file_contains "$PLAN_CMD" "NEVER write a plan without running the pre-flight" \
+    "Plan has CRITICAL pre-flight enforcement instruction"
+
+# ============================================================
+# TEST 7: Phase-end evaluator flow is complete
+# ============================================================
+
+echo ""
+echo -e "${BOLD}TEST 7: Phase-end evaluator flow${NC}"
+
+# Phase-End Flow section exists
+assert_file_contains "$PLAN_CMD" "### Phase-End Flow" \
+    "Plan has Phase-End Flow section"
+
+# Both modes documented
+assert_file_contains "$PLAN_CMD" "HEADLESS MODE" \
+    "Phase-end has headless mode"
+assert_file_contains "$PLAN_CMD" "SUBAGENT MODE" \
+    "Phase-end has subagent mode"
+
+# Headless invocation is correct
+assert_file_contains "$PLAN_CMD" "claude -p" \
+    "Phase-end headless uses claude -p"
+assert_file_contains "$PLAN_CMD" "system-prompt" \
+    "Phase-end headless passes system prompt"
+assert_file_contains "$PLAN_CMD" "evaluator-headless.md" \
+    "Phase-end headless references evaluator-headless.md template"
+
+# File existence check before invocation (hard failure, not silent skip)
+assert_file_contains "$PLAN_CMD" "Evaluator template missing" \
+    "Phase-end has file existence check"
+assert_file_contains "$PLAN_CMD" "Do NOT silently skip evaluation" \
+    "Phase-end enforces hard failure on missing template"
+
+# Verdict processing
+assert_file_contains "$PLAN_CMD" "Process the verdict" \
+    "Phase-end has verdict processing step"
+
+# Fail forwarding to generator
+assert_file_contains "$PLAN_CMD" "Forward failures" \
+    "Phase-end forwards failures to generator"
+assert_file_contains "$PLAN_CMD" "Previous attempt failed. Fix these" \
+    "Phase-end includes specific fail reason in retry prompt"
+
+# Criteria sidecar update after evaluation
+assert_file_contains "$PLAN_CMD" "Update criteria sidecar.*after evaluation" \
+    "Phase-end updates sidecar after evaluation"
+
+# Skip path when evaluator.phase-end is false
+assert_file_contains "$PLAN_CMD" "Phase-end evaluation skipped" \
+    "Phase-end has skip message when disabled"
+
+# ============================================================
+# TEST 8: Evaluator is not bypassable without explicit config
+# ============================================================
+
+echo ""
+echo -e "${BOLD}TEST 8: Evaluator bypass protection${NC}"
+
+# The only ways to skip pre-flight are: --no-review flag or evaluator.preflight: false
+# There must be NO other silent skip path
+PREFLIGHT_SKIP_COUNT=$(grep -c "skip.*pre-flight\|pre-flight.*skip\|preflight.*false" "$PLAN_CMD" 2>/dev/null)
+if [ "$PREFLIGHT_SKIP_COUNT" -le 3 ]; then
+    pass "Pre-flight has limited skip paths ($PREFLIGHT_SKIP_COUNT references)"
+else
+    fail "Pre-flight has too many skip paths ($PREFLIGHT_SKIP_COUNT) — may have unintended bypass"
+fi
+
+# Phase-end: only skip via evaluator.phase-end: false or evaluate: false on the phase
+PHASEEND_SKIP_COUNT=$(grep -c "phase-end.*false\|evaluate.*false\|Skip evaluation" "$PLAN_CMD" 2>/dev/null)
+if [ "$PHASEEND_SKIP_COUNT" -le 4 ]; then
+    pass "Phase-end has limited skip paths ($PHASEEND_SKIP_COUNT references)"
+else
+    fail "Phase-end has too many skip paths ($PHASEEND_SKIP_COUNT) — may have unintended bypass"
+fi
+
 test_summary

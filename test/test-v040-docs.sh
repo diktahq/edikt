@@ -66,17 +66,24 @@ assert_file_contains "$PROJECT_ROOT/CHANGELOG.md" "events.jsonl" "Changelog cove
 assert_file_contains "$PROJECT_ROOT/CHANGELOG.md" "Artifact Lifecycle" "Changelog covers lifecycle"
 
 VER=$(cat "$PROJECT_ROOT/VERSION" | tr -d '[:space:]')
-if [ "$VER" = "0.4.0" ]; then
-    pass "VERSION is 0.4.0"
+CONFIG_VER=$(grep 'edikt_version' "$PROJECT_ROOT/.edikt/config.yaml" | awk '{print $2}' | tr -d '"')
+
+if [ -n "$VER" ]; then
+    pass "VERSION file has value: $VER"
 else
-    fail "VERSION is $VER, expected 0.4.0"
+    fail "VERSION file is empty"
 fi
 
-CONFIG_VER=$(grep 'edikt_version' "$PROJECT_ROOT/.edikt/config.yaml" | awk '{print $2}' | tr -d '"')
-if [ "$CONFIG_VER" = "0.4.0" ]; then
-    pass "Config edikt_version is 0.4.0"
+if [ -n "$CONFIG_VER" ]; then
+    pass "Config edikt_version has value: $CONFIG_VER"
 else
-    fail "Config edikt_version is $CONFIG_VER, expected 0.4.0"
+    fail "Config edikt_version is empty"
+fi
+
+if [ "$VER" = "$CONFIG_VER" ]; then
+    pass "VERSION ($VER) matches config edikt_version ($CONFIG_VER)"
+else
+    fail "VERSION ($VER) does not match config edikt_version ($CONFIG_VER)"
 fi
 
 # ============================================================

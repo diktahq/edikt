@@ -169,14 +169,31 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
 7. Build the dependency graph. Identify phases with no inter-dependencies and group them into execution waves (Wave 1: no dependencies, Wave 2: depends only on Wave 1, etc.).
 
-8. Write the plan file to `docs/product/plans/PLAN-{slug}.md` (or `docs/plans/` if product dir doesn't exist). Use the Plan File Template in the Reference section.
+8. Run pre-flight specialist review (skip if `--no-review` in arguments):
+    - Scan the full plan text for domain signals using the Domain Signal table in the Reference section.
+    - If no domains detected, output: `Pre-flight: no specialist domains detected — plan looks self-contained.` and skip to step 9.
+    - Spawn all applicable specialist agents concurrently (single message, multiple Agent tool calls) using the domain-to-subagent mapping in the Reference section.
+    - Each agent reads the plan, reviews from their domain lens only, and returns findings with severity.
+    - Output the consolidated pre-flight review using the Pre-Flight Output Format in the Reference section.
+    - If user provides updates, incorporate them into the plan phases. If user skips, note outstanding findings for the Known Risks section.
 
-8b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory.
+9. Run pre-flight criteria validation on every phase's acceptance criteria:
+    - If `evaluator.preflight` is false, skip this step entirely. Output: "Pre-flight validation skipped (evaluator.preflight: false in config)." Proceed to step 10.
+    - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
+    - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
+    - For TESTABLE criteria, the evaluator proposes a verification command.
+    - If any criteria are VAGUE or SUBJECTIVE, surface the evaluator's rewrites inline — ask the user to accept or edit before finalizing the plan.
+    - If the evaluator verdict is ABORT (50%+ criteria untestable), flag: "Phase {N} has untestable acceptance criteria. Rewrite before implementing."
+    - This step prevents wasted iterations on criteria the evaluator cannot judge at phase end.
+
+10. Write the plan file to `docs/product/plans/PLAN-{slug}.md` (or `docs/plans/` if product dir doesn't exist). Use the Plan File Template in the Reference section. Incorporate any findings from the pre-flight review (step 8) — add a `## Known Risks` section if there are outstanding findings the user chose not to address.
+
+10b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory.
 
    For each phase:
    - Extract acceptance criteria from the plan text
    - Assign IDs: `AC-{phase}.{seq}` (e.g., AC-1.1, AC-1.2)
-   - If pre-flight criteria validation ran (step 11), populate `verify` with the proposed commands from the evaluator
+   - If pre-flight criteria validation ran (step 9), populate `verify` with the proposed commands from the evaluator
    - Set all `status: pending`, `fail_count: 0`, `fail_reason: null`, `last_evaluated: null`
 
    Schema must match `docs/product/specs/SPEC-001-plan-harness/plan-criteria-schema.yaml`. Top-level fields: `plan`, `generated`, `last_evaluated: null`, `phases[]`.
@@ -184,7 +201,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
    The sidecar file is always a sibling of the plan file:
    `docs/product/plans/PLAN-foo.md` → `docs/product/plans/PLAN-foo-criteria.yaml`
 
-9. Output next steps:
+11. Output next steps:
    ```
    ✅ Plan saved: {path}
 
@@ -197,23 +214,6 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 
    Next: Review the plan, then execute Phase 1.
    ```
-
-10. Run pre-flight specialist review (skip if `--no-review` in arguments):
-    - Scan the full plan text for domain signals using the Domain Signal table in the Reference section.
-    - If no domains detected, output: `Pre-flight: no specialist domains detected — plan looks self-contained.` and stop.
-    - Spawn all applicable specialist agents concurrently (single message, multiple Agent tool calls) using the domain-to-subagent mapping in the Reference section.
-    - Each agent reads the plan, reviews from their domain lens only, and returns findings with severity.
-    - Output the consolidated pre-flight review using the Pre-Flight Output Format in the Reference section.
-    - If user provides updates, incorporate them into the plan file. If user skips, add a `## Known Risks` section listing outstanding findings.
-
-11. Run pre-flight criteria validation on every phase's acceptance criteria:
-    - If `evaluator.preflight` is false, skip this step entirely. Output: "Pre-flight validation skipped (evaluator.preflight: false in config)." Proceed to plan output.
-    - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
-    - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
-    - For TESTABLE criteria, the evaluator proposes a verification command. Add these to a `### Verification Commands` section in each phase.
-    - If any criteria are VAGUE or SUBJECTIVE, surface the evaluator's rewrites inline — ask the user to accept or edit before finalizing the plan.
-    - If the evaluator verdict is ABORT (50%+ criteria untestable), flag: "Phase {N} has untestable acceptance criteria. Rewrite before implementing."
-    - This step prevents wasted iterations on criteria the evaluator cannot judge at phase end.
 
 ## Reference
 

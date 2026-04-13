@@ -1,5 +1,21 @@
 # edikt changelog
 
+## v0.4.2 (2026-04-13)
+
+### Bug fixes
+
+- **Spec preprocessing.** Blank line between frontmatter and `!`` preprocessing block caused shell corruption. Added missing `argument-hint`.
+- **Plan pre-flight skipped.** Pre-flight specialist review and criteria validation (steps 10-11) were ordered after the "Next: execute Phase 1" conclusion (step 9). Claude naturally stopped at the conclusion. Reordered: pre-flight is now steps 8-9, write file is step 10, output is step 11.
+- **Audit inline mode.** `--no-edikt` jump target said "step 6" (agent-spawning) but inline audit mode was at step 11. Fixed.
+- **Gov review premature conclusion.** "Next: Run /edikt:gov:compile" appeared before staleness detection still needed to run. Moved to actual conclusion.
+
+### Tests
+
+- 15 preprocessing format regression tests (no blank lines, argument-hint, awk integrity)
+- 5 step ordering regression tests (plan, audit, review)
+- 24 evaluator flow tests (pre-flight + phase-end + bypass protection)
+- Version check no longer hardcoded
+
 ## v0.4.1 (2026-04-12)
 
 ### Bug fixes
