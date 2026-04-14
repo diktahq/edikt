@@ -89,13 +89,13 @@ else
     fail "Expected 20 agents, found $AGENT_COUNT"
 fi
 
-# Verify hook count (14 hooks including headless-ask)
-# 14 event hooks + 1 utility (event-log.sh) = 15
+# Verify hook count (15 hooks including headless-ask and phase-end-detector)
+# 15 event hooks + 1 utility (event-log.sh) = 16
 HOOK_COUNT=$(ls "$INSTALL_HOME/templates/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-if [ "$HOOK_COUNT" -eq 15 ]; then
-    pass "15 hook scripts installed (14 hooks + event-log utility)"
+if [ "$HOOK_COUNT" -eq 16 ]; then
+    pass "16 hook scripts installed (15 hooks + event-log utility)"
 else
-    fail "Expected 15 hook files, found $HOOK_COUNT"
+    fail "Expected 16 hook files, found $HOOK_COUNT"
 fi
 
 # Verify all hooks listed in install.sh exist as files

@@ -395,7 +395,7 @@ if ! $DRY_RUN; then
 fi
 dim "hooks/event-log.sh"
 
-for hook in session-start pre-tool-use post-tool-use pre-compact stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask; do
+for hook in session-start pre-tool-use post-tool-use pre-compact stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask phase-end-detector; do
   install_file "${EDIKT_HOME}/hooks/${hook}.sh"
   if ! $DRY_RUN; then
     _fetch "${BASE_URL}/templates/hooks/${hook}.sh" "${EDIKT_HOME}/hooks/${hook}.sh"

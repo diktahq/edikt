@@ -1,5 +1,18 @@
 # edikt changelog
 
+## v0.4.3 (2026-04-14)
+
+### Bug fixes
+
+- **Phase-end evaluator now actually runs.** The phase-end evaluator relied on Claude voluntarily following instructions in plan.md to invoke it. When users executed plan phases directly (the common flow), the evaluator was never triggered. Added `phase-end-detector.sh` — a new Stop hook that detects phase completion signals in Claude's output, finds the in-progress phase from the active plan, and auto-invokes the headless evaluator with the phase's acceptance criteria. Logs `phase_completion_detected` and `phase_evaluation` events to `~/.edikt/events.jsonl`.
+  - Detection patterns: "Phase N complete/done/finished/implemented", "Implemented phase N", "PHASE N DONE" completion promise format
+  - Respects `evaluator.phase-end: false` config to disable
+  - Test override: `EDIKT_EVALUATOR_DRY_RUN=1` to detect without invoking claude -p, `EDIKT_SKIP_PHASE_EVAL=1` to skip entirely
+
+### Tests
+
+- 17 new tests in `test-phase-end-detector.sh` covering completion pattern detection, config respect, loop prevention, correct phase selection, event logging, and no-false-positive cases.
+
 ## v0.4.2 (2026-04-13)
 
 ### Bug fixes
