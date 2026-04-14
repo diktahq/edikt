@@ -1,0 +1,848 @@
+#!/bin/sh
+# edikt launcher — POSIX shell. INV-001: no compiled code, no build step.
+#
+# Implements SPEC-004 v0.5.0: versioned on-disk layout, generation symlink
+# chain, lock.yaml + manifest.yaml, atomic flips, flock serialization.
+#
+# Subcommands: version | list | install | use | rollback | doctor | uninstall
+#
+# Strict POSIX: no bashisms, no [[ ]], no arrays, no `source`. Verified via
+# `sh -n bin/edikt`. Tested under /bin/sh (dash on Linux, bash 3.2 on macOS).
+
+set -u
+
+umask 022
+
+# ─── Constants ──────────────────────────────────────────────────────────────
+LAUNCHER_VERSION="0.5.0"
+MIN_PAYLOAD_VERSION="0.5.0"
+RELEASE_TARBALL_BASE="https://github.com/diktahq/edikt/archive/refs/tags"
+
+# Exit codes (per SPEC-004 §2)
+EX_OK=0
+EX_NETWORK=1
+EX_CHECKSUM=2
+EX_ALREADY=3
+EX_LOCKED=4
+
+# ─── EDIKT_ROOT resolution ──────────────────────────────────────────────────
+# Priority: explicit env > project mode (ancestor walk for .edikt/bin/edikt)
+# > global mode ($HOME/.edikt). Project mode is wired here so Phase 8 only
+# adds its surface, not a rewrite of every subcommand.
+resolve_edikt_root() {
+    if [ -n "${EDIKT_ROOT:-}" ]; then
+        echo "$EDIKT_ROOT"
+        return 0
+    fi
+    # Walk upward looking for .edikt/bin/edikt (project-mode marker).
+    dir="$PWD"
+    while [ -n "$dir" ] && [ "$dir" != "/" ]; do
+        if [ -x "$dir/.edikt/bin/edikt" ]; then
+            echo "$dir/.edikt"
+            return 0
+        fi
+        dir=$(dirname "$dir")
+    done
+    # Global mode. EDIKT_HOME for Phase 1 sandbox compatibility.
+    if [ -n "${EDIKT_HOME:-}" ]; then
+        echo "$EDIKT_HOME"
+    else
+        echo "${HOME:-/}/.edikt"
+    fi
+}
+
+resolve_claude_root() {
+    if [ -n "${CLAUDE_HOME:-}" ]; then
+        echo "$CLAUDE_HOME"
+    else
+        echo "${HOME:-/}/.claude"
+    fi
+}
+
+EDIKT_ROOT=$(resolve_edikt_root)
+CLAUDE_ROOT=$(resolve_claude_root)
+
+# ─── SHA256 dispatch (per config-spec §7) ───────────────────────────────────
+sha256_file() {
+    f="$1"
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$f" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$f" | awk '{print $1}'
+    else
+        echo "error: need sha256sum or shasum" >&2
+        return 1
+    fi
+}
+
+# ─── ISO-8601 UTC timestamp (portable BSD + GNU date) ───────────────────────
+iso_now() {
+    date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+# Compact timestamp suitable for directory names.
+ts_now() {
+    date -u +%Y%m%dT%H%M%SZ
+}
+
+# ─── Logging ────────────────────────────────────────────────────────────────
+log_info() { echo "$@" >&2; }
+log_warn() { echo "warn: $*" >&2; }
+log_err()  { echo "error: $*" >&2; }
+
+# ─── flock serialization (per config-spec §8.1, §8.8 NFS fallback) ──────────
+# Acquires an exclusive lock under $EDIKT_ROOT/.lock for the lifetime of
+# the calling shell. Falls back to mkdir-based mutex when flock(1) absent
+# (e.g. macOS without util-linux). NFS ENOLCK → ln -s create-link mutex.
+LOCK_HELD=""
+LOCK_DIR=""
+LOCK_FD=""
+
+acquire_lock() {
+    mkdir -p "$EDIKT_ROOT" || return 1
+    lockfile="$EDIKT_ROOT/.lock"
+
+    if command -v flock >/dev/null 2>&1; then
+        # Use file descriptor 9 with flock -n (non-blocking).
+        # Errors during flock indicate ENOLCK on NFS; fall through.
+        if (
+            exec 9>"$lockfile" 2>/dev/null
+            flock -n 9 2>/dev/null
+        ); then
+            # We need the lock held for the lifetime of THIS shell, not a
+            # subshell. POSIX `exec N>` works here.
+            exec 9>"$lockfile"
+            if flock -n 9 2>/dev/null; then
+                LOCK_HELD="flock"
+                LOCK_FD=9
+                printf '%s %s\n' "$$" "$(iso_now)" >&9
+                return 0
+            fi
+            # flock failed after open: another process holds it.
+            log_err "another edikt process is running (lock: $lockfile). Retry or remove stale lock."
+            return 4
+        fi
+        # flock unavailable on this fs (NFS ENOLCK) → fallback.
+    fi
+
+    # mkdir mutex fallback (macOS without util-linux, NFS).
+    LOCK_DIR="$EDIKT_ROOT/.lock.d"
+    tries=0
+    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 1 ]; then
+            log_err "another edikt process is running (lock dir: $LOCK_DIR). Retry or remove stale lock."
+            return 4
+        fi
+    done
+    printf '%s %s\n' "$$" "$(iso_now)" >"$LOCK_DIR/owner" 2>/dev/null || true
+    LOCK_HELD="mkdir"
+    return 0
+}
+
+release_lock() {
+    if [ "$LOCK_HELD" = "mkdir" ] && [ -n "$LOCK_DIR" ]; then
+        rm -rf "$LOCK_DIR" 2>/dev/null || true
+    elif [ "$LOCK_HELD" = "flock" ] && [ -n "$LOCK_FD" ]; then
+        # Closing FD 9 releases the flock automatically.
+        exec 9>&- 2>/dev/null || true
+    fi
+    LOCK_HELD=""
+}
+
+trap 'release_lock' EXIT INT TERM
+
+# ─── Atomic write helper ────────────────────────────────────────────────────
+# usage: atomic_write <dest> <<EOF ... EOF
+atomic_write() {
+    dest="$1"
+    tmp="$dest.tmp.$$"
+    cat >"$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$dest"
+}
+
+# ─── Event emission to events.jsonl (per config-spec §4.4) ──────────────────
+# usage: emit_event <type> '<extra-json-fields>'
+# extra-fields is the JSON middle (no surrounding braces, no leading comma).
+emit_event() {
+    typ="$1"
+    extra="${2:-}"
+    mkdir -p "$EDIKT_ROOT" 2>/dev/null || return 0
+    line='{"event":"'"$typ"'","timestamp":"'"$(iso_now)"'"'
+    if [ -n "$extra" ]; then
+        line="$line,$extra"
+    fi
+    line="$line}"
+    # Single printf, single line — atomic on POSIX up to PIPE_BUF.
+    printf '%s\n' "$line" >>"$EDIKT_ROOT/events.jsonl"
+}
+
+# ─── Version comparison (semver, no leading v) ──────────────────────────────
+# Returns 0 if $1 >= $2, 1 otherwise. Plain dot-separated integers only.
+version_ge() {
+    a="$1"
+    b="$2"
+    a_norm=$(echo "$a" | sed 's/^v//')
+    b_norm=$(echo "$b" | sed 's/^v//')
+    # Awk-based comparison handles arbitrary segment counts.
+    awk -v a="$a_norm" -v b="$b_norm" 'BEGIN {
+        na = split(a, A, /\./)
+        nb = split(b, B, /\./)
+        n = (na > nb) ? na : nb
+        for (i = 1; i <= n; i++) {
+            ai = (i in A) ? A[i] + 0 : 0
+            bi = (i in B) ? B[i] + 0 : 0
+            if (ai > bi) exit 0
+            if (ai < bi) exit 1
+        }
+        exit 0
+    }'
+}
+
+normalize_tag() {
+    echo "$1" | sed 's/^v//'
+}
+
+# ─── lock.yaml read helpers ─────────────────────────────────────────────────
+# Plain-text YAML reader for the small subset we write. Only top-level
+# scalar keys are supported (active, previous, installed_at, installed_via).
+# History entries are treated opaquely — append-only.
+lock_get() {
+    key="$1"
+    f="$EDIKT_ROOT/lock.yaml"
+    [ -f "$f" ] || return 0
+    awk -v k="$key" '
+        $0 ~ "^"k":" {
+            sub("^"k":[ \t]*", "")
+            gsub(/^["\047]|["\047]$/, "")
+            print
+            exit
+        }
+    ' "$f"
+}
+
+# ─── lock.yaml write (atomic) ───────────────────────────────────────────────
+# Writes/updates active+previous+installed_at+installed_via, appends a new
+# history entry. Existing history is preserved (capped at 50 per config-spec).
+lock_write() {
+    new_active="$1"
+    new_installed_via="$2"
+    now=$(iso_now)
+    f="$EDIKT_ROOT/lock.yaml"
+
+    prev_active=$(lock_get active)
+    # Build the new file in a temp and move atomically.
+    tmp="$f.tmp.$$"
+    {
+        printf 'active: "%s"\n' "$new_active"
+        if [ -n "$prev_active" ] && [ "$prev_active" != "$new_active" ]; then
+            printf 'previous: "%s"\n' "$prev_active"
+        elif [ -n "$(lock_get previous)" ]; then
+            printf 'previous: "%s"\n' "$(lock_get previous)"
+        fi
+        printf 'installed_at: "%s"\n' "$now"
+        printf 'installed_via: "%s"\n' "$new_installed_via"
+        printf 'history:\n'
+        # Preserve existing history entries (best-effort), cap at 49 to make
+        # room for the new one.
+        if [ -f "$f" ]; then
+            awk '
+                /^history:/ { in_hist = 1; next }
+                in_hist && /^[a-zA-Z]/ { in_hist = 0 }
+                in_hist { print }
+            ' "$f" | head -98
+        fi
+        printf '  - version: "%s"\n' "$new_active"
+        printf '    installed_at: "%s"\n' "$now"
+        printf '    activated_at: "%s"\n' "$now"
+        printf '    installed_via: "%s"\n' "$new_installed_via"
+    } >"$tmp"
+    mv -f "$tmp" "$f"
+}
+
+# ─── Symlink chain helpers ──────────────────────────────────────────────────
+# The chain (per SPEC §1):
+#   $EDIKT_ROOT/current        -> versions/<tag>
+#   $EDIKT_ROOT/hooks          -> current/hooks
+#   $EDIKT_ROOT/templates      -> current/templates
+#   $CLAUDE_ROOT/commands/edikt -> $EDIKT_ROOT/current/commands/edikt
+ensure_external_symlinks() {
+    # hooks and templates are stable external paths embedded in
+    # settings.json. Repair on every install/use.
+    ln -sfn current/hooks "$EDIKT_ROOT/hooks"
+    ln -sfn current/templates "$EDIKT_ROOT/templates"
+    mkdir -p "$CLAUDE_ROOT/commands"
+    ln -sfn "$EDIKT_ROOT/current/commands/edikt" "$CLAUDE_ROOT/commands/edikt"
+}
+
+# Atomic symlink flip: ln -sfn replaces an existing symlink in one
+# rename(2) on most filesystems. Snapshots prior target into backups/<ts>/.
+flip_current() {
+    target="$1"  # e.g. versions/0.5.0
+    ts=$(ts_now)
+    backup_dir="$EDIKT_ROOT/backups/$ts"
+    mkdir -p "$backup_dir"
+
+    if [ -L "$EDIKT_ROOT/current" ]; then
+        prior=$(readlink "$EDIKT_ROOT/current")
+        printf '%s\n' "$prior" >"$backup_dir/prior_target"
+    fi
+
+    ln -sfn "$target" "$EDIKT_ROOT/current"
+    ensure_external_symlinks
+
+    echo "$ts"
+}
+
+# ─── manifest.yaml writer (per config-spec §4.2) ────────────────────────────
+write_manifest() {
+    version_dir="$1"
+    version="$2"
+    source_type="$3"
+    source_url="$4"
+    tarball_sha="$5"
+
+    manifest="$version_dir/manifest.yaml"
+    tmp="$manifest.tmp.$$"
+    {
+        printf 'version: "%s"\n' "$version"
+        printf 'installed_at: "%s"\n' "$(iso_now)"
+        printf 'source:\n'
+        printf '  type: "%s"\n' "$source_type"
+        if [ -n "$source_url" ]; then
+            printf '  url: "%s"\n' "$source_url"
+        fi
+        if [ -n "$tarball_sha" ]; then
+            printf '  sha256: "%s"\n' "$tarball_sha"
+        fi
+        printf 'files:\n'
+        # Walk the version dir and hash every regular file (excluding
+        # manifest.yaml itself which we're writing now).
+        ( cd "$version_dir" && find . -type f \
+            ! -name 'manifest.yaml' \
+            ! -name 'manifest.yaml.tmp.*' \
+            | sed 's|^\./||' | LC_ALL=C sort ) | while IFS= read -r relpath; do
+            sha=$(sha256_file "$version_dir/$relpath") || continue
+            mode=$(stat_mode "$version_dir/$relpath")
+            printf '  - path: "%s"\n' "$relpath"
+            printf '    sha256: "%s"\n' "$sha"
+            printf '    mode: "%s"\n' "$mode"
+        done
+    } >"$tmp"
+    mv -f "$tmp" "$manifest"
+}
+
+# Portable file mode (octal). BSD vs GNU stat differ.
+stat_mode() {
+    f="$1"
+    if stat -f '%Lp' "$f" >/dev/null 2>&1; then
+        # BSD (macOS)
+        printf '0%s' "$(stat -f '%Lp' "$f")"
+    elif stat -c '%a' "$f" >/dev/null 2>&1; then
+        # GNU
+        printf '0%s' "$(stat -c '%a' "$f")"
+    else
+        printf '0644'
+    fi
+}
+
+# ─── manifest verify ────────────────────────────────────────────────────────
+# Returns 0 if every file recorded in manifest.yaml matches its sha256,
+# 1 otherwise. Writes mismatches to stderr.
+manifest_verify() {
+    version_dir="$1"
+    manifest="$version_dir/manifest.yaml"
+    [ -f "$manifest" ] || { log_err "no manifest at $manifest"; return 1; }
+
+    # Parse path/sha256 pairs into a temp file (pipeline subshell would
+    # lose our `bad` counter).
+    pairs="$version_dir/.manifest-pairs.$$"
+    awk '
+        /^  - path:/    { if (match($0, /"[^"]*"/)) path = substr($0, RSTART+1, RLENGTH-2); next }
+        /^    sha256:/  { if (match($0, /"[^"]*"/)) print path, substr($0, RSTART+1, RLENGTH-2) }
+    ' "$manifest" >"$pairs"
+
+    bad=0
+    while read -r p s; do
+        [ -n "$p" ] && [ -n "$s" ] || continue
+        if [ ! -f "$version_dir/$p" ]; then
+            echo "missing: $p" >&2
+            bad=1
+            continue
+        fi
+        actual=$(sha256_file "$version_dir/$p")
+        if [ "$actual" != "$s" ]; then
+            echo "tampered: $p (expected $s, got $actual)" >&2
+            bad=1
+        fi
+    done <"$pairs"
+    rm -f "$pairs"
+    return $bad
+}
+
+# ─── MIN_PAYLOAD_VERSION enforcement ────────────────────────────────────────
+# Refuse to activate a payload older than MIN_PAYLOAD_VERSION.
+check_payload_min_version() {
+    payload_dir="$1"
+    vfile="$payload_dir/VERSION"
+    if [ ! -f "$vfile" ]; then
+        log_err "payload at $payload_dir is missing VERSION file"
+        return 1
+    fi
+    payload_v=$(head -1 "$vfile" | tr -d '[:space:]')
+    if ! version_ge "$payload_v" "$MIN_PAYLOAD_VERSION"; then
+        log_err "payload version $payload_v is older than launcher MIN_PAYLOAD_VERSION ($MIN_PAYLOAD_VERSION)."
+        log_err "Run \`edikt install <newer-tag>\` and \`edikt use <newer-tag>\`."
+        return 1
+    fi
+    return 0
+}
+
+# ─── Subcommand: version ────────────────────────────────────────────────────
+cmd_version() {
+    if [ -f "$EDIKT_ROOT/current/VERSION" ]; then
+        head -1 "$EDIKT_ROOT/current/VERSION"
+    elif [ -n "$(lock_get active)" ]; then
+        lock_get active
+    else
+        echo "no version installed (launcher: $LAUNCHER_VERSION)"
+        return 0
+    fi
+}
+
+# ─── Subcommand: list ───────────────────────────────────────────────────────
+cmd_list() {
+    verbose=0
+    if [ "${1:-}" = "--verbose" ]; then verbose=1; fi
+
+    versions_dir="$EDIKT_ROOT/versions"
+    if [ ! -d "$versions_dir" ]; then
+        echo "(no versions installed)"
+        return 0
+    fi
+    active_target=""
+    if [ -L "$EDIKT_ROOT/current" ]; then
+        active_target=$(readlink "$EDIKT_ROOT/current")
+        active_target=$(basename "$active_target")
+    fi
+    # Iterate sorted entries.
+    found=0
+    for d in "$versions_dir"/*/; do
+        [ -d "$d" ] || continue
+        found=1
+        tag=$(basename "$d")
+        marker=" "
+        if [ "$tag" = "$active_target" ]; then marker="*"; fi
+        if [ "$verbose" -eq 1 ]; then
+            sz="?"
+            if command -v du >/dev/null 2>&1; then
+                sz=$(du -sh "$d" 2>/dev/null | awk '{print $1}')
+            fi
+            installed=""
+            if [ -f "$d/manifest.yaml" ]; then
+                installed=$(awk -F'"' '/^installed_at:/ {print $2; exit}' "$d/manifest.yaml")
+            fi
+            printf '%s %s\t%s\t%s\n' "$marker" "$tag" "${installed:--}" "$sz"
+        else
+            printf '%s %s\n' "$marker" "$tag"
+        fi
+    done
+    if [ "$found" -eq 0 ]; then
+        echo "(no versions installed)"
+    fi
+}
+
+# ─── Subcommand: install ────────────────────────────────────────────────────
+# Fetch tarball, extract to staging, atomic move into versions/<tag>/,
+# write manifest.yaml. Does NOT activate. Use `use` to flip.
+cmd_install() {
+    tag="${1:-}"
+    if [ -z "$tag" ]; then
+        log_err "usage: edikt install <tag>"
+        return 1
+    fi
+    norm=$(normalize_tag "$tag")
+    target="$EDIKT_ROOT/versions/$norm"
+    if [ -d "$target" ]; then
+        log_err "version $norm is already installed at $target"
+        return $EX_ALREADY
+    fi
+
+    acquire_lock || return $?
+
+    mkdir -p "$EDIKT_ROOT/versions"
+    staging="$EDIKT_ROOT/.staging-$(ts_now)-$$"
+    mkdir -p "$staging" || return 1
+
+    cleanup_staging() { rm -rf "$staging" 2>/dev/null || true; }
+
+    # Allow tests / offline installs to point at a local tarball or dir.
+    src="${EDIKT_INSTALL_SOURCE:-}"
+    url=""
+    tarball_sha=""
+
+    if [ -z "$src" ]; then
+        url="$RELEASE_TARBALL_BASE/$tag.tar.gz"
+        if ! command -v curl >/dev/null 2>&1; then
+            log_err "curl not found; cannot fetch $url"
+            cleanup_staging
+            return $EX_NETWORK
+        fi
+        tarball="$staging/payload.tar.gz"
+        if ! curl -fsSL --max-time 60 -o "$tarball" "$url" 2>/dev/null; then
+            log_err "failed to fetch $url"
+            cleanup_staging
+            return $EX_NETWORK
+        fi
+        # Optional checksum verification: if the caller supplies
+        # EDIKT_INSTALL_SHA256, verify against it. Otherwise we record
+        # the observed sha and trust GitHub TLS.
+        observed=$(sha256_file "$tarball")
+        if [ -n "${EDIKT_INSTALL_SHA256:-}" ]; then
+            if [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
+                log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
+                cleanup_staging
+                return $EX_CHECKSUM
+            fi
+        fi
+        tarball_sha="$observed"
+        extract_dir="$staging/extracted"
+        mkdir -p "$extract_dir"
+        if ! tar -xzf "$tarball" -C "$extract_dir" 2>/dev/null; then
+            log_err "tar extraction failed"
+            cleanup_staging
+            return $EX_NETWORK
+        fi
+        # GitHub tarballs wrap content in a single top-level dir.
+        inner=$(find "$extract_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
+        if [ -z "$inner" ]; then
+            log_err "tarball appears empty"
+            cleanup_staging
+            return $EX_NETWORK
+        fi
+        payload_src="$inner"
+        source_type="tarball"
+    elif [ -d "$src" ]; then
+        # Test/offline path: copy the directory.
+        payload_src="$src"
+        source_type="dev"
+        url=""
+    elif [ -f "$src" ]; then
+        # Local tarball.
+        observed=$(sha256_file "$src")
+        if [ -n "${EDIKT_INSTALL_SHA256:-}" ] && [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
+            log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
+            cleanup_staging
+            return $EX_CHECKSUM
+        fi
+        tarball_sha="$observed"
+        extract_dir="$staging/extracted"
+        mkdir -p "$extract_dir"
+        if ! tar -xzf "$src" -C "$extract_dir" 2>/dev/null; then
+            log_err "tar extraction failed"
+            cleanup_staging
+            return $EX_NETWORK
+        fi
+        inner=$(find "$extract_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
+        payload_src="${inner:-$extract_dir}"
+        source_type="tarball"
+        url="file://$src"
+    else
+        log_err "EDIKT_INSTALL_SOURCE='$src' is not a file or directory"
+        cleanup_staging
+        return $EX_NETWORK
+    fi
+
+    # Stage the payload at staging/<norm>, then atomic mv into versions/.
+    final_stage="$staging/$norm"
+    if [ "$source_type" = "dev" ]; then
+        # cp is unavoidable for a source dir; use a fresh staging dir so
+        # if interrupted we leave nothing behind in versions/.
+        mkdir -p "$final_stage"
+        # Copy contents of source dir.
+        ( cd "$payload_src" && tar -cf - . ) | ( cd "$final_stage" && tar -xf - )
+    else
+        mv "$payload_src" "$final_stage"
+    fi
+
+    # Validate VERSION exists and meets MIN_PAYLOAD_VERSION.
+    if [ ! -f "$final_stage/VERSION" ]; then
+        log_err "payload missing VERSION file"
+        cleanup_staging
+        return $EX_NETWORK
+    fi
+    if ! check_payload_min_version "$final_stage"; then
+        cleanup_staging
+        return $EX_CHECKSUM
+    fi
+
+    # Write manifest into the staged tree.
+    write_manifest "$final_stage" "$norm" "$source_type" "$url" "$tarball_sha"
+
+    # Atomic move into place.
+    mv "$final_stage" "$target"
+
+    rm -rf "$staging" 2>/dev/null || true
+
+    emit_event version_installed \
+        '"version":"'"$norm"'","source":"'"$source_type"'","sha256":"'"$tarball_sha"'","installed_via":"launcher"'
+
+    log_info "installed $norm at $target"
+    return 0
+}
+
+# ─── Subcommand: use ────────────────────────────────────────────────────────
+cmd_use() {
+    tag="${1:-}"
+    if [ -z "$tag" ]; then
+        log_err "usage: edikt use <tag>"
+        return 1
+    fi
+    norm=$(normalize_tag "$tag")
+    target_dir="$EDIKT_ROOT/versions/$norm"
+    if [ ! -d "$target_dir" ]; then
+        log_err "version $norm is not installed. Run \`edikt install $tag\` first."
+        return 1
+    fi
+
+    acquire_lock || return $?
+
+    if ! check_payload_min_version "$target_dir"; then
+        return $EX_CHECKSUM
+    fi
+
+    prev=""
+    if [ -L "$EDIKT_ROOT/current" ]; then
+        prev=$(basename "$(readlink "$EDIKT_ROOT/current")")
+    fi
+
+    backup_ts=$(flip_current "versions/$norm")
+
+    lock_write "$norm" "launcher"
+
+    extra='"version":"'"$norm"'","symlink":"'"$EDIKT_ROOT"/current'"'
+    if [ -n "$prev" ]; then
+        extra="$extra"',"previous":"'"$prev"'"'
+    fi
+    extra="$extra"',"backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'"'
+    emit_event version_activated "$extra"
+
+    log_info "activated $norm"
+    return 0
+}
+
+# ─── Subcommand: rollback ───────────────────────────────────────────────────
+cmd_rollback() {
+    prev=$(lock_get previous)
+    if [ -z "$prev" ]; then
+        log_err "no previous version recorded in lock.yaml"
+        return 1
+    fi
+    if [ ! -d "$EDIKT_ROOT/versions/$prev" ]; then
+        log_err "previous version $prev is not installed"
+        return 1
+    fi
+    cur=$(lock_get active)
+
+    acquire_lock || return $?
+
+    backup_ts=$(flip_current "versions/$prev")
+    lock_write "$prev" "launcher"
+
+    emit_event rollback_performed \
+        '"from":"'"$cur"'","to":"'"$prev"'","backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'","reason":"user"'
+
+    log_info "rolled back to $prev"
+    return 0
+}
+
+# ─── Subcommand: doctor ─────────────────────────────────────────────────────
+# Exit 0 healthy, 1 warnings, 2 errors.
+cmd_doctor() {
+    warn_n=0
+    err_n=0
+    echo "edikt doctor"
+    echo "  launcher version: $LAUNCHER_VERSION"
+    echo "  EDIKT_ROOT:       $EDIKT_ROOT"
+    echo "  CLAUDE_ROOT:      $CLAUDE_ROOT"
+
+    if [ ! -d "$EDIKT_ROOT" ]; then
+        echo "  ERROR: EDIKT_ROOT does not exist"
+        return 2
+    fi
+    if [ ! -w "$EDIKT_ROOT" ]; then
+        echo "  ERROR: EDIKT_ROOT is not writable"
+        err_n=$((err_n + 1))
+    fi
+
+    # Active version
+    if [ -L "$EDIKT_ROOT/current" ]; then
+        active=$(basename "$(readlink "$EDIKT_ROOT/current")")
+        echo "  active version:   $active"
+        if [ ! -d "$EDIKT_ROOT/current/" ]; then
+            echo "  ERROR: current symlink does not resolve"
+            err_n=$((err_n + 1))
+        fi
+    else
+        echo "  WARN: no active version (current symlink missing)"
+        warn_n=$((warn_n + 1))
+    fi
+
+    # Required external symlinks
+    for link in hooks templates; do
+        if [ ! -L "$EDIKT_ROOT/$link" ]; then
+            echo "  WARN: $EDIKT_ROOT/$link is not a symlink"
+            warn_n=$((warn_n + 1))
+        elif [ ! -e "$EDIKT_ROOT/$link/" ]; then
+            echo "  ERROR: $EDIKT_ROOT/$link does not resolve"
+            err_n=$((err_n + 1))
+        fi
+    done
+    if [ -L "$CLAUDE_ROOT/commands/edikt" ]; then
+        if [ ! -e "$CLAUDE_ROOT/commands/edikt/" ]; then
+            echo "  ERROR: $CLAUDE_ROOT/commands/edikt does not resolve"
+            err_n=$((err_n + 1))
+        fi
+    else
+        echo "  WARN: $CLAUDE_ROOT/commands/edikt is not a symlink"
+        warn_n=$((warn_n + 1))
+    fi
+
+    # Manifest integrity for active version
+    if [ -L "$EDIKT_ROOT/current" ] && [ -d "$EDIKT_ROOT/current/" ]; then
+        if [ -f "$EDIKT_ROOT/current/manifest.yaml" ]; then
+            if ! manifest_verify "$EDIKT_ROOT/current/" 2>/dev/null; then
+                echo "  ERROR: manifest integrity check failed"
+                err_n=$((err_n + 1))
+            else
+                echo "  manifest:         OK"
+            fi
+        else
+            echo "  WARN: no manifest.yaml in active version"
+            warn_n=$((warn_n + 1))
+        fi
+    fi
+
+    # MIN_PAYLOAD_VERSION
+    if [ -f "$EDIKT_ROOT/current/VERSION" ]; then
+        pv=$(head -1 "$EDIKT_ROOT/current/VERSION")
+        if version_ge "$pv" "$MIN_PAYLOAD_VERSION"; then
+            echo "  payload version:  $pv (>= MIN $MIN_PAYLOAD_VERSION)"
+        else
+            echo "  ERROR: payload $pv is older than MIN_PAYLOAD_VERSION ($MIN_PAYLOAD_VERSION)"
+            err_n=$((err_n + 1))
+        fi
+    fi
+
+    # Stale .lock detection
+    if [ -f "$EDIKT_ROOT/.lock" ]; then
+        owner_pid=$(awk '{print $1; exit}' "$EDIKT_ROOT/.lock" 2>/dev/null)
+        if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
+            echo "  WARN: stale lock from pid $owner_pid (process gone)"
+            warn_n=$((warn_n + 1))
+        fi
+    fi
+
+    if [ "$err_n" -gt 0 ]; then
+        echo "result: $err_n errors, $warn_n warnings"
+        return 2
+    elif [ "$warn_n" -gt 0 ]; then
+        echo "result: $warn_n warnings"
+        return 1
+    else
+        echo "result: healthy"
+        return 0
+    fi
+}
+
+# ─── Subcommand: uninstall ──────────────────────────────────────────────────
+cmd_uninstall() {
+    yes=0
+    if [ "${1:-}" = "--yes" ] || [ "${1:-}" = "-y" ]; then yes=1; fi
+
+    if [ "$yes" -ne 1 ]; then
+        printf 'Remove %s and unlink %s/commands/edikt? [y/N]: ' "$EDIKT_ROOT" "$CLAUDE_ROOT" >&2
+        # /dev/tty fallback so non-interactive callers without --yes abort.
+        if [ -t 0 ]; then
+            read -r reply
+        else
+            reply=""
+        fi
+        case "$reply" in
+            y|Y|yes|YES) ;;
+            *) log_info "aborted"; return 0 ;;
+        esac
+    fi
+
+    acquire_lock || return $?
+
+    # Unlink Claude command symlink.
+    if [ -L "$CLAUDE_ROOT/commands/edikt" ]; then
+        rm -f "$CLAUDE_ROOT/commands/edikt"
+    fi
+
+    # Release lock first since we're about to nuke the lock dir.
+    release_lock
+
+    rm -rf "$EDIKT_ROOT"
+    log_info "uninstalled"
+    return 0
+}
+
+# ─── Help ───────────────────────────────────────────────────────────────────
+cmd_help() {
+    cat <<EOF
+edikt — governance for agentic engineering (launcher v$LAUNCHER_VERSION)
+
+Usage: edikt <subcommand> [args]
+
+Subcommands:
+  version              Print active payload version
+  list [--verbose]     List installed versions
+  install <tag>        Fetch + extract release; does not activate
+  use <tag>            Activate an installed version (atomic symlink flip)
+  rollback             Re-activate the previous version
+  doctor               Verify symlink chain + manifest integrity
+  uninstall [--yes]    Remove EDIKT_ROOT + commands symlink
+
+Environment:
+  EDIKT_ROOT           Root of edikt state. Defaults: project mode (walks
+                       up for .edikt/bin/edikt) → \$EDIKT_HOME → \$HOME/.edikt.
+  CLAUDE_HOME          Override \$HOME/.claude.
+  EDIKT_INSTALL_SOURCE Local tarball or directory used by \`install\` instead
+                       of GitHub (test + offline path).
+  EDIKT_INSTALL_SHA256 Expected sha256 of the tarball; mismatch exits 2.
+
+Layout (per SPEC-004 §1):
+  \$EDIKT_ROOT/
+    bin/edikt                    launcher (this script)
+    versions/<tag>/              immutable payloads
+    current -> versions/<tag>    generation symlink
+    hooks -> current/hooks       stable external path
+    templates -> current/templates
+    config.yaml, custom/         user data — never touched
+    backups/<ts>/                pre-flip snapshots
+    lock.yaml                    active + previous + history
+    events.jsonl                 install/activate/rollback events
+EOF
+}
+
+# ─── Dispatch ───────────────────────────────────────────────────────────────
+sub="${1:-help}"
+shift 2>/dev/null || true
+
+case "$sub" in
+    version|--version|-v) cmd_version "$@" ;;
+    list|ls)              cmd_list "$@" ;;
+    install)              cmd_install "$@" ;;
+    use)                  cmd_use "$@" ;;
+    rollback)             cmd_rollback "$@" ;;
+    doctor)               cmd_doctor "$@" ;;
+    uninstall)            cmd_uninstall "$@" ;;
+    help|--help|-h|"")    cmd_help ;;
+    *)
+        log_err "unknown subcommand: $sub"
+        cmd_help >&2
+        exit 1
+        ;;
+esac
