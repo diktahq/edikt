@@ -24,6 +24,10 @@ EX_NETWORK=1
 EX_CHECKSUM=2
 EX_ALREADY=3
 EX_LOCKED=4
+EX_MALICIOUS=5
+
+# Event log rotation threshold (10 MiB per config-spec §4.4)
+EVENTS_MAX_BYTES=10485760
 
 # ─── EDIKT_ROOT resolution ──────────────────────────────────────────────────
 # Priority: explicit env > project mode (ancestor walk for .edikt/bin/edikt)
@@ -73,6 +77,30 @@ sha256_file() {
         echo "error: need sha256sum or shasum" >&2
         return 1
     fi
+}
+
+# ─── Tarball entry safety (path-traversal guard) ────────────────────────────
+# Returns 0 if every entry in the tarball is a safe relative path, 1 if any
+# entry is absolute or contains a `..` path component. BSD tar on macOS does
+# NOT strip `../` entries during extraction, so the launcher must pre-scan.
+tarball_safe() {
+    tf="$1"
+    tar -tzf "$tf" 2>/dev/null | while IFS= read -r entry; do
+        # Strip trailing slash for directory entries.
+        case "$entry" in
+            "") continue ;;
+            /*)
+                printf 'unsafe-absolute: %s\n' "$entry" >&2
+                exit 1
+                ;;
+            ../*|*/../*|*/..)
+                printf 'unsafe-traversal: %s\n' "$entry" >&2
+                exit 1
+                ;;
+        esac
+    done
+    # `while` runs in a subshell under POSIX pipelines — its exit status
+    # propagates as the pipeline's final status. 0 means all entries safe.
 }
 
 # ─── ISO-8601 UTC timestamp (portable BSD + GNU date) ───────────────────────
@@ -127,14 +155,30 @@ acquire_lock() {
 
     # mkdir mutex fallback (macOS without util-linux, NFS).
     LOCK_DIR="$EDIKT_ROOT/.lock.d"
-    tries=0
-    while ! mkdir "$LOCK_DIR" 2>/dev/null; do
-        tries=$((tries + 1))
-        if [ "$tries" -ge 1 ]; then
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+        # Check if the existing lockdir is stale (owner pid is dead).
+        # If the owner file is missing, assume a live holder is mid-write
+        # and do NOT reclaim — avoids racing a peer between mkdir and the
+        # owner-file write below.
+        stale=0
+        if [ -f "$LOCK_DIR/owner" ]; then
+            owner_pid=$(awk '{print $1; exit}' "$LOCK_DIR/owner" 2>/dev/null)
+            if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
+                stale=1
+            fi
+        fi
+        if [ "$stale" -eq 1 ]; then
+            log_warn "reclaiming stale lock dir $LOCK_DIR"
+            rm -rf "$LOCK_DIR" 2>/dev/null || true
+            if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+                log_err "another edikt process is running (lock dir: $LOCK_DIR). Retry or remove stale lock."
+                return 4
+            fi
+        else
             log_err "another edikt process is running (lock dir: $LOCK_DIR). Retry or remove stale lock."
             return 4
         fi
-    done
+    fi
     printf '%s %s\n' "$$" "$(iso_now)" >"$LOCK_DIR/owner" 2>/dev/null || true
     LOCK_HELD="mkdir"
     return 0
@@ -173,8 +217,23 @@ emit_event() {
         line="$line,$extra"
     fi
     line="$line}"
+    # Rotate if the existing log would exceed the threshold after append.
+    evlog="$EDIKT_ROOT/events.jsonl"
+    if [ -f "$evlog" ]; then
+        cur_sz=0
+        if stat -f '%z' "$evlog" >/dev/null 2>&1; then
+            cur_sz=$(stat -f '%z' "$evlog" 2>/dev/null || echo 0)
+        elif stat -c '%s' "$evlog" >/dev/null 2>&1; then
+            cur_sz=$(stat -c '%s' "$evlog" 2>/dev/null || echo 0)
+        fi
+        # Add line length + 1 (newline) for conservative threshold check.
+        add_sz=$(( ${#line} + 1 ))
+        if [ $(( cur_sz + add_sz )) -gt "$EVENTS_MAX_BYTES" ]; then
+            mv -f "$evlog" "$evlog.1" 2>/dev/null || true
+        fi
+    fi
     # Single printf, single line — atomic on POSIX up to PIPE_BUF.
-    printf '%s\n' "$line" >>"$EDIKT_ROOT/events.jsonl"
+    printf '%s\n' "$line" >>"$evlog"
 }
 
 # ─── Version comparison (semver, no leading v) ──────────────────────────────
@@ -266,13 +325,38 @@ lock_write() {
 #   $EDIKT_ROOT/hooks          -> current/hooks
 #   $EDIKT_ROOT/templates      -> current/templates
 #   $CLAUDE_ROOT/commands/edikt -> $EDIKT_ROOT/current/commands/edikt
+# Atomic symlink install: create a sibling `.new` symlink then rename(2)
+# it over the target. rename(2) on a symlink is atomic on every POSIX
+# filesystem, closing the ln -sfn unlink-then-create window where a
+# concurrent hook could see ENOENT.
+atomic_symlink() {
+    target="$1"
+    link="$2"
+    new="$link.new.$$"
+    rm -f "$new" 2>/dev/null || true
+    ln -s "$target" "$new" || return 1
+    # mv -f on a symlink-to-directory target traverses into the directory
+    # on BSD and GNU alike. Use -h (BSD) or -T (GNU) to force treatment
+    # as a regular link rename. If neither flag is available, fall back
+    # to `ln -sfn` — not perfectly atomic, but the same behavior as the
+    # prior implementation.
+    if mv -hf "$new" "$link" 2>/dev/null; then
+        return 0
+    fi
+    if mv -Tf "$new" "$link" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$new" 2>/dev/null || true
+    ln -sfn "$target" "$link"
+}
+
 ensure_external_symlinks() {
     # hooks and templates are stable external paths embedded in
     # settings.json. Repair on every install/use.
-    ln -sfn current/hooks "$EDIKT_ROOT/hooks"
-    ln -sfn current/templates "$EDIKT_ROOT/templates"
+    atomic_symlink current/hooks "$EDIKT_ROOT/hooks"
+    atomic_symlink current/templates "$EDIKT_ROOT/templates"
     mkdir -p "$CLAUDE_ROOT/commands"
-    ln -sfn "$EDIKT_ROOT/current/commands/edikt" "$CLAUDE_ROOT/commands/edikt"
+    atomic_symlink "$EDIKT_ROOT/current/commands/edikt" "$CLAUDE_ROOT/commands/edikt"
 }
 
 # Atomic symlink flip: ln -sfn replaces an existing symlink in one
@@ -288,7 +372,7 @@ flip_current() {
         printf '%s\n' "$prior" >"$backup_dir/prior_target"
     fi
 
-    ln -sfn "$target" "$EDIKT_ROOT/current"
+    atomic_symlink "$target" "$EDIKT_ROOT/current"
     ensure_external_symlinks
 
     echo "$ts"
@@ -471,13 +555,23 @@ cmd_install() {
     acquire_lock || return $?
 
     mkdir -p "$EDIKT_ROOT/versions"
+    # Predictable-named directory inside EDIKT_ROOT — use plain mkdir (not
+    # -p) and fail loudly if the path already exists (e.g. a pre-planted
+    # symlink at the predicted path). Collision is astronomically
+    # unlikely with ts+pid but defense-in-depth matters here.
     staging="$EDIKT_ROOT/.staging-$(ts_now)-$$"
-    mkdir -p "$staging" || return 1
+    if ! mkdir "$staging" 2>/dev/null; then
+        log_err "staging dir already exists or cannot be created: $staging"
+        return 1
+    fi
 
     cleanup_staging() { rm -rf "$staging" 2>/dev/null || true; }
 
     # Allow tests / offline installs to point at a local tarball or dir.
     src="${EDIKT_INSTALL_SOURCE:-}"
+    if [ -n "$src" ]; then
+        log_warn "EDIKT_INSTALL_SOURCE override active: $src"
+    fi
     url=""
     tarball_sha=""
 
@@ -494,20 +588,60 @@ cmd_install() {
             cleanup_staging
             return $EX_NETWORK
         fi
-        # Optional checksum verification: if the caller supplies
-        # EDIKT_INSTALL_SHA256, verify against it. Otherwise we record
-        # the observed sha and trust GitHub TLS.
         observed=$(sha256_file "$tarball")
+
+        # Checksum policy (SPEC-004 §2 FR-015):
+        # 1. If EDIKT_INSTALL_SHA256 is set, verify against it.
+        # 2. Else fetch the sibling .sha256 reference from GitHub.
+        # 3. If the reference is missing, refuse — unless
+        #    EDIKT_INSTALL_INSECURE=1 is set explicitly.
         if [ -n "${EDIKT_INSTALL_SHA256:-}" ]; then
             if [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
                 log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
                 cleanup_staging
                 return $EX_CHECKSUM
             fi
+        else
+            ref_url="$url.sha256"
+            ref_file="$staging/payload.tar.gz.sha256"
+            if curl -fsSL --max-time 30 -o "$ref_file" "$ref_url" 2>/dev/null; then
+                # Reference file may be a bare hash or "<hash>  <filename>".
+                expected=$(awk '{print $1; exit}' "$ref_file" 2>/dev/null | tr -d '[:space:]')
+                if [ -z "$expected" ]; then
+                    log_err "fetched checksum reference at $ref_url is empty"
+                    cleanup_staging
+                    return $EX_CHECKSUM
+                fi
+                if [ "$observed" != "$expected" ]; then
+                    log_err "checksum mismatch: reference $ref_url expected $expected, got $observed"
+                    cleanup_staging
+                    return $EX_CHECKSUM
+                fi
+            elif [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
+                log_warn "EDIKT_INSTALL_INSECURE=1 — skipping checksum verification (TLS-only trust)"
+                log_warn "  tarball sha256: $observed"
+            else
+                log_err "no checksum reference at $ref_url and EDIKT_INSTALL_SHA256 not set."
+                log_err "Either set EDIKT_INSTALL_SHA256=<hex> explicitly, or re-fetch when"
+                log_err "the release publishes a .sha256 sidecar. Set EDIKT_INSTALL_INSECURE=1"
+                log_err "to override (not recommended)."
+                cleanup_staging
+                return $EX_CHECKSUM
+            fi
         fi
         tarball_sha="$observed"
+
+        # Pre-scan tarball for path-traversal entries. BSD tar on macOS
+        # does not strip ../ components, so a malicious archive could
+        # write outside extract_dir.
+        if ! tarball_safe "$tarball"; then
+            log_err "tarball contains unsafe paths (absolute or traversal) — refusing"
+            cleanup_staging
+            return $EX_MALICIOUS
+        fi
+
         extract_dir="$staging/extracted"
-        mkdir -p "$extract_dir"
+        mkdir "$extract_dir" || { cleanup_staging; return 1; }
         if ! tar -xzf "$tarball" -C "$extract_dir" 2>/dev/null; then
             log_err "tar extraction failed"
             cleanup_staging
@@ -536,15 +670,27 @@ cmd_install() {
             return $EX_CHECKSUM
         fi
         tarball_sha="$observed"
+        if ! tarball_safe "$src"; then
+            log_err "tarball contains unsafe paths (absolute or traversal) — refusing"
+            cleanup_staging
+            return $EX_MALICIOUS
+        fi
         extract_dir="$staging/extracted"
-        mkdir -p "$extract_dir"
+        mkdir "$extract_dir" || { cleanup_staging; return 1; }
         if ! tar -xzf "$src" -C "$extract_dir" 2>/dev/null; then
             log_err "tar extraction failed"
             cleanup_staging
             return $EX_NETWORK
         fi
-        inner=$(find "$extract_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
-        payload_src="${inner:-$extract_dir}"
+        # If extraction produced a top-level VERSION (archive rooted at
+        # payload), use extract_dir directly. Otherwise pick the single
+        # inner directory (GitHub-style wrapper).
+        if [ -f "$extract_dir/VERSION" ]; then
+            payload_src="$extract_dir"
+        else
+            inner=$(find "$extract_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
+            payload_src="${inner:-$extract_dir}"
+        fi
         source_type="tarball"
         url="file://$src"
     else
@@ -659,9 +805,14 @@ cmd_rollback() {
 # ─── Subcommand: doctor ─────────────────────────────────────────────────────
 # Exit 0 healthy, 1 warnings, 2 errors.
 cmd_doctor() {
+    quick=0
+    if [ "${1:-}" = "--quick" ]; then quick=1; fi
     warn_n=0
     err_n=0
     echo "edikt doctor"
+    if [ "$quick" -eq 1 ]; then
+        echo "  mode:             --quick (skip per-file SHA256)"
+    fi
     echo "  launcher version: $LAUNCHER_VERSION"
     echo "  EDIKT_ROOT:       $EDIKT_ROOT"
     echo "  CLAUDE_ROOT:      $CLAUDE_ROOT"
@@ -711,7 +862,9 @@ cmd_doctor() {
     # Manifest integrity for active version
     if [ -L "$EDIKT_ROOT/current" ] && [ -d "$EDIKT_ROOT/current/" ]; then
         if [ -f "$EDIKT_ROOT/current/manifest.yaml" ]; then
-            if ! manifest_verify "$EDIKT_ROOT/current/" 2>/dev/null; then
+            if [ "$quick" -eq 1 ]; then
+                echo "  manifest:         present (skipped hash verify)"
+            elif ! manifest_verify "$EDIKT_ROOT/current/" 2>/dev/null; then
                 echo "  ERROR: manifest integrity check failed"
                 err_n=$((err_n + 1))
             else
@@ -774,6 +927,26 @@ cmd_uninstall() {
         esac
     fi
 
+    # Safety guards before rm -rf:
+    # (a) refuse if $EDIKT_ROOT itself is a symlink — rm -rf would follow
+    #     the link and nuke the target directory's contents.
+    if [ -L "$EDIKT_ROOT" ]; then
+        log_err "refusing to uninstall: $EDIKT_ROOT is a symlink."
+        log_err "Remove it manually after verifying the target."
+        return $EX_ALREADY
+    fi
+    # (b) require identifying markers so we don't nuke an unrelated
+    #     directory pointed at via EDIKT_ROOT.
+    base=$(basename "$EDIKT_ROOT")
+    if [ "$base" != ".edikt" ] \
+        && [ ! -f "$EDIKT_ROOT/lock.yaml" ] \
+        && [ ! -f "$EDIKT_ROOT/VERSION" ] \
+        && [ ! -d "$EDIKT_ROOT/versions" ]; then
+        log_err "refusing to uninstall: $EDIKT_ROOT does not look like an edikt root"
+        log_err "(basename is not '.edikt' and no lock.yaml/VERSION/versions/ found)."
+        return $EX_ALREADY
+    fi
+
     acquire_lock || return $?
 
     # Unlink Claude command symlink.
@@ -802,7 +975,8 @@ Subcommands:
   install <tag>        Fetch + extract release; does not activate
   use <tag>            Activate an installed version (atomic symlink flip)
   rollback             Re-activate the previous version
-  doctor               Verify symlink chain + manifest integrity
+  doctor [--quick]     Verify symlink chain + manifest integrity
+                       (--quick skips per-file SHA256 verification)
   uninstall [--yes]    Remove EDIKT_ROOT + commands symlink
 
 Environment:
@@ -812,6 +986,10 @@ Environment:
   EDIKT_INSTALL_SOURCE Local tarball or directory used by \`install\` instead
                        of GitHub (test + offline path).
   EDIKT_INSTALL_SHA256 Expected sha256 of the tarball; mismatch exits 2.
+  EDIKT_INSTALL_INSECURE
+                       Set to 1 to skip checksum verification when neither
+                       EDIKT_INSTALL_SHA256 nor a fetched .sha256 sidecar
+                       is available. Not recommended.
 
 Layout (per SPEC-004 §1):
   \$EDIKT_ROOT/
