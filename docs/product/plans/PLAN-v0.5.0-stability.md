@@ -14,8 +14,9 @@
 | Phase | Status | Attempt | Updated |
 |-------|--------|---------|---------|
 | 1     | done | 1/5 | 2026-04-14      |
-| 2     | done (partial — fixtures + wiring; hook tests gated on 2b) | 1/5 | 2026-04-14 |
-| 2b    | pending (new — migrate hooks to JSON hook protocol; flip EDIKT_ENABLE_HOOK_JSON_TESTS=1) | 0/5 | - |
+| 2     | done (partial — fixtures + wiring; hook tests gated on 2b.i) | 1/5 | 2026-04-14 |
+| 2b.i  | pending (new — rewrite fixtures.yaml §9.1 against actual hook behavior, sandbox-staged for determinism) | 0/5 | - |
+| 2b.ii | pending (new — hook semantic rewrites: subagent-stop structured evaluator input per ADR-010, session-start/user-prompt wording alignment) | 0/5 | - |
 | 3     | pending | 0/5 | -      |
 | 4     | pending | 0/5 | -      |
 | 5     | pending | 0/5 | -      |
@@ -282,9 +283,61 @@ When complete, output: HOOK TESTS READY
 
 ---
 
-## Phase 2b: Migrate hooks to Claude Code JSON hook protocol
+## Phase 2b: [SPLIT] fixture-vs-hook semantic mismatch
 
-**Objective:** Rewrite the 9 lifecycle hooks listed in SPEC-004 §9.1 to read JSON stdin and emit JSON stdout per Claude Code's hook protocol (`continue`, `systemMessage`, `additionalContext`, `decision`). Once migrated, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` as the default in `test/run.sh` so Phase 2 hook tests run on every invocation.
+**Finding (2026-04-14):** Phase 2b was originally scoped as "migrate hooks to JSON protocol." On reading the 9 hooks, the gap is materially deeper — the fixtures encode a **different semantic contract** than the hooks implement:
+
+- `session-start.sh`: 85 lines of git-aware session summary (changed files since last session, classified by domain → agent suggestions). Fixture expects a static banner.
+- `subagent-stop.sh`: Text-mines agent name from prose, regex-greps severity markers (🔴/🟡/🟢), runs config-driven gate logic with override tracking (events.jsonl, gate-overrides.jsonl). Fixture expects structured `{verdict: BLOCKED, evaluator_output: {severity, findings[]}}` input.
+- `stop-hook.sh`: Already JSON-in/JSON-out, but emits different strings than fixtures (`🔒 Security-sensitive change — run /edikt:audit before shipping.` vs fixture's `🔐 Security change — run /edikt:sdlc:audit.`).
+- `user-prompt-submit.sh`: Emits richer plan context than fixture; fixture wording is a simplification.
+
+Forcing hooks to match fixtures would regress real UX. Forcing fixtures to match hooks requires deterministic sandbox staging (e.g. a fixed git history for session-start). Split into two phases below.
+
+---
+
+## Phase 2b.i: Characterize hooks — rewrite fixtures against actual behavior
+
+**Objective:** Rewrite `fixtures.yaml` §9.1 and `test/expected/hook-outputs/` to match what the current hooks actually emit, using deterministic sandbox-staged inputs (fixed git history, staged `.edikt/config.yaml`, staged plan files) so fixture diffs are reproducible. Flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` on once tests pass. This turns Phase 2 tests into a **characterization suite** of today's hooks — a regression net, not an aspirational contract.
+**Model:** `sonnet`
+**Max Iterations:** 5
+**Completion Promise:** `HOOK CHARACTERIZATION READY`
+**Evaluate:** true
+**Dependencies:** Phase 2
+
+**Acceptance Criteria:**
+- [ ] For each hook, the fixture payload includes any sandbox staging needed (e.g. `fixture_project_mid_plan` is a real directory under `test/fixtures/projects/` with a staged plan file).
+- [ ] Expected-output fixtures encode exact strings the current hooks emit, not aspirational wording.
+- [ ] `EDIKT_ENABLE_HOOK_JSON_TESTS=1` is the default in `test/run.sh`. All 9 hook suites pass.
+- [ ] 10/10 consecutive sandbox runs produce identical output for every fixture (no time-dependent text, no path leakage).
+- [ ] `fixtures.yaml` §9.1 is updated; each record's `_note` explains why the expected output is what it is (characterization, not prescription).
+
+---
+
+## Phase 2b.ii: Hook semantic rewrites (opt-in, may defer)
+
+**Objective:** Where current hook behavior is worth changing — e.g. `subagent-stop.sh` text-mining is a v0.4.x hack that ADR-010 replaces with structured evaluator input — rewrite the hook and update fixtures to the new contract. This phase is **opt-in**; each sub-item is independently shippable.
+**Model:** `opus`
+**Max Iterations:** 5
+**Completion Promise:** `HOOK SEMANTIC REWRITES READY`
+**Evaluate:** true
+**Dependencies:** Phase 2b.i
+
+**Candidates (not all required):**
+- `subagent-stop.sh`: replace prose-mining with structured `evaluator_output` JSON input per ADR-010. Requires evaluator agents to emit this structure (likely already done in v0.4.3 evaluator work — verify). New ADR if input contract is novel.
+- `user-prompt-submit.sh`: align wording with fixture's intended UX once reviewed.
+- `stop-hook.sh`: align command names (`/edikt:audit` → `/edikt:sdlc:audit`) and emoji (`🔒` → `🔐`) if desired.
+
+**Acceptance Criteria:**
+- [ ] Each candidate that lands has a matching ADR (if behavior-level change) or commit note (if cosmetic).
+- [ ] Fixtures updated to new contract in the same commit as the hook change.
+- [ ] All prior hook suites remain green.
+
+---
+
+## (original Phase 2b — superseded by 2b.i + 2b.ii)
+
+**Original objective:** Rewrite the 9 lifecycle hooks listed in SPEC-004 §9.1 to read JSON stdin and emit JSON stdout per Claude Code's hook protocol (`continue`, `systemMessage`, `additionalContext`, `decision`). Once migrated, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` as the default in `test/run.sh` so Phase 2 hook tests run on every invocation.
 **Model:** `sonnet`
 **Max Iterations:** 5
 **Completion Promise:** `HOOK JSON PROTOCOL READY`
