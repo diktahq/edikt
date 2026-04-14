@@ -21,7 +21,8 @@ test_start() {
 pass() {
     local msg="${1:-$TEST_NAME}"
     echo -e "  ${GREEN}PASS${NC}  $msg"
-    ((PASS_COUNT++))
+    PASS_COUNT=$((PASS_COUNT + 1))
+    return 0
 }
 
 # Record failure
@@ -32,7 +33,8 @@ fail() {
     if [ -n "$detail" ]; then
         echo -e "        ${RED}$detail${NC}"
     fi
-    ((FAIL_COUNT++))
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+    return 0
 }
 
 # Assert file exists

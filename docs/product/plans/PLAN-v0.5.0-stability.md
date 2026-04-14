@@ -17,7 +17,7 @@
 | 2     | done (partial — fixtures + wiring; hook tests gated on 2b.i) | 1/5 | 2026-04-14 |
 | 2b.i  | pending (new — rewrite fixtures.yaml §9.1 against actual hook behavior, sandbox-staged for determinism) | 0/5 | - |
 | 2b.ii | pending (new — hook semantic rewrites: subagent-stop structured evaluator input per ADR-010, session-start/user-prompt wording alignment) | 0/5 | - |
-| 3     | pending | 0/5 | -      |
+| 3     | done | 1/5 | 2026-04-15 |
 | 4     | pending | 0/5 | -      |
 | 5     | pending | 0/5 | -      |
 | 6     | pending | 0/5 | -      |
