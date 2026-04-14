@@ -31,8 +31,12 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 ## Arguments
 
 - `$ARGUMENTS` — Optional. Any of: a task description, ticket ID, SPEC identifier, plan name, or nothing (triggers interview)
+- `--eval-only {phase}` — Re-run evaluation for a specific phase in the active plan without re-running the generator. Used to recover from BLOCKED verdicts (ADR-010) after fixing the underlying cause (e.g. switching `evaluator.mode` to headless). `{phase}` is the phase number (1-indexed). Optionally combine with `--plan {slug}` to disambiguate when multiple plans exist. Cannot be combined with a positional task argument.
+- `--plan {slug}` — Optional companion to `--eval-only`. Names the plan file by slug (e.g. `v0.4.3-evaluator-headless-default`) when multiple plans exist in `docs/plans/` or `docs/product/plans/`.
 
 ## Instructions
+
+0. **Eval-Only routing** — if `$ARGUMENTS` contains `--eval-only N`, skip the interview, codebase analysis, pre-flight specialist review, and phase generation entirely. Route to the **Eval-Only Flow** section in the Reference and stop after it runs. See that section for the isolated flow.
 
 1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read evaluator configuration from `.edikt/config.yaml`:
    - `evaluator.preflight` (default: `true`) — whether to run pre-flight criteria validation
@@ -291,6 +295,7 @@ Each phase has an `evaluate:` flag:
 | `pending` | Not started |
 | `in-progress` | Generator is working |
 | `evaluating` | Phase-end evaluator is running |
+| `blocked` | Evaluator could not verify — missing capability (Bash denied, test runner unavailable, etc.). Phase NOT verified. |
 | `done` | All acceptance criteria PASS |
 | `stuck` | Max attempts reached — human decision needed |
 | `skipped` | Explicitly skipped by user |
@@ -313,26 +318,67 @@ When a phase completes (generator outputs the completion promise):
      ```
      Do NOT silently skip evaluation. This is a hard failure.
 
-   **b. HEADLESS MODE** (`evaluator.mode: "headless"`): Invoke via Bash tool:
-   ```bash
-   claude -p "{evaluation prompt with criteria + file list}" \
-     --system-prompt "$(cat {path to evaluator-headless.md})" \
-     --allowedTools "Read,Grep,Glob,Bash" \
-     --disallowedTools "Write,Edit" \
-     --model {evaluator.model} \
-     --output-format json \
-     --bare
-   ```
-   The evaluation prompt (user message) must include:
-   - The phase's acceptance criteria (from criteria sidecar if available, or from plan markdown)
-   - The list of files modified during the phase (from `git diff --name-only` or phase output)
-   - The project's test command if available
+   **b. PRIMARY MODE invocation:**
+   - If `evaluator.mode` is `"headless"`: attempt headless first. Invoke via Bash tool:
+     ```bash
+     claude -p "{evaluation prompt with criteria + file list}" \
+       --system-prompt "$(cat {path to evaluator-headless.md})" \
+       --allowedTools "Read,Grep,Glob,Bash" \
+       --disallowedTools "Write,Edit" \
+       --model {evaluator.model} \
+       --output-format json \
+       --bare
+     ```
+     The evaluation prompt (user message) must include:
+     - The phase's acceptance criteria (from criteria sidecar if available, or from plan markdown)
+     - The list of files modified during the phase (from `git diff --name-only` or phase output)
+     - The project's test command if available
 
-   Parse the evaluator's JSON output to extract per-criterion PASS/FAIL verdicts.
+     Parse the evaluator's JSON output to extract per-criterion PASS/FAIL/BLOCKED verdicts.
 
-   **c. SUBAGENT MODE** (`evaluator.mode: "subagent"`): Spawn the evaluator agent via the Agent tool with the phase's acceptance criteria, code changes, and test results. (This is the current behavior — no change needed.)
+   - If `evaluator.mode` is `"subagent"`: go directly to subagent invocation in step c.iii below.
 
-   **d. Process the verdict:** Wait for PASS/FAIL verdict.
+   **c. HEADLESS FAILURE HANDLING** (only when `evaluator.mode` was `"headless"` and the invocation above did not return a usable verdict):
+
+   i. **Classify the failure:**
+      - spawn error (`claude` CLI not found: ENOENT or "command not found")
+      - non-zero exit
+      - auth error (stderr contains "authentication" or "not logged in")
+      - timeout (>60s no response)
+      - JSON parse failure (`--output-format json` returned malformed output)
+
+   ii. **Emit the fallback warning banner** (exact format — downstream tests grep for the header):
+      ```
+      ⚠ EVALUATOR FALLBACK
+      ━━━━━━━━━━━━━━━━━━━━
+        Headless mode failed: {reason}
+        Falling back to subagent mode.
+        ⚠ Bash execution may be denied in subagent mode — test criteria may return BLOCKED.
+        To fix: {actionable hint based on reason, e.g.:
+          - spawn error: "install Claude Code CLI or add `claude` to PATH"
+          - auth error: "run `claude login` or set ANTHROPIC_API_KEY"
+          - timeout: "check network / increase timeout"
+          - JSON parse: "file an edikt issue — claude -p output changed"}
+      ━━━━━━━━━━━━━━━━━━━━
+      ```
+
+   iii. **Invoke the subagent evaluator** via the Agent tool with the phase's acceptance criteria, code changes, and test results. This is the existing subagent path and is also the primary path when `evaluator.mode: "subagent"`.
+
+   iv. **If the subagent also fails**, emit the hard-failure banner (exact format — downstream tests grep for the header):
+      ```
+      ✗ EVALUATION FAILED
+      ━━━━━━━━━━━━━━━━━━━━
+        Headless: {reason}
+        Subagent: {reason}
+        Phase {N} marked UNVERIFIED in progress table.
+        Recovery:
+          1. Run /edikt:doctor to diagnose evaluator setup
+          2. Or skip with: /edikt:config set evaluator.phase-end false (not recommended)
+      ━━━━━━━━━━━━━━━━━━━━
+      ```
+      Set the phase status to `stuck` with the reason "evaluation failed in both modes" and wait for user input.
+
+   **d. Process the verdict:** Wait for PASS / FAIL / BLOCKED verdict.
    - If PASS: proceed to context reset guidance
    - If FAIL: report failures, then:
 
@@ -363,10 +409,44 @@ When a phase completes (generator outputs the completion promise):
 
      v. **Update criteria sidecar** — after evaluation, update `PLAN-{slug}-criteria.yaml`:
         - Read the sidecar file (skip silently if it doesn't exist)
-        - For each criterion the evaluator judged: update `status` (pass/fail), `last_evaluated` (ISO date), `fail_reason` (if fail)
-        - Increment `fail_count` for each fail (reset to 0 on pass)
+        - For each criterion the evaluator judged: update `status` (one of `pass | fail | blocked`), `last_evaluated` (ISO date), `fail_reason` (if fail), `block_reason` (if blocked)
+        - Increment `fail_count` for each fail (reset to 0 on pass; do NOT reset or increment on blocked)
         - Update phase-level `status` and `attempt`
         - Write back to the same file
+
+   - If BLOCKED: evaluator could not verify one or more criteria due to a missing capability (Bash denied, test runner unavailable, etc.). This is a capability failure, not a generator failure. Retrying the generator does not help.
+
+     i. **Do NOT increment the Attempt column.** The generator's work may be correct — we simply couldn't verify it.
+
+     ii. **Set the phase status to `blocked`** in the progress table. Do not mark `done`, `stuck`, or advance to the next phase.
+
+     iii. **Output each blocked criterion** with its recovery hint from the evaluator:
+        ```
+        AC-{id}: BLOCKED — {reason}
+          Recovery: {hint from evaluator}
+        ```
+
+     iv. **Output the phase-level recovery prompt:**
+        ```
+        Phase {N} BLOCKED — evaluator could not verify {n} criteria.
+
+        Options:
+          1. Switch to headless mode (recommended):
+             /edikt:config set evaluator.mode headless
+          2. Grant Bash to subagents (session-level):
+             Add "Bash" to permissions.allow in .claude/settings.local.json
+          3. Skip evaluation for this phase (not recommended):
+             /edikt:config set evaluator.phase-end false
+
+        After applying a fix, re-run evaluation for this phase with:
+          /edikt:sdlc:plan --eval-only {N}
+        ```
+
+     v. **Update criteria sidecar** — for blocked criteria: set `status: blocked`, record `block_reason: {reason from evaluator}`, set `last_evaluated: {ISO date}`. Do NOT increment `fail_count`. Do NOT reset `fail_count`. Update phase-level `status: blocked`. Write back.
+
+     vi. **Do not proceed to context reset guidance.** Stop and wait for the user to apply a fix.
+
+   Schema note for the sidecar: `status` may be one of `pending | in-progress | pass | fail | blocked`. A new optional field `block_reason` parallels `fail_reason`.
 
 2. **If `evaluate: true` AND `evaluator.phase-end` is false:**
    Skip evaluation. Output: "Phase-end evaluation skipped (evaluator.phase-end: false in config)."
@@ -382,6 +462,54 @@ When a phase completes (generator outputs the completion promise):
 
    State is saved in the plan file — nothing is lost.
    ```
+
+### Eval-Only Flow
+
+Invoked when `$ARGUMENTS` contains `--eval-only N`. This flow skips interview, codebase analysis, pre-flight review, and phase generation — it re-runs only the Phase-End Flow against an existing phase. Use it to recover from BLOCKED verdicts (ADR-010) after the user has fixed the underlying cause (e.g. switched `evaluator.mode` to headless).
+
+1. **Parse arguments:**
+   - Extract `N` from `--eval-only N`. Reject if `N` is not a positive integer: output `[FAIL] --eval-only requires a positive integer phase number (e.g. --eval-only 2)` and stop.
+   - If `$ARGUMENTS` also contains a positional task argument alongside `--eval-only`, output `[FAIL] cannot combine --eval-only with a new plan task — use one or the other` and stop.
+   - Extract `--plan {slug}` if present.
+
+2. **Locate the active plan:**
+   - Read `paths.plans` from `.edikt/config.yaml` (default: `docs/plans`). Candidates in order: `{paths.plans}/PLAN-*.md`, `docs/product/plans/PLAN-*.md`.
+   - If `--plan {slug}` was provided: match a file whose name contains `{slug}`. If none: `[FAIL] No plan matching --plan {slug} found in {paths.plans}/ or docs/product/plans/` and stop.
+   - If no `--plan` and exactly one plan file exists: use it.
+   - If no `--plan` and multiple plans exist: list them and output `[FAIL] Multiple plans found. Specify which with --plan {slug}:\n  {list}` and stop.
+   - If no plan file exists: `[FAIL] No plan file found. Run /edikt:sdlc:plan to create one first.` and stop.
+
+3. **Locate phase N in the plan:**
+   - Read the plan's Progress table. Confirm a row for phase N exists. If not: `[FAIL] Phase {N} does not exist in {plan}` and stop.
+   - Read the plan's `## Phase {N}:` section to extract:
+     - Acceptance criteria (list items under `**Acceptance Criteria:**`)
+     - Files modified (from `git diff --name-only` relative to the last commit touching the phase, falling back to the phase's `Context Needed` list)
+
+4. **Invoke the Phase-End Flow** (the existing `### Phase-End Flow` section of this command):
+   - Pass phase number, criteria, and file list
+   - Use the same `evaluator.mode` routing as regular evaluation — headless first if configured, fallback to subagent on headless failure, BLOCKED handling unchanged
+   - All the visible output (banners, BLOCKED per-criterion rows, recovery prompt) is identical
+
+5. **Update state for phase N only:**
+   - Update the progress table row for phase N only — other rows untouched
+   - Update the criteria sidecar (`PLAN-{slug}-criteria.yaml`) for phase N's criteria only
+   - Do NOT advance to context reset guidance — this is a one-off re-evaluation, not phase completion
+
+6. **Output the verdict:**
+   ```
+   ✓ Phase {N} re-evaluated
+     Previous status: {old status}
+     New status: {new status}
+     {If verdict changed:}
+       Criteria now passing: {list of AC-IDs}
+       Criteria still failing/blocked: {list with reasons}
+   ```
+
+Constraints:
+- Do not duplicate Phase-End Flow logic — always route through that section
+- Do not add new config keys — reuse `evaluator.mode`, `evaluator.model`, `evaluator.phase-end`
+- Do not modify phases other than N
+- Do not run the pre-flight criteria validation (step 9 of main flow) — that is only for new plans
 
 ### Completion Promise Rules
 
@@ -465,6 +593,8 @@ Domains detected: {list} ({n} of 6 checked)
 | 2     | pending | 0/{max} | -      |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
+
+A `blocked` status means evaluation couldn't run — see Status Values table. The phase is NOT verified until re-evaluated successfully (`/edikt:sdlc:plan --eval-only {N}`).
 
 ## Model Assignment
 | Phase | Task | Model | Reasoning | Est. Cost |

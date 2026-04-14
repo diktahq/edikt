@@ -226,4 +226,54 @@ assert_file_contains "$WEBSITE_EVAL" "evaluator.preflight" \
 assert_file_contains "$WEBSITE_EVAL" "claude -p" \
   "Website shows headless invocation"
 
+# ============================================================
+# TEST: ADR-010 — BLOCKED verdict, visible fallback, doctor probe, --eval-only
+# ============================================================
+
+echo ""
+echo -e "${BOLD}TEST: ADR-010 evaluator contracts${NC}"
+
+DOCTOR_CMD="$PROJECT_ROOT/commands/doctor.md"
+
+# BLOCKED verdict in both evaluator templates
+assert_file_contains "$EVALUATOR_SUBAGENT" "BLOCKED" \
+  "Subagent evaluator declares BLOCKED verdict (ADR-010)"
+assert_file_contains "$EVALUATOR_HEADLESS" "BLOCKED" \
+  "Headless evaluator declares BLOCKED verdict (ADR-010)"
+
+# Subagent-only: Capability Self-Check
+assert_file_contains "$EVALUATOR_SUBAGENT" "Capability Self-Check" \
+  "Subagent evaluator has Capability Self-Check section (ADR-010)"
+
+# Both templates have the never-PASS-when-exec-unavailable rule
+assert_file_contains "$EVALUATOR_SUBAGENT" "never PASS" \
+  "Subagent evaluator enforces never-PASS-without-execution rule"
+assert_file_contains "$EVALUATOR_HEADLESS" "never PASS" \
+  "Headless evaluator enforces never-PASS-without-execution rule"
+
+# Subagent top comment warns Bash may be denied
+assert_file_contains "$EVALUATOR_SUBAGENT" "Bash execution may be denied" \
+  "Subagent evaluator warns about parent sandbox Bash denial"
+
+# plan.md: visible fallback banners
+assert_file_contains "$PLAN_CMD" "⚠ EVALUATOR FALLBACK" \
+  "plan.md emits visible EVALUATOR FALLBACK banner (ADR-010)"
+assert_file_contains "$PLAN_CMD" "✗ EVALUATION FAILED" \
+  "plan.md emits EVALUATION FAILED banner on double-failure (ADR-010)"
+
+# plan.md: --eval-only flag
+if grep -q -- '--eval-only' "$PLAN_CMD"; then
+  pass "plan.md documents --eval-only flag (ADR-010)"
+else
+  fail "plan.md missing --eval-only flag documentation"
+fi
+
+# doctor.md: evaluator probe
+assert_file_contains "$DOCTOR_CMD" "Evaluator" \
+  "doctor.md has Evaluator probe section (ADR-010)"
+assert_file_contains "$DOCTOR_CMD" "command -v claude" \
+  "doctor.md probes claude CLI on PATH"
+assert_file_contains "$DOCTOR_CMD" "evaluator-headless.md" \
+  "doctor.md probes headless template presence"
+
 test_summary

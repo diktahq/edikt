@@ -30,7 +30,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 3. Run all checks in parallel where possible. Use the check definitions in the Reference section below. For each check, report `[ok]`, `[!!]`, or `[FAIL]` as defined there.
 
-4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Directive sentinel schema, Linter sync, edikt version.
+4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Directive sentinel schema, Linter sync, Evaluator, edikt version.
 
 5. Run the Decision Graph checks from the Reference section. Report findings inline with the other checks.
 
@@ -299,6 +299,51 @@ Directive sentinel schema:
 
 Migrations are never urgent — legacy blocks continue to work via gov:compile's backward compatibility path. The report exists so users know which files haven't been touched since v0.2.x.
 
+**Evaluator (ADR-010):**
+
+Probe the phase-end evaluator's runtime health. The evaluator defaults to headless mode; subagent is a fallback for environments where headless cannot run. This probe catches misconfiguration before it blocks a phase.
+
+1. **Config mode:**
+   ```bash
+   MODE=$(grep -A1 '^evaluator:' .edikt/config.yaml 2>/dev/null | grep 'mode:' | awk '{print $2}' | tr -d '"')
+   ```
+   - If explicitly set: `[ok] Evaluator config.mode: {value}`
+   - If absent (inferred default of `headless`): `[!!] Evaluator config.mode: headless (inferred default — not explicitly set) — run /edikt:config set evaluator.mode headless to make the choice explicit`
+
+2. **Claude CLI on PATH:**
+   ```bash
+   command -v claude >/dev/null 2>&1
+   ```
+   - If present: `[ok] Evaluator: claude CLI on PATH ({path from `which claude`})`
+   - If absent: `[FAIL] Evaluator: claude CLI not on PATH — install Claude Code CLI`
+
+3. **Headless probe** (only if CLI is on PATH):
+   ```bash
+   claude -p "echo ok" --allowedTools "Bash" --bare 2>&1
+   ```
+   Capture exit code and stderr.
+   - If exit 0 and output contains `ok`: `[ok] Evaluator: headless probe succeeded (claude -p "echo ok")`
+   - If exit non-zero:
+     - stderr contains `authentication` or `not logged in`: `[!!] Evaluator: headless probe failed (auth) — run claude login or set ANTHROPIC_API_KEY`
+     - stderr contains `permission`: `[!!] Evaluator: headless probe failed (permission) — check file/sandbox permissions`
+     - otherwise: `[!!] Evaluator: headless probe failed — exit {code}: {first line of stderr}`
+
+4. **Headless template presence:**
+   Check `.edikt/templates/agents/evaluator-headless.md`, `templates/agents/evaluator-headless.md` (project-local repo), and `~/.edikt/templates/agents/evaluator-headless.md`.
+   - If found in any: `[ok] Evaluator: headless template present ({path})`
+   - If missing everywhere: `[!!] Evaluator: headless template missing — run /edikt:upgrade to refresh templates`
+
+5. **Subagent template presence:**
+   Check `.claude/agents/evaluator.md`, `.edikt/templates/agents/evaluator.md`, `templates/agents/evaluator.md`, and `~/.edikt/templates/agents/evaluator.md`.
+   - If found in any: `[ok] Evaluator: subagent template present ({path})`
+   - If missing everywhere: `[!!] Evaluator: subagent template missing — fallback unavailable. Run /edikt:upgrade to refresh templates`
+   - Subagent absence is `[!!]` not `[FAIL]`: headless is primary, subagent is fallback.
+
+6. **Summary verdict** (appended below the above lines):
+   - If headless probe passed AND headless template present: `[ok] Evaluator: Ready`
+   - Else if subagent template present: `[!!] Evaluator: Degraded — subagent fallback available but cannot execute Bash in sandbox-denied sessions`
+   - Else: `[FAIL] Evaluator: Blocked — evaluation will fail. Fix the errors above before running /edikt:sdlc:plan.`
+
 **edikt version:**
 ```bash
 INSTALLED=$(cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]' || echo "unknown")
@@ -365,6 +410,7 @@ Check the decision graph for consistency. Read all ADRs, invariants, and specs:
  [ok]   {n} plans found
  [ok]   {n} agents installed in .claude/agents/
  [ok]   Memory: {n} days old, {lines}/200 lines
+ [ok]   Evaluator: Ready (headless probe succeeded, templates present)
 
 Note: Number all [!!] and [FAIL] items sequentially (#1, #2, #3...) so the user can reference them. [ok] items don't need numbers.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

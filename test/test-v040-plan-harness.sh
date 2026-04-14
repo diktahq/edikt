@@ -248,11 +248,17 @@ echo -e "${BOLD}TEST 7: Phase-end evaluator flow${NC}"
 assert_file_contains "$PLAN_CMD" "### Phase-End Flow" \
     "Plan has Phase-End Flow section"
 
-# Both modes documented
-assert_file_contains "$PLAN_CMD" "HEADLESS MODE" \
-    "Phase-end has headless mode"
-assert_file_contains "$PLAN_CMD" "SUBAGENT MODE" \
-    "Phase-end has subagent mode"
+# Both modes documented (v0.4.3: restructured to PRIMARY MODE + HEADLESS FAILURE HANDLING per ADR-010)
+assert_file_contains "$PLAN_CMD" "PRIMARY MODE" \
+    "Phase-end has primary mode (headless-first routing)"
+assert_file_contains "$PLAN_CMD" "subagent" \
+    "Phase-end references subagent invocation"
+assert_file_contains "$PLAN_CMD" "HEADLESS FAILURE HANDLING" \
+    "Phase-end has headless failure handling (fallback to subagent)"
+assert_file_contains "$PLAN_CMD" "⚠ EVALUATOR FALLBACK" \
+    "Phase-end emits visible fallback banner (ADR-010)"
+assert_file_contains "$PLAN_CMD" "BLOCKED" \
+    "Phase-end supports BLOCKED verdict (ADR-010)"
 
 # Headless invocation is correct
 assert_file_contains "$PLAN_CMD" "claude -p" \
@@ -295,16 +301,21 @@ echo -e "${BOLD}TEST 8: Evaluator bypass protection${NC}"
 
 # The only ways to skip pre-flight are: --no-review flag or evaluator.preflight: false
 # There must be NO other silent skip path
+# v0.4.3 raised the threshold to 6 to accommodate the Eval-Only Flow (ADR-010)
+# which legitimately references "pre-flight" to document that it skips the
+# pre-flight specialist review and pre-flight criteria validation when re-evaluating a phase.
 PREFLIGHT_SKIP_COUNT=$(grep -c "skip.*pre-flight\|pre-flight.*skip\|preflight.*false" "$PLAN_CMD" 2>/dev/null)
-if [ "$PREFLIGHT_SKIP_COUNT" -le 3 ]; then
+if [ "$PREFLIGHT_SKIP_COUNT" -le 6 ]; then
     pass "Pre-flight has limited skip paths ($PREFLIGHT_SKIP_COUNT references)"
 else
     fail "Pre-flight has too many skip paths ($PREFLIGHT_SKIP_COUNT) — may have unintended bypass"
 fi
 
-# Phase-end: only skip via evaluator.phase-end: false or evaluate: false on the phase
+# Phase-end: only skip via evaluator.phase-end: false or evaluate: false on the phase.
+# v0.4.3 raised the threshold to 8 to accommodate the BLOCKED-verdict recovery paths
+# added by ADR-010 (which legitimately reference `phase-end false` as an escape hatch).
 PHASEEND_SKIP_COUNT=$(grep -c "phase-end.*false\|evaluate.*false\|Skip evaluation" "$PLAN_CMD" 2>/dev/null)
-if [ "$PHASEEND_SKIP_COUNT" -le 4 ]; then
+if [ "$PHASEEND_SKIP_COUNT" -le 8 ]; then
     pass "Phase-end has limited skip paths ($PHASEEND_SKIP_COUNT references)"
 else
     fail "Phase-end has too many skip paths ($PHASEEND_SKIP_COUNT) — may have unintended bypass"
