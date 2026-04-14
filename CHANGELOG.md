@@ -9,9 +9,31 @@
   - Respects `evaluator.phase-end: false` config to disable
   - Test override: `EDIKT_EVALUATOR_DRY_RUN=1` to detect without invoking claude -p, `EDIKT_SKIP_PHASE_EVAL=1` to skip entirely
 
+- **Upgrade no longer silently overwrites user customizations.** `/edikt:upgrade` compared installed agents against current templates using a simple hash diff and reported any difference as "template updated ⬆" — misleading language that prompted users to accept and lose their customizations. Now classifies diffs into three buckets:
+  - **PURE EXPANSION** — template added content, no user content removed. Auto-applied.
+  - **PATH SUBSTITUTION** — only paths differ (e.g., `docs/architecture/decisions/` → `adr/`). Flagged as user divergence.
+  - **USER DIVERGENCE** — installed file has content not in the template. Prompts individually with diff preview and options: apply template (lose customizations), keep mine (add `<!-- edikt:custom -->` marker), or skip.
+
+- **Evaluator could silently degrade to read-only PASS.** When invoked as a subagent (directly via the Agent tool, or as a fallback from headless), the evaluator inherited the parent session's permission sandbox — which may deny Bash even when the agent's `tools:` frontmatter declares it. With no way to signal "I couldn't verify this," the evaluator fell back to read-only inspection and returned PASS verdicts on acceptance criteria that required test execution. Captured in [ADR-010](docs/architecture/decisions/ADR-010-evaluator-headless-default-visible-fallback.md).
+
+### Features
+
+- **BLOCKED verdict (ADR-010).** Both evaluator templates (`templates/agents/evaluator.md` and `templates/agents/evaluator-headless.md`) now declare BLOCKED as a valid per-criterion and overall verdict. Rule added: "if a criterion requires execution and execution is unavailable, verdict is BLOCKED — never PASS." The subagent template gained a Capability Self-Check section that probes Bash availability before claiming verdicts.
+
+- **Visible evaluator fallback (ADR-010).** `/edikt:sdlc:plan` now attempts headless first when `evaluator.mode: headless`, falls back to subagent on headless failure with a visible `⚠ EVALUATOR FALLBACK` banner naming the reason and recovery hint, and emits a `✗ EVALUATION FAILED` banner when both modes fail. BLOCKED verdicts now surface per-criterion with recovery hints; the progress table gained a `blocked` state. No silent degradation paths remain.
+
+- **Doctor evaluator probe (ADR-010).** `/edikt:doctor` now probes the evaluator: checks `claude` CLI is on PATH, runs a headless sanity call (`claude -p "echo ok"`), verifies both evaluator templates exist, and reports whether `evaluator.mode` is explicitly set. Each failure has actionable remediation (`claude login`, `/edikt:upgrade`, `/edikt:config set evaluator.mode headless`).
+
+- **`--eval-only {phase}` flag on `/edikt:sdlc:plan` (ADR-010).** Re-run evaluation on a specific phase without re-running the generator. Recovery path for BLOCKED verdicts after the user has fixed the underlying cause (e.g. switching `evaluator.mode` to headless). Routes through the existing Phase-End Flow — no verdict-logic duplication. Optionally combines with `--plan {slug}` when multiple plans exist.
+
+### Governance
+
+- ADR-010 captures the decision and its directives: headless default, subagent as fallback, BLOCKED over silent PASS, visible warnings, doctor probe, no silent degradation.
+
 ### Tests
 
 - 17 new tests in `test-phase-end-detector.sh` covering completion pattern detection, config respect, loop prevention, correct phase selection, event logging, and no-false-positive cases.
+- 11 new assertions in `test-v040-evaluator.sh` covering BLOCKED verdicts, Capability Self-Check, never-PASS rule, parent-sandbox warning, fallback/failed banners, `--eval-only` flag documentation, and doctor evaluator probe.
 
 ## v0.4.2 (2026-04-13)
 

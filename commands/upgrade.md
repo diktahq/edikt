@@ -166,8 +166,20 @@ installed_hash=$(md5 -q .claude/agents/{slug}.md 2>/dev/null || md5sum .claude/a
 ```
 
 - If customized → skip (note as "custom — skipped")
-- If hashes differ → outdated
+- If hashes differ → **compute the diff** and classify (see below)
 - If hashes match → up to date
+
+**Classify the diff (for each divergent agent):**
+
+Run `diff -u ~/.edikt/templates/agents/{slug}.md .claude/agents/{slug}.md` and count:
+- **Additions** (lines starting with `+`): content in the template but NOT in the installed file. These are template expansions (new sections, new bullets, new formatters).
+- **Deletions** (lines starting with `-`): content in the installed file but NOT in the template. These are either user customizations or content that was removed from the template.
+- **Path substitutions**: lines where only a file path differs (e.g., `docs/architecture/decisions/` → `adr/`). Detect by checking if the removed line matches a default path from `~/.edikt/templates/.edikt/config.yaml` AND the added line matches the user's configured path in `.edikt/config.yaml`.
+
+Classify into three buckets:
+- **PURE EXPANSION**: only additions, no deletions (except trivial whitespace). Safe to apply — the template added content.
+- **PATH SUBSTITUTION**: deletions match the user's configured paths. Safe to apply if we re-substitute paths after upgrade. For now: flag as USER DIVERGENCE.
+- **USER DIVERGENCE**: deletions exist that aren't just path substitutions. The installed file has content the template doesn't — likely user customization. Require explicit confirmation with diff preview.
 
 Do NOT touch agents that have no matching template (user-created agents) or that are marked as custom.
 
@@ -299,8 +311,8 @@ Hooks (.claude/settings.json)
   ⬆  PreCompact     — inline bash → script reference
 
 Agents (.claude/agents/)
-  ⬆  dba.md   — template updated
-  ⬆  security.md  — template updated
+  ⬆  dba.md   — template added 12 lines (pure expansion, safe to apply)
+  ⚠  security.md  — installed file has 8 lines not in template (USER DIVERGENCE — preview diff before accepting)
   +  evaluator-headless.md — new in v0.4.0
   ✓  architect.md  — up to date
 
@@ -335,13 +347,38 @@ If everything is already up to date:
 
 ### 4. Confirm
 
-Ask the user:
+**If any agent has USER DIVERGENCE**, prompt for each diverged agent individually BEFORE the main confirmation:
+
+```
+⚠  security.md has content not in the template.
+   Showing diff (installed vs template):
+
+   [diff output — deletions shown as - lines, additions as +]
+
+   Your options:
+     [1] Apply template — REPLACES your customizations (you'll lose the - lines)
+     [2] Keep mine     — add `<!-- edikt:custom -->` marker so upgrade skips this forever
+     [3] Skip          — don't change this file now, ask again next upgrade
+
+   Choice [1/2/3]:
+```
+
+If user picks [2], add the `<!-- edikt:custom -->` marker at the top of the file (after frontmatter if any) and report:
+```
+✓ security.md is now yours. Upgrade will skip it from now on.
+```
+
+If user picks [3], exclude it from the agent upgrade list.
+
+Then ask the main confirmation:
 ```
 Apply these upgrades? (y/n/select)
   y      — apply all
   n      — cancel
   select — choose which sections to apply (hooks / agents / rules / config / claude.md)
 ```
+
+**Agents classified as PURE EXPANSION** can be auto-applied with `y` without individual confirmation — they're provably safe (no deletions).
 
 Wait for response. If `select`, ask separately for each section.
 
