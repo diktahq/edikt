@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "PostCompact",
+  "cwd": "${HOME}/projects/mid-plan",
+  "active_plan": "docs/plans/PLAN-feature-x.md",
+  "current_phase": 2
+}

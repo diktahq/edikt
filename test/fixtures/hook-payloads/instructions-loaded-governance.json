@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "InstructionsLoaded",
+  "cwd": "${HOME}/projects/greenfield",
+  "loaded_files": [".claude/rules/governance.md"]
+}

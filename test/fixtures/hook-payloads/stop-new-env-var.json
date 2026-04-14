@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Added required STRIPE_WEBHOOK_SECRET for signature verification.",
+  "cwd": "${HOME}/projects/greenfield"
+}

@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Refactored helper to reduce duplication.",
+  "cwd": "${HOME}/projects/greenfield"
+}

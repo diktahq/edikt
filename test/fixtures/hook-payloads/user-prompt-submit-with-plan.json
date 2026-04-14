@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "continue phase 2",
+  "cwd": "${HOME}/projects/mid-plan"
+}

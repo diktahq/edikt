@@ -212,6 +212,38 @@ assert_frontmatter_has() {
     fi
 }
 
+# ─── Sandbox helpers (Layer 3) ──────────────────────────────────────────────
+# These helpers assume test/run.sh has redirected $HOME, $EDIKT_HOME, and
+# $CLAUDE_HOME into a per-run temp tree. See test/run.sh for the sandbox
+# preamble.
+
+# Reset the sandbox edikt + claude state dirs to empty.
+# Call this at the top of a test that needs a clean slate.
+sandbox_setup() {
+    if [ -z "${HOME:-}" ] || [ "$HOME" = "/" ] || [ "$HOME" = "$(eval echo ~)" ]; then
+        fail "sandbox_setup" "HOME is not redirected — run this test via test/run.sh"
+        return 1
+    fi
+    if [ -z "${EDIKT_HOME:-}" ] || [ -z "${CLAUDE_HOME:-}" ]; then
+        fail "sandbox_setup" "EDIKT_HOME or CLAUDE_HOME not set — run this test via test/run.sh"
+        return 1
+    fi
+    rm -rf "${EDIKT_HOME:?}" "${CLAUDE_HOME:?}"
+    mkdir -p "${EDIKT_HOME}" "${CLAUDE_HOME}"
+}
+
+# Skip a test if the current working directory is not inside a git repo.
+# Use this in tests that rely on `git log` or `git blame` of cwd.
+# Returns 0 if git is available, 1 otherwise (and prints SKIP).
+skip_if_no_git() {
+    local msg="${1:-test skipped: no git repo in cwd}"
+    if ! git rev-parse --git-dir >/dev/null 2>&1; then
+        echo -e "  ${YELLOW}SKIP${NC}  $msg"
+        return 1
+    fi
+    return 0
+}
+
 # Print summary and exit with appropriate code
 test_summary() {
     local total=$((PASS_COUNT + FAIL_COUNT))
