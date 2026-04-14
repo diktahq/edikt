@@ -1,0 +1,1108 @@
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=fixtures spec=SPEC-004 status=accepted reviewed_by=qa
+# created_at=2026-04-14T00:00:00Z
+# Transform to actual files at implementation time — each scenario becomes one or more files on disk.
+
+spec: SPEC-004
+title: v0.5.0 Stability Release — test fixtures
+conventions:
+  file_formats:
+    - json        # hook I/O payloads — Claude Code hook protocol
+    - yaml        # edikt config, lock files, manifests
+    - md          # CLAUDE.md, agents, commands, ADRs/INVs
+    - sh          # hook scripts (reference only; fixtures do not ship code)
+    - txt         # VERSION files, flat text artifacts
+  placeholders:
+    TEST_SANDBOX: "absolute path to per-run sandbox root (set by test/run.sh)"
+    HOME: "{TEST_SANDBOX}/home"
+    EDIKT_HOME: "{HOME}/.edikt"
+    CLAUDE_HOME: "{HOME}/.claude"
+  immutability: >
+    Regression-museum fixtures are frozen artifacts. They reproduce historical bugs by
+    encoding the exact failure-triggering state. They are NOT cleaned up, reformatted,
+    or "improved" for aesthetics. The _note field on each record explains the bug so
+    future engineers do not delete meaningful bytes.
+
+scenarios:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. HOOK PAYLOAD FIXTURES — Layer 1 inputs (Spec §9)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - name: hook-payloads
+    purpose: unit tests
+    location: test/fixtures/hook-payloads/
+    description: >
+      JSON payloads piped to each hook's stdin. Shape mirrors Claude Code's hook
+      protocol. Each file exercises one branch of one hook. Payloads are minimal —
+      only the keys the hook actually reads.
+    entities:
+
+      - entity: file
+        records:
+
+          - path: session-start-with-edikt.json
+            format: json
+            content:
+              hook_event_name: SessionStart
+              cwd: "{fixture_project_greenfield}"
+              session_id: "sess-0001"
+            _note: >
+              Project has .edikt/config.yaml present. Hook must emit the standard
+              session banner (no-op exit 0 is a bug — we lost this in v0.3.2).
+
+          - path: session-start-no-edikt.json
+            format: json
+            content:
+              hook_event_name: SessionStart
+              cwd: "/tmp/non-edikt-project"
+              session_id: "sess-0002"
+            _note: >
+              No .edikt/ directory. Hook MUST exit 0 silently. This is the
+              "don't break non-edikt projects" guarantee — if this fixture starts
+              producing output, we've regressed the opt-in invariant.
+
+          - path: user-prompt-submit-no-plan.json
+            format: json
+            content:
+              hook_event_name: UserPromptSubmit
+              prompt: "help me refactor this function"
+              cwd: "{fixture_project_greenfield}"
+            _note: Plan-aware reminder should NOT fire — no active plan on disk.
+
+          - path: user-prompt-submit-with-plan.json
+            format: json
+            content:
+              hook_event_name: UserPromptSubmit
+              prompt: "continue phase 2"
+              cwd: "{fixture_project_mid_plan}"
+            _note: >
+              Active plan in docs/plans/PLAN-xxx.md. Hook should inject current
+              phase context into additionalContext.
+
+          - path: pre-tool-use-write.json
+            format: json
+            content:
+              hook_event_name: PreToolUse
+              tool_name: Write
+              tool_input:
+                file_path: "src/handler.go"
+                content: "package main\n\nfunc Handle() {}\n"
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              Write against a .go file. PreToolUse should pass-through
+              (PostToolUse handles formatting). Regression anchor: v0.4.2
+              blank-line preprocessing corruption originated here.
+
+          - path: post-tool-use-go.json
+            format: json
+            content:
+              hook_event_name: PostToolUse
+              tool_name: Write
+              tool_input:
+                file_path: "src/handler.go"
+                content: "package main\nfunc Handle(){}"
+              tool_response:
+                success: true
+              cwd: "{fixture_project_greenfield}"
+            _note: gofmt should be invoked. Verify exit 0 and file reformatted.
+
+          - path: post-tool-use-ts.json
+            format: json
+            content:
+              hook_event_name: PostToolUse
+              tool_name: Edit
+              tool_input:
+                file_path: "src/app.ts"
+                old_string: "const x=1"
+                new_string: "const x = 1"
+              tool_response:
+                success: true
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              Prettier path. Must respect EDIKT_FORMAT_SKIP=1 — covered by a
+              sibling test run with env override, not a separate fixture.
+
+          - path: post-tool-use-unknown-ext.json
+            format: json
+            content:
+              hook_event_name: PostToolUse
+              tool_name: Write
+              tool_input:
+                file_path: "notes/meeting.xyz"
+                content: "free-form text"
+              tool_response: { success: true }
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              Negative-path: unknown extension. Hook MUST NOT invoke a formatter.
+              ADR-003 invariant — fire only on known source extensions.
+
+          - path: stop-adr-candidate.json
+            format: json
+            content:
+              hook_event_name: Stop
+              stop_hook_active: false
+              last_assistant_message: >
+                We chose PostgreSQL over DynamoDB for the metadata store because
+                relational joins dominate our query shape. This is an architectural
+                decision we should record.
+              cwd: "{fixture_project_greenfield}"
+            _note: Must match "ADR" / "chose X over Y" / "architectural decision" regex.
+
+          - path: stop-new-route.json
+            format: json
+            content:
+              hook_event_name: Stop
+              stop_hook_active: false
+              last_assistant_message: >
+                Added POST /api/v1/invoices and GET /api/v1/invoices/:id.
+              cwd: "{fixture_project_greenfield}"
+            _note: Route regex — first route wins, head -1.
+
+          - path: stop-new-env-var.json
+            format: json
+            content:
+              hook_event_name: Stop
+              stop_hook_active: false
+              last_assistant_message: >
+                Added required STRIPE_WEBHOOK_SECRET for signature verification.
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              Env-var regex must exclude ADR/HTTP/API/JSON/HTML/CSS tokens.
+              Keep STRIPE_WEBHOOK_SECRET — 4+ uppercase chars, passes the filter.
+
+          - path: stop-security-change.json
+            format: json
+            content:
+              hook_event_name: Stop
+              stop_hook_active: false
+              last_assistant_message: >
+                Switched JWT signing from HS256 to RS256 and rotated the bearer
+                token issuer. Password hashes now use bcrypt cost 12.
+              cwd: "{fixture_project_greenfield}"
+            _note: Multiple security terms in one message — substantive-change branch.
+
+          - path: stop-clean.json
+            format: json
+            content:
+              hook_event_name: Stop
+              stop_hook_active: false
+              last_assistant_message: "Refactored helper to reduce duplication."
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              No signal keywords. Hook must emit {"continue": true} with no
+              systemMessage. Guards against false-positive noise.
+
+          - path: stop-loop-guard.json
+            format: json
+            content:
+              hook_event_name: Stop
+              stop_hook_active: true
+              last_assistant_message: "anything — must be ignored"
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              stop_hook_active=true means we are inside a continuation.
+              Hook MUST exit 0 silently — otherwise infinite loop.
+
+          - path: subagent-stop-critical.json
+            format: json
+            content:
+              hook_event_name: SubagentStop
+              subagent_type: qa
+              verdict: BLOCKED
+              evaluator_output:
+                severity: critical
+                findings:
+                  - "Test suite fails on clean checkout"
+              cwd: "{fixture_project_greenfield}"
+            _note: >
+              ADR-010 BLOCKED verdict. Must surface to user, not swallow.
+              Regression anchor: v0.4.3 evaluator silent-fail under sandbox.
+
+          - path: subagent-stop-warning.json
+            format: json
+            content:
+              hook_event_name: SubagentStop
+              subagent_type: qa
+              verdict: WARN
+              evaluator_output:
+                severity: warning
+                findings: ["Coverage dropped below 60% on changed files"]
+              cwd: "{fixture_project_greenfield}"
+            _note: Non-blocking surface; must render but not halt flow.
+
+          - path: subagent-stop-ok.json
+            format: json
+            content:
+              hook_event_name: SubagentStop
+              subagent_type: qa
+              verdict: OK
+              evaluator_output: { severity: info, findings: [] }
+              cwd: "{fixture_project_greenfield}"
+            _note: OK verdict — no systemMessage, exit 0.
+
+          - path: pre-compact.json
+            format: json
+            content:
+              hook_event_name: PreCompact
+              trigger: auto
+              cwd: "{fixture_project_mid_plan}"
+            _note: Captures active plan state before context reset.
+
+          - path: post-compact-with-plan.json
+            format: json
+            content:
+              hook_event_name: PostCompact
+              cwd: "{fixture_project_mid_plan}"
+              active_plan: "docs/plans/PLAN-feature-x.md"
+              current_phase: 2
+            _note: >
+              Re-injects plan phase + active invariants. If this emits nothing,
+              we've broken the PostCompact recovery guarantee.
+
+          - path: post-compact-with-failing-criteria.json
+            format: json
+            content:
+              hook_event_name: PostCompact
+              cwd: "{fixture_project_post_compact}"
+              active_plan: "docs/plans/PLAN-feature-x.md"
+              current_phase: 3
+              acceptance_criteria_status: failing
+            _note: Must surface the failing criteria so next turn doesn't skip them.
+
+          - path: instructions-loaded-governance.json
+            format: json
+            content:
+              hook_event_name: InstructionsLoaded
+              cwd: "{fixture_project_greenfield}"
+              loaded_files: [".claude/rules/governance.md"]
+            _note: >
+              Signals that governance.md was injected. Used by Layer 2 to assert
+              compiled rules reach the agent context.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. HOOK EXPECTED OUTPUTS — Layer 1 assertions
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - name: hook-expected-outputs
+    purpose: unit tests
+    location: test/expected/hook-outputs/
+    description: >
+      One expected-stdout JSON per input fixture. Tests pipe input.json into the
+      hook and diff output against these files (jq -S normalized).
+    entities:
+
+      - entity: file
+        records:
+
+          - path: session-start-with-edikt.expected.json
+            format: json
+            content:
+              continue: true
+              systemMessage: "edikt session loaded — run /edikt:status for next steps."
+            _note: Wording is load-bearing; changing it breaks onboarding tests.
+
+          - path: session-start-no-edikt.expected.json
+            format: json
+            content: {}
+            _note: Empty body (exit 0). File exists so test row stays symmetric.
+
+          - path: user-prompt-submit-no-plan.expected.json
+            format: json
+            content: { continue: true }
+            _note: No additionalContext — no plan to inject.
+
+          - path: user-prompt-submit-with-plan.expected.json
+            format: json
+            content:
+              continue: true
+              additionalContext: "Active plan: PLAN-feature-x.md — current phase: 2"
+            _note: Fuzzy match on phase number; exact text may tolerate whitespace.
+
+          - path: pre-tool-use-write.expected.json
+            format: json
+            content: { continue: true }
+            _note: Pass-through.
+
+          - path: post-tool-use-go.expected.json
+            format: json
+            content: { continue: true }
+            _note: >
+              Side-effect is on disk (gofmt rewrite). Assertion pair —
+              stdout + "file was reformatted" — lives in the test, not here.
+
+          - path: post-tool-use-ts.expected.json
+            format: json
+            content: { continue: true }
+
+          - path: post-tool-use-unknown-ext.expected.json
+            format: json
+            content: {}
+            _note: Silent exit — no JSON, no formatter invocation.
+
+          - path: stop-adr-candidate.expected.json
+            format: json
+            content:
+              systemMessage: "💡 ADR candidate — run /edikt:adr:new to capture this decision."
+            _note: Emoji is part of UX contract. Do not strip.
+
+          - path: stop-new-route.expected.json
+            format: json
+            content:
+              systemMessage: "📄 Doc gap: new route POST /api/v1/invoices — run /edikt:docs:review to review."
+
+          - path: stop-new-env-var.expected.json
+            format: json
+            content:
+              systemMessage: "📄 Doc gap: new env var STRIPE_WEBHOOK_SECRET — run /edikt:docs:review to review."
+
+          - path: stop-security-change.expected.json
+            format: json
+            content:
+              systemMessage: "🔐 Security change — run /edikt:sdlc:audit."
+
+          - path: stop-clean.expected.json
+            format: json
+            content: { continue: true }
+            _note: No systemMessage field — false-positive guard.
+
+          - path: stop-loop-guard.expected.json
+            format: json
+            content: {}
+            _note: Empty output, exit 0 — loop prevention invariant.
+
+          - path: subagent-stop-critical.expected.json
+            format: json
+            content:
+              systemMessage: "🛑 qa BLOCKED: Test suite fails on clean checkout"
+              decision: block
+            _note: >
+              `decision: block` is the Claude Code hook protocol field that
+              actually halts the turn. Missing it = silent-fail regression.
+
+          - path: subagent-stop-warning.expected.json
+            format: json
+            content:
+              systemMessage: "⚠ qa warning: Coverage dropped below 60% on changed files"
+
+          - path: subagent-stop-ok.expected.json
+            format: json
+            content: { continue: true }
+
+          - path: pre-compact.expected.json
+            format: json
+            content:
+              continue: true
+              additionalContext: "Plan state snapshot captured before compaction."
+
+          - path: post-compact-with-plan.expected.json
+            format: json
+            content:
+              continue: true
+              additionalContext: "Resuming PLAN-feature-x.md phase 2. Invariants active: INV-001, INV-002."
+
+          - path: post-compact-with-failing-criteria.expected.json
+            format: json
+            content:
+              continue: true
+              additionalContext: "Phase 3 has failing acceptance criteria — address before advancing."
+
+          - path: instructions-loaded-governance.expected.json
+            format: json
+            content: { continue: true }
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. INTEGRATION TEST PROJECT FIXTURES (Spec §9, Layer 2)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - name: project-greenfield
+    purpose: integration tests
+    location: test/integration/fixtures/project-greenfield/
+    description: >
+      Minimum viable edikt project — fresh init result. Used for init tests,
+      happy-path plan creation, session-start sanity.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.5.0"
+              stack: ["go"]
+              paths:
+                decisions: "docs/architecture/decisions"
+                invariants: "docs/architecture/invariants"
+                plans: "docs/plans"
+                prds: "docs/product/prds"
+                specs: "docs/product/specs"
+              gates: { quality: true }
+              agents: { custom: [] }
+            _note: Minimum config; paths match substitution defaults so no rewrites needed.
+
+          - path: .claude/settings.json
+            format: json
+            content:
+              hooks:
+                SessionStart: [{ hooks: [{ type: command, command: "$HOME/.edikt/hooks/session-start.sh" }] }]
+                PostToolUse: [{ matcher: "Write|Edit", hooks: [{ type: command, command: "$HOME/.edikt/hooks/post-tool-use.sh" }] }]
+                Stop: [{ hooks: [{ type: command, command: "$HOME/.edikt/hooks/stop-hook.sh" }] }]
+            _note: Absolute $HOME hook paths — invariant asserted in Spec §1.
+
+          - path: .claude/agents/qa.md
+            format: md
+            content: |
+              ---
+              name: qa
+              description: QA specialist
+              model: opus
+              memory: project
+              edikt_template_hash: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+              edikt_template_version: "0.5.0"
+              ---
+              # QA agent body (substituted paths)
+            _note: Provenance frontmatter present — upgrade should take fast-path.
+
+          - path: CLAUDE.md
+            format: md
+            content: |
+              # Project
+
+              [edikt:start]: # managed by edikt — do not edit this block manually
+              ## edikt
+              (managed block)
+              [edikt:end]: #
+            _note: ADR-006 visible sentinels. HTML sentinels would be a v0.1.x fixture.
+
+          - path: docs/architecture/decisions/.gitkeep
+            format: txt
+            content: ""
+          - path: docs/plans/.gitkeep
+            format: txt
+            content: ""
+
+  - name: project-mid-plan
+    purpose: integration tests
+    location: test/integration/fixtures/project-mid-plan/
+    description: >
+      Project with an active plan partially executed. Used for
+      user-prompt-submit injection, plan-phase execution, and PreCompact capture.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.5.0"
+              stack: ["go", "typescript"]
+              paths: { plans: "docs/plans", decisions: "docs/architecture/decisions" }
+            _note: Multi-stack so stack-filter behavior is exercised.
+
+          - path: docs/plans/PLAN-feature-x.md
+            format: md
+            content: |
+              ---
+              status: active
+              current_phase: 2
+              ---
+              # PLAN-feature-x
+
+              ## Progress
+              | Phase | Status |
+              |-------|--------|
+              | 1 | done |
+              | 2 | in-progress |
+              | 3 | pending |
+            _note: >
+              Progress table is the persistent execution state (ADR-001).
+              Hook reads current_phase from frontmatter; table is human view.
+
+          - path: .claude/agents/qa.md
+            format: md
+            content: "---\nname: qa\nedikt_template_hash: \"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4\"\nedikt_template_version: \"0.5.0\"\n---\n"
+
+  - name: project-post-compact
+    purpose: integration tests
+    location: test/integration/fixtures/project-post-compact/
+    description: >
+      Project simulating state immediately after context compaction. Plan is
+      active, phase 3 has a failing acceptance criterion encoded in a sidecar.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/config.yaml
+            format: yaml
+            content: { edikt_version: "0.5.0", stack: ["python"] }
+
+          - path: docs/plans/PLAN-feature-x.md
+            format: md
+            content: |
+              ---
+              status: active
+              current_phase: 3
+              ---
+              # PLAN
+              | 1 | done |
+              | 2 | done |
+              | 3 | in-progress |
+
+          - path: docs/plans/PLAN-feature-x.criteria.yaml
+            format: yaml
+            content:
+              phase_3:
+                - { id: AC-1, status: failing, note: "pytest -k new_flow: 2 failures" }
+                - { id: AC-2, status: passing }
+            _note: >
+              Acceptance-criteria sidecar. PostCompact must re-surface failing
+              AC so the agent doesn't advance past unmet criteria.
+
+  - name: project-with-customized-agents
+    purpose: integration tests
+    location: test/integration/fixtures/project-with-customized-agents/
+    description: >
+      Two agents: one customized (edikt:custom marker + edited body), one
+      pristine (hash matches source template). Used by upgrade tests.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.4.3"
+              agents: { custom: ["qa"] }
+            _note: >
+              qa listed in agents.custom AND qa.md has an edikt:custom marker.
+              Redundant on purpose — upgrade must respect either signal (ADR-005).
+
+          - path: .claude/agents/qa.md
+            format: md
+            content: |
+              ---
+              name: qa
+              edikt_template_hash: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
+              edikt_template_version: "0.4.3"
+              ---
+              <!-- edikt:custom -->
+              Our QA team requires mutation testing on all `payment_*` modules.
+              <!-- /edikt:custom -->
+            _note: >
+              Custom body below the marker. Upgrade provenance-flow MUST
+              preserve this block even when the template hash has moved.
+
+          - path: .claude/agents/architect.md
+            format: md
+            content: |
+              ---
+              name: architect
+              edikt_template_hash: "f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3"
+              edikt_template_version: "0.4.3"
+              ---
+              # Architect (pristine)
+            _note: >
+              No edits. Upgrade should replace in place and bump
+              edikt_template_version. Fast-path — no 3-way diff prompt.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4. MIGRATION FIXTURES — one per source version (Spec §10)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - name: migration-v0.1.0
+    purpose: integration tests
+    location: test/integration/migration/fixtures/v0.1.0/
+    description: >
+      Frozen snapshot of ~/.edikt/ + ~/.claude/commands/edikt/ as v0.1.0 left it.
+      Detectable signals — HTML sentinels, flat command names, flat layout.
+    entities:
+      - entity: file
+        records:
+          - path: home/.edikt/VERSION
+            format: txt
+            content: "0.1.0"
+            _note: Version signal. Drives M1–M5 migrations.
+
+          - path: home/.edikt/hooks/session-start.sh
+            format: sh
+            content: "#!/usr/bin/env bash\n# v0.1.0 session-start (reference)\nexit 0\n"
+            _note: REAL FILE, not symlink. This is the flat-layout signal for M1.
+
+          - path: home/.edikt/templates/agents/qa.md
+            format: md
+            content: "# qa agent v0.1.0"
+
+          - path: home/.claude/commands/edikt/plan.md
+            format: md
+            content: "# /edikt:plan (flat command, v0.1.0)"
+            _note: >
+              Flat command name. M3 replaces this with /edikt:sdlc:plan
+              (namespaced) and deletes the top-level plan.md.
+
+          - path: home/.claude/commands/edikt/adr.md
+            format: md
+            content: "# /edikt:adr (flat)"
+
+          - path: project/CLAUDE.md
+            format: md
+            content: |
+              # Project
+              <!-- edikt:start -->
+              ## edikt
+              managed block
+              <!-- edikt:end -->
+            _note: >
+              HTML-comment sentinels — the v0.1.0 style, superseded by ADR-006.
+              M2 rewrites to `[edikt:start]: #` visible markdown link refs.
+
+          - path: project/.edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.1.0"
+            _note: >
+              Missing paths:, stack:, gates: keys. M5 adds defaults without
+              removing edikt_version.
+
+  - name: migration-v0.1.4
+    purpose: integration tests
+    location: test/integration/migration/fixtures/v0.1.4/
+    description: >
+      v0.1.4 — still HTML sentinels and flat commands, but includes the brainstorm
+      command and plan-mode guards added in v0.1.4. Tests chained migrations
+      starting from a later v0.1.x point.
+    entities:
+      - entity: file
+        records:
+          - path: home/.edikt/VERSION
+            format: txt
+            content: "0.1.4"
+
+          - path: home/.edikt/hooks/session-start.sh
+            format: sh
+            content: "#!/usr/bin/env bash\nexit 0\n"
+            _note: Directory (not symlink) — triggers M1.
+
+          - path: home/.claude/commands/edikt/brainstorm.md
+            format: md
+            content: "# /edikt:brainstorm (v0.1.4 addition)"
+            _note: >
+              Signal: brainstorm exists but sdlc/ namespace directory does not.
+              Distinguishes v0.1.4 from v0.1.0 at detection time.
+
+          - path: home/.claude/commands/edikt/plan.md
+            format: md
+            content: "# /edikt:plan (flat, v0.1.4 with plan-mode guard)"
+
+          - path: project/CLAUDE.md
+            format: md
+            content: "<!-- edikt:start -->\n## edikt\n<!-- edikt:end -->\n"
+
+  - name: migration-v0.2.0
+    purpose: integration tests
+    location: test/integration/migration/fixtures/v0.2.0/
+    description: >
+      v0.2.0 — namespaced commands introduced, ADR-006 markdown sentinels
+      landed, compile schema v1. Detectable signal: sdlc/ namespace present
+      AND old compile schema (single rules.md, no topic grouping).
+    entities:
+      - entity: file
+        records:
+          - path: home/.edikt/VERSION
+            format: txt
+            content: "0.2.0"
+
+          - path: home/.claude/commands/edikt/sdlc/plan.md
+            format: md
+            content: "# /edikt:sdlc:plan (namespaced, v0.2.0)"
+            _note: Namespaced — M3 no-op; command name already correct.
+
+          - path: home/.claude/commands/edikt/plan.md
+            format: md
+            content: "# DEPRECATED — redirects to sdlc:plan"
+            _note: >
+              Transitional shim ships both. M3 must NOT delete namespaced
+              versions; only flat duplicates that were never namespaced.
+
+          - path: project/.claude/rules/rules.md
+            format: md
+            content: "# Rules (compile schema v1 — flat, no sentinel blocks)"
+            _note: >
+              Single flat rules.md. M4 re-runs compile to regenerate
+              topic-grouped governance.md with v2 sentinels.
+
+          - path: project/CLAUDE.md
+            format: md
+            content: |
+              # Project
+              [edikt:start]: # managed by edikt
+              ## edikt
+              [edikt:end]: #
+            _note: Already new-style sentinels. M2 no-op here.
+
+  - name: migration-v0.3.0
+    purpose: integration tests
+    location: test/integration/migration/fixtures/v0.3.0/
+    description: >
+      v0.3.0 — compile schema v1 still, but harness experiments added. No
+      criteria sidecar yet. Used to prove M4 re-compile preserves manual
+      directives (ADR-008 three-list schema).
+    entities:
+      - entity: file
+        records:
+          - path: home/.edikt/VERSION
+            format: txt
+            content: "0.3.0"
+
+          - path: project/.claude/rules/governance.md
+            format: md
+            content: |
+              # Governance
+
+              ## Non-Negotiable Constraints
+              - (edikt-generated) INV-001 ...
+
+              ## Manual Directives
+              - We use tabs, not spaces.
+            _note: >
+              Manual directive outside edikt-generated block. M4 must
+              preserve this verbatim. If the post-migration file drops the
+              manual line, ADR-008 is violated.
+
+          - path: project/.edikt/config.yaml
+            format: yaml
+            content: { edikt_version: "0.3.0", paths: { decisions: "docs/architecture/decisions" } }
+
+  - name: migration-v0.4.3
+    purpose: integration tests
+    location: test/integration/migration/fixtures/v0.4.3/
+    description: >
+      v0.4.3 — current layout, markdown sentinels, compile schema v2,
+      but NO provenance frontmatter on agents. Only M1 (layout) and M6
+      (opt-in backfill) apply.
+    entities:
+      - entity: file
+        records:
+          - path: home/.edikt/VERSION
+            format: txt
+            content: "0.4.3"
+
+          - path: home/.edikt/hooks/session-start.sh
+            format: sh
+            content: "#!/usr/bin/env bash\nexit 0\n"
+            _note: Still a real directory — M1 still needed.
+
+          - path: project/.claude/agents/qa.md
+            format: md
+            content: |
+              ---
+              name: qa
+              description: QA specialist
+              model: opus
+              ---
+              # qa body
+            _note: >
+              NO edikt_template_hash. Upgrade falls back to v0.4.3
+              classifier per FR-029 unless user opts in to backfill.
+
+          - path: project/.edikt/config.yaml
+            format: yaml
+            content: { edikt_version: "0.4.3", paths: {}, stack: [], gates: {} }
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 5. PROJECT-MODE FIXTURE (Spec §11)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - name: project-mode-greenfield
+    purpose: integration tests
+    location: test/integration/project-mode/fixtures/greenfield/
+    description: >
+      Mirrors project-greenfield but edikt lives at .edikt/ (inside the
+      project) instead of ~/.edikt/. Exercises project-relative hook paths
+      and launcher auto-detection.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/bin/edikt
+            format: sh
+            content: "#!/usr/bin/env sh\nexec $HOME/.edikt/bin/edikt \"$@\"\n"
+            _note: >
+              Project launcher — symlink OR thin wrapper to global. Presence
+              of this file is the signal that flips launcher into project mode.
+
+          - path: .edikt/versions/0.5.0/hooks/session-start.sh
+            format: sh
+            content: "#!/usr/bin/env bash\nexit 0\n"
+
+          - path: .edikt/current
+            format: txt
+            content: "versions/0.5.0"
+            _note: Represents the symlink target (tests create real symlink from this).
+
+          - path: .edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.5.0"
+              mode: project
+              stack: ["go"]
+
+          - path: .claude/settings.json
+            format: json
+            content:
+              hooks:
+                SessionStart:
+                  - hooks:
+                      - type: command
+                        command: "${PROJECT_ROOT}/.edikt/hooks/session-start.sh"
+            _note: >
+              Project-relative path, NOT $HOME. Asserting this differentiates
+              project mode from global mode and catches a class of bugs where
+              a project-mode install accidentally writes $HOME paths.
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 6. REGRESSION MUSEUM (Spec §13, FR-032)
+  # ─────────────────────────────────────────────────────────────────────────────
+
+  - name: regression-v040-silent-overwrite
+    purpose: regression
+    location: test/integration/regression/fixtures/v040-silent-overwrite/
+    description: >
+      Reproduces v0.4.0 silent overwrite of customized agents during upgrade
+      (fixed in commit d81f6e3). Fixture must trigger the overwrite if the
+      provenance-first flow regresses.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.3.9"
+              agents: { custom: [] }
+            _note: >
+              LOAD-BEARING: agents.custom is INTENTIONALLY empty even though
+              qa has user edits. This is the exact bug condition — v0.4.0
+              relied solely on agents.custom and ignored the in-file
+              edikt:custom marker. Do not "fix" this file.
+
+          - path: .claude/agents/qa.md
+            format: md
+            content: |
+              ---
+              name: qa
+              model: opus
+              ---
+              <!-- edikt:custom -->
+              Require mutation testing on payment modules.
+              <!-- /edikt:custom -->
+            _note: >
+              LOAD-BEARING: no edikt_template_hash frontmatter (simulates
+              pre-v0.5.0 install). Upgrade must detect customization via the
+              in-file marker, NOT the config list. If the test starts to pass
+              only because you added provenance here, you've broken the test.
+
+          - path: expected-post-upgrade/qa.md
+            format: md
+            content: |
+              ---
+              name: qa
+              model: opus
+              ---
+              <!-- edikt:custom -->
+              Require mutation testing on payment modules.
+              <!-- /edikt:custom -->
+            _note: Body unchanged after upgrade. Overwrite = test fails.
+
+  - name: regression-v042-blank-line-corruption
+    purpose: regression
+    location: test/integration/regression/fixtures/v042-blank-line-corruption/
+    description: >
+      v0.4.2 spec preprocessing collapsed consecutive blank lines in code
+      blocks, corrupting .go and .py fixtures whose significant whitespace
+      (Python) or formatting (gofmt-stable) depended on the blank lines.
+    entities:
+      - entity: file
+        records:
+          - path: docs/product/specs/SPEC-example/spec.md
+            format: md
+            content: |
+              # Spec
+
+              ```python
+              def handler():
+
+
+                  return 1
+              ```
+
+              End.
+            _note: >
+              LOAD-BEARING: two blank lines inside the python block. The bug
+              was that preprocessing ran `grep -v '^$'` style cleanup across
+              the entire file, including inside fenced code. Collapsing those
+              blank lines would be a silent corruption. Do not reformat.
+
+          - path: expected-after-preprocessing/spec.md
+            format: md
+            content: |
+              # Spec
+
+              ```python
+              def handler():
+
+
+                  return 1
+              ```
+
+              End.
+            _note: Identical to input — preprocessor must not touch code fences.
+
+  - name: regression-v042-preflight-order
+    purpose: regression
+    location: test/integration/regression/fixtures/v042-preflight-order/
+    description: >
+      v0.4.2 ran plan-phase pre-flight checks AFTER advancing the progress
+      table, so a failing pre-flight still left the plan marked "in-progress"
+      on the next phase. Fixture encodes the state-transition sequence.
+    entities:
+      - entity: file
+        records:
+          - path: docs/plans/PLAN-regress.md
+            format: md
+            content: |
+              ---
+              status: active
+              current_phase: 2
+              ---
+              # PLAN-regress
+
+              ## Phase 2 — pre-flight requires `git status` clean
+
+              | Phase | Status |
+              |-------|--------|
+              | 1 | done |
+              | 2 | in-progress |
+              | 3 | pending |
+
+          - path: .git-dirty-marker
+            format: txt
+            content: "pre-flight should FAIL because working tree is dirty"
+            _note: >
+              LOAD-BEARING: fixture encodes an intentionally-dirty working
+              tree. Pre-flight must run BEFORE the progress table is touched.
+              Assertion: after a failed /edikt:sdlc:plan invocation, the
+              progress table still shows phase 2 in-progress (not advanced to 3).
+
+          - path: expected-post-run/PLAN-regress.md
+            format: md
+            content: |
+              ---
+              status: active
+              current_phase: 2
+              ---
+            _note: current_phase unchanged — pre-flight blocked advancement.
+
+  - name: regression-v043-evaluator-silent-fail
+    purpose: regression
+    location: test/integration/regression/fixtures/v043-evaluator-silent-fail/
+    description: >
+      v0.4.3 evaluator produced no output under the test sandbox because the
+      sandbox unset $HOME so the evaluator's HOME-relative prompt lookup
+      returned empty string, and the error was swallowed by `2>/dev/null`.
+      Fixture constructs that exact environment.
+    entities:
+      - entity: file
+        records:
+          - path: .edikt/config.yaml
+            format: yaml
+            content:
+              edikt_version: "0.4.3"
+              evaluator:
+                enabled: true
+                timeout_sec: 30
+            _note: Evaluator on; sandbox tightens $HOME in the test harness.
+
+          - path: env.override
+            format: txt
+            content: |
+              HOME=
+              EDIKT_HOME=
+            _note: >
+              LOAD-BEARING: fixture declares unset HOME. Test harness applies
+              this env override before invoking the evaluator. The fixed code
+              must either (a) resolve EDIKT_HOME independently, or (b) fail
+              LOUDLY with BLOCKED verdict visible to the user. Silent pass
+              under empty HOME = regression.
+
+          - path: expected/verdict.json
+            format: json
+            content:
+              verdict: BLOCKED
+              reason: "evaluator prompt not found — HOME resolution failed"
+              visible: true
+            _note: >
+              ADR-010 compliance: BLOCKED verdict, visible fallback. If the
+              evaluator produces {"continue": true} with no verdict field,
+              the silent-fail bug is back.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Relationships & ordering constraints
+# ─────────────────────────────────────────────────────────────────────────────
+
+relationships:
+
+  - kind: references
+    from: hook-expected-outputs
+    to: hook-payloads
+    detail: >
+      Each expected-output record pairs 1:1 with a same-named input fixture.
+      Test rows iterate (input, expected) pairs; renaming one must rename the
+      other. Enforce with a helper that fails the suite if the two directories
+      drift in filename set.
+
+  - kind: references
+    from: hook-payloads
+    to: [project-greenfield, project-mid-plan, project-post-compact]
+    detail: >
+      Hook payload `cwd` fields point into the integration fixture trees.
+      Those fixtures must be materialized BEFORE Layer 1 tests run — Layer 1
+      currently assumes cwd exists on disk for hooks that check .edikt/config.yaml.
+
+  - kind: ordering
+    from: migration-v0.1.0
+    to: migration-v0.1.4
+    detail: >
+      Chained-migration tests run v0.1.0 → v0.5.0 first (all migrations apply),
+      then v0.1.4 → v0.5.0 (subset). Running them in that order surfaces
+      migrations that only work when upstream migrations have already normalized
+      state (M4 compile depends on M5 config keys).
+
+  - kind: ordering
+    from: [migration-v0.1.0, migration-v0.1.4, migration-v0.2.0, migration-v0.3.0, migration-v0.4.3]
+    to: project-greenfield
+    detail: >
+      Every migration test asserts post-migration layout matches project-greenfield
+      (structurally — files present, sentinel style, command namespace). project-greenfield
+      is the reference oracle; changing it changes the pass bar for every migration.
+
+  - kind: mirror
+    from: project-mode-greenfield
+    to: project-greenfield
+    detail: >
+      Project-mode fixture mirrors global-mode structure but rooted at .edikt/
+      rather than ~/.edikt/. Divergence between the two is a spec smell —
+      audit if one gains files the other lacks.
+
+  - kind: isolation
+    from: regression-*
+    to: all
+    detail: >
+      Regression fixtures must never be "cleaned up" to match evolving style.
+      Each carries a _note explaining the load-bearing bytes. If a regression
+      fixture needs to change, the correct process is: (1) remove the
+      regression only if the underlying code path is gone, (2) otherwise,
+      open a new fixture capturing the new failure mode and leave the old
+      one intact.
+
+  - kind: sandbox
+    from: all
+    to: test/run.sh
+    detail: >
+      Every scenario's absolute-looking paths ($HOME, ~/.edikt/, ~/.claude/)
+      must resolve to {TEST_SANDBOX}/home/... set by the sandbox preamble.
+      No fixture may contain a hard-coded /Users/... or /home/... path.
+      Enforced by a `grep -R` check in test/unit/test-fixtures-sanity.sh.

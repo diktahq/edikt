@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "SessionStart",
+  "cwd": "${HOME}/projects/greenfield",
+  "session_id": "sess-0001"
+}

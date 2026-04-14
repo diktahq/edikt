@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "help me refactor this function",
+  "cwd": "${HOME}/projects/greenfield"
+}

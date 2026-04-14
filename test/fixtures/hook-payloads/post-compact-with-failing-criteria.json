@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "PostCompact",
+  "cwd": "${HOME}/projects/post-compact",
+  "active_plan": "docs/plans/PLAN-feature-x.md",
+  "current_phase": 3,
+  "acceptance_criteria_status": "failing"
+}

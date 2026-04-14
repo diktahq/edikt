@@ -1,0 +1,9 @@
+{
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "src/handler.go",
+    "content": "package main\n\nfunc Handle() {}\n"
+  },
+  "cwd": "${HOME}/projects/greenfield"
+}

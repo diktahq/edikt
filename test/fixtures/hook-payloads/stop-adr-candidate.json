@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "We chose PostgreSQL over DynamoDB for the metadata store because relational joins dominate our query shape. This is an architectural decision we should record.",
+  "cwd": "${HOME}/projects/greenfield"
+}

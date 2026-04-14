@@ -1,0 +1,7 @@
+{
+  "hook_event_name": "SubagentStop",
+  "subagent_type": "qa",
+  "verdict": "OK",
+  "evaluator_output": { "severity": "info", "findings": [] },
+  "cwd": "${HOME}/projects/greenfield"
+}
