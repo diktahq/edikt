@@ -882,7 +882,27 @@ cmd_rollback() {
 # Exit 0 healthy, 1 warnings, 2 errors.
 cmd_doctor() {
     quick=0
-    if [ "${1:-}" = "--quick" ]; then quick=1; fi
+    do_backfill=0
+    dry_run=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --quick)               quick=1 ;;
+            --backfill-provenance) do_backfill=1 ;;
+            --dry-run)             dry_run=1 ;;
+        esac
+        shift
+    done
+
+    # --backfill-provenance: opt-in M6 backfill path. Never automatic.
+    if [ "$do_backfill" -eq 1 ]; then
+        log_info "edikt doctor --backfill-provenance"
+        if [ "$dry_run" -eq 1 ]; then
+            log_info "  mode: dry-run (candidates listed, no files written)"
+        fi
+        _doctor_backfill_provenance "$dry_run"
+        return $?
+    fi
+
     warn_n=0
     err_n=0
     echo "edikt doctor"
@@ -1327,13 +1347,392 @@ migrate_m4_compile_schema_v1_to_v2() {
     return 0
 }
 
-# ─── M6: provenance backfill (stub — Phase 11) ──────────────────────────────
-# TODO Phase 11: backfill edikt_template_hash on agents installed before
-# v0.5.0. No action in v0.5.0 — agents without provenance fall back to the
-# v0.4.3 classifier per FR-029.
+# ─── M6: provenance backfill (SPEC-004 §10.M6) ──────────────────────────────
+# Opt-in only — invoked via `edikt doctor --backfill-provenance`.
+# NEVER runs automatically during migration. Agents without provenance fall
+# back to the v0.4.3 diff classifier per FR-029.
+#
+# Algorithm per candidate agent in .claude/agents/*.md:
+#   a. Parse frontmatter; if edikt_template_hash present → skip (already done)
+#   b. Detect install version from frontmatter edikt_version: or version: key;
+#      if absent, prompt user.
+#   c. Load source template from migration-fixtures/v<version>/templates/agents/
+#   d. If absent → skip (no captured template for that version)
+#   e. Compute md5 of raw template bytes (Phase 9 hash contract: before substitution)
+#   f. Re-synthesize (substitutions + stack filter) and compare via Levenshtein:
+#        ≤ 15% of installed size → near-match, stamp provenance frontmatter
+#        > 15% of installed size → diverged (user edits), skip
+#        (15% threshold documented here and in --help per Phase 11 AC #3)
+# Edge case: identical template bytes across two captured versions → prompt user
+#   which version to stamp; hash is the same, only edikt_template_version differs.
+
+# md5 of a file. Portable BSD (md5 -q) + GNU (md5sum) dispatch.
+_md5_file() {
+    _mf="$1"
+    if command -v md5sum >/dev/null 2>&1; then
+        md5sum "$_mf" | awk '{print $1}'
+    elif command -v md5 >/dev/null 2>&1; then
+        md5 -q "$_mf"
+    else
+        log_err "md5sum or md5 required for backfill"
+        return 1
+    fi
+}
+
+# Extract a scalar value from YAML frontmatter (between the first pair of ---).
+# Usage: _fm_get <file> <key>
+_fm_get() {
+    _fg_f="$1"
+    _fg_k="$2"
+    awk -v k="$_fg_k" '
+        /^---$/ { fm++; next }
+        fm == 1 {
+            if ($0 ~ ("^" k ":")) {
+                sub("^" k ":[ \t]*", "")
+                gsub(/^["'"'"']|["'"'"']$/, "")
+                print; exit
+            }
+        }
+        fm >= 2 { exit }
+    ' "$_fg_f"
+}
+
+# Re-synthesize a template: apply path substitutions + stack filter.
+# Reads: template_file, config_yaml, substitutions_yaml.
+# Writes synthesised content to stdout.
+# Falls back gracefully if _substitutions.yaml or config keys are absent.
+_backfill_resynth() {
+    _br_tmpl="$1"
+    _br_cfg="$2"
+    _br_subs="$3"
+    python3 - "$_br_tmpl" "$_br_cfg" "$_br_subs" <<'PYEOF'
+import sys, re
+
+tmpl_file = sys.argv[1]
+cfg_file  = sys.argv[2]
+subs_file = sys.argv[3]
+
+try:
+    content = open(tmpl_file).read()
+except Exception as e:
+    sys.exit("error: cannot read template: " + str(e))
+
+try:
+    import yaml
+    subs_table = (yaml.safe_load(open(subs_file).read()) or {}).get("substitutions", {})
+except Exception:
+    subs_table = {}
+
+try:
+    import yaml
+    cfg = yaml.safe_load(open(cfg_file).read()) or {}
+    config_paths = cfg.get("paths", {}) or {}
+    stack = cfg.get("stack", []) or []
+    if isinstance(stack, str):
+        stack = [stack]
+except Exception:
+    config_paths = {}
+    stack = []
+
+for _key, entry in subs_table.items():
+    default   = entry.get("default", "")
+    leaf      = (entry.get("config_key", "") or "").split(".")[-1]
+    configured = config_paths.get(leaf) if leaf else None
+    if configured and configured != default:
+        content = content.replace(default, configured)
+
+if stack:
+    opens  = len(re.findall(r"<!-- edikt:stack:[^>]+ -->", content))
+    closes = len(re.findall(r"<!-- /edikt:stack -->", content))
+    if opens == closes and opens > 0:
+        pat = re.compile(
+            r"<!-- edikt:stack:([^>]+) -->\n(.*?)<!-- /edikt:stack -->",
+            re.DOTALL,
+        )
+        def _repl(m):
+            langs = {l.strip() for l in m.group(1).strip().split(",")}
+            return m.group(2).rstrip("\n") if langs & set(stack) else ""
+        content = pat.sub(_repl, content)
+        content = re.sub(r"\n{3,}", "\n\n", content)
+
+sys.stdout.write(content)
+PYEOF
+}
+
+# Strip edikt_template_hash and edikt_template_version from frontmatter for
+# comparison. Writes cleaned content to stdout.
+_backfill_strip_prov_fm() {
+    _bsp_f="$1"
+    python3 - "$_bsp_f" <<'PYEOF'
+import sys
+content = open(sys.argv[1]).read()
+if not content.startswith("---\n"):
+    sys.stdout.write(content); sys.exit(0)
+try:
+    end = content.index("\n---\n", 4)
+except ValueError:
+    sys.stdout.write(content); sys.exit(0)
+fm_body  = content[4:end]
+after_fm = content[end + 1:]
+lines = [l for l in fm_body.splitlines()
+         if not l.startswith(("edikt_template_hash:", "edikt_template_version:"))]
+sys.stdout.write("---\n" + "\n".join(lines) + "\n" + after_fm)
+PYEOF
+}
+
+# Check Levenshtein(installed_stripped, resynth) ≤ 15% of installed size.
+# Returns 0 (near-match, safe to stamp) or 1 (diverged, skip).
+# Phase 11 AC #3: threshold = 15% of installed file character count.
+# This threshold is documented here and in `edikt doctor --help`.
+_backfill_lev_ok() {
+    _blo_inst="$1"
+    _blo_resynth="$2"
+    python3 - "$_blo_inst" "$_blo_resynth" <<'PYEOF'
+import sys
+
+a = open(sys.argv[1]).read()   # installed (stripped)
+b = open(sys.argv[2]).read()   # resynth
+
+# Threshold: 15% of installed file character count (SPEC-004 §10.M6 / Phase 11 AC #3).
+threshold = int(0.15 * len(a))
+
+if abs(len(a) - len(b)) > threshold:
+    sys.exit(1)   # size gap alone exceeds threshold — diverged
+
+m, n = len(a), len(b)
+prev = list(range(n + 1))
+for i in range(1, m + 1):
+    cur = [i]; row_min = i
+    for j in range(1, n + 1):
+        cost = 0 if a[i-1] == b[j-1] else 1
+        v = min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + cost)
+        cur.append(v)
+        if v < row_min: row_min = v
+    if row_min > threshold:
+        sys.exit(1)   # early exit: already over threshold
+    prev = cur
+
+sys.exit(0 if prev[n] <= threshold else 1)
+PYEOF
+}
+
+# Write edikt_template_hash + edikt_template_version into frontmatter (atomic).
+_backfill_write_prov() {
+    _bwp_file="$1"
+    _bwp_hash="$2"
+    _bwp_ver="$3"
+    python3 - "$_bwp_file" "$_bwp_hash" "$_bwp_ver" <<'PYEOF'
+import sys, os
+path, hval, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+content = open(path).read()
+if not content.startswith("---\n"):
+    sys.exit("error: " + path + " has no YAML frontmatter")
+try:
+    end = content.index("\n---\n", 4)
+except ValueError:
+    sys.exit("error: " + path + " missing closing ---")
+fm_body  = content[4:end]
+after_fm = content[end + 1:]
+lines = [l for l in fm_body.splitlines()
+         if not l.startswith(("edikt_template_hash:", "edikt_template_version:"))]
+lines.append('edikt_template_hash: "' + hval + '"')
+lines.append('edikt_template_version: "' + ver + '"')
+new_content = "---\n" + "\n".join(lines) + "\n" + after_fm
+tmp = path + ".prov.tmp"
+open(tmp, "w").write(new_content)
+os.replace(tmp, path)
+PYEOF
+}
+
+# Known captured versions for same-hash disambiguation check.
+_M6_KNOWN_VERSIONS="0.1.0 0.1.4 0.2.0 0.3.0 0.4.3"
+
+# Main backfill implementation. $1: dry_run (0|1).
+_doctor_backfill_provenance() {
+    _dbp_dry="$1"
+
+    agents_dir="$CLAUDE_ROOT/agents"
+    if [ ! -d "$agents_dir" ]; then
+        log_info "  backfill: no agents directory at $agents_dir — nothing to do"
+        return 0
+    fi
+
+    config_file="$EDIKT_ROOT/config.yaml"
+    subs_yaml="$EDIKT_ROOT/current/templates/agents/_substitutions.yaml"
+    # EDIKT_MIGRATION_FIXTURES_BASE can be overridden for tests.
+    fixtures_base="${EDIKT_MIGRATION_FIXTURES_BASE:-$EDIKT_ROOT/migration-fixtures}"
+
+    _dbp_stamped=0
+    _dbp_skipped=0
+    _dbp_already=0
+
+    log_info "  scanning $agents_dir ..."
+
+    for _agent_file in "$agents_dir"/*.md; do
+        [ -f "$_agent_file" ] || continue
+        _aname=$(basename "$_agent_file" .md)
+
+        # a. Skip if already provenanced.
+        _stored_hash=$(_fm_get "$_agent_file" "edikt_template_hash")
+        if [ -n "$_stored_hash" ]; then
+            log_info "  $_aname: already provenanced — skip"
+            _dbp_already=$((_dbp_already + 1))
+            continue
+        fi
+
+        # b. Detect install version hint from frontmatter.
+        _install_ver=$(_fm_get "$_agent_file" "edikt_version")
+        [ -z "$_install_ver" ] && _install_ver=$(_fm_get "$_agent_file" "version")
+
+        if [ -z "$_install_ver" ]; then
+            # No hint — prompt user.
+            printf "\n  %s: no version hint in frontmatter.\n" "$_aname"
+            printf "  Which edikt version installed '%s'?\n" "$_aname"
+            printf "  [0.1.0 / 0.1.4 / 0.2.0 / 0.3.0 / 0.4.x / skip]: "
+            if ! read -r _uver 2>/dev/null; then
+                log_info "  $_aname: non-interactive stdin — skip"
+                emit_event provenance_backfill_skipped \
+                    '"agent":"'"$_aname"'","reason":"no version hint and non-interactive"'
+                _dbp_skipped=$((_dbp_skipped + 1))
+                continue
+            fi
+            case "$_uver" in
+                0.1.0|0.1.4|0.2.0|0.3.0) _install_ver="$_uver" ;;
+                0.4.x|0.4.*)              _install_ver="0.4.3" ;;
+                skip|"")
+                    log_info "  $_aname: skipped by user"
+                    emit_event provenance_backfill_skipped \
+                        '"agent":"'"$_aname"'","reason":"skipped by user"'
+                    _dbp_skipped=$((_dbp_skipped + 1))
+                    continue
+                    ;;
+                *)
+                    log_info "  $_aname: unrecognised input '$_uver' — skip"
+                    emit_event provenance_backfill_skipped \
+                        '"agent":"'"$_aname"'","reason":"unrecognised version input"'
+                    _dbp_skipped=$((_dbp_skipped + 1))
+                    continue
+                    ;;
+            esac
+        fi
+
+        # Normalise 0.4.x variants.
+        case "$_install_ver" in 0.4.*) _install_ver="0.4.3" ;; esac
+
+        # c. Locate source template in fixtures.
+        _tmpl_path="$fixtures_base/v${_install_ver}/templates/agents/${_aname}.md"
+
+        # d. Skip if no captured template for this version.
+        if [ ! -f "$_tmpl_path" ]; then
+            log_info "  $_aname: no captured template for v${_install_ver} — skip"
+            emit_event provenance_backfill_skipped \
+                '"agent":"'"$_aname"'","reason":"no captured template for v'"$_install_ver"'"'
+            _dbp_skipped=$((_dbp_skipped + 1))
+            continue
+        fi
+
+        # e. Compute md5 of raw source template bytes (Phase 9 hash contract:
+        #    hash is taken before substitution and stack filtering).
+        _tmpl_hash=$(_md5_file "$_tmpl_path") || {
+            log_warn "  $_aname: md5 failed — skip"
+            _dbp_skipped=$((_dbp_skipped + 1))
+            continue
+        }
+
+        # Edge case: identical template bytes across two captured versions →
+        # prompt user which version to stamp. Hash is the same; only
+        # edikt_template_version differs.
+        _version_to_stamp="$_install_ver"
+        for _other_ver in $_M6_KNOWN_VERSIONS; do
+            [ "$_other_ver" = "$_install_ver" ] && continue
+            _other_tmpl="$fixtures_base/v${_other_ver}/templates/agents/${_aname}.md"
+            [ -f "$_other_tmpl" ] || continue
+            _other_hash=$(_md5_file "$_other_tmpl") || continue
+            if [ "$_other_hash" = "$_tmpl_hash" ]; then
+                printf "\n  %s: template bytes identical across v%s and v%s.\n" \
+                    "$_aname" "$_install_ver" "$_other_ver"
+                printf "  Which version should be stamped in edikt_template_version?\n"
+                printf "  [%s / %s]: " "$_install_ver" "$_other_ver"
+                if read -r _vpick 2>/dev/null; then
+                    case "$_vpick" in
+                        "$_install_ver") _version_to_stamp="$_install_ver" ;;
+                        "$_other_ver")   _version_to_stamp="$_other_ver" ;;
+                        *)
+                            log_info "  $_aname: unrecognised pick '$_vpick' — using $_install_ver"
+                            _version_to_stamp="$_install_ver"
+                            ;;
+                    esac
+                fi
+                break
+            fi
+        done
+
+        # f. Re-synthesize (substitutions + stack filter) and compare.
+        _tmp_resynth="${TMPDIR:-/tmp}/edikt-backfill-resynth.$$.tmp"
+        _tmp_inst="${TMPDIR:-/tmp}/edikt-backfill-inst.$$.tmp"
+        # Register both temps in the global EXIT trap so they are removed even
+        # if the process receives SIGINT/SIGTERM mid-loop (e.g. Ctrl-C during
+        # a long backfill run). The rm -f at end-of-loop handles the normal path.
+        trap 'rm -f "$_tmp_resynth" "$_tmp_inst"; edikt_exit_trap' EXIT
+        trap 'rm -f "$_tmp_resynth" "$_tmp_inst"; edikt_exit_trap INT' INT
+        trap 'rm -f "$_tmp_resynth" "$_tmp_inst"; edikt_exit_trap TERM' TERM
+
+        if ! _backfill_resynth "$_tmpl_path" "$config_file" "$subs_yaml" \
+                > "$_tmp_resynth" 2>/dev/null; then
+            # Re-synthesis failed (Python unavailable, etc.) — fall back to raw template.
+            cp "$_tmpl_path" "$_tmp_resynth"
+        fi
+
+        # Strip provenance frontmatter from installed file for comparison.
+        if ! _backfill_strip_prov_fm "$_agent_file" > "$_tmp_inst" 2>/dev/null; then
+            cp "$_agent_file" "$_tmp_inst"
+        fi
+
+        # Levenshtein check (threshold: 15% of installed file character count).
+        # Threshold cited here per Phase 11 AC #3; also in `edikt doctor --help`.
+        if _backfill_lev_ok "$_tmp_inst" "$_tmp_resynth"; then
+            if [ "$_dbp_dry" -eq 1 ]; then
+                log_info "  $_aname: [dry-run] would stamp hash=$_tmpl_hash version=$_version_to_stamp"
+            else
+                if _backfill_write_prov "$_agent_file" "$_tmpl_hash" "$_version_to_stamp"; then
+                    log_info "  $_aname: stamped (hash=$_tmpl_hash, version=$_version_to_stamp)"
+                    emit_event provenance_backfilled \
+                        '"agent":"'"$_aname"'","hash":"'"$_tmpl_hash"'","version":"'"$_version_to_stamp"'"'
+                    _dbp_stamped=$((_dbp_stamped + 1))
+                else
+                    log_warn "  $_aname: failed to write provenance — skip"
+                    _dbp_skipped=$((_dbp_skipped + 1))
+                fi
+            fi
+        else
+            # Levenshtein distance > 15% of installed size — user has customised
+            # this agent beyond the safe-backfill threshold.
+            log_info "  $_aname: user customizations exceed safe-backfill threshold (>15% Levenshtein) — skip"
+            emit_event provenance_backfill_skipped \
+                '"agent":"'"$_aname"'","reason":"user customizations exceed safe-backfill threshold"'
+            _dbp_skipped=$((_dbp_skipped + 1))
+        fi
+
+        rm -f "$_tmp_resynth" "$_tmp_inst"
+        # Restore normal exit traps now that temps are gone.
+        trap 'edikt_exit_trap' EXIT
+        trap 'edikt_exit_trap INT'  INT
+        trap 'edikt_exit_trap TERM' TERM
+    done
+
+    if [ "$_dbp_dry" -eq 1 ]; then
+        log_info "  [dry-run] candidates to stamp: $_dbp_stamped  to skip: $_dbp_skipped  already provenanced: $_dbp_already"
+    else
+        log_info "  stamped: $_dbp_stamped  skipped: $_dbp_skipped  already provenanced: $_dbp_already"
+    fi
+    return 0
+}
+
+# migrate_m6_provenance_backfill — no-op in the migration chain.
+# M6 backfill is NEVER automatic: it runs only via `edikt doctor --backfill-provenance`.
+# Agents without provenance fall back to the v0.4.3 diff classifier per FR-029.
 migrate_m6_provenance_backfill() {
-    # No-op stub. Detection logic ships in Phase 11.
-    : "${1:-}"
+    : "${1:-}"   # dry_run ignored — this is intentionally a no-op
     return 0
 }
 
@@ -2620,8 +3019,17 @@ Subcommands:
   dev unlink           Remove dev mode, revert to most-recent tagged version
   migrate [flags]      Migrate pre-v0.5.0 flat layout → versioned layout
                        Flags: --dry-run, --yes, --abort
-  doctor [--quick]     Verify symlink chain + manifest integrity
-                       (--quick skips per-file SHA256 verification)
+  doctor [flags]       Verify symlink chain + manifest integrity
+                       --quick               skip per-file SHA256 verification
+                       --backfill-provenance opt-in M6 backfill: stamps
+                         edikt_template_hash on pre-v0.5.0 agents that lack it.
+                         NEVER runs automatically — must be passed explicitly.
+                         Uses Levenshtein distance to detect user edits:
+                         if distance > 15%% of installed file size the agent
+                         is skipped ("user customizations exceed safe-backfill
+                         threshold"). See docs/guides/migrating-from-v0.4.md.
+                       --dry-run (with --backfill-provenance): list candidates
+                         without writing any files.
   uninstall [--yes]    Remove EDIKT_ROOT + commands symlink
 
 Environment:
