@@ -21,8 +21,8 @@
 | 6     | done | 1/5 | 2026-04-15      |
 | 7a    | done | 1/5 | 2026-04-15 |
 | 7b    | pending (split — run capture.sh, commit real fixtures, wire M4 to compile invocation) | 0/5 | - |
-| 8     | pending | 0/5 | -      |
-| 9     | pending | 0/5 | -      |
+| 8     | done | 1/5 | 2026-04-15 |
+| 9     | done | 1/5 | 2026-04-15 |
 | 10    | pending | 0/5 | -      |
 | 11    | pending | 0/5 | -      |
 | 11b   | pending (was 2b.i — characterize hooks: rewrite fixtures against actual behavior, sandbox-staged, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1`) | 0/5 | - |
@@ -1187,14 +1187,14 @@ When complete, output: UPGRADE PROVENANCE READY
 - `docs/product/specs/SPEC-004-v050-stability/spec.md` (§10.M6)
 
 **Acceptance Criteria:**
-- [ ] `edikt doctor --backfill-provenance` scans `.claude/agents/*.md`, identifies files without `edikt_template_hash` in frontmatter.
-- [ ] For each candidate: inspects the agent file for any hint at its install version (frontmatter `version:` if v0.4.x wrote one; otherwise prompts user). Uses `test/integration/migration/fixtures/v<detected>/` template as the hash source, computes md5, writes provenance frontmatter.
-- [ ] Dry-run mode lists candidates without writing.
-- [ ] After backfill, `/edikt:upgrade` treats backfilled agents identically to v0.5.0-installed agents (Phase 10's fast path triggers).
-- [ ] Backfill is NEVER automatic — explicit flag required. Documented in `edikt doctor --help` and Phase 14 docs.
-- [ ] Edge case: if the user-modified file diverges substantially from every captured template version, backfill warns and skips with a clear reason. Does not guess.
-- [ ] Events `provenance_backfilled` + `provenance_backfill_skipped` written per file.
-- [ ] Tests: `test/integration/migration/test_m6_backfill_exact_match.py`, `test_m6_backfill_diverged_skips.py`, `test_m6_backfill_unknown_version_prompts.py`.
+- [x] `edikt doctor --backfill-provenance` scans `.claude/agents/*.md`, identifies files without `edikt_template_hash` in frontmatter.
+- [x] For each candidate: inspects the agent file for any hint at its install version (frontmatter `version:` if v0.4.x wrote one; otherwise prompts user). Uses `test/integration/migration/fixtures/v<detected>/` template as the hash source, computes md5, writes provenance frontmatter.
+- [x] Dry-run mode lists candidates without writing.
+- [x] After backfill, `/edikt:upgrade` treats backfilled agents identically to v0.5.0-installed agents (Phase 10's fast path triggers).
+- [x] Backfill is NEVER automatic — explicit flag required. Documented in `edikt doctor --help` and Phase 14 docs (stub at `docs/guides/migrating-from-v0.4.md`).
+- [x] Edge case: if the user-modified file diverges substantially from every captured template version, backfill warns and skips with a clear reason. Does not guess.
+- [x] Events `provenance_backfilled` + `provenance_backfill_skipped` written per file.
+- [x] Tests: `test/integration/migration/test_m6_backfill_exact_match.py`, `test_m6_backfill_diverged_skips.py`, `test_m6_backfill_unknown_version_prompts.py`.
 
 **Prompt:**
 ```

@@ -97,6 +97,29 @@ if [ -d "$SCRIPT_DIR/integration/install" ]; then
     done < <(find "$SCRIPT_DIR/integration/install" -type f -name 'test_*.sh' | sort)
 fi
 
+# ─── Layer 2b: shell-based integration tests (init provenance) ───────────────
+# Phase 9 owns test/integration/init/test_*.sh. Structural checks for
+# _substitutions.yaml, stack markers, and provenance instructions in init.md.
+#
+# NOTE: test/integration/upgrade/ is pytest-only by design (no test_*.sh
+# files are expected there). All upgrade tests are picked up by the pytest
+# invocation in the Layer 2 block below. Adding .sh tests under upgrade/
+# would require a matching discovery block here.
+if [ -d "$SCRIPT_DIR/integration/init" ]; then
+    while IFS= read -r it_test; do
+        rel="${it_test#$SCRIPT_DIR/}"
+        suite_name="${rel%.sh}"
+        echo ""
+        echo -e "${BOLD}[$suite_name]${NC}"
+        SUITE_COUNT=$((SUITE_COUNT + 1))
+
+        chmod +x "$it_test"
+        if ! bash "$it_test" "$PROJECT_ROOT"; then
+            FAILED_SUITES=$((FAILED_SUITES + 1))
+        fi
+    done < <(find "$SCRIPT_DIR/integration/init" -type f -name 'test_*.sh' | sort)
+fi
+
 # ─── Layer 2: Agent SDK integration tests (opt-in) ──────────────────────────
 # Placeholder branch for Phase 12. When test/integration/ exists and
 # SKIP_INTEGRATION != 1, the pytest suite runs here. Until then this is
