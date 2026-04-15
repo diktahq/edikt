@@ -148,12 +148,9 @@ LOCK_DIR=""
 LOCK_FD=""
 
 acquire_lock() {
-    # Re-entrancy guard: if this process already holds the lock, return 0.
-    # This allows composite subcommands (upgrade, dev) to call install/use
-    # internals without double-locking. Single-threaded POSIX sh: safe.
-    if [ -n "${LOCK_HELD:-}" ]; then
-        return 0
-    fi
+    # acquire_lock is NOT re-entrant. Any future composite that needs to call
+    # subcommand internals must inline the work (see cmd_dev_link/unlink for
+    # the pattern).
     mkdir -p "$EDIKT_ROOT" || return 1
     lockfile="$EDIKT_ROOT/.lock"
 
@@ -784,6 +781,8 @@ cmd_install() {
 
     rm -rf "$staging" 2>/dev/null || true
 
+    release_lock
+
     emit_event version_installed \
         '"version":"'"$norm"'","source":"'"$source_type"'","sha256":"'"$tarball_sha"'","installed_via":"launcher"'
 
@@ -808,6 +807,7 @@ cmd_use() {
     acquire_lock || return $?
 
     if ! check_payload_min_version "$target_dir"; then
+        release_lock
         return $EX_CHECKSUM
     fi
 
@@ -825,6 +825,9 @@ cmd_use() {
         extra="$extra"',"previous":"'"$prev"'"'
     fi
     extra="$extra"',"backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'"'
+
+    release_lock
+
     emit_event version_activated "$extra"
 
     log_info "activated $norm"
@@ -848,6 +851,8 @@ cmd_rollback() {
 
     backup_ts=$(flip_current "versions/$prev")
     lock_write "$prev" "launcher"
+
+    release_lock
 
     emit_event rollback_performed \
         '"from":"'"$cur"'","to":"'"$prev"'","backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'","reason":"user"'
@@ -1580,10 +1585,19 @@ cmd_uninstall() {
 find_project_config() {
     _dir="$PWD"
     _home="${HOME:-/}"
+    # Resolve the natural global edikt root (EDIKT_HOME or $HOME/.edikt).
+    # We compare found configs against this to skip the global config.
+    # $EDIKT_ROOT may be overridden (e.g. in tests) so we use EDIKT_HOME
+    # (the canonical home-level path) as the ground truth for "global".
+    _global_root="${EDIKT_HOME:-${_home}/.edikt}"
     while true; do
         if [ -f "$_dir/.edikt/config.yaml" ]; then
-            echo "$_dir/.edikt/config.yaml"
-            return 0
+            # Skip if this is the global edikt config (lives at $EDIKT_HOME/config.yaml,
+            # not a project pin). Project configs are by definition NOT $EDIKT_HOME.
+            if [ "$_dir/.edikt" != "$_global_root" ]; then
+                echo "$_dir/.edikt/config.yaml"
+                return 0
+            fi
         fi
         # Stop at $HOME — don't leak out of the user tree.
         if [ "$_dir" = "$_home" ] || [ "$_dir" = "/" ]; then
@@ -1623,6 +1637,17 @@ resolve_latest_tag() {
         log_err "could not parse tag_name from GitHub API response"
         return 1
     fi
+    # Sanity check: the extracted value must look like a semver tag.
+    # A malformed JSON response (or a future GitHub field reorder) could
+    # otherwise cause us to install garbage.
+    case "$_tag" in
+        v[0-9]*.[0-9]*.[0-9]*) ;;
+        [0-9]*.[0-9]*.[0-9]*) ;;
+        *)
+            log_err "extracted tag does not look like semver: $_tag"
+            return 1
+            ;;
+    esac
     echo "$_tag"
 }
 
@@ -1896,12 +1921,17 @@ cmd_upgrade_pin() {
     fi
     active_norm=$(normalize_tag "$active")
 
+    acquire_lock || return $?
+
     # Read current pin (if any) for informational output.
     old_pin=$(awk '/^edikt_version:/{gsub(/["\x27[:space:]]/,"",$2);print $2;exit}' "$cfg" 2>/dev/null || true)
 
     tmp="$cfg.tmp.$$"
 
     if grep -q '^edikt_version:' "$cfg" 2>/dev/null; then
+        # Match only column-0 'edikt_version:' lines. Indented variants (e.g.
+        # nested under a YAML parent key) are not supported by this surgical
+        # update — use a yaml-aware editor for that case.
         # Replace only the first occurrence of edikt_version: line.
         # awk -v sets the variable before processing begins; the replaced flag
         # guards against editing any subsequent edikt_version: lines.
@@ -1921,6 +1951,8 @@ cmd_upgrade_pin() {
         } >"$tmp" && mv -f "$tmp" "$cfg"
         log_info "upgrade-pin: appended edikt_version to $cfg"
     fi
+
+    release_lock
 
     emit_event version_pinned \
         '"version":"'"$active_norm"'","config":"'"$cfg"'"'
@@ -1977,8 +2009,36 @@ cmd_dev_link() {
 
     dev_dir="$EDIKT_ROOT/versions/dev"
     # Tear down any existing dev link.
+    # Safety: if dev_dir contains regular files or populated subdirectories
+    # (i.e. user-created content, not just our own symlinks), quarantine it
+    # instead of nuking it. Consistent with Phase 4 _safe_remove_or_quarantine
+    # hardening — never rm -rf content that might belong to the user.
     if [ -e "$dev_dir" ] || [ -L "$dev_dir" ]; then
-        rm -rf "$dev_dir" 2>/dev/null || true
+        if [ -L "$dev_dir" ]; then
+            # It's a plain symlink — safe to remove.
+            rm -f "$dev_dir" 2>/dev/null || true
+        elif [ -d "$dev_dir" ]; then
+            # Check for any regular files or non-empty subdirs (real content).
+            _has_real_content=0
+            for _e in "$dev_dir"/* "$dev_dir"/.[!.]* "$dev_dir"/..?*; do
+                [ -e "$_e" ] || [ -L "$_e" ] || continue
+                if [ -L "$_e" ]; then
+                    continue  # our own symlinks — safe to remove
+                fi
+                _has_real_content=1
+                break
+            done
+            if [ "$_has_real_content" -eq 1 ]; then
+                _safe_remove_or_quarantine "$dev_dir" "dev-link" || {
+                    release_lock
+                    return 1
+                }
+            else
+                rm -rf "$dev_dir" 2>/dev/null || true
+            fi
+        else
+            rm -f "$dev_dir" 2>/dev/null || true
+        fi
     fi
     mkdir -p "$dev_dir"
 
