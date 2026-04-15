@@ -297,6 +297,9 @@ substitutions:
   plans:
     default: "docs/plans"
     config_key: "paths.plans"
+  guidelines:
+    default: "docs/guidelines"
+    config_key: "paths.guidelines"
 ```
 
 4. For each entry: if `config.paths.<key>` is set and differs from `default`, replace all occurrences of `default` string in the template with the configured path, then write the result.
@@ -326,7 +329,7 @@ substitutions:
 2. For each `<!-- edikt:stack:<langs> --> … <!-- /edikt:stack -->` block:
    - If `<langs>` intersects `stack:`, keep the block content (strip the markers).
    - If no intersection, delete the block entirely (markers + content).
-3. Markers without closing tag log a warning and are left verbatim (fail-safe).
+3. Markers without closing tag log a warning and skip filtering for the entire file (fail-safe — better to include too much than to corrupt the agent by partially processing mismatched markers).
 
 Applies to every agent template during init. `backend.md`, `qa.md`, `frontend.md` are the initial targets (language-heavy).
 
@@ -341,7 +344,7 @@ description: Software architect specialist
 model: opus
 memory: project
 edikt_template_hash: "a1b2c3d4e5f6…"     # md5 of source template BEFORE substitution
-edikt_template_version: "0.5.0"           # edikt version that installed it
+edikt_template_version: "<INSTALLED>"     # value of ~/.edikt/VERSION at install time
 ---
 ```
 
