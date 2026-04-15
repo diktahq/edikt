@@ -46,6 +46,7 @@ EX_OK=0
 EX_NETWORK=1
 EX_PERMISSION=2
 EX_VERSION=3
+EX_GENERAL=4
 
 # ─── Flag parsing ───────────────────────────────────────────────────────────
 INSTALL_MODE=""
@@ -494,8 +495,8 @@ write_settings_json() {
   # Use | as sed delimiter to avoid conflicts with path separators.
   sed "s|\${EDIKT_HOOK_DIR}|${EDIKT_HOOK_DIR}|g" "$tmpl" >"$tmp" || {
     rm -f "$tmp" 2>/dev/null || true
-    warn "settings.json substitution failed — skipping"
-    return 0
+    error "settings.json substitution failed — hook paths not written"
+    return $EX_GENERAL
   }
   mv -f "$tmp" "$dest"
   dim "wrote $dest (hook dir: $EDIKT_HOOK_DIR)"
