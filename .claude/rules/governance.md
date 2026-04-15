@@ -26,7 +26,7 @@ Before starting a task, scan this table. If your task matches any signals or sco
 | Signals | Scope | File |
 |---|---|---|
 | platform, rules, plan, architecture, structure | planning, design, review, implementation | `governance/architecture.md` |
-| agent, specialist, advisor, subagent, evaluator, domain signal, BLOCKED | planning, design, review, implementation | `governance/agents.md` |
+| agent, specialist, advisor, subagent, evaluator, domain signal, BLOCKED | planning, design, review, implementation | `governance/agent-rules.md` |
 | hook, PostToolUse, format, preprocessing, CLAUDE.md, sentinel | implementation | `governance/hooks.md` |
 | template, override, custom, rule pack, upgrade | implementation | `governance/extensibility.md` |
 | compile, governance, schema, directive, sentinel block, invariant record, INV, artifact | implementation, design | `governance/compile.md` |
