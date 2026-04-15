@@ -94,10 +94,17 @@ for tag in "$@"; do
 
     # 5. Sanitize absolute $HOME references → ${HOME} placeholder.
     # Skip binary files (rare in edikt fixtures, but defensive).
+    # Escape $HOME for sed's BRE so any regex metacharacters in the path
+    # (e.g. '.' on macOS sandbox paths like /private/var/folders/...) don't
+    # corrupt the substitution pattern or silently match the wrong text.
+    _escape_for_sed() {
+        printf '%s\n' "$1" | sed 's/[][\/.^$*]/\\&/g'
+    }
+    _home_escaped=$(_escape_for_sed "$HOME")
     find "$fixture_dir" -type f | while read -r f; do
         if grep -Iq "$HOME" "$f" 2>/dev/null; then
             # shellcheck disable=SC2086
-            $SED_INPLACE "s|$HOME|\${HOME}|g" "$f"
+            $SED_INPLACE "s|${_home_escaped}|\${HOME}|g" "$f"
         fi
     done
 
