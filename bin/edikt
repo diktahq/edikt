@@ -911,6 +911,18 @@ cmd_doctor() {
         fi
     fi
 
+    # Partial/interrupted migration detection (per config-spec §8.2).
+    if migration_in_progress; then
+        echo "  ERROR: interrupted migration detected — run: edikt migrate --abort"
+        err_n=$((err_n + 1))
+    fi
+
+    # Pre-v0.5.0 flat layout awaiting migration.
+    if needs_migration; then
+        echo "  ERROR: flat layout detected — run: edikt migrate [--dry-run]"
+        err_n=$((err_n + 1))
+    fi
+
     # Stale .lock detection
     if [ -f "$EDIKT_ROOT/.lock" ]; then
         owner_pid=$(awk '{print $1; exit}' "$EDIKT_ROOT/.lock" 2>/dev/null)
@@ -930,6 +942,359 @@ cmd_doctor() {
         echo "result: healthy"
         return 0
     fi
+}
+
+# ─── Legacy-layout detection (per SPEC-004 §2 FR-018) ──────────────────────
+# Returns 0 if the flat (pre-v0.5.0) layout is present: $EDIKT_ROOT/hooks/ is
+# a real directory (not a symlink) AND $EDIKT_ROOT/VERSION exists. Returns 1
+# otherwise. Used by the dispatch gate and by `migrate`.
+needs_migration() {
+    [ -d "$EDIKT_ROOT/hooks" ] && [ ! -L "$EDIKT_ROOT/hooks" ] && [ -f "$EDIKT_ROOT/VERSION" ]
+}
+
+# Detects a partial/interrupted migration: presence of any staging or
+# pre-migration sibling dir. Used by doctor.
+migration_in_progress() {
+    for d in "$EDIKT_ROOT"/.migrate-staging-* "$EDIKT_ROOT"/.pre-migration-*; do
+        [ -e "$d" ] && return 0
+    done
+    return 1
+}
+
+# ─── Subcommand: migrate ────────────────────────────────────────────────────
+# Migrate a pre-v0.5.0 flat layout into the versioned layout.
+#   edikt migrate [--dry-run] [--yes] [--abort]
+# See SPEC-004 §2 FR-018, §10.M1, and config-spec §8.2.
+#
+# Atomicity approach:
+#   1. Stage the new layout at $EDIKT_ROOT/.migrate-staging-<ts>/<VERSION>/.
+#   2. Write pre-migration.tar.gz backup to backups/migration-<ts>/.
+#   3. Move flat dirs sideways into $EDIKT_ROOT/.pre-migration-<ts>/.
+#   4. Move staged version into versions/<VERSION>/.
+#   5. Wire symlink chain (atomic_symlink).
+#   6. Write lock.yaml, emit event, remove .pre-migration-<ts>/ last.
+# A trap on INT/TERM/EXIT invokes migrate_abort if MIGRATE_STATE != "done".
+
+# Per-migration state. Set in cmd_migrate / migrate_abort.
+MIGRATE_STATE=""
+MIGRATE_TS=""
+MIGRATE_STAGING=""
+MIGRATE_PREDIR=""
+MIGRATE_BACKUP_DIR=""
+MIGRATE_VERSION=""
+
+# Find any existing (orphaned) staging/pre-migration dirs. Echoes one path
+# per line. Used by --abort to recover from a crashed prior run.
+find_migration_leftovers() {
+    for d in "$EDIKT_ROOT"/.migrate-staging-* "$EDIKT_ROOT"/.pre-migration-*; do
+        [ -e "$d" ] || continue
+        echo "$d"
+    done
+}
+
+# Restore flat layout from $pre_dir (if present) — moves its children back
+# into $EDIKT_ROOT/. Safe to call even if individual children are absent.
+migrate_restore_from_predir() {
+    pre="$1"
+    [ -d "$pre" ] || return 0
+    for entry in hooks templates commands VERSION CHANGELOG.md; do
+        src="$pre/$entry"
+        dst="$EDIKT_ROOT/$entry"
+        if [ -e "$src" ] || [ -L "$src" ]; then
+            # Remove the half-installed replacement at dst (symlink or dir)
+            # before restoring. Do not touch config.yaml, custom/, backups/.
+            if [ -L "$dst" ]; then
+                rm -f "$dst" 2>/dev/null || true
+            elif [ -d "$dst" ]; then
+                rm -rf "$dst" 2>/dev/null || true
+            elif [ -e "$dst" ]; then
+                rm -f "$dst" 2>/dev/null || true
+            fi
+            mv "$src" "$dst" 2>/dev/null || true
+        fi
+    done
+    rmdir "$pre" 2>/dev/null || rm -rf "$pre" 2>/dev/null || true
+}
+
+# Abort an in-progress or crashed migration. Idempotent.
+# Arguments: none (consults MIGRATE_STATE vars and on-disk leftovers).
+# Returns 0 on success; always best-effort.
+migrate_abort() {
+    _any=0
+    # 1. Restore any .pre-migration-<ts>/ dirs (crashed or in-progress).
+    for pre in "$EDIKT_ROOT"/.pre-migration-*; do
+        [ -d "$pre" ] || continue
+        _any=1
+        log_info "migrate-abort: restoring flat layout from $(basename "$pre")"
+        # Tear down partial symlink chain first.
+        for link in "$EDIKT_ROOT/current" "$EDIKT_ROOT/hooks" "$EDIKT_ROOT/templates"; do
+            if [ -L "$link" ]; then
+                rm -f "$link" 2>/dev/null || true
+            fi
+        done
+        # Tear down the in-place versions/<v> tree only if it was the target
+        # of this migration (i.e. sibling .migrate-staging exists or the
+        # MIGRATE_VERSION var matches). Safer: only remove empty dirs.
+        if [ -n "${MIGRATE_VERSION:-}" ] && [ -d "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ]; then
+            rm -rf "$EDIKT_ROOT/versions/$MIGRATE_VERSION" 2>/dev/null || true
+            rmdir "$EDIKT_ROOT/versions" 2>/dev/null || true
+        fi
+        # Remove lock.yaml written by the aborted migration.
+        if [ -n "${MIGRATE_VERSION:-}" ] && [ -f "$EDIKT_ROOT/lock.yaml" ]; then
+            # Only remove if it names the aborted version and no prior version
+            # had a lock (we created it fresh during migration).
+            _active=$(lock_get active)
+            if [ "$_active" = "$MIGRATE_VERSION" ]; then
+                rm -f "$EDIKT_ROOT/lock.yaml" 2>/dev/null || true
+            fi
+        fi
+        migrate_restore_from_predir "$pre"
+    done
+
+    # 2. Remove any stale staging dirs.
+    for stg in "$EDIKT_ROOT"/.migrate-staging-*; do
+        [ -d "$stg" ] || continue
+        _any=1
+        log_info "migrate-abort: removing staging $(basename "$stg")"
+        rm -rf "$stg" 2>/dev/null || true
+    done
+
+    if [ "$_any" -eq 1 ]; then
+        emit_event migration_aborted \
+            '"reason":"abort","root":"'"$EDIKT_ROOT"'"'
+        log_info "migrate-abort: complete"
+    fi
+    return 0
+}
+
+# Trap handler used during migration. Called on EXIT/INT/TERM.
+# $1 is the exit status we received (from EXIT trap: use $?).
+migrate_trap_handler() {
+    _rc="${1:-1}"
+    # If we already committed successfully, only release the lock.
+    if [ "$MIGRATE_STATE" = "done" ]; then
+        release_lock
+        return 0
+    fi
+    # Otherwise treat as interrupted — abort.
+    MIGRATE_STATE="aborting"
+    migrate_abort 2>/dev/null || true
+    release_lock
+    # For INT (130) / TERM (143), re-signal ourselves so shell reports it.
+    case "$_rc" in
+        130|143) exit "$_rc" ;;
+        *) ;;
+    esac
+}
+
+cmd_migrate() {
+    dry_run=0
+    assume_yes=0
+    abort_only=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) dry_run=1 ;;
+            --yes|-y)  assume_yes=1 ;;
+            --abort)   abort_only=1 ;;
+            -h|--help)
+                cat <<EOF
+Usage: edikt migrate [--dry-run] [--yes] [--abort]
+
+Migrate a pre-v0.5.0 flat layout (hooks/ as directory) into the versioned
+layout. Dry-run previews the move plan without mutation. --yes bypasses the
+interactive confirmation. --abort restores state from any crashed or
+in-progress migration.
+EOF
+                return 0
+                ;;
+            *) log_err "unknown flag: $1"; return 1 ;;
+        esac
+        shift
+    done
+
+    # --abort bypasses detection; it's a pure recovery command.
+    if [ "$abort_only" -eq 1 ]; then
+        acquire_lock || return $?
+        if ! migration_in_progress; then
+            release_lock
+            log_info "nothing to abort (no staging or pre-migration directory found)"
+            return 0
+        fi
+        migrate_abort
+        release_lock
+        return 0
+    fi
+
+    # Detect the flat layout.
+    if ! needs_migration; then
+        # Check for an orphaned partial migration (crash with no flat left).
+        if migration_in_progress; then
+            log_warn "partial migration detected. Run: edikt migrate --abort"
+            return 1
+        fi
+        log_info "No migration needed."
+        return 0
+    fi
+
+    MIGRATE_VERSION=$(head -1 "$EDIKT_ROOT/VERSION" | tr -d '[:space:]')
+    if [ -z "$MIGRATE_VERSION" ]; then
+        log_err "cannot read version from $EDIKT_ROOT/VERSION"
+        return 1
+    fi
+
+    # Print the plan. Always show, even in --yes mode.
+    echo "Migration needed: flat layout → versioned layout (target: $MIGRATE_VERSION)"
+    echo ""
+    echo "Will move:"
+    for entry in hooks templates commands VERSION CHANGELOG.md; do
+        if [ -e "$EDIKT_ROOT/$entry" ] || [ -L "$EDIKT_ROOT/$entry" ]; then
+            echo "  $EDIKT_ROOT/$entry  →  $EDIKT_ROOT/versions/$MIGRATE_VERSION/$entry"
+        fi
+    done
+    echo ""
+    echo "Will create symlinks:"
+    echo "  $EDIKT_ROOT/current      → versions/$MIGRATE_VERSION"
+    echo "  $EDIKT_ROOT/hooks        → current/hooks"
+    echo "  $EDIKT_ROOT/templates    → current/templates"
+    echo "  $CLAUDE_ROOT/commands/edikt → $EDIKT_ROOT/current/commands/edikt"
+    echo ""
+    echo "Will preserve:"
+    for entry in config.yaml custom backups events.jsonl lock.yaml; do
+        if [ -e "$EDIKT_ROOT/$entry" ]; then
+            echo "  $EDIKT_ROOT/$entry (untouched)"
+        fi
+    done
+    echo ""
+
+    if [ "$dry_run" -eq 1 ]; then
+        echo "(dry-run: no changes written)"
+        return 0
+    fi
+
+    # Consent.
+    if [ "$assume_yes" -ne 1 ]; then
+        if [ ! -r /dev/tty ] || [ ! -t 0 ] && [ ! -c /dev/tty ]; then
+            log_err "non-interactive session detected. Re-run with --yes to confirm migration."
+            return 1
+        fi
+        printf 'Proceed? [y/N]: ' >/dev/tty 2>/dev/null || printf 'Proceed? [y/N]: ' >&2
+        if ! read -r reply </dev/tty 2>/dev/null; then
+            log_err "cannot read from /dev/tty. Re-run with --yes."
+            return 1
+        fi
+        case "$reply" in
+            y|Y|yes|YES) ;;
+            *) log_info "aborted"; return 0 ;;
+        esac
+    fi
+
+    acquire_lock || return $?
+
+    # Install migration-specific trap. The global EXIT trap already runs
+    # release_lock; we override it with a combined handler and restore
+    # semantics at the end.
+    MIGRATE_STATE="starting"
+    MIGRATE_TS=$(ts_now)
+    MIGRATE_STAGING="$EDIKT_ROOT/.migrate-staging-$MIGRATE_TS"
+    MIGRATE_PREDIR="$EDIKT_ROOT/.pre-migration-$MIGRATE_TS"
+    MIGRATE_BACKUP_DIR="$EDIKT_ROOT/backups/migration-$MIGRATE_TS"
+    trap 'migrate_trap_handler $?' EXIT
+    trap 'migrate_trap_handler 130' INT
+    trap 'migrate_trap_handler 143' TERM
+
+    # Step a: create backup first (before any mutation).
+    mkdir -p "$MIGRATE_BACKUP_DIR" || return 1
+    tar_src_files=""
+    for entry in hooks templates commands VERSION CHANGELOG.md; do
+        if [ -e "$EDIKT_ROOT/$entry" ] || [ -L "$EDIKT_ROOT/$entry" ]; then
+            tar_src_files="$tar_src_files $entry"
+        fi
+    done
+    # shellcheck disable=SC2086
+    if ! ( cd "$EDIKT_ROOT" && tar -czf "$MIGRATE_BACKUP_DIR/pre-migration.tar.gz" $tar_src_files 2>/dev/null ); then
+        log_err "failed to create pre-migration backup tarball"
+        return 1
+    fi
+    if ! tar -tzf "$MIGRATE_BACKUP_DIR/pre-migration.tar.gz" >/dev/null 2>&1; then
+        log_err "pre-migration backup tarball is not readable"
+        return 1
+    fi
+    log_info "migrate: wrote pre-migration backup to $MIGRATE_BACKUP_DIR/pre-migration.tar.gz"
+
+    # Step b+c: create staging dir and copy flat layout into it.
+    if ! mkdir "$MIGRATE_STAGING" 2>/dev/null; then
+        log_err "staging dir already exists: $MIGRATE_STAGING"
+        return 1
+    fi
+    stage_version_dir="$MIGRATE_STAGING/$MIGRATE_VERSION"
+    mkdir "$stage_version_dir" || return 1
+    for entry in hooks templates commands VERSION CHANGELOG.md; do
+        src="$EDIKT_ROOT/$entry"
+        [ -e "$src" ] || [ -L "$src" ] || continue
+        # tar-pipe preserves modes, symlinks, and is portable.
+        if [ -d "$src" ] && [ ! -L "$src" ]; then
+            ( cd "$EDIKT_ROOT" && tar -cf - "$entry" ) | ( cd "$stage_version_dir" && tar -xf - ) \
+                || { log_err "failed to copy $entry into staging"; return 1; }
+        else
+            cp "$src" "$stage_version_dir/$entry" || { log_err "failed to copy $entry"; return 1; }
+        fi
+    done
+
+    # Step d: write manifest into the staged version dir.
+    write_manifest "$stage_version_dir" "$MIGRATE_VERSION" "migration" "" ""
+
+    # Validate manifest is readable and self-consistent.
+    if ! manifest_verify "$stage_version_dir" >/dev/null 2>&1; then
+        log_err "staged manifest verification failed"
+        return 1
+    fi
+
+    MIGRATE_STATE="swapping"
+
+    # Step e: atomic-ish swap.
+    # (i) move flat entries sideways into .pre-migration-<ts>/
+    mkdir "$MIGRATE_PREDIR" || return 1
+    for entry in hooks templates commands VERSION CHANGELOG.md; do
+        src="$EDIKT_ROOT/$entry"
+        if [ -e "$src" ] || [ -L "$src" ]; then
+            mv "$src" "$MIGRATE_PREDIR/$entry" || {
+                log_err "failed to move $entry sideways — will be restored by abort"
+                return 1
+            }
+        fi
+    done
+
+    # (ii) move staged version into versions/<VERSION>/
+    mkdir -p "$EDIKT_ROOT/versions"
+    if [ -e "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ]; then
+        log_err "versions/$MIGRATE_VERSION already exists — refusing to overwrite"
+        return 1
+    fi
+    mv "$stage_version_dir" "$EDIKT_ROOT/versions/$MIGRATE_VERSION" \
+        || { log_err "failed to move staged version into place"; return 1; }
+
+    # (iii) wire the symlink chain atomically.
+    atomic_symlink "versions/$MIGRATE_VERSION" "$EDIKT_ROOT/current" \
+        || { log_err "failed to create current symlink"; return 1; }
+    ensure_external_symlinks
+
+    # Step f: write lock.yaml (active=<VERSION>, previous=null implicit).
+    lock_write "$MIGRATE_VERSION" "migration"
+
+    # Step g: emit success event.
+    emit_event layout_migrated \
+        '"from":"flat","to":"versioned","version":"'"$MIGRATE_VERSION"'","backup":"'"$MIGRATE_BACKUP_DIR"'"'
+
+    # Step h: commit — remove the .pre-migration-<ts>/ holding dir.
+    MIGRATE_STATE="done"
+    rm -rf "$MIGRATE_PREDIR" 2>/dev/null || true
+    rm -rf "$MIGRATE_STAGING" 2>/dev/null || true
+
+    # Restore normal exit trap and release lock.
+    trap 'release_lock' EXIT INT TERM
+
+    log_info "migration complete: $MIGRATE_VERSION activated"
+    return 0
 }
 
 # ─── Subcommand: uninstall ──────────────────────────────────────────────────
@@ -999,6 +1364,8 @@ Subcommands:
   install <tag>        Fetch + extract release; does not activate
   use <tag>            Activate an installed version (atomic symlink flip)
   rollback             Re-activate the previous version
+  migrate [flags]      Migrate pre-v0.5.0 flat layout → versioned layout
+                       Flags: --dry-run, --yes, --abort
   doctor [--quick]     Verify symlink chain + manifest integrity
                        (--quick skips per-file SHA256 verification)
   uninstall [--yes]    Remove EDIKT_ROOT + commands symlink
@@ -1033,12 +1400,26 @@ EOF
 sub="${1:-help}"
 shift 2>/dev/null || true
 
+# Legacy-layout gate (per SPEC-004 §2 FR-018). If pre-v0.5.0 flat layout is
+# detected, only migrate/doctor/version/help are reachable. Every other
+# subcommand refuses with a migration-needed message and exit 1.
+if needs_migration; then
+    case "$sub" in
+        migrate|doctor|version|--version|-v|help|--help|-h|"") ;;
+        *)
+            log_err "Layout migration needed. Run: edikt migrate [--dry-run]"
+            exit 1
+            ;;
+    esac
+fi
+
 case "$sub" in
     version|--version|-v) cmd_version "$@" ;;
     list|ls)              cmd_list "$@" ;;
     install)              cmd_install "$@" ;;
     use)                  cmd_use "$@" ;;
     rollback)             cmd_rollback "$@" ;;
+    migrate)              cmd_migrate "$@" ;;
     doctor)               cmd_doctor "$@" ;;
     uninstall)            cmd_uninstall "$@" ;;
     help|--help|-h|"")    cmd_help ;;
