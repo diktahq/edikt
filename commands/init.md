@@ -1034,7 +1034,40 @@ Format: SPEC-NNN-title/spec.md
 #   Write to: .claude/agents/architect.md
 ```
 
-For each enabled agent from step 3, Read the template and Write to `.claude/agents/{name}.md`.
+For each enabled agent from step 3, follow this install sequence — do not shortcut:
+
+**a. Load substitutions** — Read `~/.edikt/templates/agents/_substitutions.yaml` once (reuse for all agents). It maps config path keys to their default path strings.
+
+**b. Compute hash** — Compute the md5 of the raw source template file before any modification. This is `edikt_template_hash`. Command:
+- macOS: `md5 -q ~/.edikt/templates/agents/{name}.md`
+- Linux: `md5sum ~/.edikt/templates/agents/{name}.md | awk '{print $1}'`
+
+Hash before substitution. This is the stable anchor for upgrade comparison — it records "what the template looked like when installed," not "what the installed file looks like after customization."
+
+**c. Apply path substitutions** — For each entry in `_substitutions.yaml`:
+1. Read `config.paths.<config_key>` from `.edikt/config.yaml`
+2. If the configured path differs from `default`, replace every occurrence of `default` in the template content with the configured path
+3. If the configured path equals `default`, skip (no-op)
+
+**d. Apply stack filter** — Read `stack:` from `.edikt/config.yaml`. If stack is empty (`[]`) or absent, skip this step entirely — all content is kept verbatim. If stack is non-empty:
+1. Scan for unterminated markers: a `<!-- edikt:stack:... -->` with no matching `<!-- /edikt:stack -->`. If found, log a warning and skip filtering for this file entirely (fail-safe: better to include too much than to corrupt the agent).
+2. For each well-formed `<!-- edikt:stack:<langs> --> … <!-- /edikt:stack -->` block:
+   - Parse `<langs>` as a comma-separated list
+   - If any lang in `<langs>` is present in `stack`, keep the block content and strip the marker lines
+   - If no lang intersects, delete the entire block (markers + content)
+
+**e. Update frontmatter** — The installed file must have these two fields in its YAML frontmatter:
+```yaml
+edikt_template_hash: "<md5 computed in step b>"
+edikt_template_version: "<INSTALLED>"   # the value read from ~/.edikt/VERSION in Step 0
+```
+If the frontmatter already contains `edikt_template_hash` or `edikt_template_version` (reinstall scenario), update those values in place. Otherwise append them before the closing `---`.
+
+The version field records which edikt release installed this agent. Use the `INSTALLED` variable from Step 0 (`cat ~/.edikt/VERSION`), not a hardcoded string — the correct value differs across releases and is authoritative from the installed payload.
+
+The version field records when the agent was installed, not when it was last touched. Write it once at install and never bump it on upgrade-preserved files.
+
+**f. Write** — Write the processed content to `.claude/agents/{name}.md`.
 
 **Linter sync** — If linter configs were found, run `/edikt:sync` logic.
 
