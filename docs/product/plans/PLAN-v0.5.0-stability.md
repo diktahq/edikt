@@ -23,9 +23,9 @@
 | 7b    | pending (split — run capture.sh, commit real fixtures, wire M4 to compile invocation) | 0/5 | - |
 | 8     | done | 1/5 | 2026-04-15 |
 | 9     | done | 1/5 | 2026-04-15 |
-| 10    | pending | 0/5 | -      |
-| 11    | pending | 0/5 | -      |
-| 11b   | pending (was 2b.i — characterize hooks: rewrite fixtures against actual behavior, sandbox-staged, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1`) | 0/5 | - |
+| 10    | done | 1/5 | 2026-04-15 |
+| 11    | done | 1/5 | 2026-04-15 |
+| 11b   | done (characterize hooks: fixtures rewritten against actual behavior, sandbox-staged, gate replaced with opt-out `EDIKT_SKIP_HOOK_TESTS=1`) | 1/5 | 2026-04-15 |
 | 12    | pending | 0/5 | -      |
 | 13    | pending | 0/5 | -      |
 | 14    | pending | 0/5 | -      |

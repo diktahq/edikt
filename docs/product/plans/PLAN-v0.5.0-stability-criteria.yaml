@@ -637,50 +637,50 @@ phases:
 
   - phase: 11b
     title: "Hook Fixture Characterization (was 2b.i)"
-    status: pending
-    attempt: "0/5"
+    status: pass
+    attempt: "1/5"
     criteria:
       - id: AC-11b.1
         text: "Each fixture payload includes any sandbox staging needed (real fixture project dirs, fixed git history, staged config/plan files)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-15"
         verify: "test -d test/fixtures/projects && ls test/fixtures/projects/ | wc -l | awk '$1 >= 1'"
       - id: AC-11b.2
         text: "Expected-output fixtures encode exact strings v0.5.0 hooks emit (verified by piping payload to hook and diffing)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-15"
         verify: "for t in test/unit/hooks/test_*.sh; do bash $t || exit 1; done"
       - id: AC-11b.3
         text: "EDIKT_ENABLE_HOOK_JSON_TESTS gate removed; hook tests run by default in test/run.sh; opt-out via EDIKT_SKIP_HOOK_TESTS=1"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-15"
         verify: "! grep -q 'EDIKT_ENABLE_HOOK_JSON_TESTS' test/run.sh test/unit/hooks/test_*.sh test/unit/hooks/_runner.sh"
       - id: AC-11b.4
         text: "10/10 consecutive sandbox runs produce identical hook-suite output (after time/path normalization)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-15"
         verify: "for i in $(seq 1 10); do bash test/run.sh > /tmp/edikt-11b-$i.txt 2>&1; done; for i in $(seq 1 10); do sed -E -e 's|/tmp/[^ ]*|<TMP>|g' -e 's|/var/folders/[^ ]*|<TMP>|g' -e 's|edikt-test-[A-Za-z0-9]+|<SANDBOX>|g' /tmp/edikt-11b-$i.txt > /tmp/edikt-11b-$i-norm.txt; done; diff -q /tmp/edikt-11b-1-norm.txt /tmp/edikt-11b-10-norm.txt"
       - id: AC-11b.5
         text: "fixtures.yaml §9.1 _note fields explain WHY each expected output is what it is (characterization rationale, not prescription)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-15"
         verify: "grep -c '_note:' docs/product/specs/SPEC-004-v050-stability/fixtures.yaml | awk '$1 >= 19'"
       - id: AC-11b.6
         text: "Any non-deterministic fixture pair removed with rationale, not flaked or weakly-asserted in runner"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-15"
         verify: "! grep -E 'best.?effort|approximately|tolerate' test/unit/hooks/_runner.sh"
 
   - phase: 12
