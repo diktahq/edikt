@@ -78,11 +78,34 @@ for test_file in "$SCRIPT_DIR"/test-*.sh; do
     fi
 done
 
+# ─── Layer 2a: shell-based integration tests (install.sh bootstrap) ─────────
+# Phase 5 owns test/integration/install/test_*.sh. Discovered the same way
+# as Layer 1 unit tests. Runs before the pytest branch so install-bootstrap
+# regressions fail loudly even when pytest isn't installed.
+if [ -d "$SCRIPT_DIR/integration/install" ]; then
+    while IFS= read -r it_test; do
+        rel="${it_test#$SCRIPT_DIR/}"
+        suite_name="${rel%.sh}"
+        echo ""
+        echo -e "${BOLD}[$suite_name]${NC}"
+        SUITE_COUNT=$((SUITE_COUNT + 1))
+
+        chmod +x "$it_test"
+        if ! bash "$it_test" "$PROJECT_ROOT"; then
+            FAILED_SUITES=$((FAILED_SUITES + 1))
+        fi
+    done < <(find "$SCRIPT_DIR/integration/install" -type f -name 'test_*.sh' | sort)
+fi
+
 # ─── Layer 2: Agent SDK integration tests (opt-in) ──────────────────────────
 # Placeholder branch for Phase 12. When test/integration/ exists and
 # SKIP_INTEGRATION != 1, the pytest suite runs here. Until then this is
 # a no-op, but the branch is in place so CI wiring (Phase 14) works.
-if [ "${SKIP_INTEGRATION:-0}" != "1" ] && [ -d "$SCRIPT_DIR/integration" ]; then
+# Phase 12 will populate test/integration/ with pytest files; until then
+# we gate on the presence of conftest.py or a pytest.ini to avoid pytest
+# tripping over the shell-based install tests above.
+if [ "${SKIP_INTEGRATION:-0}" != "1" ] && [ -d "$SCRIPT_DIR/integration" ] && \
+   { [ -f "$SCRIPT_DIR/integration/conftest.py" ] || [ -f "$SCRIPT_DIR/integration/pytest.ini" ]; }; then
     echo ""
     echo -e "${BOLD}[integration]${NC}"
     SUITE_COUNT=$((SUITE_COUNT + 1))

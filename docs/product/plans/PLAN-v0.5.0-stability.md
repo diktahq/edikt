@@ -17,7 +17,7 @@
 | 2     | done (partial — fixtures + wiring; hook tests gated on 11b) | 1/5 | 2026-04-14 |
 | 3     | done | 1/5 | 2026-04-15 |
 | 4     | done | 1/5 | 2026-04-15 |
-| 5     | pending | 0/5 | -      |
+| 5     | done | 1/5 | 2026-04-15 |
 | 6     | pending | 0/5 | -      |
 | 7     | pending | 0/5 | -      |
 | 8     | pending | 0/5 | -      |

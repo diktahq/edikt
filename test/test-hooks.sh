@@ -741,7 +741,11 @@ assert_file_contains "$PROJECT_ROOT/commands/init.md" "product/specs" "init.md c
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "specs:" "init.md adds specs config"
 
 # Install includes new commands (sdlc namespace covers artifacts)
-assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace"
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh includes sdlc namespace"
+else
+    assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace"
+fi
 
 # ============================================================
 # v4.3 — Drift Detection
@@ -770,7 +774,11 @@ assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "DRIFT CHECK" "sdlc
 assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "edikt:sdlc:drift\|edikt:drift" "sdlc/review.md references drift command"
 
 # Install includes drift (via sdlc namespace)
-assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace (covers drift)"
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh includes sdlc namespace (covers drift)"
+else
+    assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace (covers drift)"
+fi
 
 # ============================================================
 # v4.0 — Compile command
@@ -794,6 +802,10 @@ assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:gov:compile\|edi
 assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:gov:compile\|edikt:compile" "invariant/new.md suggests /edikt:gov:compile after creation"
 
 # Install includes compile (via gov namespace)
-assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers compile)"
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh includes gov namespace (covers compile)"
+else
+    assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers compile)"
+fi
 
 test_summary

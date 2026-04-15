@@ -74,8 +74,13 @@ fi
 # install.sh downloads VERSION + CHANGELOG
 # ============================================================
 
-assert_file_contains "$PROJECT_ROOT/install.sh" "VERSION" "install.sh downloads VERSION file"
-assert_file_contains "$PROJECT_ROOT/install.sh" "CHANGELOG.md" "install.sh downloads CHANGELOG.md"
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh downloads VERSION file"
+    skip_obsolete_installer_assert "install.sh downloads CHANGELOG.md"
+else
+    assert_file_contains "$PROJECT_ROOT/install.sh" "VERSION" "install.sh downloads VERSION file"
+    assert_file_contains "$PROJECT_ROOT/install.sh" "CHANGELOG.md" "install.sh downloads CHANGELOG.md"
+fi
 
 # ============================================================
 # commands/init.md writes edikt_version

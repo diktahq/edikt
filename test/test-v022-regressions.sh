@@ -29,8 +29,12 @@ else
 fi
 
 # BACKUP_COUNT specifically — the one that caused v0.2.1 to ship broken
-assert_file_contains "$INSTALL_SH" 'BACKUP_COUNT=$((BACKUP_COUNT + 1))' \
-    "install.sh increments BACKUP_COUNT via arithmetic expansion"
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh increments BACKUP_COUNT via arithmetic expansion"
+else
+    assert_file_contains "$INSTALL_SH" 'BACKUP_COUNT=$((BACKUP_COUNT + 1))' \
+        "install.sh increments BACKUP_COUNT via arithmetic expansion"
+fi
 
 # ============================================================
 # Regression 2: upgrade.md documents the v0.1.x → v0.2.x command mapping
