@@ -1,46 +1,106 @@
 #!/usr/bin/env bash
 set -euo pipefail
-umask 0022
-
-# edikt installer
-# TODO: add SHA-256 manifest verification once the release workflow exists
+# edikt installer — v0.5.0 thin bootstrap.
+#
+# This script is intentionally small. All heavy lifting (payload fetch,
+# checksum verification, versioned layout, migration from flat layout,
+# symlink chain, lock.yaml) lives in the launcher at $EDIKT_ROOT/bin/edikt.
+#
+# install.sh's job:
+#   1. Parse flags (--project | --global | --dry-run | --ref <tag>).
+#   2. Detect installed state: fresh | legacy_v04 | current_v05.
+#   3. Fetch the launcher for the requested release (curl).
+#   4. Install launcher atomically, add to $PATH idempotently.
+#   5. Delegate to `edikt migrate` (if legacy) and `edikt install/use`.
+#
+# Canonical v0.4.x → v0.5.0 cross-major upgrade path. /edikt:upgrade
+# redirects here for major-version jumps (Phase 6).
+#
+# Exit codes:
+#   0 success
+#   1 network error (launcher or release-tag fetch failed)
+#   2 permission error ($EDIKT_ROOT not writable, rc append refused)
+#   3 version mismatch (requested tag older than currently installed)
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash                    # global (default)
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash -s -- --project   # project-only
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash -s -- --dry-run   # preview changes
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+#   curl -fsSL ...install.sh | bash -s -- --project
+#   curl -fsSL ...install.sh | bash -s -- --dry-run
+#   curl -fsSL ...install.sh | bash -s -- --ref v0.5.1
+#
+# Test overrides (for test/integration/install/):
+#   EDIKT_LAUNCHER_SOURCE=<path>  — local launcher file; skip curl
+#   EDIKT_RELEASE_TAG=<tag>       — skip GitHub API, use this tag
+#   EDIKT_INSTALL_SOURCE=<path>   — forwarded to `edikt install`
+
+umask 0022
 
 REPO="diktahq/edikt"
-BRANCH="main"
-BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+RAW_BASE="https://raw.githubusercontent.com/${REPO}"
+API_BASE="https://api.github.com/repos/${REPO}"
 
-# Parse flags
+# Exit codes
+EX_OK=0
+EX_NETWORK=1
+EX_PERMISSION=2
+EX_VERSION=3
+
+# ─── Flag parsing ───────────────────────────────────────────────────────────
 INSTALL_MODE=""
 DRY_RUN=false
-for arg in "$@"; do
-  case "$arg" in
-    --project)  INSTALL_MODE="project" ;;
-    --global)   INSTALL_MODE="global" ;;
-    --dry-run)  DRY_RUN=true ;;
+REF_TAG=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --project)   INSTALL_MODE="project" ;;
+    --global)    INSTALL_MODE="global" ;;
+    --dry-run)   DRY_RUN=true ;;
+    --ref)       shift; REF_TAG="${1:-}" ;;
+    --ref=*)     REF_TAG="${1#--ref=}" ;;
+    -h|--help)
+      sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *)
+      echo "error: unknown flag: $1" >&2
+      echo "Usage: install.sh [--global|--project] [--dry-run] [--ref <tag>]" >&2
+      exit 2
+      ;;
   esac
+  shift
 done
 
-# Detect pre-existing edikt installations in BOTH locations. This powers
-# the install location prompt, duplication warnings, and leftover cleanup.
-HAS_GLOBAL=false
-HAS_PROJECT=false
-[ -f "${HOME}/.edikt/VERSION" ] && HAS_GLOBAL=true
-[ -d "${HOME}/.claude/commands/edikt" ] && HAS_GLOBAL=true
-[ -f ".edikt/VERSION" ] && HAS_PROJECT=true
-[ -d ".claude/commands/edikt" ] && HAS_PROJECT=true
+# ─── Colors / logging ───────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+DIM='\033[2m'
+BOLD='\033[1m'
+RESET='\033[0m'
 
-# Interactive prompt if no flag provided.
-#
-# Use /dev/tty for both reading and writing the prompt, so it works
-# correctly even when stdin is a pipe (e.g. `curl ... | bash`). Falls
-# back to the non-interactive default when no TTY is available at all
-# (CI environments, redirected stdin/stdout without --global/--project).
+info()  { printf '%b> %b %s\n' "$GREEN" "$RESET" "$1"; }
+dim()   { printf '%b  %s%b\n' "$DIM" "$1" "$RESET"; }
+warn()  { printf '%b!%b %s\n' "$YELLOW" "$RESET" "$1" >&2; }
+error() { printf '%berror:%b %s\n' "$RED" "$RESET" "$1" >&2; }
+
+# ─── Dependency check ───────────────────────────────────────────────────────
+command -v curl >/dev/null 2>&1 || { error "curl is required"; exit $EX_NETWORK; }
+
+# ─── Interactive mode prompt (preserved from v0.4.x) ────────────────────────
+# Use /dev/tty so `curl | bash` still gets a prompt. Fall back to global.
+detect_existing_for_prompt() {
+  HAS_GLOBAL=false
+  HAS_PROJECT=false
+  [ -e "${HOME}/.edikt/VERSION" ] && HAS_GLOBAL=true
+  [ -e "${HOME}/.edikt/bin/edikt" ] && HAS_GLOBAL=true
+  [ -d "${HOME}/.claude/commands/edikt" ] && HAS_GLOBAL=true
+  [ -e ".edikt/VERSION" ] && HAS_PROJECT=true
+  [ -e ".edikt/bin/edikt" ] && HAS_PROJECT=true
+  [ -d ".claude/commands/edikt" ] && HAS_PROJECT=true
+}
+
 if [ -z "$INSTALL_MODE" ]; then
+  detect_existing_for_prompt
   if [ -r /dev/tty ] && [ -w /dev/tty ]; then
     {
       echo ""
@@ -50,403 +110,423 @@ if [ -z "$INSTALL_MODE" ]; then
       echo "  [2] Project only     — installed in current directory"
       echo ""
       if $HAS_GLOBAL; then
-        echo "  Note: a global edikt install already exists (~/.edikt). Choosing [2] will"
-        echo "        cause Claude Code to load commands from BOTH locations — duplicated."
+        echo "  Note: a global edikt install already exists at ~/.edikt."
         echo ""
       fi
-      if $HAS_PROJECT && [ -z "${INSTALL_MODE}" ]; then
-        echo "  Note: a project-local edikt install already exists (.edikt/ in this directory)."
-        echo "        Choosing [1] will leave those local files in place — also duplicated."
+      if $HAS_PROJECT; then
+        echo "  Note: a project-local edikt install already exists in .edikt/."
         echo ""
       fi
       printf "  Choice [1]: "
     } > /dev/tty
-    read -r choice < /dev/tty
+    read -r choice < /dev/tty || choice=""
     case "$choice" in
       2) INSTALL_MODE="project" ;;
       *) INSTALL_MODE="global" ;;
     esac
   else
-    # No TTY available (e.g. CI, fully redirected) — default to global.
     INSTALL_MODE="global"
   fi
 fi
 
+# ─── Root resolution ────────────────────────────────────────────────────────
+# Matches bin/edikt's EDIKT_ROOT resolution so both see the same layout.
 if [ "$INSTALL_MODE" = "project" ]; then
-  EDIKT_HOME=".edikt"
-  CLAUDE_COMMANDS=".claude/commands"
-  echo -e "\033[1mInstalling edikt (project-local)...\033[0m"
+  EDIKT_ROOT="$(pwd)/.edikt"
+  CLAUDE_HOME_DIR="$(pwd)/.claude"
 else
-  EDIKT_HOME="${HOME}/.edikt"
-  CLAUDE_COMMANDS="${HOME}/.claude/commands"
-  echo -e "\033[1mInstalling edikt (global)...\033[0m"
+  EDIKT_ROOT="${EDIKT_HOME:-${HOME}/.edikt}"
+  CLAUDE_HOME_DIR="${CLAUDE_HOME:-${HOME}/.claude}"
 fi
 
-# Warn about duplication when the OTHER location already has an install.
-# This catches the case where the user doesn't see the prompt (piped with
-# no TTY, or explicit --global/--project flag) but would end up with
-# commands loaded from both places.
-if [ "$INSTALL_MODE" = "global" ] && $HAS_PROJECT; then
-  echo
-  echo -e "  \033[0;33m!\033[0m Detected project-local edikt files in current directory:"
-  [ -d ".claude/commands/edikt" ] && echo "      .claude/commands/edikt/"
-  [ -d ".edikt" ]                  && echo "      .edikt/"
-  echo "    Claude Code will load commands from BOTH locations when run from here."
-  echo "    To avoid duplication, remove the local files after install:"
-  echo "      rm -rf .claude/commands/edikt .edikt"
-  echo
+# ─── State detection ────────────────────────────────────────────────────────
+STATE="fresh_install"
+
+# legacy_v04: flat layout — VERSION<0.5.0 OR hooks/ is a real dir (not symlink)
+is_version_lt_050() {
+  v="$(printf '%s' "$1" | tr -d '[:space:]')"
+  case "$v" in
+    0.0.*|0.1.*|0.2.*|0.3.*|0.4.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if [ -x "$EDIKT_ROOT/bin/edikt" ]; then
+  STATE="current_v05"
+elif [ -d "$EDIKT_ROOT/hooks" ] && [ ! -L "$EDIKT_ROOT/hooks" ]; then
+  STATE="legacy_v04"
+elif [ -f "$EDIKT_ROOT/VERSION" ]; then
+  ver=$(cat "$EDIKT_ROOT/VERSION" 2>/dev/null || echo "")
+  if is_version_lt_050 "$ver"; then
+    STATE="legacy_v04"
+  fi
 fi
-if [ "$INSTALL_MODE" = "project" ] && $HAS_GLOBAL; then
-  echo
-  echo -e "  \033[0;33m!\033[0m A global edikt install already exists at ~/.edikt."
-  echo "    Claude Code will load commands from BOTH the global and project"
-  echo "    locations, causing duplicates. Either:"
-  echo "      - Use only the global install (rm -rf .claude/commands/edikt .edikt)"
-  echo "      - Or remove the global install first (rm -rf ~/.claude/commands/edikt ~/.edikt)"
-  echo
+
+# Fresh = nothing on disk in either EDIKT_ROOT or CLAUDE commands dir.
+if [ "$STATE" = "fresh_install" ]; then
+  if [ -d "$CLAUDE_HOME_DIR/commands/edikt" ] && [ ! -e "$EDIKT_ROOT" ]; then
+    # Commands-only remnant (rare) — treat as fresh, delegation will clean it.
+    :
+  fi
 fi
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-DIM='\033[2m'
-BOLD='\033[1m'
-RESET='\033[0m'
-
-info()  { echo -e "${GREEN}>${RESET} $1"; }
-dim()   { echo -e "${DIM}  $1${RESET}"; }
-warn()  { echo -e "${RED}!${RESET} $1"; }
-error() { echo -e "${RED}error:${RESET} $1" >&2; exit 1; }
-
-# Safe file install — backs up existing files before overwriting
-BACKUP_DIR=""
-BACKUP_COUNT=0
-install_file() {
-  local dest="$1"
-  if $DRY_RUN; then
-    if [ -f "$dest" ]; then
-      dim "(would overwrite) $dest"
-    else
-      dim "(would create)    $dest"
-    fi
+# ─── Tag resolution ─────────────────────────────────────────────────────────
+# Precedence: --ref > EDIKT_RELEASE_TAG env (test override) > GitHub API latest.
+resolve_tag() {
+  if [ -n "$REF_TAG" ]; then
+    printf '%s' "$REF_TAG"
     return 0
   fi
-  # Backup existing file before overwriting
-  if [ -f "$dest" ]; then
-    if [ -z "$BACKUP_DIR" ]; then
-      BACKUP_DIR="${EDIKT_HOME}/backups/$(date +%Y%m%d-%H%M%S)"
-      mkdir -p "$BACKUP_DIR"
-    fi
-    local rel_path="${dest#"$EDIKT_HOME"/}"
-    rel_path="${rel_path#"$CLAUDE_COMMANDS"/}"
-    mkdir -p "$(dirname "$BACKUP_DIR/$rel_path")"
-    cp "$dest" "$BACKUP_DIR/$rel_path"
-    BACKUP_COUNT=$((BACKUP_COUNT + 1))
+  if [ -n "${EDIKT_RELEASE_TAG:-}" ]; then
+    printf '%s' "$EDIKT_RELEASE_TAG"
+    return 0
   fi
+  # GitHub API for latest stable release. A read-only call, safe in --dry-run.
+  if ! out=$(curl -fsSL --max-time 15 "$API_BASE/releases/latest" 2>/dev/null); then
+    error "failed to query $API_BASE/releases/latest"
+    error "network error — retry later, or pass --ref <tag> explicitly"
+    return $EX_NETWORK
+  fi
+  tag=$(printf '%s' "$out" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+  if [ -z "$tag" ]; then
+    error "could not parse tag_name from GitHub API response"
+    return $EX_NETWORK
+  fi
+  printf '%s' "$tag"
 }
 
-# Check dependencies
-command -v curl >/dev/null 2>&1 || error "curl is required"
-command -v git >/dev/null 2>&1  || error "git is required"
-
-echo
-
-# Detect existing install
-if [ -f "${EDIKT_HOME}/VERSION" ]; then
-  EXISTING_VER=$(cat "${EDIKT_HOME}/VERSION" 2>/dev/null | tr -d '[:space:]')
-  info "Existing edikt installation detected (v${EXISTING_VER})"
-  if $DRY_RUN; then
-    info "Dry run — showing what would change (no files will be written)"
-    echo
-  else
-    info "Files will be backed up before overwriting"
-    echo
-  fi
+TAG=""
+if ! TAG=$(resolve_tag); then
+  exit $EX_NETWORK
+fi
+if [ -z "$TAG" ]; then
+  error "empty release tag resolved — refusing to proceed"
+  exit $EX_NETWORK
 fi
 
-if $DRY_RUN; then
-  info "DRY RUN — no files will be written"
-  echo
-fi
-
-# Create directories (even in dry-run — needed for path checks)
-if ! $DRY_RUN; then
-  mkdir -p "${EDIKT_HOME}/templates/rules/base"
-  mkdir -p "${EDIKT_HOME}/templates/rules/lang"
-  mkdir -p "${EDIKT_HOME}/templates/rules/framework"
-  mkdir -p "${EDIKT_HOME}/templates/agents"
-  mkdir -p "${EDIKT_HOME}/templates/sdlc"
-  mkdir -p "${EDIKT_HOME}/templates/examples"
-  mkdir -p "${EDIKT_HOME}/templates/examples/invariants"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/adr"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/invariant"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/guideline"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/gov"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/sdlc"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/docs"
-  mkdir -p "${CLAUDE_COMMANDS}/edikt/deprecated"
-fi
-
-# Download edikt commands (/edikt:init, /edikt:context, etc.)
-info "Installing edikt commands..."
-
-# Clean up OLD flat command files from v0.1.x that moved into namespaces in v0.2.0.
-# These files now live under ${CLAUDE_COMMANDS}/edikt/{adr,invariant,gov,sdlc,docs}/
-# but may still exist at the top level from a prior install. Skip user-customized files.
-V01_MOVED_COMMANDS=(adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake)
-for cmd in "${V01_MOVED_COMMANDS[@]}"; do
-  old="${CLAUDE_COMMANDS}/edikt/${cmd}.md"
-  [ -f "$old" ] || continue
-  if grep -qF '<!-- edikt:custom -->' "$old" 2>/dev/null; then
-    dim "keeping old edikt:${cmd} (custom)"
-    continue
+# ─── Version-mismatch gate (exit 3) ─────────────────────────────────────────
+# If a v0.5.x launcher is already installed and the requested tag is older,
+# refuse and print a rollback hint.
+check_version_not_older() {
+  [ "$STATE" = "current_v05" ] || return 0
+  installed_raw=""
+  if [ -x "$EDIKT_ROOT/bin/edikt" ]; then
+    installed_raw=$("$EDIKT_ROOT/bin/edikt" version 2>/dev/null | head -1 || true)
   fi
-  install_file "$old"  # backup before removing
-  if ! $DRY_RUN; then
-    rm -f "$old"
+  # Strip leading "v" for comparison.
+  installed=${installed_raw#v}
+  requested=${TAG#v}
+  # Only numeric x.y.z comparison. If installed is empty or non-numeric, skip.
+  case "$installed" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *) return 0 ;;
+  esac
+  case "$requested" in
+    [0-9]*.[0-9]*.[0-9]*) ;;
+    *) return 0 ;;
+  esac
+  # Compare via sort -V; if installed > requested → version mismatch.
+  newest=$(printf '%s\n%s\n' "$installed" "$requested" | sort -V | tail -1)
+  if [ "$newest" = "$installed" ] && [ "$installed" != "$requested" ]; then
+    error "requested tag $TAG is older than installed ($installed_raw)."
+    error "Downgrade with: edikt rollback"
+    return $EX_VERSION
   fi
-  dim "removed old edikt:${cmd} (moved into namespace)"
-done
-
-# Safe curl — exits on failure instead of silently leaving a stale file
-_fetch() {
-  local url="$1" dest="$2"
-  if ! curl -fsSL --retry 2 --max-time 30 "$url" -o "$dest"; then
-    error "Failed to download ${url} — install aborted (file: ${dest})"
-  fi
-  if [ ! -s "$dest" ]; then
-    error "Downloaded file is empty: ${dest}"
-  fi
+  return 0
 }
 
-# Flat commands (top-level)
-FLAT_COMMANDS=(init upgrade doctor status context brainstorm session config agents mcp capture)
-for cmd in "${FLAT_COMMANDS[@]}"; do
-  dest="${CLAUDE_COMMANDS}/edikt/${cmd}.md"
-  if [ -f "$dest" ] && grep -qF '<!-- edikt:custom -->' "$dest" 2>/dev/null; then
-    dim "edikt:${cmd} (skipped — custom)"
-  else
-    install_file "$dest"
-    if ! $DRY_RUN; then
-      _fetch "${BASE_URL}/commands/${cmd}.md" "$dest"
-    fi
-    dim "edikt:${cmd}"
-  fi
-done
+if ! check_version_not_older; then
+  exit $EX_VERSION
+fi
 
-# Namespaced commands (subdirectories)
-_install_ns_cmd() {
-  local ns="$1" cmd="$2"
-  local dest="${CLAUDE_COMMANDS}/edikt/${ns}/${cmd}.md"
-  if [ -f "$dest" ] && grep -qF '<!-- edikt:custom -->' "$dest" 2>/dev/null; then
-    dim "edikt:${ns}:${cmd} (skipped — custom)"
+# ─── Writability gate ───────────────────────────────────────────────────────
+check_writable() {
+  parent=$(dirname "$EDIKT_ROOT")
+  if [ -e "$EDIKT_ROOT" ]; then
+    [ -w "$EDIKT_ROOT" ] || {
+      error "$EDIKT_ROOT is not writable"
+      error "Fix: sudo chown -R \"$USER\" \"$EDIKT_ROOT\""
+      return $EX_PERMISSION
+    }
   else
-    install_file "$dest"
-    if ! $DRY_RUN; then
-      _fetch "${BASE_URL}/commands/${ns}/${cmd}.md" "$dest"
-    fi
-    dim "edikt:${ns}:${cmd}"
+    [ -w "$parent" ] || {
+      error "$parent is not writable (cannot create $EDIKT_ROOT)"
+      error "Fix: sudo chown \"$USER\" \"$parent\""
+      return $EX_PERMISSION
+    }
   fi
+  return 0
 }
 
-# adr namespace
-for cmd in new compile review; do
-  _install_ns_cmd adr "$cmd"
-done
-
-# invariant namespace
-for cmd in new compile review; do
-  _install_ns_cmd invariant "$cmd"
-done
-
-# guideline namespace (v0.3.0: added `compile` for parity with adr/invariant)
-for cmd in new compile review; do
-  _install_ns_cmd guideline "$cmd"
-done
-
-# gov namespace
-for cmd in compile review score rules-update sync; do
-  _install_ns_cmd gov "$cmd"
-done
-
-# sdlc namespace
-for cmd in prd spec artifacts plan review drift audit; do
-  _install_ns_cmd sdlc "$cmd"
-done
-
-# docs namespace
-for cmd in review intake; do
-  _install_ns_cmd docs "$cmd"
-done
-
-# deprecated namespace
-for cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake team; do
-  _install_ns_cmd deprecated "$cmd"
-done
-
-# Download rule templates
-info "Installing rule templates..."
-
-# Registry
-install_file "${EDIKT_HOME}/templates/rules/_registry.yaml"
 if ! $DRY_RUN; then
-  _fetch "${BASE_URL}/templates/rules/_registry.yaml" "${EDIKT_HOME}/templates/rules/_registry.yaml"
+  if ! check_writable; then
+    exit $EX_PERMISSION
+  fi
 fi
 
-# Base rules
-for rule in code-quality testing security error-handling frontend architecture api database observability seo; do
-  install_file "${EDIKT_HOME}/templates/rules/base/${rule}.md"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/rules/base/${rule}.md" "${EDIKT_HOME}/templates/rules/base/${rule}.md"
-  fi
-  dim "base/${rule}"
-done
-
-# Language rules
-for rule in go typescript python php; do
-  install_file "${EDIKT_HOME}/templates/rules/lang/${rule}.md"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/rules/lang/${rule}.md" "${EDIKT_HOME}/templates/rules/lang/${rule}.md"
-  fi
-  dim "lang/${rule}"
-done
-
-# Framework rules
-for rule in chi nextjs laravel symfony rails django; do
-  install_file "${EDIKT_HOME}/templates/rules/framework/${rule}.md"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/rules/framework/${rule}.md" "${EDIKT_HOME}/templates/rules/framework/${rule}.md"
-  fi
-  dim "framework/${rule}"
-done
-
-# Download supporting templates
-info "Installing templates..."
-for tmpl in CLAUDE.md.tmpl project-context.md.tmpl product-spec.md.tmpl prd.md.tmpl settings.json.tmpl; do
-  install_file "${EDIKT_HOME}/templates/${tmpl}"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/${tmpl}" "${EDIKT_HOME}/templates/${tmpl}"
-  fi
-  dim "${tmpl}"
-done
-
-# Reference example templates for ADRs, Invariant Records, and guidelines (v0.3.0).
-# These are NOT auto-loaded as defaults — they're starting points offered during
-# /edikt:init when the user picks "Start fresh". See ADR-009 for the Invariant
-# Record template contract and PRD-001-spec for the full design.
-for example in \
-  adr-nygard-minimal.md \
-  adr-madr-extended.md \
-  invariant-minimal.md \
-  invariant-full.md \
-  guideline-minimal.md \
-  guideline-extended.md; do
-  install_file "${EDIKT_HOME}/templates/examples/${example}"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/examples/${example}" "${EDIKT_HOME}/templates/examples/${example}"
-  fi
-  dim "examples/${example}"
-done
-
-# Canonical Invariant Record examples (v0.3.0 / ADR-009). Worked examples that
-# ground the abstract template in concrete production-grade invariants. Shipped
-# to ~/.edikt/templates/examples/invariants/ so users can browse locally without
-# visiting the website. See templates/examples/invariants/README.md for context.
-for invariant_example in \
-  README.md \
-  WRITING-GUIDE.md \
-  tenant-isolation.md \
-  money-precision.md; do
-  install_file "${EDIKT_HOME}/templates/examples/invariants/${invariant_example}"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/examples/invariants/${invariant_example}" \
-           "${EDIKT_HOME}/templates/examples/invariants/${invariant_example}"
-  fi
-  dim "examples/invariants/${invariant_example}"
-done
-
-# Agent templates
-for agent in architect dba security api backend frontend qa sre platform docs pm ux data performance compliance mobile seo gtm evaluator; do
-  install_file "${EDIKT_HOME}/templates/agents/${agent}.md"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/agents/${agent}.md" "${EDIKT_HOME}/templates/agents/${agent}.md"
-  fi
-  dim "agents/${agent}"
-done
-install_file "${EDIKT_HOME}/templates/agents/_registry.yaml"
-if ! $DRY_RUN; then
-  _fetch "${BASE_URL}/templates/agents/_registry.yaml" "${EDIKT_HOME}/templates/agents/_registry.yaml"
-fi
-dim "agents/_registry.yaml"
-
-# Hook scripts (Claude Code hooks + git hooks)
-if ! $DRY_RUN; then
-  mkdir -p "${EDIKT_HOME}/templates/hooks"
-  mkdir -p "${EDIKT_HOME}/hooks"
-fi
-
-# Claude Code hook scripts — installed to ~/.edikt/hooks/ and referenced from settings.json
-# Event logging utility (sourced by other hooks, not executed directly)
-install_file "${EDIKT_HOME}/hooks/event-log.sh"
-if ! $DRY_RUN; then
-  _fetch "${BASE_URL}/templates/hooks/event-log.sh" "${EDIKT_HOME}/hooks/event-log.sh"
-  _fetch "${BASE_URL}/templates/hooks/event-log.sh" "${EDIKT_HOME}/templates/hooks/event-log.sh"
-fi
-dim "hooks/event-log.sh"
-
-for hook in session-start pre-tool-use post-tool-use pre-compact stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask phase-end-detector; do
-  install_file "${EDIKT_HOME}/hooks/${hook}.sh"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/hooks/${hook}.sh" "${EDIKT_HOME}/hooks/${hook}.sh"
-    chmod +x "${EDIKT_HOME}/hooks/${hook}.sh"
-    # Also keep in templates/ for upgrade hash comparison
-    _fetch "${BASE_URL}/templates/hooks/${hook}.sh" "${EDIKT_HOME}/templates/hooks/${hook}.sh"
-  fi
-  dim "hooks/${hook}.sh"
-done
-
-# Git pre-push hook template
-install_file "${EDIKT_HOME}/templates/hooks/pre-push"
-if ! $DRY_RUN; then
-  _fetch "${BASE_URL}/templates/hooks/pre-push" "${EDIKT_HOME}/templates/hooks/pre-push"
-  chmod +x "${EDIKT_HOME}/templates/hooks/pre-push"
-fi
-dim "hooks/pre-push"
-
-# SDLC templates
-for sdlc in pull_request_template commit-convention; do
-  install_file "${EDIKT_HOME}/templates/sdlc/${sdlc}.md"
-  if ! $DRY_RUN; then
-    _fetch "${BASE_URL}/templates/sdlc/${sdlc}.md" "${EDIKT_HOME}/templates/sdlc/${sdlc}.md"
-  fi
-  dim "sdlc/${sdlc}"
-done
-
-# Version + Changelog
-install_file "${EDIKT_HOME}/VERSION"
-install_file "${EDIKT_HOME}/CHANGELOG.md"
-if ! $DRY_RUN; then
-  _fetch "${BASE_URL}/VERSION" "${EDIKT_HOME}/VERSION"
-  _fetch "${BASE_URL}/CHANGELOG.md" "${EDIKT_HOME}/CHANGELOG.md"
-fi
-
-echo
-if $DRY_RUN; then
-  echo -e "${BOLD}Dry run complete — no files were written.${RESET}"
-  echo
-  echo "  Remove --dry-run to install."
+# ─── Launcher fetch / placement ─────────────────────────────────────────────
+# Source: EDIKT_LAUNCHER_SOURCE env (test override) or raw GitHub for TAG.
+LAUNCHER_URL=""
+LAUNCHER_SRC_LOCAL=""
+if [ -n "${EDIKT_LAUNCHER_SOURCE:-}" ]; then
+  LAUNCHER_SRC_LOCAL="$EDIKT_LAUNCHER_SOURCE"
 else
-  echo -e "${GREEN}${BOLD}edikt installed.${RESET}"
-  if [ "$BACKUP_COUNT" -gt 0 ]; then
-    echo
-    echo -e "  Backed up ${BACKUP_COUNT} files to: ${BACKUP_DIR}"
-  fi
+  LAUNCHER_URL="$RAW_BASE/$TAG/bin/edikt"
 fi
+
+# Fetch the launcher into a tmp file, sh -n verify, then move into place.
+# Never curl -o directly onto the live path.
+stage_launcher() {
+  stage="$1"  # destination (tmp path)
+  if [ -n "$LAUNCHER_SRC_LOCAL" ]; then
+    cp "$LAUNCHER_SRC_LOCAL" "$stage" || {
+      error "failed to copy launcher from $LAUNCHER_SRC_LOCAL"
+      return $EX_NETWORK
+    }
+  else
+    if ! curl -fsSL --retry 2 --max-time 30 "$LAUNCHER_URL" -o "$stage"; then
+      error "failed to download launcher from $LAUNCHER_URL"
+      error "retry: re-run install.sh; or pass --ref <different-tag>"
+      return $EX_NETWORK
+    fi
+  fi
+  if [ ! -s "$stage" ]; then
+    error "downloaded launcher is empty"
+    return $EX_NETWORK
+  fi
+  if ! sh -n "$stage" 2>/dev/null; then
+    error "downloaded launcher failed syntax check (sh -n)"
+    return $EX_NETWORK
+  fi
+  chmod +x "$stage"
+  return 0
+}
+
+# Atomically put the verified launcher at $EDIKT_ROOT/bin/edikt.
+# One-deep backup: previous launcher → bin/edikt.prev before overwrite.
+install_launcher() {
+  mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
+  tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
+  if ! stage_launcher "$tmp"; then
+    rm -f "$tmp" 2>/dev/null || true
+    return $?
+  fi
+  if [ -f "$EDIKT_ROOT/bin/edikt" ]; then
+    cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
+  fi
+  mv "$tmp" "$EDIKT_ROOT/bin/edikt"
+  return 0
+}
+
+# ─── Shell-rc PATH append (idempotent) ──────────────────────────────────────
+RC_MARKER="# edikt bootstrap (do not edit)"
+
+pick_rc_file() {
+  case "${SHELL:-}" in
+    */zsh)  printf '%s/.zshrc' "$HOME" ;;
+    */bash) printf '%s/.bashrc' "$HOME" ;;
+    *)
+      # Fallback: prefer .zshrc on macOS, .bashrc on Linux.
+      if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+        printf '%s/.zshrc' "$HOME"
+      else
+        printf '%s/.bashrc' "$HOME"
+      fi
+      ;;
+  esac
+}
+
+rc_has_marker() {
+  rc="$1"
+  [ -f "$rc" ] || return 1
+  grep -qF "$RC_MARKER" "$rc" 2>/dev/null
+}
+
+append_path_to_rc() {
+  rc="$1"
+  # Create if missing; respect parent writability.
+  rc_dir=$(dirname "$rc")
+  if [ ! -w "$rc_dir" ]; then
+    warn "$rc_dir is not writable — skipping PATH update"
+    warn "Add manually: export PATH=\"$EDIKT_ROOT/bin:\$PATH\""
+    return 0
+  fi
+  if [ -f "$rc" ] && [ ! -w "$rc" ]; then
+    warn "$rc is not writable — skipping PATH update"
+    warn "Add manually: export PATH=\"$EDIKT_ROOT/bin:\$PATH\""
+    return 0
+  fi
+  {
+    printf '\n%s\n' "$RC_MARKER"
+    printf 'export PATH="%s/bin:$PATH"\n' "$EDIKT_ROOT"
+  } >> "$rc"
+  return 0
+}
+
+# ─── Dry-run command recording ──────────────────────────────────────────────
+# `dryrun_do <label>` prints "would-run: <label>" without executing.
+dryrun_do() {
+  dim "would-run: $1"
+}
+
+# ─── Flow orchestration ─────────────────────────────────────────────────────
+run_launcher_step() {
+  # Args: subcommand and its args. Honors EDIKT_INSTALL_SOURCE pass-through.
+  if $DRY_RUN; then
+    dryrun_do "$EDIKT_ROOT/bin/edikt $*"
+    return 0
+  fi
+  "$EDIKT_ROOT/bin/edikt" "$@"
+}
+
+do_fresh_install() {
+  info "Fresh install into $EDIKT_ROOT"
+  if $DRY_RUN; then
+    dryrun_do "mkdir -p $EDIKT_ROOT/bin"
+    if [ -n "$LAUNCHER_SRC_LOCAL" ]; then
+      dryrun_do "cp $LAUNCHER_SRC_LOCAL $EDIKT_ROOT/bin/edikt (verify: sh -n)"
+    else
+      dryrun_do "curl $LAUNCHER_URL -> $EDIKT_ROOT/bin/edikt (verify: sh -n)"
+    fi
+    dryrun_do "chmod +x $EDIKT_ROOT/bin/edikt"
+    rc=$(pick_rc_file)
+    if rc_has_marker "$rc"; then
+      dim "PATH entry already present in $rc (marker: $RC_MARKER)"
+    else
+      dryrun_do "append PATH export to $rc (marker: $RC_MARKER)"
+    fi
+    dryrun_do "$EDIKT_ROOT/bin/edikt install $TAG"
+    dryrun_do "$EDIKT_ROOT/bin/edikt use $TAG"
+    return 0
+  fi
+
+  install_launcher || return $?
+  rc=$(pick_rc_file)
+  if rc_has_marker "$rc"; then
+    dim "PATH entry already present in $rc"
+  else
+    append_path_to_rc "$rc" || return $?
+    dim "added PATH entry to $rc (open a new shell to pick up)"
+  fi
+  run_launcher_step install "$TAG" || return $?
+  run_launcher_step use "$TAG" || return $?
+}
+
+do_legacy_v04() {
+  printf '%b==> Detected v0.4.x install. Migrating to versioned layout...%b\n' "$BOLD" "$RESET"
+  if $DRY_RUN; then
+    dryrun_do "mkdir -p $EDIKT_ROOT/bin"
+    if [ -n "$LAUNCHER_SRC_LOCAL" ]; then
+      dryrun_do "cp $LAUNCHER_SRC_LOCAL $EDIKT_ROOT/bin/edikt (verify: sh -n)"
+    else
+      dryrun_do "curl $LAUNCHER_URL -> $EDIKT_ROOT/bin/edikt (verify: sh -n)"
+    fi
+    dryrun_do "chmod +x $EDIKT_ROOT/bin/edikt"
+    rc=$(pick_rc_file)
+    if rc_has_marker "$rc"; then
+      dim "PATH entry already present in $rc"
+    else
+      dryrun_do "append PATH export to $rc (marker: $RC_MARKER)"
+    fi
+    # migrate --dry-run is itself non-mutating, so we run it live even in dry-run.
+    # But the launcher isn't on disk yet during a dry-run fresh path — guard.
+    dryrun_do "$EDIKT_ROOT/bin/edikt migrate --dry-run"
+    dryrun_do "$EDIKT_ROOT/bin/edikt install $TAG"
+    dryrun_do "$EDIKT_ROOT/bin/edikt use $TAG"
+    return 0
+  fi
+
+  install_launcher || return $?
+  rc=$(pick_rc_file)
+  if rc_has_marker "$rc"; then
+    dim "PATH entry already present in $rc"
+  else
+    append_path_to_rc "$rc" || return $?
+    dim "added PATH entry to $rc"
+  fi
+  # For a mutating install, still pass --yes to migrate. Dry-run was handled above.
+  run_launcher_step migrate --yes || return $?
+  run_launcher_step install "$TAG" || return $?
+  run_launcher_step use "$TAG" || return $?
+  printf '%bMigration complete. Run %b\`edikt doctor\`%b to verify.%b\n' "$GREEN" "$BOLD" "$RESET$GREEN" "$RESET"
+}
+
+# Extract LAUNCHER_VERSION from a launcher script's constants.
+launcher_script_version() {
+  f="$1"
+  [ -f "$f" ] || { echo ""; return 0; }
+  awk -F'"' '/^LAUNCHER_VERSION=/ {print $2; exit}' "$f"
+}
+
+do_current_v05() {
+  info "v0.5.0 layout detected at $EDIKT_ROOT"
+
+  # Decide whether to replace launcher script. Fetch a tmp copy, compare
+  # embedded LAUNCHER_VERSION against currently installed.
+  if $DRY_RUN; then
+    dim "would check: embedded LAUNCHER_VERSION vs installed"
+    dryrun_do "$EDIKT_ROOT/bin/edikt install $TAG"
+    dryrun_do "$EDIKT_ROOT/bin/edikt use $TAG"
+    return 0
+  fi
+
+  tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
+  mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
+  if ! stage_launcher "$tmp"; then
+    rm -f "$tmp" 2>/dev/null || true
+    return $EX_NETWORK
+  fi
+  new_ver=$(launcher_script_version "$tmp")
+  cur_ver=$(launcher_script_version "$EDIKT_ROOT/bin/edikt")
+  if [ -n "$new_ver" ] && [ "$new_ver" != "$cur_ver" ]; then
+    cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
+    mv "$tmp" "$EDIKT_ROOT/bin/edikt"
+    info "launcher updated: $cur_ver -> $new_ver"
+  else
+    rm -f "$tmp"
+    dim "launcher is current ($cur_ver)"
+  fi
+
+  # Idempotent: re-running edikt install for an already-installed tag
+  # exits EX_ALREADY=3. Treat that as "already done, continue".
+  if run_launcher_step install "$TAG"; then
+    :
+  else
+    rc=$?
+    if [ "$rc" -eq 3 ]; then
+      dim "$TAG already installed — continuing"
+    else
+      return $rc
+    fi
+  fi
+  run_launcher_step use "$TAG" || return $?
+}
+
+# ─── Main ───────────────────────────────────────────────────────────────────
+printf '\n%bedikt installer%b (mode: %s, tag: %s%s)\n' "$BOLD" "$RESET" "$INSTALL_MODE" "$TAG" "$($DRY_RUN && printf ', dry-run' || true)"
+printf '  EDIKT_ROOT = %s\n' "$EDIKT_ROOT"
+printf '  state      = %s\n\n' "$STATE"
+
+case "$STATE" in
+  fresh_install) do_fresh_install ;;
+  legacy_v04)    do_legacy_v04 ;;
+  current_v05)   do_current_v05 ;;
+  *)
+    error "unknown state: $STATE"
+    exit 1
+    ;;
+esac
+
+# ─── Post-install banner ────────────────────────────────────────────────────
 echo
-echo "  Commands:  ${CLAUDE_COMMANDS}/edikt/"
-echo "  Templates: ${EDIKT_HOME}/templates/"
-echo
-echo "  Open any project in Claude Code and run:"
-echo -e "  ${BOLD}/edikt:init${RESET}"
-echo
+if $DRY_RUN; then
+  printf '%bDry run complete.%b No files were written, no PATH changes made.\n' "$BOLD" "$RESET"
+  printf '  Remove --dry-run to install.\n\n'
+else
+  printf '%b%bedikt installed.%b\n' "$GREEN" "$BOLD" "$RESET"
+  printf '  Version:  %s\n' "$TAG"
+  printf '  Launcher: %s/bin/edikt\n' "$EDIKT_ROOT"
+  printf '\n  Next: open a new shell (or source your rc) and run:\n'
+  printf '    %bedikt doctor%b\n\n' "$BOLD" "$RESET"
+fi
+exit $EX_OK

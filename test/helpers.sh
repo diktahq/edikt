@@ -5,6 +5,28 @@ PASS_COUNT=0
 FAIL_COUNT=0
 TEST_NAME=""
 
+# ─── v0.5.0 bootstrap detection ─────────────────────────────────────────────
+# After Phase 5, install.sh is a thin launcher bootstrap — it no longer
+# enumerates commands, hooks, agents, or templates (the launcher does that
+# via the payload tarball). Pre-v0.5.0 suites grep install.sh for specific
+# strings that have moved out; those assertions are no longer meaningful.
+#
+# This helper reports whether install.sh is the v0.5.0 bootstrap. Suites
+# call it to gate their install.sh-content assertions. The skip is surfaced
+# as an informational message (counted neither as pass nor fail) so the
+# suite can still validate the assertions that remain relevant.
+is_v050_bootstrap_installer() {
+    [ -n "${PROJECT_ROOT:-}" ] || return 1
+    grep -qF "v0.5.0 thin bootstrap" "$PROJECT_ROOT/install.sh" 2>/dev/null
+}
+
+# Print a SKIP message for an assertion that's obsolete under the v0.5.0
+# bootstrap. Does NOT increment PASS or FAIL counters.
+skip_obsolete_installer_assert() {
+    local msg="${1:-install.sh legacy-payload assertion}"
+    echo -e "  ${YELLOW}SKIP${NC}  $msg (v0.5.0 bootstrap — payload owned by launcher)"
+}
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'

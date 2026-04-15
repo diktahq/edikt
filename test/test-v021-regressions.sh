@@ -54,6 +54,24 @@ done
 
 INSTALL_SH="$PROJECT_ROOT/install.sh"
 
+# v0.5.0: install.sh is a thin launcher bootstrap; v0.1.x→v0.2.x cleanup
+# logic (V01_MOVED_COMMANDS, _fetch helper) has moved into the release
+# tarball / migration flow. Pre-v0.5.0 structural assertions are skipped.
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh declares V01_MOVED_COMMANDS cleanup list"
+    for cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake; do
+        skip_obsolete_installer_assert "V01_MOVED_COMMANDS includes '$cmd'"
+    done
+    skip_obsolete_installer_assert "install.sh removes old flat files after backup"
+    skip_obsolete_installer_assert "install.sh preserves user-customized old commands during cleanup"
+    skip_obsolete_installer_assert "install.sh defines _fetch helper"
+    skip_obsolete_installer_assert "install.sh _fetch uses --retry flag"
+    skip_obsolete_installer_assert "install.sh _fetch uses --max-time to avoid hangs"
+    skip_obsolete_installer_assert "install.sh _fetch aborts on download failure"
+    skip_obsolete_installer_assert "install.sh _fetch detects empty downloads"
+    skip_obsolete_installer_assert "install.sh has no bare 'curl -o' calls outside _fetch"
+else
+
 assert_file_contains "$INSTALL_SH" "V01_MOVED_COMMANDS" \
     "install.sh declares V01_MOVED_COMMANDS cleanup list"
 
@@ -123,6 +141,7 @@ if [ -z "$BARE_CURL" ]; then
     pass "install.sh has no bare 'curl -o' calls outside _fetch"
 else
     fail "install.sh has bare 'curl -o' calls outside _fetch" "$BARE_CURL"
+fi
 fi
 
 # ============================================================

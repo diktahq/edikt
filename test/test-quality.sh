@@ -496,7 +496,9 @@ assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings" "Init d
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings.d" "Init detects policy fragments"
 
 # Install includes headless hook
-if grep -qF "headless-ask" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
+if is_v050_bootstrap_installer; then
+    skip_obsolete_installer_assert "install.sh includes headless-ask hook"
+elif grep -qF "headless-ask" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
     pass "install.sh includes headless-ask hook"
 else
     fail "install.sh includes headless-ask hook"
