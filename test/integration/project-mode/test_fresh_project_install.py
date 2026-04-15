@@ -59,8 +59,9 @@ def test_dry_run_mentions_project_relative_paths(sandbox):
     )
 
     # settings.json would be written to .claude/ under the project, not $HOME
-    assert project_claude in output or "settings.json" in output, (
-        f"Expected project .claude path or settings.json mention in dry-run output.\n"
+    assert project_claude in output, (
+        f"Expected project .claude path '{project_claude}' in dry-run output "
+        f"(settings.json must be project-relative, not $HOME-relative).\n"
         f"Output was:\n{output}"
     )
 
