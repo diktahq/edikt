@@ -690,30 +690,9 @@ INSTALL="$PROJECT_ROOT/install.sh"
 # bin/edikt. Pre-v0.5.0 string-presence assertions are skipped.
 assert_file_contains "$INSTALL" "DRY_RUN" "Installer has dry-run support"
 
-# v0.5.0: install.sh is a thin launcher bootstrap; payload enumeration
-# (hooks, agents, commands) has moved into the release tarball fetched by
-# bin/edikt. Pre-v0.5.0 string-presence assertions are skipped.
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "Installer has backup function"
-    skip_obsolete_installer_assert "Installer creates backup dir"
-    skip_obsolete_installer_assert "Installer respects custom markers"
-    skip_obsolete_installer_assert "Installer includes headless hook"
-    skip_obsolete_installer_assert "Installer includes evaluator agent"
-    skip_obsolete_installer_assert "Installer includes StopFailure hook"
-    skip_obsolete_installer_assert "Installer includes TaskCreated hook"
-    skip_obsolete_installer_assert "Installer includes CwdChanged hook"
-    skip_obsolete_installer_assert "Installer includes FileChanged hook"
-else
-    assert_file_contains "$INSTALL" "install_file" "Installer has backup function"
-    assert_file_contains "$INSTALL" "BACKUP_DIR" "Installer creates backup dir"
-    assert_file_contains "$INSTALL" "edikt:custom" "Installer respects custom markers"
-    assert_file_contains "$INSTALL" "headless-ask" "Installer includes headless hook"
-    assert_file_contains "$INSTALL" "evaluator" "Installer includes evaluator agent"
-    assert_file_contains "$INSTALL" "stop-failure" "Installer includes StopFailure hook"
-    assert_file_contains "$INSTALL" "task-created" "Installer includes TaskCreated hook"
-    assert_file_contains "$INSTALL" "cwd-changed" "Installer includes CwdChanged hook"
-    assert_file_contains "$INSTALL" "file-changed" "Installer includes FileChanged hook"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # Verify install.sh is valid bash
 if bash -n "$INSTALL" 2>/dev/null; then

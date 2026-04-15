@@ -495,14 +495,9 @@ assert_file_contains "$PROJECT_ROOT/website/guides/ci.md" "GitHub Actions" "CI g
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings" "Init detects managed settings"
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "managed-settings.d" "Init detects policy fragments"
 
-# Install includes headless hook
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh includes headless-ask hook"
-elif grep -qF "headless-ask" "$PROJECT_ROOT/install.sh" 2>/dev/null; then
-    pass "install.sh includes headless-ask hook"
-else
-    fail "install.sh includes headless-ask hook"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # Reports directory exists
 assert_dir_exists "$PROJECT_ROOT/docs/reports" "Reports directory exists"

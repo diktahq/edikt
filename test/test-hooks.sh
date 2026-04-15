@@ -740,12 +740,9 @@ assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "spec-artifacts" "sdl
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "product/specs" "init.md creates specs directory"
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "specs:" "init.md adds specs config"
 
-# Install includes new commands (sdlc namespace covers artifacts)
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh includes sdlc namespace"
-else
-    assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # v4.3 — Drift Detection
@@ -773,12 +770,9 @@ assert_file_contains "$DRIFT_CMD" "architect" "sdlc/drift.md routes to architect
 assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "DRIFT CHECK" "sdlc/review.md integrates drift detection"
 assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "edikt:sdlc:drift\|edikt:drift" "sdlc/review.md references drift command"
 
-# Install includes drift (via sdlc namespace)
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh includes sdlc namespace (covers drift)"
-else
-    assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace (covers drift)"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # v4.0 — Compile command
@@ -801,11 +795,8 @@ assert_file_contains "$COMPILE_CMD" "event_log\|edikt_log_event" "gov/compile.md
 assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:gov:compile\|edikt:compile" "adr/new.md suggests /edikt:gov:compile after creation"
 assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:gov:compile\|edikt:compile" "invariant/new.md suggests /edikt:gov:compile after creation"
 
-# Install includes compile (via gov namespace)
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh includes gov namespace (covers compile)"
-else
-    assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers compile)"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 test_summary
