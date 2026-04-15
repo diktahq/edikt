@@ -996,6 +996,328 @@ migration_in_progress() {
     return 1
 }
 
+# ─── Multi-version migration helpers (Phase 7a — M2/M3/M4/M5/M6) ────────────
+# Each migrate_mN_* function is detection-gated: a no-op if the relevant
+# signal is absent. Functions consult the module-level $MIGRATE_BACKUP_DIR
+# (created by M1) for backup placement. If M1 didn't run (because the
+# legacy flat layout wasn't present), they create a backup dir on demand
+# via _ensure_secondary_backup_dir.
+#
+# Convention: each function takes "$1" = dry_run (0|1) and prints what it
+# would do via log_info; mutating ops are gated on dry_run==0. Returns 0
+# on success or no-op; non-zero only on hard failure (which aborts the
+# migration chain).
+
+# Tracks whether any of M2-M6 actually fired this run (for summary).
+MIGRATE_RAN_M2=0
+MIGRATE_RAN_M3=0
+MIGRATE_RAN_M4=0
+MIGRATE_RAN_M5=0
+# Preserved files reported in summary.
+MIGRATE_M3_PRESERVED=""
+
+# Lazily create a secondary backup dir for M2/M5 when M1 didn't run.
+# Sets $MIGRATE_BACKUP_DIR if it isn't already set.
+_ensure_secondary_backup_dir() {
+    if [ -n "${MIGRATE_BACKUP_DIR:-}" ] && [ -d "$MIGRATE_BACKUP_DIR" ]; then
+        return 0
+    fi
+    _ts="${MIGRATE_TS:-$(ts_now)}"
+    MIGRATE_TS="$_ts"
+    MIGRATE_BACKUP_DIR="$EDIKT_ROOT/backups/migration-$_ts-$$"
+    mkdir -p "$MIGRATE_BACKUP_DIR" 2>/dev/null || return 1
+    return 0
+}
+
+# ─── M2: CLAUDE.md HTML sentinels → markdown link-ref form (ADR-006) ────────
+# Detection: $EDIKT_ROOT/CLAUDE.md exists AND contains both HTML markers.
+# Action: rewrite "<!-- edikt:start -->" → "[edikt:start]: #" and
+#         "<!-- edikt:end -->" → "[edikt:end]: #". Content between markers
+# preserved byte-for-byte. Backup the original to
+# $MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2 first.
+migrate_m2_claudemd_sentinels() {
+    _dry="$1"
+    _f="$EDIKT_ROOT/CLAUDE.md"
+    [ -f "$_f" ] || return 0
+    # Detection: must contain BOTH HTML markers; if neither is present we are
+    # already on the new format (or never had sentinels) — skip silently.
+    if ! grep -q '<!-- edikt:start -->' "$_f" 2>/dev/null; then
+        return 0
+    fi
+    if ! grep -q '<!-- edikt:end -->' "$_f" 2>/dev/null; then
+        return 0
+    fi
+    if [ "$_dry" -eq 1 ]; then
+        log_info "M2 (CLAUDE.md sentinels): would rewrite HTML sentinels in $_f to markdown link-ref form"
+        return 0
+    fi
+    _ensure_secondary_backup_dir || {
+        log_err "M2: could not create backup dir"
+        return 1
+    }
+    cp "$_f" "$MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2" || {
+        log_err "M2: failed to back up $_f"
+        return 1
+    }
+    _tmp="$_f.tmp.$$"
+    # POSIX sed; preserve content between markers verbatim — only the marker
+    # lines themselves are rewritten.
+    sed \
+        -e 's|<!-- edikt:start -->|[edikt:start]: #|g' \
+        -e 's|<!-- edikt:end -->|[edikt:end]: #|g' \
+        "$_f" >"$_tmp" || {
+        rm -f "$_tmp"
+        log_err "M2: sed rewrite failed"
+        return 1
+    }
+    mv -f "$_tmp" "$_f" || {
+        rm -f "$_tmp"
+        log_err "M2: atomic mv failed"
+        return 1
+    }
+    MIGRATE_RAN_M2=1
+    log_info "M2: rewrote sentinels in $_f (backup at $MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2)"
+    emit_event migration_step_completed \
+        '"step":"M2","file":"'"$_f"'"'
+    return 0
+}
+
+# ─── M3: flat command names → namespaced ────────────────────────────────────
+# Detection: top-level *.md files in $CLAUDE_ROOT/commands/edikt/ that have
+# a same-basename namespaced replacement somewhere deeper in
+# $EDIKT_ROOT/current/commands/edikt/.
+# Action: if the top-level file's sha256 matches the namespaced
+# replacement's sha256, rm it (template unchanged — namespaced version is
+# canonical). Otherwise mv to $EDIKT_ROOT/custom/<name>.md and warn.
+migrate_m3_flat_commands() {
+    _dry="$1"
+    _flat_dir="$CLAUDE_ROOT/commands/edikt"
+    _payload_dir="$EDIKT_ROOT/current/commands/edikt"
+    [ -d "$_flat_dir" ] || return 0
+    [ -d "$_payload_dir" ] || return 0
+    _custom_dir="$EDIKT_ROOT/custom"
+
+    _matches=""
+    for _flat in "$_flat_dir"/*.md; do
+        [ -f "$_flat" ] || continue
+        # Skip symlinks — those are the v0.5.0-namespaced layout's own.
+        [ -L "$_flat" ] && continue
+        _base=$(basename "$_flat")
+        # Find a same-basename file deeper in the payload tree.
+        _replacement=$(find "$_payload_dir" -mindepth 2 -type f -name "$_base" 2>/dev/null | head -1)
+        [ -n "$_replacement" ] || continue
+        _matches="$_matches $_flat|$_replacement"
+    done
+    [ -n "$_matches" ] || return 0
+
+    if [ "$_dry" -eq 1 ]; then
+        for _pair in $_matches; do
+            _flat=${_pair%%|*}
+            _repl=${_pair##*|}
+            log_info "M3 (flat commands): would compare $_flat vs $_repl"
+        done
+        return 0
+    fi
+
+    for _pair in $_matches; do
+        _flat=${_pair%%|*}
+        _repl=${_pair##*|}
+        _flat_sha=$(sha256_file "$_flat" 2>/dev/null) || _flat_sha=""
+        _repl_sha=$(sha256_file "$_repl" 2>/dev/null) || _repl_sha=""
+        if [ -n "$_flat_sha" ] && [ "$_flat_sha" = "$_repl_sha" ]; then
+            # Unmodified template — safe to delete.
+            _safe_remove_or_quarantine "$_flat" "M3" || {
+                log_err "M3: failed to remove $_flat"
+                return 1
+            }
+            log_info "M3: removed unmodified flat command: $_flat"
+            emit_event migration_step_completed \
+                '"step":"M3","action":"removed","file":"'"$_flat"'"'
+        else
+            # User-modified — preserve in custom/.
+            mkdir -p "$_custom_dir" || {
+                log_err "M3: failed to create $_custom_dir"
+                return 1
+            }
+            _dest="$_custom_dir/$(basename "$_flat")"
+            mv "$_flat" "$_dest" || {
+                log_err "M3: failed to mv $_flat → $_dest"
+                return 1
+            }
+            log_warn "Preserved user-modified command: $(basename "$_flat") → $_custom_dir/"
+            MIGRATE_M3_PRESERVED="$MIGRATE_M3_PRESERVED $_dest"
+            emit_event migration_step_completed \
+                '"step":"M3","action":"preserved","file":"'"$_dest"'"'
+        fi
+        MIGRATE_RAN_M3=1
+    done
+    return 0
+}
+
+# ─── M5: config.yaml schema additions ───────────────────────────────────────
+# Detection: $EDIKT_ROOT/config.yaml exists AND is missing one or more of
+# the v0.5.0 expected top-level keys: paths:, stack:, gates:.
+# Action: append missing keys with defaults. Never reorder existing keys,
+# never modify existing values. Atomic write via .tmp + mv. Backup to
+# $MIGRATE_BACKUP_DIR/config.yaml.pre-m5.
+migrate_m5_config_additions() {
+    _dry="$1"
+    _f="$EDIKT_ROOT/config.yaml"
+    [ -f "$_f" ] || return 0
+
+    _missing=""
+    grep -q '^paths:' "$_f" 2>/dev/null || _missing="$_missing paths"
+    grep -q '^stack:' "$_f" 2>/dev/null || _missing="$_missing stack"
+    grep -q '^gates:' "$_f" 2>/dev/null || _missing="$_missing gates"
+
+    [ -n "$_missing" ] || return 0
+
+    if [ "$_dry" -eq 1 ]; then
+        log_info "M5 (config.yaml): would append missing keys to $_f:$_missing"
+        return 0
+    fi
+    _ensure_secondary_backup_dir || {
+        log_err "M5: could not create backup dir"
+        return 1
+    }
+    cp "$_f" "$MIGRATE_BACKUP_DIR/config.yaml.pre-m5" || {
+        log_err "M5: failed to back up $_f"
+        return 1
+    }
+
+    _tmp="$_f.tmp.$$"
+    cp "$_f" "$_tmp" || {
+        log_err "M5: failed to seed temp file"
+        return 1
+    }
+    # Ensure trailing newline before appending blocks.
+    if [ -s "$_tmp" ]; then
+        _last_byte=$(tail -c 1 "$_tmp" | od -An -c | tr -d ' ')
+        if [ "$_last_byte" != "\\n" ]; then
+            printf '\n' >>"$_tmp"
+        fi
+    fi
+
+    for _key in $_missing; do
+        case "$_key" in
+            paths)
+                cat >>"$_tmp" <<'EOF'
+
+# Added by edikt v0.5.0 migration
+paths:
+  decisions: docs/architecture/decisions
+  invariants: docs/architecture/invariants
+  plans: docs/plans
+  specs: docs/product/specs
+  prds: docs/product/prds
+  guidelines: docs/guidelines
+  reports: docs/reports
+  project-context: docs/project-context.md
+EOF
+                ;;
+            stack)
+                cat >>"$_tmp" <<'EOF'
+
+# Added by edikt v0.5.0 migration
+stack: []
+EOF
+                ;;
+            gates)
+                cat >>"$_tmp" <<'EOF'
+
+# Added by edikt v0.5.0 migration
+gates:
+  quality-gates: true
+EOF
+                ;;
+        esac
+    done
+
+    mv -f "$_tmp" "$_f" || {
+        rm -f "$_tmp"
+        log_err "M5: atomic mv failed"
+        return 1
+    }
+    MIGRATE_RAN_M5=1
+    log_info "M5: appended missing keys to $_f:$_missing"
+    emit_event migration_step_completed \
+        '"step":"M5","keys":"'"$(echo "$_missing" | sed 's/^ //;s/ /,/g')"'"'
+    return 0
+}
+
+# ─── M4: compile schema v1 → v2 (stub — Phase 7b will wire claude -p) ───────
+# Detection: .claude/rules/governance.md exists AND lacks the v2 sentinel
+# "<!-- compile-schema: v2 -->". The compile invocation itself is deferred
+# to Phase 7b; this stub records intent in $EDIKT_ROOT/.m4-pending so the
+# next compile run (or Phase 7b's automation) can act on it.
+migrate_m4_compile_schema_v1_to_v2() {
+    _dry="$1"
+    _gov="$CLAUDE_ROOT/rules/governance.md"
+    # Detection is scoped to $CLAUDE_ROOT — project-mode invocations resolve
+    # CLAUDE_ROOT to the project's .claude/ via env. We do NOT walk PWD
+    # here because that would falsely fire when the launcher runs from a
+    # repo that happens to ship its own governance.md at .claude/rules/.
+    [ -f "$_gov" ] || return 0
+    if grep -q '<!-- compile-schema: v2 -->' "$_gov" 2>/dev/null; then
+        return 0
+    fi
+    # Already-pending marker → idempotent skip. Phase 7b's compile run will
+    # clear the marker by writing the v2 sentinel.
+    if [ -f "$EDIKT_ROOT/.m4-pending" ]; then
+        return 0
+    fi
+    if [ "$_dry" -eq 1 ]; then
+        log_info "M4 (compile schema): would invoke compile to migrate rule schema (deferred to Phase 7b)"
+        return 0
+    fi
+    log_info "M4 (compile schema): would invoke 'claude -p /edikt:gov:compile' — deferred to Phase 7b. Mark schema migration pending."
+    : >"$EDIKT_ROOT/.m4-pending" || {
+        log_warn "M4: could not write $EDIKT_ROOT/.m4-pending (non-fatal)"
+        return 0
+    }
+    MIGRATE_RAN_M4=1
+    emit_event migration_step_completed \
+        '"step":"M4","action":"pending","marker":"'"$EDIKT_ROOT/.m4-pending"'"'
+    return 0
+}
+
+# ─── M6: provenance backfill (stub — Phase 11) ──────────────────────────────
+# TODO Phase 11: backfill edikt_template_hash on agents installed before
+# v0.5.0. No action in v0.5.0 — agents without provenance fall back to the
+# v0.4.3 classifier per FR-029.
+migrate_m6_provenance_backfill() {
+    # No-op stub. Detection logic ships in Phase 11.
+    : "${1:-}"
+    return 0
+}
+
+# Run the full M2-M6 chain. Stops at the first hard failure.
+_run_secondary_migrations() {
+    _dry="$1"
+    migrate_m2_claudemd_sentinels "$_dry" || return $?
+    migrate_m3_flat_commands "$_dry" || return $?
+    migrate_m5_config_additions "$_dry" || return $?
+    migrate_m4_compile_schema_v1_to_v2 "$_dry" || return $?
+    migrate_m6_provenance_backfill "$_dry" || return $?
+    return 0
+}
+
+_print_secondary_summary() {
+    _ran_any=0
+    if [ "$MIGRATE_RAN_M2" -eq 1 ]; then echo "  M2: CLAUDE.md sentinels rewritten"; _ran_any=1; fi
+    if [ "$MIGRATE_RAN_M3" -eq 1 ]; then
+        echo "  M3: flat command names normalized"
+        _ran_any=1
+        if [ -n "$MIGRATE_M3_PRESERVED" ]; then
+            echo "    user-modified files preserved:$MIGRATE_M3_PRESERVED"
+        fi
+    fi
+    if [ "$MIGRATE_RAN_M5" -eq 1 ]; then echo "  M5: config.yaml keys added"; _ran_any=1; fi
+    if [ "$MIGRATE_RAN_M4" -eq 1 ]; then echo "  M4: compile schema marked pending (deferred to Phase 7b)"; _ran_any=1; fi
+    [ "$_ran_any" -eq 0 ] && echo "  (M2-M6: no signals detected)"
+    return 0
+}
+
 # ─── Subcommand: migrate ────────────────────────────────────────────────────
 # Migrate a pre-v0.5.0 flat layout into the versioned layout.
 #   edikt migrate [--dry-run] [--yes] [--abort]
@@ -1306,14 +1628,81 @@ EOF
         return "$_abort_rc"
     fi
 
-    # Detect the flat layout.
+    # Detect partial/orphaned migration (always; independent of M1 detection).
+    if ! needs_migration && migration_in_progress; then
+        log_warn "partial migration detected. Run: edikt migrate --abort"
+        return 1
+    fi
+
+    # If no M1 signal, still run the M2-M6 chain — each is independently
+    # detection-gated. If nothing fires either, we report "No migration needed".
     if ! needs_migration; then
-        # Check for an orphaned partial migration (crash with no flat left).
-        if migration_in_progress; then
-            log_warn "partial migration detected. Run: edikt migrate --abort"
-            return 1
+        # Detect any secondary signal up front so dry-run output and the
+        # idempotent re-run path can both decide between "plan" vs
+        # "nothing to do" without mutating disk twice.
+        _has_signal=0
+        # M2 signal
+        if [ -f "$EDIKT_ROOT/CLAUDE.md" ] \
+           && grep -q '<!-- edikt:start -->' "$EDIKT_ROOT/CLAUDE.md" 2>/dev/null \
+           && grep -q '<!-- edikt:end -->' "$EDIKT_ROOT/CLAUDE.md" 2>/dev/null; then
+            _has_signal=1
         fi
-        log_info "No migration needed."
+        # M3 signal
+        if [ "$_has_signal" -eq 0 ] \
+           && [ -d "$CLAUDE_ROOT/commands/edikt" ] \
+           && [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
+            for _f in "$CLAUDE_ROOT"/commands/edikt/*.md; do
+                [ -f "$_f" ] || continue
+                [ -L "$_f" ] && continue
+                _b=$(basename "$_f")
+                if find "$EDIKT_ROOT/current/commands/edikt" -mindepth 2 -type f -name "$_b" 2>/dev/null | grep -q .; then
+                    _has_signal=1
+                    break
+                fi
+            done
+        fi
+        # M5 signal
+        if [ "$_has_signal" -eq 0 ] && [ -f "$EDIKT_ROOT/config.yaml" ]; then
+            for _k in '^paths:' '^stack:' '^gates:'; do
+                if ! grep -q "$_k" "$EDIKT_ROOT/config.yaml" 2>/dev/null; then
+                    _has_signal=1
+                    break
+                fi
+            done
+        fi
+        # M4 signal
+        if [ "$_has_signal" -eq 0 ] \
+           && [ -f "$CLAUDE_ROOT/rules/governance.md" ] \
+           && ! grep -q '<!-- compile-schema: v2 -->' "$CLAUDE_ROOT/rules/governance.md" 2>/dev/null \
+           && [ ! -f "$EDIKT_ROOT/.m4-pending" ]; then
+            _has_signal=1
+        fi
+
+        if [ "$_has_signal" -eq 0 ]; then
+            log_info "No migration needed."
+            return 0
+        fi
+
+        if [ "$dry_run" -eq 1 ]; then
+            echo "Migration plan (dry-run):"
+            _run_secondary_migrations 1
+            echo ""
+            echo "(dry-run: no changes written)"
+            return 0
+        fi
+        # Real run. Need lock so M2/M5 atomic writes are serialized with
+        # any concurrent install/upgrade operating on the same EDIKT_ROOT.
+        acquire_lock || return $?
+        MIGRATE_TS=$(ts_now)
+        _run_secondary_migrations 0
+        _rc=$?
+        release_lock
+        if [ "$_rc" -ne 0 ]; then
+            return "$_rc"
+        fi
+        echo ""
+        echo "Migration summary:"
+        _print_secondary_summary
         return 0
     fi
 
@@ -1369,6 +1758,9 @@ EOF
     echo ""
 
     if [ "$dry_run" -eq 1 ]; then
+        echo "Secondary migrations (M2-M6) — detection plan:"
+        _run_secondary_migrations 1
+        echo ""
         echo "(dry-run: no changes written)"
         return 0
     fi
@@ -1520,6 +1912,16 @@ EOF
     rm -rf "$MIGRATE_STAGING" 2>/dev/null || true
 
     log_info "migration complete: $MIGRATE_VERSION activated"
+
+    # Chain into M2-M6 now that the versioned layout is in place. These
+    # share the same lock and backup dir created above. Failures here are
+    # logged but do not roll back M1 — M1 is the load-bearing transition;
+    # M2-M6 are repeatable and can be re-run with `edikt migrate` later.
+    _run_secondary_migrations 0 || log_warn "secondary migrations reported a failure — re-run 'edikt migrate' to retry"
+    echo ""
+    echo "Migration summary:"
+    echo "  M1: flat → versioned (target $MIGRATE_VERSION)"
+    _print_secondary_summary
     return 0
 }
 

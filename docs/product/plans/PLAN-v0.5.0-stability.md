@@ -19,7 +19,7 @@
 | 4     | done | 1/5 | 2026-04-15 |
 | 5     | done | 1/5 | 2026-04-15 |
 | 6     | done | 1/5 | 2026-04-15      |
-| 7a    | pending (split — M2/M3/M5 migrations + capture.sh script + synthetic-fixture tests) | 0/5 | - |
+| 7a    | done | 1/5 | 2026-04-15 |
 | 7b    | pending (split — run capture.sh, commit real fixtures, wire M4 to compile invocation) | 0/5 | - |
 | 8     | pending | 0/5 | -      |
 | 9     | pending | 0/5 | -      |
