@@ -79,6 +79,27 @@ sha256_file() {
     fi
 }
 
+# ─── Sidecar checksum verification ──────────────────────────────────────────
+# Verifies an observed sha256 against a reference file. Reference may be a
+# bare hex hash or "<hash>  <filename>" (standard sha256sum/shasum output).
+# Arguments: observed_hash, reference_file_path, reference_label (for errors).
+# Returns 0 on match, non-zero on empty/mismatched reference. Logs to stderr.
+verify_against_sidecar() {
+    _observed="$1"
+    _ref_file="$2"
+    _ref_label="$3"
+    _expected=$(awk '{print $1; exit}' "$_ref_file" 2>/dev/null | tr -d '[:space:]')
+    if [ -z "$_expected" ]; then
+        log_err "checksum reference $_ref_label is empty"
+        return 1
+    fi
+    if [ "$_observed" != "$_expected" ]; then
+        log_err "checksum mismatch: reference $_ref_label expected $_expected, got $_observed"
+        return 1
+    fi
+    return 0
+}
+
 # ─── Tarball entry safety (path-traversal guard) ────────────────────────────
 # Returns 0 if every entry in the tarball is a safe relative path, 1 if any
 # entry is absolute or contains a `..` path component. BSD tar on macOS does
@@ -605,15 +626,7 @@ cmd_install() {
             ref_url="$url.sha256"
             ref_file="$staging/payload.tar.gz.sha256"
             if curl -fsSL --max-time 30 -o "$ref_file" "$ref_url" 2>/dev/null; then
-                # Reference file may be a bare hash or "<hash>  <filename>".
-                expected=$(awk '{print $1; exit}' "$ref_file" 2>/dev/null | tr -d '[:space:]')
-                if [ -z "$expected" ]; then
-                    log_err "fetched checksum reference at $ref_url is empty"
-                    cleanup_staging
-                    return $EX_CHECKSUM
-                fi
-                if [ "$observed" != "$expected" ]; then
-                    log_err "checksum mismatch: reference $ref_url expected $expected, got $observed"
+                if ! verify_against_sidecar "$observed" "$ref_file" "$ref_url"; then
                     cleanup_staging
                     return $EX_CHECKSUM
                 fi
@@ -664,10 +677,21 @@ cmd_install() {
     elif [ -f "$src" ]; then
         # Local tarball.
         observed=$(sha256_file "$src")
-        if [ -n "${EDIKT_INSTALL_SHA256:-}" ] && [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
-            log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
-            cleanup_staging
-            return $EX_CHECKSUM
+        if [ -n "${EDIKT_INSTALL_SHA256:-}" ]; then
+            if [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
+                log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
+                cleanup_staging
+                return $EX_CHECKSUM
+            fi
+        elif [ -f "$src.sha256" ]; then
+            # Opportunistic verification: if a sibling .sha256 exists, use it.
+            # Local tarballs without a sidecar are implicitly trusted (user
+            # chose the file); network tarballs require a sidecar — see the
+            # network branch above.
+            if ! verify_against_sidecar "$observed" "$src.sha256" "$src.sha256"; then
+                cleanup_staging
+                return $EX_CHECKSUM
+            fi
         fi
         tarball_sha="$observed"
         if ! tarball_safe "$src"; then

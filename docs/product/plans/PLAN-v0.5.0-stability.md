@@ -1417,6 +1417,7 @@ When complete, output: INTEGRATION TESTS READY
 - [ ] Documentation: add `website/guides/homebrew.md` distinguishing `brew upgrade edikt` (launcher) from `edikt upgrade` (payload) — covered fully in Phase 14, but stub it here so the release announcement links correctly.
 - [ ] Tests: `.github/workflows/release.yml` has a `workflow_dispatch` input `--dry-run` that does everything except the final tap PR — verifies the pipeline without mutating the tap. Covered by manual test in Phase 13 acceptance.
 - [ ] Verikt formula integrity: post-release, the existing `verikt.rb` is byte-identical to its pre-release content. Enforced by staging-branch diff audit.
+- [ ] **Checksum sidecar format decision.** The v0.5.0 launcher (Phase 3) validates network install tarballs via a `<tarball>.sha256` simple-sibling file (single hex hash, or `hash  filename` per `sha256sum` convention). Before wiring the release workflow, confirm this is the desired shape OR upgrade to an aggregated `SHA256SUMS` listing all release artifacts. Signing (GPG / Sigstore / cosign) is an open question — decide here, because both the workflow emitter and `bin/edikt`'s verification logic need matching updates. Record decision as an ADR.
 
 **Prompt:**
 ```
