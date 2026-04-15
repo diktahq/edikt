@@ -148,6 +148,12 @@ LOCK_DIR=""
 LOCK_FD=""
 
 acquire_lock() {
+    # Re-entrancy guard: if this process already holds the lock, return 0.
+    # This allows composite subcommands (upgrade, dev) to call install/use
+    # internals without double-locking. Single-threaded POSIX sh: safe.
+    if [ -n "${LOCK_HELD:-}" ]; then
+        return 0
+    fi
     mkdir -p "$EDIKT_ROOT" || return 1
     lockfile="$EDIKT_ROOT/.lock"
 
@@ -1566,6 +1572,483 @@ cmd_uninstall() {
     return 0
 }
 
+# ─── Project-config ancestor walk ──────────────────────────────────────────
+# Walks from $PWD upward until it finds .edikt/config.yaml, or reaches $HOME
+# or the filesystem root. Stops at $HOME so we don't leak out of the user's
+# project tree and accidentally hit the project repo's own .edikt/ during tests.
+# Prints the path to the config file, or nothing if not found.
+find_project_config() {
+    _dir="$PWD"
+    _home="${HOME:-/}"
+    while true; do
+        if [ -f "$_dir/.edikt/config.yaml" ]; then
+            echo "$_dir/.edikt/config.yaml"
+            return 0
+        fi
+        # Stop at $HOME — don't leak out of the user tree.
+        if [ "$_dir" = "$_home" ] || [ "$_dir" = "/" ]; then
+            return 1
+        fi
+        _dir=$(dirname "$_dir")
+    done
+}
+
+# ─── Version major extractor ────────────────────────────────────────────────
+# Parses the major component (X in vX.Y.Z or X.Y.Z). Strips leading 'v'.
+extract_major() {
+    echo "$1" | sed 's/^v//' | awk -F. '{print $1+0}'
+}
+
+# ─── GitHub latest-tag resolver ─────────────────────────────────────────────
+# Fetches the latest stable release tag from GitHub API.
+# Respects EDIKT_RELEASE_TAG env override for offline/test use.
+# Prints the tag (e.g. "v0.5.1") on success; returns 1 on network failure.
+resolve_latest_tag() {
+    if [ -n "${EDIKT_RELEASE_TAG:-}" ]; then
+        echo "$EDIKT_RELEASE_TAG"
+        return 0
+    fi
+    if ! command -v curl >/dev/null 2>&1; then
+        log_err "curl not found; cannot check latest version"
+        return 1
+    fi
+    _api_url="https://api.github.com/repos/diktahq/edikt/releases/latest"
+    _response=$(curl -fsSL --max-time 15 "$_api_url" 2>/dev/null) || {
+        log_err "failed to fetch latest release from GitHub API"
+        return 1
+    }
+    # Extract "tag_name" from the JSON response without requiring jq.
+    _tag=$(echo "$_response" | awk -F'"' '/"tag_name"/{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2);exit}}}')
+    if [ -z "$_tag" ]; then
+        log_err "could not parse tag_name from GitHub API response"
+        return 1
+    fi
+    echo "$_tag"
+}
+
+# ─── Project-pin warn ────────────────────────────────────────────────────────
+# Prints a stderr warning if the ancestor project's .edikt/config.yaml pins a
+# version that differs from the current active version. Called in the dispatch
+# prologue for all subcommands except the exempt list.
+# POSIX: uses only shell builtins + awk + grep.
+check_pin_warn() {
+    _cfg=$(find_project_config 2>/dev/null) || return 0
+    [ -f "$_cfg" ] || return 0
+    _pinned=$(awk '/^edikt_version:/{gsub(/["\x27[:space:]]/,"",$2);print $2;exit}' "$_cfg")
+    [ -n "$_pinned" ] || return 0
+    _active=$(lock_get active 2>/dev/null)
+    [ -n "$_active" ] || return 0
+    # Strip leading v for comparison.
+    _pinned_n=$(echo "$_pinned" | sed 's/^v//')
+    _active_n=$(echo "$_active" | sed 's/^v//')
+    if [ "$_pinned_n" != "$_active_n" ]; then
+        printf '⚠ This project pins edikt v%s but the active version is v%s. Run '"'"'edikt upgrade-pin'"'"' to update the pin, or '"'"'edikt use %s'"'"' to match.\n' \
+            "$_pinned_n" "$_active_n" "$_pinned_n" >&2
+    fi
+}
+
+# ─── Subcommand: prune ──────────────────────────────────────────────────────
+# edikt prune [--keep N] [--dry-run]
+# Removes versions older than the Nth most recent. Never removes `active` or
+# `previous` from lock.yaml regardless of position in sort order.
+# NOTE: sort order is lexical (good enough for v0.5.x; semver sort is Phase 7).
+cmd_prune() {
+    keep=3
+    dry_run=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --keep)
+                shift
+                keep="${1:-3}"
+                case "$keep" in
+                    *[!0-9]*|"")
+                        log_err "--keep requires a positive integer, got: $keep"
+                        return 1
+                        ;;
+                esac
+                ;;
+            --dry-run) dry_run=1 ;;
+            -h|--help)
+                cat <<EOF
+Usage: edikt prune [--keep N] [--dry-run]
+
+Remove versions from \$EDIKT_ROOT/versions/ older than the Nth most recent.
+Default --keep is 3. Never removes the active or previous version recorded
+in lock.yaml regardless of age or position.
+
+--dry-run  Print which versions would be pruned without removing anything.
+--keep N   Keep the N most recent versions (default: 3).
+EOF
+                return 0
+                ;;
+            *) log_err "prune: unknown flag: $1"; return 1 ;;
+        esac
+        shift
+    done
+
+    versions_dir="$EDIKT_ROOT/versions"
+    if [ ! -d "$versions_dir" ]; then
+        log_info "prune: no versions directory — nothing to prune"
+        return 0
+    fi
+
+    # Read protected versions from lock.yaml.
+    protected_active=$(lock_get active 2>/dev/null || true)
+    protected_previous=$(lock_get previous 2>/dev/null || true)
+
+    # Build sorted list of version directories (lexical; Phase 7 adds semver).
+    # Only directories under versions/; skip dev and any non-dir.
+    all_versions=""
+    for d in "$versions_dir"/*/; do
+        [ -d "$d" ] || continue
+        tag=$(basename "$d")
+        all_versions="${all_versions}${tag}
+"
+    done
+
+    # Sort lexically descending (newest first by string sort).
+    sorted=$(printf '%s' "$all_versions" | sort -r | grep -v '^$' || true)
+    total=$(printf '%s\n' "$sorted" | grep -c . || echo 0)
+
+    if [ "$total" -eq 0 ]; then
+        log_info "prune: no versions found"
+        return 0
+    fi
+
+    # Identify versions to keep (first --keep entries) and to prune (rest).
+    keep_list=""
+    prune_list=""
+    idx=0
+    while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        idx=$((idx + 1))
+        if [ "$idx" -le "$keep" ]; then
+            keep_list="${keep_list}${tag}
+"
+        else
+            prune_list="${prune_list}${tag}
+"
+        fi
+    done <<EOF
+$sorted
+EOF
+
+    if [ -z "$prune_list" ]; then
+        log_info "prune: nothing to prune (total=$total, keep=$keep)"
+        return 0
+    fi
+
+    any_failed=0
+    while IFS= read -r tag; do
+        [ -n "$tag" ] || continue
+        # Never prune active or previous — non-negotiable.
+        tag_n=$(echo "$tag" | sed 's/^v//')
+        active_n=$(echo "$protected_active" | sed 's/^v//')
+        previous_n=$(echo "$protected_previous" | sed 's/^v//')
+        if [ -n "$active_n" ] && [ "$tag_n" = "$active_n" ]; then
+            log_info "prune: skipping active version $tag"
+            continue
+        fi
+        if [ -n "$previous_n" ] && [ "$tag_n" = "$previous_n" ]; then
+            log_info "prune: skipping previous version $tag"
+            continue
+        fi
+        if [ "$dry_run" -eq 1 ]; then
+            echo "would prune: $tag"
+        else
+            log_info "prune: removing $tag"
+            if rm -rf "$versions_dir/$tag" 2>/dev/null; then
+                emit_event version_pruned \
+                    '"version":"'"$tag"'","keep":'"$keep"',"root":"'"$EDIKT_ROOT"'"'
+            else
+                log_err "prune: failed to remove $versions_dir/$tag"
+                any_failed=1
+            fi
+        fi
+    done <<EOF
+$prune_list
+EOF
+
+    if [ "$dry_run" -eq 1 ]; then
+        log_info "prune: dry-run complete (no changes)"
+        return 0
+    fi
+
+    if [ "$any_failed" -ne 0 ]; then
+        log_err "prune: one or more versions could not be removed"
+        return 1
+    fi
+    return 0
+}
+
+# ─── Subcommand: upgrade ────────────────────────────────────────────────────
+# edikt upgrade [--dry-run] [--yes]
+# Fetches the latest stable tag from GitHub, installs+activates if newer.
+# Refuses to auto-upgrade across major versions.
+cmd_upgrade() {
+    dry_run=0
+    assume_yes=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run) dry_run=1 ;;
+            --yes|-y)  assume_yes=1 ;;
+            -h|--help)
+                cat <<EOF
+Usage: edikt upgrade [--dry-run] [--yes]
+
+Fetch the latest stable release from GitHub and install it if newer.
+A major-version jump (e.g. v0.x → v1.x) is refused — re-run install.sh
+to upgrade across major versions.
+
+--dry-run  Show what would be done without making changes.
+--yes      Skip the confirmation prompt before activating.
+EOF
+                return 0
+                ;;
+            *) log_err "upgrade: unknown flag: $1"; return 1 ;;
+        esac
+        shift
+    done
+
+    # Resolve current active version.
+    current_v=$(lock_get active 2>/dev/null || true)
+    if [ -z "$current_v" ] && [ -f "$EDIKT_ROOT/current/VERSION" ]; then
+        current_v=$(head -1 "$EDIKT_ROOT/current/VERSION" | tr -d '[:space:]')
+    fi
+    if [ -z "$current_v" ]; then
+        log_err "upgrade: no active version found. Run 'edikt install <tag>' first."
+        return 1
+    fi
+    current_norm=$(normalize_tag "$current_v")
+
+    # Fetch the latest tag.
+    latest_tag=$(resolve_latest_tag) || return 1
+    latest_norm=$(normalize_tag "$latest_tag")
+
+    # Already up to date.
+    if version_ge "$current_norm" "$latest_norm"; then
+        log_info "upgrade: already up to date (v$current_norm)"
+        return 0
+    fi
+
+    # Major-version jump detection (strict numeric comparison of X in X.Y.Z).
+    current_major=$(extract_major "$current_norm")
+    latest_major=$(extract_major "$latest_norm")
+    if [ "$latest_major" -ne "$current_major" ]; then
+        log_err "major upgrade detected (current v$current_norm, latest v$latest_norm) — run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash"
+        return 1
+    fi
+
+    echo "upgrade: v$current_norm → v$latest_norm"
+
+    if [ "$dry_run" -eq 1 ]; then
+        echo "(dry-run: would install $latest_tag and activate it)"
+        return 0
+    fi
+
+    # Install if not already present.
+    target_dir="$EDIKT_ROOT/versions/$latest_norm"
+    if [ ! -d "$target_dir" ]; then
+        log_info "upgrade: installing $latest_tag ..."
+        cmd_install "$latest_tag" || return $?
+    else
+        log_info "upgrade: $latest_norm already installed, skipping fetch"
+    fi
+
+    # Prompt before activating unless --yes.
+    if [ "$assume_yes" -ne 1 ]; then
+        if { [ ! -r /dev/tty ] || [ ! -t 0 ]; } && [ ! -c /dev/tty ]; then
+            log_err "non-interactive session. Re-run with --yes to confirm activation."
+            return 1
+        fi
+        printf 'Activate v%s? [y/N]: ' "$latest_norm" >/dev/tty 2>/dev/null \
+            || printf 'Activate v%s? [y/N]: ' "$latest_norm" >&2
+        if ! read -r _reply </dev/tty 2>/dev/null; then
+            log_err "cannot read from /dev/tty. Re-run with --yes."
+            return 1
+        fi
+        case "$_reply" in
+            y|Y|yes|YES) ;;
+            *) log_info "aborted"; return 0 ;;
+        esac
+    fi
+
+    cmd_use "$latest_tag" || return $?
+    log_info "upgrade complete: v$current_norm → v$latest_norm"
+    return 0
+}
+
+# ─── Subcommand: upgrade-pin ────────────────────────────────────────────────
+# edikt upgrade-pin
+# Updates edikt_version: in the nearest ancestor .edikt/config.yaml to the
+# current global active version. Shell-only YAML line replacement — byte-for-byte
+# preserves all other lines. Atomic write via .tmp + mv.
+cmd_upgrade_pin() {
+    cfg=$(find_project_config 2>/dev/null) || {
+        log_err "not inside an edikt project directory — upgrade-pin requires .edikt/config.yaml"
+        return 1
+    }
+
+    active=$(lock_get active 2>/dev/null || true)
+    if [ -z "$active" ]; then
+        log_err "upgrade-pin: no active version in lock.yaml"
+        return 1
+    fi
+    active_norm=$(normalize_tag "$active")
+
+    # Read current pin (if any) for informational output.
+    old_pin=$(awk '/^edikt_version:/{gsub(/["\x27[:space:]]/,"",$2);print $2;exit}' "$cfg" 2>/dev/null || true)
+
+    tmp="$cfg.tmp.$$"
+
+    if grep -q '^edikt_version:' "$cfg" 2>/dev/null; then
+        # Replace only the first occurrence of edikt_version: line.
+        # awk -v sets the variable before processing begins; the replaced flag
+        # guards against editing any subsequent edikt_version: lines.
+        awk -v ver="$active_norm" -v replaced=0 '
+            /^edikt_version:/ && replaced == 0 {
+                printf "edikt_version: \"%s\"\n", ver
+                replaced=1
+                next
+            }
+            { print }
+        ' "$cfg" >"$tmp" && mv -f "$tmp" "$cfg"
+    else
+        # Line not present — append with a leading blank line.
+        {
+            cat "$cfg"
+            printf '\nedikt_version: "%s"\n' "$active_norm"
+        } >"$tmp" && mv -f "$tmp" "$cfg"
+        log_info "upgrade-pin: appended edikt_version to $cfg"
+    fi
+
+    emit_event version_pinned \
+        '"version":"'"$active_norm"'","config":"'"$cfg"'"'
+
+    log_info "upgrade-pin: updated $cfg (${old_pin:-unset} → $active_norm)"
+    return 0
+}
+
+# ─── Subcommand: dev ────────────────────────────────────────────────────────
+# edikt dev link <path>  — create versions/dev/ with symlinks into <path>
+# edikt dev unlink       — remove versions/dev/, revert to most-recent tagged ver
+cmd_dev() {
+    subcmd="${1:-}"
+    shift 2>/dev/null || true
+    case "$subcmd" in
+        link)   cmd_dev_link "$@" ;;
+        unlink) cmd_dev_unlink "$@" ;;
+        ""|--help|-h)
+            cat <<EOF
+Usage: edikt dev link <path>
+       edikt dev unlink
+
+link    Create \$EDIKT_ROOT/versions/dev/ with symlinks into <path> and activate it.
+        <path> must contain: VERSION, templates/, templates/hooks/, commands/
+unlink  Remove dev mode, revert to the most recent tagged version.
+EOF
+            ;;
+        *) log_err "dev: unknown subcommand: $subcmd"; return 1 ;;
+    esac
+}
+
+cmd_dev_link() {
+    src="${1:-}"
+    if [ -z "$src" ]; then
+        log_err "dev link: usage: edikt dev link <path>"
+        return 1
+    fi
+
+    # Resolve to absolute path.
+    case "$src" in
+        /*) ;;
+        *) src="$PWD/$src" ;;
+    esac
+
+    # Validate required entries exist in the source tree.
+    for req in VERSION templates templates/hooks commands; do
+        if [ ! -e "$src/$req" ]; then
+            log_err "dev link: <path>/$req not found in $src — cannot create dev link"
+            return 1
+        fi
+    done
+
+    acquire_lock || return $?
+
+    dev_dir="$EDIKT_ROOT/versions/dev"
+    # Tear down any existing dev link.
+    if [ -e "$dev_dir" ] || [ -L "$dev_dir" ]; then
+        rm -rf "$dev_dir" 2>/dev/null || true
+    fi
+    mkdir -p "$dev_dir"
+
+    # Create symlinks.
+    ln -s "$src/VERSION"          "$dev_dir/VERSION"
+    ln -s "$src/templates/hooks"  "$dev_dir/hooks"
+    ln -s "$src/templates"        "$dev_dir/templates"
+    ln -s "$src/commands"         "$dev_dir/commands"
+    if [ -f "$src/CHANGELOG.md" ]; then
+        ln -s "$src/CHANGELOG.md" "$dev_dir/CHANGELOG.md"
+    fi
+
+    # Write DEV_SOURCE for unlink and doctor.
+    printf '%s\n' "$src" >"$dev_dir/DEV_SOURCE"
+
+    # Activate dev: flip current without manifest verification.
+    log_info "dev mode: manifest verification skipped"
+    backup_ts=$(flip_current "versions/dev")
+    lock_write "dev" "dev-link"
+
+    emit_event dev_linked \
+        '"source":"'"$src"'","symlink":"'"$EDIKT_ROOT"'/current","backup":"'"$EDIKT_ROOT/backups/$backup_ts"'"'
+
+    log_info "dev mode active: $src"
+    return 0
+}
+
+cmd_dev_unlink() {
+    dev_dir="$EDIKT_ROOT/versions/dev"
+    if [ ! -e "$dev_dir" ] && [ ! -L "$dev_dir" ]; then
+        log_info "no dev link active"
+        return 0
+    fi
+
+    # Find the most recent tagged (non-dev) version.
+    # Lexical sort: iterate all entries; last non-dev dir wins.
+    best_tag=""
+    if [ -d "$EDIKT_ROOT/versions" ]; then
+        for d in "$EDIKT_ROOT/versions"/*/; do
+            [ -d "$d" ] || continue
+            tag=$(basename "$d")
+            [ "$tag" = "dev" ] && continue
+            best_tag="$tag"
+        done
+    fi
+
+    if [ -z "$best_tag" ]; then
+        log_err "no tagged version to fall back to — run 'edikt install <tag>'"
+        return 1
+    fi
+
+    acquire_lock || return $?
+
+    rm -rf "$dev_dir" 2>/dev/null || true
+
+    # Revert: flip current + update lock.yaml directly (avoid double-lock from
+    # calling cmd_use, which also calls acquire_lock).
+    if ! check_payload_min_version "$EDIKT_ROOT/versions/$best_tag"; then
+        return $EX_CHECKSUM
+    fi
+    backup_ts=$(flip_current "versions/$best_tag")
+    lock_write "$best_tag" "launcher"
+
+    emit_event dev_unlinked \
+        '"fallback":"'"$best_tag"'","backup":"'"$EDIKT_ROOT/backups/$backup_ts"'","root":"'"$EDIKT_ROOT"'"'
+
+    log_info "dev mode removed; activated $best_tag"
+    return 0
+}
+
 # ─── Help ───────────────────────────────────────────────────────────────────
 cmd_help() {
     cat <<EOF
@@ -1579,6 +2062,13 @@ Subcommands:
   install <tag>        Fetch + extract release; does not activate
   use <tag>            Activate an installed version (atomic symlink flip)
   rollback             Re-activate the previous version
+  prune [--keep N]     Remove old versions (keeps N most recent; default 3)
+                       Flags: --keep N, --dry-run
+  upgrade [flags]      Fetch + install latest stable release from GitHub
+                       Flags: --dry-run, --yes
+  upgrade-pin          Update .edikt/config.yaml edikt_version to active ver
+  dev link <path>      Create dev mode — symlinks from versions/dev/ → <path>
+  dev unlink           Remove dev mode, revert to most-recent tagged version
   migrate [flags]      Migrate pre-v0.5.0 flat layout → versioned layout
                        Flags: --dry-run, --yes, --abort
   doctor [--quick]     Verify symlink chain + manifest integrity
@@ -1647,12 +2137,28 @@ if needs_migration; then
     esac
 fi
 
+# Project-pin warn (SPEC-004 FR-019). Runs AFTER migration gates, BEFORE
+# acquire_lock. Exempt subcommands that produce machine-readable output or
+# that are diagnostic/informational: version, list, doctor, help, dev.
+# The ancestor walk is bounded by $HOME so sandbox tests that live under
+# a tmpdir never accidentally pick up the project repo's own .edikt/.
+case "$sub" in
+    version|--version|-v|list|ls|doctor|help|--help|-h|""|dev) ;;
+    *)
+        check_pin_warn
+        ;;
+esac
+
 case "$sub" in
     version|--version|-v) cmd_version "$@" ;;
     list|ls)              cmd_list "$@" ;;
     install)              cmd_install "$@" ;;
     use)                  cmd_use "$@" ;;
     rollback)             cmd_rollback "$@" ;;
+    prune)                cmd_prune "$@" ;;
+    upgrade)              cmd_upgrade "$@" ;;
+    upgrade-pin)          cmd_upgrade_pin "$@" ;;
+    dev)                  cmd_dev "$@" ;;
     migrate)              cmd_migrate "$@" ;;
     doctor)               cmd_doctor "$@" ;;
     uninstall)            cmd_uninstall "$@" ;;
