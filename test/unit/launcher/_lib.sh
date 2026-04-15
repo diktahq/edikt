@@ -84,12 +84,20 @@ assert_test() {
     fi
 }
 
-# Assert a grep match in a string.
+# Assert a grep match in a string. We deliberately disable pipefail inside
+# this helper: at text sizes above the pipe buffer (~64KB on macOS), `grep
+# -q` exits as soon as it matches which sends SIGPIPE to `printf`. Under
+# `set -o pipefail` the whole pipeline then inherits printf's 141 and the
+# assertion fails even though grep matched. Scope the override locally.
 assert_grep() {
     pattern="$1"
     text="$2"
     msg="$3"
-    if printf '%s\n' "$text" | grep -q -- "$pattern"; then
+    (
+        set +o pipefail 2>/dev/null || true
+        printf '%s\n' "$text" | grep -q -- "$pattern"
+    )
+    if [ $? -eq 0 ]; then
         pass "$msg"
     else
         fail "$msg" "pattern not found: $pattern"
