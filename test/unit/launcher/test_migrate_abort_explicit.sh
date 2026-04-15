@@ -39,6 +39,19 @@ cp -R "$LAUNCHER_ROOT/hooks/." "$LAUNCHER_ROOT/_hooks_saved/"
 mv "$LAUNCHER_ROOT/hooks" "$pre/hooks"
 ln -s current/hooks "$LAUNCHER_ROOT/hooks"
 
+# Plant a valid backup tarball. migrate_abort (finding #2 hardening)
+# refuses to mutate state without a verified backup.
+bkdir="$LAUNCHER_ROOT/backups/migration-20260101T000001Z"
+mkdir -p "$bkdir"
+( cd "$LAUNCHER_ROOT" && tar -czf "$bkdir/pre-migration.tar.gz" \
+    VERSION CHANGELOG.md templates commands 2>/dev/null )
+if command -v sha256sum >/dev/null 2>&1; then
+    hash=$(sha256sum "$bkdir/pre-migration.tar.gz" | awk '{print $1}')
+else
+    hash=$(shasum -a 256 "$bkdir/pre-migration.tar.gz" | awk '{print $1}')
+fi
+printf '%s  pre-migration.tar.gz\n' "$hash" >"$bkdir/pre-migration.tar.gz.sha256"
+
 run_launcher migrate --abort >/dev/null 2>&1
 rc=$?
 assert_rc "$rc" 0 "second --abort on pre-migration exits 0"

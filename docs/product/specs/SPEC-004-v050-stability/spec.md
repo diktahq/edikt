@@ -612,7 +612,7 @@ FR-018 covers the flat→versioned layout migration. That's one of several trans
 - User-written plans, ADRs, invariants, PRDs, specs — never touched.
 - Project-local `.edikt/config.yaml` — only the global one gets schema migration; project configs are migrated on first in-project launcher invocation with user confirmation.
 
-**Escape hatch:** `edikt migrate --from <version> --dry-run` shows exactly what would change. `edikt migrate --abort` restores the pre-migration snapshot from `~/.edikt/backups/migration-<ts>/`. Every migration step writes a backup before acting.
+**Escape hatch:** `edikt migrate --dry-run` shows exactly what would change. `edikt migrate --abort` restores the pre-migration snapshot from `~/.edikt/backups/migration-<ts>/`. Every migration step writes a backup before acting. (The `--from <version>` selector was reserved for the multi-tag migration scenarios M2–M5; those ship in Phase 7, so v0.5.0 ships M1 only via implicit detection and omits `--from`.)
 
 ### 11. Project-mode installs
 

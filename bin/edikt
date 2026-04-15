@@ -215,7 +215,31 @@ release_lock() {
     LOCK_HELD=""
 }
 
-trap 'release_lock' EXIT INT TERM
+# Single global exit dispatcher. When a migration is in flight
+# (MIGRATE_STATE ∈ {starting, swapping, aborting}), delegate to the
+# migrate trap handler FIRST — it restores on-disk state — then always
+# release the lock. Refactored from an in-cmd_migrate trap-swap
+# (review finding #17) so future global cleanup additions cannot be
+# silently swallowed by cmd_migrate's override.
+edikt_exit_trap() {
+    _rc=$?
+    _signum="${1:-}"
+    case "${MIGRATE_STATE:-}" in
+        ""|idle|done) ;;
+        *)
+            case "$_signum" in
+                INT)  _rc=130 ;;
+                TERM) _rc=143 ;;
+            esac
+            migrate_trap_handler "$_rc" 2>/dev/null || true
+            ;;
+    esac
+    release_lock
+    return "$_rc"
+}
+trap 'edikt_exit_trap' EXIT
+trap 'edikt_exit_trap INT'  INT
+trap 'edikt_exit_trap TERM' TERM
 
 # ─── Atomic write helper ────────────────────────────────────────────────────
 # usage: atomic_write <dest> <<EOF ... EOF
@@ -976,7 +1000,8 @@ migration_in_progress() {
 # A trap on INT/TERM/EXIT invokes migrate_abort if MIGRATE_STATE != "done".
 
 # Per-migration state. Set in cmd_migrate / migrate_abort.
-MIGRATE_STATE=""
+# States: idle → starting → swapping → done (normal), or aborting (abort path).
+MIGRATE_STATE="idle"
 MIGRATE_TS=""
 MIGRATE_STAGING=""
 MIGRATE_PREDIR=""
@@ -992,8 +1017,86 @@ find_migration_leftovers() {
     done
 }
 
+# ─── Safe-removal helpers (review findings #2, #13) ─────────────────────────
+# Returns 0 if $1 is an empty directory, 1 otherwise.
+_dir_is_empty() {
+    _d="$1"
+    [ -d "$_d" ] || return 1
+    # `find ... -mindepth 1 -print -quit` is non-portable; use shell globbing.
+    for _e in "$_d"/* "$_d"/.[!.]* "$_d"/..?*; do
+        [ -e "$_e" ] || [ -L "$_e" ] || continue
+        return 1
+    done
+    return 0
+}
+
+# Defense-in-depth rm for paths that might contain user content during
+# migration recovery. If $1 is a symlink, unlink. If empty dir or regular
+# file, rm. If a non-empty directory, REFUSE to rm-rf and instead rename
+# to "$1.aborted-<ts>" for human review. Always logs loudly.
+# Returns 0 even on rename (caller can check the path is gone); 1 only if
+# we fail to move the content out of the way.
+_safe_remove_or_quarantine() {
+    _tgt="$1"
+    _reason="${2:-migrate-abort}"
+    if [ ! -e "$_tgt" ] && [ ! -L "$_tgt" ]; then
+        return 0
+    fi
+    if [ -L "$_tgt" ]; then
+        rm -f "$_tgt" 2>/dev/null || return 1
+        return 0
+    fi
+    if [ -f "$_tgt" ]; then
+        rm -f "$_tgt" 2>/dev/null || return 1
+        return 0
+    fi
+    if [ -d "$_tgt" ] && _dir_is_empty "$_tgt"; then
+        rmdir "$_tgt" 2>/dev/null || rm -rf "$_tgt" 2>/dev/null || return 1
+        return 0
+    fi
+    # Non-empty directory: do NOT rm -rf. Quarantine.
+    _quar="$_tgt.aborted-$(ts_now)-$$"
+    if mv "$_tgt" "$_quar" 2>/dev/null; then
+        log_warn "$_reason: refusing to rm-rf non-empty $_tgt — renamed to $_quar for human review"
+        return 0
+    fi
+    log_err "$_reason: could not quarantine $_tgt (mv failed); leaving in place"
+    return 1
+}
+
+# Verify a migration backup tarball is present and readable. Checks the
+# sha256 sidecar if present. Returns 0 on success, 1 otherwise.
+# Arguments: backup_dir
+_verify_backup_tarball() {
+    _bk="$1"
+    _tar="$_bk/pre-migration.tar.gz"
+    [ -f "$_tar" ] || return 1
+    tar -tzf "$_tar" >/dev/null 2>&1 || return 1
+    if [ -f "$_tar.sha256" ]; then
+        _obs=$(sha256_file "$_tar" 2>/dev/null) || return 1
+        verify_against_sidecar "$_obs" "$_tar.sha256" "$_tar.sha256" >/dev/null 2>&1 \
+            || return 1
+    fi
+    return 0
+}
+
+# Echo the path of the most recent readable backup dir under
+# $EDIKT_ROOT/backups/migration-*, or nothing if none is usable.
+_find_latest_backup_dir() {
+    _latest=""
+    for _b in "$EDIKT_ROOT"/backups/migration-*; do
+        [ -d "$_b" ] || continue
+        if _verify_backup_tarball "$_b"; then
+            _latest="$_b"  # glob expands in sorted order → latest wins
+        fi
+    done
+    [ -n "$_latest" ] && printf '%s\n' "$_latest"
+}
+
 # Restore flat layout from $pre_dir (if present) — moves its children back
 # into $EDIKT_ROOT/. Safe to call even if individual children are absent.
+# Finding #13: if the destination exists and is a NON-EMPTY directory (not a
+# symlink), rename it to "$dst.conflict-<ts>" rather than rm-rf'ing it.
 migrate_restore_from_predir() {
     pre="$1"
     [ -d "$pre" ] || return 0
@@ -1001,48 +1104,112 @@ migrate_restore_from_predir() {
         src="$pre/$entry"
         dst="$EDIKT_ROOT/$entry"
         if [ -e "$src" ] || [ -L "$src" ]; then
-            # Remove the half-installed replacement at dst (symlink or dir)
-            # before restoring. Do not touch config.yaml, custom/, backups/.
+            # Clear dst first. Symlinks/regular files: unlink freely — they
+            # are artifacts of the half-wired migration. Non-empty dirs:
+            # quarantine rather than destroy (defense in depth).
             if [ -L "$dst" ]; then
                 rm -f "$dst" 2>/dev/null || true
             elif [ -d "$dst" ]; then
-                rm -rf "$dst" 2>/dev/null || true
+                if _dir_is_empty "$dst"; then
+                    rmdir "$dst" 2>/dev/null || true
+                else
+                    _conflict="$dst.conflict-$(ts_now)-$$"
+                    if mv "$dst" "$_conflict" 2>/dev/null; then
+                        log_warn "migrate_restore_from_predir: refusing to rm-rf non-empty $dst — renamed to $_conflict for human review"
+                    else
+                        log_err "migrate_restore_from_predir: could not quarantine $dst; skipping entry $entry"
+                        continue
+                    fi
+                fi
             elif [ -e "$dst" ]; then
                 rm -f "$dst" 2>/dev/null || true
             fi
             mv "$src" "$dst" 2>/dev/null || true
         fi
     done
-    rmdir "$pre" 2>/dev/null || rm -rf "$pre" 2>/dev/null || true
+    rmdir "$pre" 2>/dev/null || true
 }
 
 # Abort an in-progress or crashed migration. Idempotent.
 # Arguments: none (consults MIGRATE_STATE vars and on-disk leftovers).
-# Returns 0 on success; always best-effort.
+# Returns 0 on success; non-zero if the backup tarball is missing/corrupt
+# AND user content has already been moved into versions/<v> (we refuse to
+# touch it in that case — the user needs to recover manually).
+#
+# Safety model (review finding #2):
+#   - BEFORE any destructive op, verify the most recent backup tarball is
+#     present and readable (and sha256-matches its sidecar if present).
+#   - NEVER rm-rf a non-empty directory that could contain user content:
+#     rename to <path>.aborted-<ts>-<pid> instead (quarantine). See
+#     _safe_remove_or_quarantine.
+#   - When MIGRATE_STATE=swapping and versions/<v> is populated AND the
+#     .pre-migration-<ts>/ predir is present, the canonical restore is
+#     (a) quarantine versions/<v>, then (b) move predir contents back.
+#     The backup is a belt-and-braces third line of defense — we only
+#     require its existence; we do NOT actually extract from it here
+#     because the predir already holds the originals by design.
 migrate_abort() {
     _any=0
+
+    # Inventory. Do we have a predir? A staging? A populated versions/<v>?
+    _have_predir=0
+    for pre in "$EDIKT_ROOT"/.pre-migration-*; do
+        [ -d "$pre" ] && { _have_predir=1; break; }
+    done
+    _have_staging=0
+    for stg in "$EDIKT_ROOT"/.migrate-staging-*; do
+        [ -d "$stg" ] && { _have_staging=1; break; }
+    done
+
+    # Will we touch a (potentially populated) versions/<v>?
+    _will_touch_versions=0
+    if [ -n "${MIGRATE_VERSION:-}" ] \
+        && [ -d "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ] \
+        && [ "$_have_predir" -eq 1 ]; then
+        _will_touch_versions=1
+    fi
+
+    # Verify backup BEFORE any destructive op (finding #2, final guard).
+    # We only require a readable backup when we're actually about to
+    # mutate state. A completely-clean abort (no staging, no predir) is
+    # a no-op and needs no backup.
+    if [ "$_have_predir" -eq 1 ] || [ "$_will_touch_versions" -eq 1 ]; then
+        _bk_dir=$(_find_latest_backup_dir)
+        if [ -z "$_bk_dir" ]; then
+            log_err "migrate-abort: no readable backup tarball found under $EDIKT_ROOT/backups/migration-*"
+            log_err "migrate-abort: refusing to mutate state without a verified backup"
+            log_err "migrate-abort: inspect $EDIKT_ROOT/.pre-migration-*/ and $EDIKT_ROOT/versions/ manually"
+            return 1
+        fi
+        log_info "migrate-abort: verified backup at $_bk_dir/pre-migration.tar.gz"
+    fi
+
     # 1. Restore any .pre-migration-<ts>/ dirs (crashed or in-progress).
     for pre in "$EDIKT_ROOT"/.pre-migration-*; do
         [ -d "$pre" ] || continue
         _any=1
         log_info "migrate-abort: restoring flat layout from $(basename "$pre")"
-        # Tear down partial symlink chain first.
+        # Tear down partial symlink chain first. These are always symlinks
+        # in a half-wired migration; rm -f on a symlink is safe by design.
         for link in "$EDIKT_ROOT/current" "$EDIKT_ROOT/hooks" "$EDIKT_ROOT/templates"; do
             if [ -L "$link" ]; then
                 rm -f "$link" 2>/dev/null || true
             fi
         done
         # Tear down the in-place versions/<v> tree only if it was the target
-        # of this migration (i.e. sibling .migrate-staging exists or the
-        # MIGRATE_VERSION var matches). Safer: only remove empty dirs.
+        # of this migration. Finding #2: the tree may already contain the
+        # user's content (copied from staging during step e-ii). NEVER rm-rf
+        # blindly. Quarantine first if non-empty, THEN restore from predir.
         if [ -n "${MIGRATE_VERSION:-}" ] && [ -d "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ]; then
-            rm -rf "$EDIKT_ROOT/versions/$MIGRATE_VERSION" 2>/dev/null || true
-            rmdir "$EDIKT_ROOT/versions" 2>/dev/null || true
+            _safe_remove_or_quarantine "$EDIKT_ROOT/versions/$MIGRATE_VERSION" "migrate-abort" \
+                || log_err "migrate-abort: versions/$MIGRATE_VERSION could not be moved aside; continuing"
+            # Only remove the versions/ dir itself if it is now empty.
+            _dir_is_empty "$EDIKT_ROOT/versions" \
+                && rmdir "$EDIKT_ROOT/versions" 2>/dev/null || true
         fi
-        # Remove lock.yaml written by the aborted migration.
+        # Remove lock.yaml written by the aborted migration. Only remove if
+        # it names the aborted version — we wrote it fresh during migration.
         if [ -n "${MIGRATE_VERSION:-}" ] && [ -f "$EDIKT_ROOT/lock.yaml" ]; then
-            # Only remove if it names the aborted version and no prior version
-            # had a lock (we created it fresh during migration).
             _active=$(lock_get active)
             if [ "$_active" = "$MIGRATE_VERSION" ]; then
                 rm -f "$EDIKT_ROOT/lock.yaml" 2>/dev/null || true
@@ -1051,7 +1218,9 @@ migrate_abort() {
         migrate_restore_from_predir "$pre"
     done
 
-    # 2. Remove any stale staging dirs.
+    # 2. Remove any stale staging dirs. Staging is always our own tree
+    # (copied from flat, never the user's live content), so rm -rf is
+    # safe here — but only under .migrate-staging-* paths.
     for stg in "$EDIKT_ROOT"/.migrate-staging-*; do
         [ -d "$stg" ] || continue
         _any=1
@@ -1121,8 +1290,9 @@ EOF
             return 0
         fi
         migrate_abort
+        _abort_rc=$?
         release_lock
-        return 0
+        return "$_abort_rc"
     fi
 
     # Detect the flat layout.
@@ -1139,6 +1309,21 @@ EOF
     MIGRATE_VERSION=$(head -1 "$EDIKT_ROOT/VERSION" | tr -d '[:space:]')
     if [ -z "$MIGRATE_VERSION" ]; then
         log_err "cannot read version from $EDIKT_ROOT/VERSION"
+        return 1
+    fi
+    # Shape gate (review finding #5). VERSION is untrusted user-owned input;
+    # it later feeds directory paths ("$EDIKT_ROOT/versions/$MIGRATE_VERSION").
+    # Reject anything that isn't a semver-ish plain identifier before we
+    # create any directory or backup. No slashes, no `..`, no shell metacharacters.
+    case "$MIGRATE_VERSION" in
+        *[!0-9A-Za-z._-]* | *..* | /* | */* | .* | -*)
+            log_err "refusing to migrate: VERSION ($MIGRATE_VERSION) is not a valid semver-ish identifier"
+            return 1
+            ;;
+    esac
+    if ! printf '%s' "$MIGRATE_VERSION" \
+        | awk '/^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$/ {ok=1} END {exit !ok}'; then
+        log_err "refusing to migrate: VERSION ($MIGRATE_VERSION) does not match ^[0-9]+.[0-9]+.[0-9]+([.-][A-Za-z0-9]+)*$"
         return 1
     fi
 
@@ -1165,6 +1350,12 @@ EOF
         fi
     done
     echo ""
+    # Review finding #4 — surface the single most important safety property.
+    echo "Backup:"
+    echo "  $EDIKT_ROOT/backups/migration-<ts>/pre-migration.tar.gz"
+    echo "  $EDIKT_ROOT/backups/migration-<ts>/pre-migration.tar.gz.sha256"
+    echo "  (use 'edikt migrate --abort' to restore from the most recent backup)"
+    echo ""
 
     if [ "$dry_run" -eq 1 ]; then
         echo "(dry-run: no changes written)"
@@ -1173,7 +1364,13 @@ EOF
 
     # Consent.
     if [ "$assume_yes" -ne 1 ]; then
-        if [ ! -r /dev/tty ] || [ ! -t 0 ] && [ ! -c /dev/tty ]; then
+        # Refuse to prompt only when there is no viable channel at all:
+        # stdin is not a tty AND /dev/tty is neither readable nor a
+        # character device. Review finding #10: original expression
+        # parsed as `(A || B) && C` due to POSIX left-associativity of
+        # `||`/`&&`; rewritten with explicit grouping so a readable
+        # /dev/tty alone is enough to proceed.
+        if { [ ! -r /dev/tty ] || [ ! -t 0 ]; } && [ ! -c /dev/tty ]; then
             log_err "non-interactive session detected. Re-run with --yes to confirm migration."
             return 1
         fi
@@ -1190,28 +1387,33 @@ EOF
 
     acquire_lock || return $?
 
-    # Install migration-specific trap. The global EXIT trap already runs
-    # release_lock; we override it with a combined handler and restore
-    # semantics at the end.
+    # State transitions are observed by the global edikt_exit_trap
+    # dispatcher (see finding #17). Do NOT swap traps here.
     MIGRATE_STATE="starting"
     MIGRATE_TS=$(ts_now)
-    MIGRATE_STAGING="$EDIKT_ROOT/.migrate-staging-$MIGRATE_TS"
-    MIGRATE_PREDIR="$EDIKT_ROOT/.pre-migration-$MIGRATE_TS"
-    MIGRATE_BACKUP_DIR="$EDIKT_ROOT/backups/migration-$MIGRATE_TS"
-    trap 'migrate_trap_handler $?' EXIT
-    trap 'migrate_trap_handler 130' INT
-    trap 'migrate_trap_handler 143' TERM
+    # Review finding #16 — align staging/predir naming with cmd_install's
+    # `<prefix>-<ts>-<pid>` pattern so leftovers from one run never collide
+    # with another and patterns used by tests/doctor remain stable.
+    MIGRATE_STAGING="$EDIKT_ROOT/.migrate-staging-$MIGRATE_TS-$$"
+    MIGRATE_PREDIR="$EDIKT_ROOT/.pre-migration-$MIGRATE_TS-$$"
+    MIGRATE_BACKUP_DIR="$EDIKT_ROOT/backups/migration-$MIGRATE_TS-$$"
 
     # Step a: create backup first (before any mutation).
     mkdir -p "$MIGRATE_BACKUP_DIR" || return 1
-    tar_src_files=""
+    # Review finding #11: build the tar file list with positional parameters
+    # instead of relying on word-splitting of an unquoted variable. Only
+    # include entries that actually exist on disk.
+    set --
     for entry in hooks templates commands VERSION CHANGELOG.md; do
         if [ -e "$EDIKT_ROOT/$entry" ] || [ -L "$EDIKT_ROOT/$entry" ]; then
-            tar_src_files="$tar_src_files $entry"
+            set -- "$@" "$entry"
         fi
     done
-    # shellcheck disable=SC2086
-    if ! ( cd "$EDIKT_ROOT" && tar -czf "$MIGRATE_BACKUP_DIR/pre-migration.tar.gz" $tar_src_files 2>/dev/null ); then
+    if [ "$#" -eq 0 ]; then
+        log_err "no legacy layout entries found to back up"
+        return 1
+    fi
+    if ! ( cd "$EDIKT_ROOT" && tar -czf "$MIGRATE_BACKUP_DIR/pre-migration.tar.gz" "$@" 2>/dev/null ); then
         log_err "failed to create pre-migration backup tarball"
         return 1
     fi
@@ -1219,7 +1421,20 @@ EOF
         log_err "pre-migration backup tarball is not readable"
         return 1
     fi
+    # Review finding #12 — write a sha256 sidecar next to the tarball so
+    # migrate_abort (and humans) can confirm the backup is intact before any
+    # destructive operation. Mirrors manifest.yaml's sidecar pattern.
+    _bk_hash=$(sha256_file "$MIGRATE_BACKUP_DIR/pre-migration.tar.gz") || {
+        log_err "failed to compute backup sha256"
+        return 1
+    }
+    printf '%s  pre-migration.tar.gz\n' "$_bk_hash" \
+        >"$MIGRATE_BACKUP_DIR/pre-migration.tar.gz.sha256" || {
+        log_err "failed to write backup sha256 sidecar"
+        return 1
+    }
     log_info "migrate: wrote pre-migration backup to $MIGRATE_BACKUP_DIR/pre-migration.tar.gz"
+    log_info "migrate: backup sha256 recorded in pre-migration.tar.gz.sha256"
 
     # Step b+c: create staging dir and copy flat layout into it.
     if ! mkdir "$MIGRATE_STAGING" 2>/dev/null; then
@@ -1286,12 +1501,12 @@ EOF
         '"from":"flat","to":"versioned","version":"'"$MIGRATE_VERSION"'","backup":"'"$MIGRATE_BACKUP_DIR"'"'
 
     # Step h: commit — remove the .pre-migration-<ts>/ holding dir.
+    # Setting MIGRATE_STATE=done BEFORE any rm ensures the global exit
+    # trap (edikt_exit_trap) treats us as committed even if a signal
+    # lands between here and function return (see finding #17).
     MIGRATE_STATE="done"
     rm -rf "$MIGRATE_PREDIR" 2>/dev/null || true
     rm -rf "$MIGRATE_STAGING" 2>/dev/null || true
-
-    # Restore normal exit trap and release lock.
-    trap 'release_lock' EXIT INT TERM
 
     log_info "migration complete: $MIGRATE_VERSION activated"
     return 0
@@ -1399,6 +1614,25 @@ EOF
 # ─── Dispatch ───────────────────────────────────────────────────────────────
 sub="${1:-help}"
 shift 2>/dev/null || true
+
+# Interrupted-migration gate (review finding #1). On-disk markers
+# (.migrate-staging-*/, .pre-migration-*/) evidence an in-flight or
+# crashed migration from another process. Running ANY state-changing
+# subcommand now would race against recovery. Admit only migrate (which
+# holds the lock) and diagnostic/help commands. This check happens
+# BEFORE needs_migration so that a partial-crash state (flat layout
+# already torn down but predir still present) is still caught.
+# NB: we deliberately do NOT acquire the lock here — doctor must remain
+# reachable precisely when a stuck holder has the lock.
+if migration_in_progress; then
+    case "$sub" in
+        migrate|doctor|version|--version|-v|help|--help|-h|"") ;;
+        *)
+            log_err "Migration in progress — wait for it to complete or run: edikt migrate --abort"
+            exit 1
+            ;;
+    esac
+fi
 
 # Legacy-layout gate (per SPEC-004 §2 FR-018). If pre-v0.5.0 flat layout is
 # detected, only migrate/doctor/version/help are reachable. Every other
