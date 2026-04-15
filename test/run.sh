@@ -45,6 +45,8 @@ FAILED_SUITES=0
 # ─── Layer 1: unit tests (fixture-driven, no API) ───────────────────────────
 # Discovers test/unit/**/test_*.sh. Runs before the shell suites so fast
 # fixture checks fail early before any longer-running test.
+# Hook characterization tests run by default (Phase 11b). To skip during local
+# debugging: EDIKT_SKIP_HOOK_TESTS=1 ./test/run.sh
 if [ -d "$SCRIPT_DIR/unit" ]; then
     while IFS= read -r unit_test; do
         rel="${unit_test#$SCRIPT_DIR/}"

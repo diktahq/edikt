@@ -2,11 +2,13 @@
 # Shared hook-test runner. Pipes a fixture payload to a hook and diffs
 # stdout against the expected-output sibling (jq -S normalized).
 #
-# Currently each caller is gated behind EDIKT_ENABLE_HOOK_JSON_TESTS=1.
-# Hooks today emit plaintext; Phase 2b migrates them to the Claude Code
-# hook JSON protocol and flips this gate on. Until then these tests skip
-# rather than fail — see docs/product/plans/PLAN-v0.5.0-stability.md
-# "Phase 2b" entry for context.
+# Phase 11b characterization suite: fixtures encode what the v0.5.0 hooks
+# ACTUALLY emit today, verified by running each hook and capturing output.
+# This is a regression net, not an aspirational contract. Hooks that emit
+# plaintext (pre-compact, session-start-with-edikt) or nondeterministic
+# output (subagent-stop-critical) have no fixture pair; see fixtures.yaml
+# §9.1 _note fields for the per-fixture rationale.
+# Opt-out for local debugging: EDIKT_SKIP_HOOK_TESTS=1
 
 set -uo pipefail
 
@@ -49,6 +51,5 @@ run_hook_fixture() {
 
 hook_suite_skip_notice() {
     local hook_name="$1"
-    echo "  SKIP: $hook_name — hook emits plaintext; awaiting Phase 2b JSON protocol migration"
-    echo "        Enable with EDIKT_ENABLE_HOOK_JSON_TESTS=1 once hooks are migrated."
+    echo "  SKIP: $hook_name — EDIKT_SKIP_HOOK_TESTS=1"
 }

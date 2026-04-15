@@ -1,0 +1,5 @@
+# Staged test fixture — minimal edikt project.
+# Used by hook unit tests that need .edikt/config.yaml in CWD.
+# Do not use this as a real edikt project.
+base: docs
+edikt_version: "0.5.0"

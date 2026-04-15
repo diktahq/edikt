@@ -1,0 +1,4 @@
+# Staged test fixture — edikt project with an active plan (Phase 2 in-progress).
+# Used by post-compact.sh and user-prompt-submit.sh hook tests.
+base: docs
+edikt_version: "0.5.0"
