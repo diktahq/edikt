@@ -1,4 +1,3 @@
 {
-  "continue": true,
-  "additionalContext": "Resuming PLAN-feature-x.md phase 2. Invariants active: INV-001, INV-002."
+  "systemMessage": "Context recovered after compaction. Active plan: PLAN-feature-x. Phase 2 — Implementation. Re-read docs/plans/PLAN-feature-x.md for full phase details. Invariants (1): Test Invariant 1. These are hard constraints — never violate them."
 }

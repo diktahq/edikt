@@ -1,0 +1,4 @@
+# Staged test fixture — edikt project with plan + failing criteria sidecar.
+# Used by post-compact-with-failing-criteria hook test.
+base: docs
+edikt_version: "0.5.0"

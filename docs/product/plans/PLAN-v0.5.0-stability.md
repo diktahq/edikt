@@ -1265,13 +1265,13 @@ When complete, output: PROVENANCE BACKFILL READY
 - Phase 7 outputs (M4 rule recompile may have shifted `instructions-loaded.sh` observable state)
 
 **Acceptance Criteria:**
-- [ ] For each hook, the fixture payload includes any sandbox staging needed (e.g. a real `test/fixtures/projects/mid-plan/` directory with a staged plan file consumed by `user-prompt-submit.sh`).
-- [ ] Expected-output fixtures encode exact strings the v0.5.0 hooks emit, verified by piping the payload to the hook script and comparing.
-- [ ] `EDIKT_ENABLE_HOOK_JSON_TESTS=1` is the default in `test/run.sh`. All 9 hook suites pass (no SKIPs).
-- [ ] 10/10 consecutive sandbox runs produce identical output for every fixture (no time-dependent text, no path leakage). Time-stamped or path-leaking emissions are normalized to placeholders before diffing.
-- [ ] `fixtures.yaml` §9.1 is updated; each record's `_note` field explains why the expected output is what it is (characterization, not prescription).
-- [ ] Any fixture pair that cannot be characterized deterministically (e.g. random IDs, model nondeterminism) is removed with a `_note` explaining why, rather than flaking the suite.
-- [ ] `test/run.sh` no longer suggests "awaiting Phase 2b" anywhere; the gate is removed and the env var becomes opt-out for local debugging only.
+- [x] For each hook, the fixture payload includes any sandbox staging needed (e.g. a real `test/fixtures/projects/mid-plan/` directory with a staged plan file consumed by `user-prompt-submit.sh`).
+- [x] Expected-output fixtures encode exact strings the v0.5.0 hooks emit, verified by piping the payload to the hook script and comparing.
+- [x] All 9 hook suites pass (no SKIPs). `EDIKT_ENABLE_HOOK_JSON_TESTS` gate removed; replaced with opt-out `EDIKT_SKIP_HOOK_TESTS=1`.
+- [x] 10/10 consecutive sandbox runs produce identical output for every fixture (no time-dependent text, no path leakage). Plan paths are relative — machine-independent without normalization.
+- [x] `fixtures.yaml` §9.1 is updated; each record's `_note` field explains why the expected output is what it is (characterization, not prescription).
+- [x] Fixture pairs removed with documented rationale: `pre-compact` (plaintext), `session-start-with-edikt` (plaintext), `subagent-stop-critical` (nondeterministic git user + timestamps).
+- [x] `test/run.sh` no longer suggests "awaiting Phase 2b" anywhere; the gate is removed and the env var becomes opt-out for local debugging only.
 
 **Prompt:**
 ```

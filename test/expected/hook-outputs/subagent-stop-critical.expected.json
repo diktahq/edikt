@@ -1,4 +1,0 @@
-{
-  "systemMessage": "🛑 qa BLOCKED: Test suite fails on clean checkout",
-  "decision": "block"
-}

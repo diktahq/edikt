@@ -1,3 +1,3 @@
 {
-  "systemMessage": "🔐 Security change — run /edikt:sdlc:audit."
+  "systemMessage": "🔒 Security-sensitive change — run /edikt:audit before shipping."
 }
