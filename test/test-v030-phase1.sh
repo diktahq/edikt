@@ -149,43 +149,9 @@ assert_file_contains "$GUIDELINE_NEW" "No global default" \
 
 INSTALL_SH="$PROJECT_ROOT/install.sh"
 
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh creates templates/examples directory"
-    skip_obsolete_installer_assert "install.sh ships adr-nygard-minimal.md"
-    skip_obsolete_installer_assert "install.sh ships adr-madr-extended.md"
-    skip_obsolete_installer_assert "install.sh ships invariant-minimal.md"
-    skip_obsolete_installer_assert "install.sh ships invariant-full.md"
-    skip_obsolete_installer_assert "install.sh ships guideline-minimal.md"
-    skip_obsolete_installer_assert "install.sh ships guideline-extended.md"
-    skip_obsolete_installer_assert "install.sh guideline namespace loop includes: new compile review"
-else
-    assert_file_contains "$INSTALL_SH" "templates/examples" \
-        "install.sh creates templates/examples directory"
-
-    assert_file_contains "$INSTALL_SH" "adr-nygard-minimal.md" \
-        "install.sh ships adr-nygard-minimal.md"
-    assert_file_contains "$INSTALL_SH" "adr-madr-extended.md" \
-        "install.sh ships adr-madr-extended.md"
-    assert_file_contains "$INSTALL_SH" "invariant-minimal.md" \
-        "install.sh ships invariant-minimal.md"
-    assert_file_contains "$INSTALL_SH" "invariant-full.md" \
-        "install.sh ships invariant-full.md"
-    assert_file_contains "$INSTALL_SH" "guideline-minimal.md" \
-        "install.sh ships guideline-minimal.md"
-    assert_file_contains "$INSTALL_SH" "guideline-extended.md" \
-        "install.sh ships guideline-extended.md"
-
-    # ============================================================
-    # Regression 9: install.sh guideline namespace loop includes compile
-    # ============================================================
-
-    if grep -A2 '# guideline namespace' "$INSTALL_SH" | grep -qE 'for cmd in new compile review'; then
-        pass "install.sh guideline namespace loop includes: new compile review"
-    else
-        fail "install.sh guideline namespace loop includes: new compile review" \
-            "Expected: for cmd in new compile review; got something else. Check install.sh."
-    fi
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # Regression 10: Invariant templates reference ADR-009 for the template contract

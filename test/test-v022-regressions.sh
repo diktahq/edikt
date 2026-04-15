@@ -28,13 +28,9 @@ else
     pass "install.sh has no (VAR++) under set -e"
 fi
 
-# BACKUP_COUNT specifically — the one that caused v0.2.1 to ship broken
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh increments BACKUP_COUNT via arithmetic expansion"
-else
-    assert_file_contains "$INSTALL_SH" 'BACKUP_COUNT=$((BACKUP_COUNT + 1))' \
-        "install.sh increments BACKUP_COUNT via arithmetic expansion"
-fi
+# install.sh BACKUP_COUNT assertion removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # Regression 2: upgrade.md documents the v0.1.x → v0.2.x command mapping

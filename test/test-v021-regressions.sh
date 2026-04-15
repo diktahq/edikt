@@ -54,95 +54,9 @@ done
 
 INSTALL_SH="$PROJECT_ROOT/install.sh"
 
-# v0.5.0: install.sh is a thin launcher bootstrap; v0.1.x→v0.2.x cleanup
-# logic (V01_MOVED_COMMANDS, _fetch helper) has moved into the release
-# tarball / migration flow. Pre-v0.5.0 structural assertions are skipped.
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh declares V01_MOVED_COMMANDS cleanup list"
-    for cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake; do
-        skip_obsolete_installer_assert "V01_MOVED_COMMANDS includes '$cmd'"
-    done
-    skip_obsolete_installer_assert "install.sh removes old flat files after backup"
-    skip_obsolete_installer_assert "install.sh preserves user-customized old commands during cleanup"
-    skip_obsolete_installer_assert "install.sh defines _fetch helper"
-    skip_obsolete_installer_assert "install.sh _fetch uses --retry flag"
-    skip_obsolete_installer_assert "install.sh _fetch uses --max-time to avoid hangs"
-    skip_obsolete_installer_assert "install.sh _fetch aborts on download failure"
-    skip_obsolete_installer_assert "install.sh _fetch detects empty downloads"
-    skip_obsolete_installer_assert "install.sh has no bare 'curl -o' calls outside _fetch"
-else
-
-assert_file_contains "$INSTALL_SH" "V01_MOVED_COMMANDS" \
-    "install.sh declares V01_MOVED_COMMANDS cleanup list"
-
-# Must list all 15 moved commands
-for cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake; do
-    if grep -E '^V01_MOVED_COMMANDS=.*\b'"$cmd"'\b' "$INSTALL_SH" >/dev/null 2>&1; then
-        pass "V01_MOVED_COMMANDS includes '$cmd'"
-    else
-        fail "V01_MOVED_COMMANDS includes '$cmd'" "Missing from cleanup list in install.sh"
-    fi
-done
-
-# Cleanup must run `rm -f` on old flat files
-if grep -E 'rm -f.*edikt/\$\{cmd\}\.md|rm -f "\$old"' "$INSTALL_SH" >/dev/null 2>&1; then
-    pass "install.sh removes old flat files after backup"
-else
-    fail "install.sh removes old flat files after backup" \
-        "No 'rm -f \$old' (or similar) found in cleanup loop"
-fi
-
-# Cleanup must preserve user-customized files
-assert_file_contains "$INSTALL_SH" 'keeping old edikt:' \
-    "install.sh preserves user-customized old commands during cleanup"
-
-# ============================================================
-# Regression 3: install.sh checks curl exit status
-# ============================================================
-# Bare `curl -o` can silently fail and leave stale files. All downloads
-# must go through a _fetch helper that exits on failure.
-
-assert_file_contains "$INSTALL_SH" '_fetch()' \
-    "install.sh defines _fetch helper"
-
-assert_file_contains "$INSTALL_SH" 'if ! curl -fsSL --retry' \
-    "install.sh _fetch uses --retry flag"
-
-if grep -F -- '--max-time' "$INSTALL_SH" >/dev/null 2>&1; then
-    pass "install.sh _fetch uses --max-time to avoid hangs"
-else
-    fail "install.sh _fetch uses --max-time to avoid hangs" \
-        "No --max-time flag found in install.sh"
-fi
-
-# Must error out on failure, not silently continue
-if grep -A3 '_fetch()' "$INSTALL_SH" | grep -q 'error "Failed to download'; then
-    pass "install.sh _fetch aborts on download failure"
-else
-    fail "install.sh _fetch aborts on download failure" \
-        "_fetch should call 'error' on curl failure"
-fi
-
-# Must detect empty downloads
-if grep -A6 '_fetch()' "$INSTALL_SH" | grep -q '\-s "\$dest"'; then
-    pass "install.sh _fetch detects empty downloads"
-else
-    fail "install.sh _fetch detects empty downloads" \
-        "_fetch should check that downloaded file is non-empty"
-fi
-
-# No bare `curl -fsSL ... -o` calls should remain (outside of _fetch itself
-# and header comments). Allow the comment example and the _fetch definition.
-BARE_CURL=$(grep -nE 'curl -fsSL.*-o ' "$INSTALL_SH" \
-    | grep -v '^[0-9]*:#' \
-    | grep -v 'curl -fsSL --retry' \
-    || true)
-if [ -z "$BARE_CURL" ]; then
-    pass "install.sh has no bare 'curl -o' calls outside _fetch"
-else
-    fail "install.sh has bare 'curl -o' calls outside _fetch" "$BARE_CURL"
-fi
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # Regression 4: init.md adopts detected ADR path into config

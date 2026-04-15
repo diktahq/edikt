@@ -74,13 +74,9 @@ fi
 # install.sh downloads VERSION + CHANGELOG
 # ============================================================
 
-if is_v050_bootstrap_installer; then
-    skip_obsolete_installer_assert "install.sh downloads VERSION file"
-    skip_obsolete_installer_assert "install.sh downloads CHANGELOG.md"
-else
-    assert_file_contains "$PROJECT_ROOT/install.sh" "VERSION" "install.sh downloads VERSION file"
-    assert_file_contains "$PROJECT_ROOT/install.sh" "CHANGELOG.md" "install.sh downloads CHANGELOG.md"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # commands/init.md writes edikt_version

@@ -32,6 +32,8 @@ set -euo pipefail
 #   EDIKT_LAUNCHER_SOURCE=<path>  — local launcher file; skip curl
 #   EDIKT_RELEASE_TAG=<tag>       — skip GitHub API, use this tag
 #   EDIKT_INSTALL_SOURCE=<path>   — forwarded to `edikt install`
+#   EDIKT_LAUNCHER_SHA256=<hex>   — pin launcher checksum (takes precedence over sidecar fetch)
+#   EDIKT_INSTALL_INSECURE=1      — skip sidecar .sha256 fetch (not recommended)
 
 umask 0022
 
@@ -178,6 +180,7 @@ resolve_tag() {
     return 0
   fi
   if [ -n "${EDIKT_RELEASE_TAG:-}" ]; then
+    warn "EDIKT_RELEASE_TAG override active: $EDIKT_RELEASE_TAG"
     printf '%s' "$EDIKT_RELEASE_TAG"
     return 0
   fi
@@ -269,12 +272,42 @@ fi
 LAUNCHER_URL=""
 LAUNCHER_SRC_LOCAL=""
 if [ -n "${EDIKT_LAUNCHER_SOURCE:-}" ]; then
+  warn "EDIKT_LAUNCHER_SOURCE override active: $EDIKT_LAUNCHER_SOURCE"
   LAUNCHER_SRC_LOCAL="$EDIKT_LAUNCHER_SOURCE"
 else
   LAUNCHER_URL="$RAW_BASE/$TAG/bin/edikt"
 fi
 
-# Fetch the launcher into a tmp file, sh -n verify, then move into place.
+# sha256 of a file — portable across macOS (shasum) and Linux (sha256sum).
+_sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    error "need sha256sum or shasum to verify launcher integrity"
+    return $EX_NETWORK
+  fi
+}
+
+# Verify observed hash against a reference file that may be a bare hex hash
+# or the standard "<hash>  <filename>" format (matches bin/edikt contract).
+_verify_launcher_checksum() {
+  _observed="$1"
+  _ref_file="$2"
+  _expected=$(awk '{print $1; exit}' "$_ref_file" 2>/dev/null | tr -d '[:space:]')
+  if [ -z "$_expected" ]; then
+    error "launcher .sha256 reference is empty"
+    return $EX_NETWORK
+  fi
+  if [ "$_observed" != "$_expected" ]; then
+    error "launcher checksum mismatch: expected $_expected, got $_observed"
+    return $EX_NETWORK
+  fi
+  return 0
+}
+
+# Fetch the launcher into a tmp file, verify integrity, then move into place.
 # Never curl -o directly onto the live path.
 stage_launcher() {
   stage="$1"  # destination (tmp path)
@@ -283,15 +316,76 @@ stage_launcher() {
       error "failed to copy launcher from $LAUNCHER_SRC_LOCAL"
       return $EX_NETWORK
     }
+    # ── Integrity verification for local source ──────────────────────────
+    # Precedence: EDIKT_LAUNCHER_SHA256 env > opportunistic sibling sidecar.
+    # If neither is present, the local path is implicitly trusted (user chose it).
+    if [ -n "${EDIKT_LAUNCHER_SHA256:-}" ]; then
+      _observed=$(_sha256_file "$stage") || return $EX_NETWORK
+      _ref_tmp=$(mktemp)
+      printf '%s\n' "$EDIKT_LAUNCHER_SHA256" > "$_ref_tmp"
+      if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
+        rm -f "$_ref_tmp"
+        return $EX_NETWORK
+      fi
+      rm -f "$_ref_tmp"
+    else
+      # Opportunistic local sidecar check.
+      _local_sidecar="${LAUNCHER_SRC_LOCAL}.sha256"
+      if [ -f "$_local_sidecar" ]; then
+        _observed=$(_sha256_file "$stage") || return $EX_NETWORK
+        _verify_launcher_checksum "$_observed" "$_local_sidecar" || return $EX_NETWORK
+      fi
+    fi
   else
     if ! curl -fsSL --retry 2 --max-time 30 "$LAUNCHER_URL" -o "$stage"; then
       error "failed to download launcher from $LAUNCHER_URL"
       error "retry: re-run install.sh; or pass --ref <different-tag>"
       return $EX_NETWORK
     fi
+    # ── Integrity verification for remote source ──────────────────────────
+    # Precedence: EDIKT_LAUNCHER_SHA256 env > sidecar fetch.
+    _observed=$(_sha256_file "$stage") || return $EX_NETWORK
+    if [ -n "${EDIKT_LAUNCHER_SHA256:-}" ]; then
+      _ref_tmp=$(mktemp)
+      printf '%s\n' "$EDIKT_LAUNCHER_SHA256" > "$_ref_tmp"
+      if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
+        rm -f "$_ref_tmp"
+        return $EX_NETWORK
+      fi
+      rm -f "$_ref_tmp"
+    else
+      # Fetch sibling .sha256 sidecar from the same raw URL.
+      _sidecar_url="${LAUNCHER_URL}.sha256"
+      _sidecar_tmp=$(mktemp)
+      if curl -fsSL --retry 2 --max-time 15 "$_sidecar_url" -o "$_sidecar_tmp" 2>/dev/null; then
+        if ! _verify_launcher_checksum "$_observed" "$_sidecar_tmp"; then
+          rm -f "$_sidecar_tmp"
+          return $EX_NETWORK
+        fi
+        rm -f "$_sidecar_tmp"
+      else
+        rm -f "$_sidecar_tmp" 2>/dev/null || true
+        if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
+          warn "launcher sidecar .sha256 unavailable — proceeding without integrity check (EDIKT_INSTALL_INSECURE=1)"
+        else
+          error "launcher sidecar .sha256 unavailable; set EDIKT_INSTALL_INSECURE=1 to override (not recommended)"
+          return $EX_NETWORK
+        fi
+      fi
+    fi
   fi
   if [ ! -s "$stage" ]; then
     error "downloaded launcher is empty"
+    return $EX_NETWORK
+  fi
+  # ── Content sanity checks (guard against HTML error pages) ───────────────
+  _first_line=$(head -n1 "$stage")
+  case "$_first_line" in
+    '#!'*) ;;
+    *) error "downloaded launcher missing shebang"; return $EX_NETWORK ;;
+  esac
+  if ! grep -qF 'MIN_PAYLOAD_VERSION=' "$stage"; then
+    error "downloaded file does not look like an edikt launcher"
     return $EX_NETWORK
   fi
   if ! sh -n "$stage" 2>/dev/null; then
@@ -358,7 +452,7 @@ append_path_to_rc() {
   fi
   {
     printf '\n%s\n' "$RC_MARKER"
-    printf 'export PATH="%s/bin:$PATH"\n' "$EDIKT_ROOT"
+    printf '[ -d "%s/bin" ] && export PATH="%s/bin:$PATH"\n' "$EDIKT_ROOT" "$EDIKT_ROOT"
   } >> "$rc"
   return 0
 }
