@@ -65,6 +65,7 @@ else
 fi
 
 # Stop hook must be type:command referencing stop-hook.sh
+# The template uses ${EDIKT_HOOK_DIR}/stop-hook.sh (Phase 8 parameterization).
 if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
@@ -72,7 +73,8 @@ stop = s['hooks']['Stop'][0]['hooks'][0]
 if stop['type'] != 'command':
     print(f'Stop hook type is {stop[\"type\"]}, expected command')
     sys.exit(1)
-if '.edikt/hooks/stop-hook.sh' not in stop.get('command', ''):
+cmd = stop.get('command', '')
+if 'stop-hook.sh' not in cmd:
     print('Stop hook command does not reference stop-hook.sh')
     sys.exit(1)
 " 2>/dev/null; then
@@ -107,7 +109,9 @@ for hook_file in session-start.sh pre-tool-use.sh post-tool-use.sh pre-compact.s
     fi
 done
 
-# Settings.json.tmpl references .edikt/hooks/ scripts (not inline bash)
+# Settings.json.tmpl references hook scripts via the EDIKT_HOOK_DIR placeholder
+# (Phase 8: parameterized for project-mode parity). The placeholder is
+# substituted at install time. Check that every command ends in a .sh name.
 if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
@@ -117,13 +121,13 @@ for name, entries in hooks.items():
         for h in entry.get('hooks', []):
             if h.get('type') == 'command':
                 cmd = h.get('command', '')
-                if '.edikt/hooks/' not in cmd:
-                    print(f'{name}: command does not reference .edikt/hooks/: {cmd}')
+                if not cmd.endswith('.sh'):
+                    print(name + ': command does not end in .sh: ' + cmd)
                     sys.exit(1)
 " 2>/dev/null; then
-    pass "All command hooks reference \$HOME/.edikt/hooks/ scripts"
+    pass "All command hooks reference .sh scripts"
 else
-    fail "All command hooks reference \$HOME/.edikt/hooks/ scripts"
+    fail "All command hooks reference .sh scripts"
 fi
 
 # ============================================================

@@ -545,16 +545,33 @@ cmd_version() {
 # ─── Subcommand: list ───────────────────────────────────────────────────────
 cmd_list() {
     verbose=0
-    if [ "${1:-}" = "--verbose" ]; then verbose=1; fi
+    use_global=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --verbose) verbose=1 ;;
+            --global)  use_global=1 ;;
+            *) log_err "list: unknown flag: $1"; return 1 ;;
+        esac
+        shift
+    done
 
-    versions_dir="$EDIKT_ROOT/versions"
+    if [ "$use_global" -eq 1 ]; then
+        list_root="${HOME:-/}/.edikt"
+        if [ -n "${EDIKT_HOME:-}" ]; then
+            list_root="$EDIKT_HOME"
+        fi
+    else
+        list_root="$EDIKT_ROOT"
+    fi
+
+    versions_dir="$list_root/versions"
     if [ ! -d "$versions_dir" ]; then
         echo "(no versions installed)"
         return 0
     fi
     active_target=""
-    if [ -L "$EDIKT_ROOT/current" ]; then
-        active_target=$(readlink "$EDIKT_ROOT/current")
+    if [ -L "$list_root/current" ]; then
+        active_target=$(readlink "$list_root/current")
         active_target=$(basename "$active_target")
     fi
     # Iterate sorted entries.
@@ -2589,7 +2606,8 @@ Usage: edikt <subcommand> [args]
 
 Subcommands:
   version              Print active payload version
-  list [--verbose]     List installed versions
+  list [--verbose] [--global]  List installed versions
+                       (--global forces listing from global ~/.edikt/versions/)
   install <tag>        Fetch + extract release; does not activate
   use <tag>            Activate an installed version (atomic symlink flip)
   rollback             Re-activate the previous version
