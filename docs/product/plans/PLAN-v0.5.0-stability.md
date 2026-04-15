@@ -14,9 +14,7 @@
 | Phase | Status | Attempt | Updated |
 |-------|--------|---------|---------|
 | 1     | done | 1/5 | 2026-04-14      |
-| 2     | done (partial — fixtures + wiring; hook tests gated on 2b.i) | 1/5 | 2026-04-14 |
-| 2b.i  | pending (new — rewrite fixtures.yaml §9.1 against actual hook behavior, sandbox-staged for determinism) | 0/5 | - |
-| 2b.ii | pending (new — hook semantic rewrites: subagent-stop structured evaluator input per ADR-010, session-start/user-prompt wording alignment) | 0/5 | - |
+| 2     | done (partial — fixtures + wiring; hook tests gated on 11b) | 1/5 | 2026-04-14 |
 | 3     | done | 1/5 | 2026-04-15 |
 | 4     | done | 1/5 | 2026-04-15 |
 | 5     | pending | 0/5 | -      |
@@ -26,9 +24,12 @@
 | 9     | pending | 0/5 | -      |
 | 10    | pending | 0/5 | -      |
 | 11    | pending | 0/5 | -      |
+| 11b   | pending (was 2b.i — characterize hooks: rewrite fixtures against actual behavior, sandbox-staged, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1`) | 0/5 | - |
 | 12    | pending | 0/5 | -      |
 | 13    | pending | 0/5 | -      |
 | 14    | pending | 0/5 | -      |
+
+**Deferred to v0.6.0:** Phase 2b.ii (hook semantic rewrites — subagent-stop structured evaluator input per ADR-010, session-start/user-prompt wording alignment, stop-hook command renames). See `docs/internal/plans/ROADMAP.md` v0.6.0 section.
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
@@ -47,6 +48,7 @@
 | 9 | Init provenance | sonnet | Path substitution + stack filters + hash-before-substitution contract | $0.08 |
 | 10 | Upgrade provenance-first flow | opus | Complex comparison + 3-way diff; data-loss risk if wrong | $0.80 |
 | 11 | M6 provenance backfill | sonnet | Contract already defined by phases 9 + 10 | $0.08 |
+| 11b | Hook fixture characterization (was 2b.i) | sonnet | Rewrite fixtures against actual hook behavior now that all hook-touching phases (7's M4 rule recompile) have landed; sandbox-stage for determinism; flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` | $0.08 |
 | 12 | Layer 2 integration tests + regression museum | sonnet | Pytest + SDK + fuzzy-match snapshots + code-path assertions | $0.08 |
 | 13 | Homebrew formula + release automation | sonnet | Ruby DSL + homebrew-releaser + tap CI isolation | $0.08 |
 | 14 | Docs + website refresh + CI + doctor --report | sonnet | Writing quality + cross-link verification + observability | $0.08 |
@@ -68,9 +70,10 @@ All phases run **sequentially** per user decision. No parallel waves.
 | 9     | None (independent surface; can land any time after P1) | - |
 | 10    | 9         | -             |
 | 11    | 7, 10     | -             |
-| 12    | 2, 7, 10  | -             |
+| 11b   | 2, 7      | -             |
+| 12    | 2, 7, 10, 11b | -         |
 | 13    | 3, 5      | -             |
-| 14    | All       | -             |
+| 14    | All (incl. 11b — CI gate flips `EDIKT_ENABLE_HOOK_JSON_TESTS=1`) | - |
 
 ## Artifact Flow
 
@@ -87,6 +90,7 @@ All phases run **sequentially** per user decision. No parallel waves.
 | 9 | `templates/agents/_substitutions.yaml`, agents with `<!-- edikt:stack:... -->` markers, `edikt_template_hash` frontmatter spec | 10, 11 |
 | 10 | Provenance-first upgrade in `commands/upgrade.md` | 11, 12 |
 | 11 | M6 backfill in `edikt doctor --backfill-provenance` | 12 (test coverage) |
+| 11b | Rewritten `test/expected/hook-outputs/*.expected.json`, updated `fixtures.yaml` §9.1, gate removed from `test/run.sh` + `test/unit/hooks/test_*.sh` | 12 (regression museum), 14 (CI gate runs hooks by default) |
 | 12 | `test/integration/**`, regression museum, `test/integration/failures/` | 14 (CI gate) |
 | 13 | `Formula/edikt.rb` in `diktahq/homebrew-tap`, `.github/workflows/release.yml`, GitHub Release tarballs | 14 (docs link brew instructions) |
 | 14 | README, website guides, CHANGELOG, `.github/workflows/test.yml`, `edikt doctor --report` | Release cut |
@@ -283,59 +287,18 @@ When complete, output: HOOK TESTS READY
 
 ---
 
-## Phase 2b: [SPLIT] fixture-vs-hook semantic mismatch
+## Phase 2b history (2026-04-14): split, then re-scoped
 
-**Finding (2026-04-14):** Phase 2b was originally scoped as "migrate hooks to JSON protocol." On reading the 9 hooks, the gap is materially deeper — the fixtures encode a **different semantic contract** than the hooks implement:
+Phase 2b was originally "migrate hooks to JSON protocol." On reading the 9 hooks, the gap turned out to be semantic, not just presentational — see commit `1a315bf` for the finding. It was split into two:
 
-- `session-start.sh`: 85 lines of git-aware session summary (changed files since last session, classified by domain → agent suggestions). Fixture expects a static banner.
-- `subagent-stop.sh`: Text-mines agent name from prose, regex-greps severity markers (🔴/🟡/🟢), runs config-driven gate logic with override tracking (events.jsonl, gate-overrides.jsonl). Fixture expects structured `{verdict: BLOCKED, evaluator_output: {severity, findings[]}}` input.
-- `stop-hook.sh`: Already JSON-in/JSON-out, but emits different strings than fixtures (`🔒 Security-sensitive change — run /edikt:audit before shipping.` vs fixture's `🔐 Security change — run /edikt:sdlc:audit.`).
-- `user-prompt-submit.sh`: Emits richer plan context than fixture; fixture wording is a simplification.
+- **2b.i — Characterize hooks** (rewrite fixtures against actual behavior, sandbox-staged for determinism, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1`). **Re-scheduled as Phase 11b** (below) so it captures final v0.5.0 hook behavior after Phase 7's M4 rule recompile, rather than mid-flight.
+- **2b.ii — Hook semantic rewrites** (subagent-stop structured evaluator input per ADR-010, wording alignment). **Deferred to v0.6.0** per `docs/internal/plans/ROADMAP.md`. Needs its own ADR for the hook input contract.
 
-Forcing hooks to match fixtures would regress real UX. Forcing fixtures to match hooks requires deterministic sandbox staging (e.g. a fixed git history for session-start). Split into two phases below.
+The original Phase 2b body (JSON-protocol migration) is fully superseded by 11b's characterization approach: fixtures now adapt to hooks, not the other way around. No content from the original 2b prompt is needed.
 
 ---
 
-## Phase 2b.i: Characterize hooks — rewrite fixtures against actual behavior
-
-**Objective:** Rewrite `fixtures.yaml` §9.1 and `test/expected/hook-outputs/` to match what the current hooks actually emit, using deterministic sandbox-staged inputs (fixed git history, staged `.edikt/config.yaml`, staged plan files) so fixture diffs are reproducible. Flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` on once tests pass. This turns Phase 2 tests into a **characterization suite** of today's hooks — a regression net, not an aspirational contract.
-**Model:** `sonnet`
-**Max Iterations:** 5
-**Completion Promise:** `HOOK CHARACTERIZATION READY`
-**Evaluate:** true
-**Dependencies:** Phase 2
-
-**Acceptance Criteria:**
-- [ ] For each hook, the fixture payload includes any sandbox staging needed (e.g. `fixture_project_mid_plan` is a real directory under `test/fixtures/projects/` with a staged plan file).
-- [ ] Expected-output fixtures encode exact strings the current hooks emit, not aspirational wording.
-- [ ] `EDIKT_ENABLE_HOOK_JSON_TESTS=1` is the default in `test/run.sh`. All 9 hook suites pass.
-- [ ] 10/10 consecutive sandbox runs produce identical output for every fixture (no time-dependent text, no path leakage).
-- [ ] `fixtures.yaml` §9.1 is updated; each record's `_note` explains why the expected output is what it is (characterization, not prescription).
-
----
-
-## Phase 2b.ii: Hook semantic rewrites (opt-in, may defer)
-
-**Objective:** Where current hook behavior is worth changing — e.g. `subagent-stop.sh` text-mining is a v0.4.x hack that ADR-010 replaces with structured evaluator input — rewrite the hook and update fixtures to the new contract. This phase is **opt-in**; each sub-item is independently shippable.
-**Model:** `opus`
-**Max Iterations:** 5
-**Completion Promise:** `HOOK SEMANTIC REWRITES READY`
-**Evaluate:** true
-**Dependencies:** Phase 2b.i
-
-**Candidates (not all required):**
-- `subagent-stop.sh`: replace prose-mining with structured `evaluator_output` JSON input per ADR-010. Requires evaluator agents to emit this structure (likely already done in v0.4.3 evaluator work — verify). New ADR if input contract is novel.
-- `user-prompt-submit.sh`: align wording with fixture's intended UX once reviewed.
-- `stop-hook.sh`: align command names (`/edikt:audit` → `/edikt:sdlc:audit`) and emoji (`🔒` → `🔐`) if desired.
-
-**Acceptance Criteria:**
-- [ ] Each candidate that lands has a matching ADR (if behavior-level change) or commit note (if cosmetic).
-- [ ] Fixtures updated to new contract in the same commit as the hook change.
-- [ ] All prior hook suites remain green.
-
----
-
-## (original Phase 2b — superseded by 2b.i + 2b.ii)
+## (original Phase 2b — superseded by 11b)
 
 **Original objective:** Rewrite the 9 lifecycle hooks listed in SPEC-004 §9.1 to read JSON stdin and emit JSON stdout per Claude Code's hook protocol (`continue`, `systemMessage`, `additionalContext`, `decision`). Once migrated, flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` as the default in `test/run.sh` so Phase 2 hook tests run on every invocation.
 **Model:** `sonnet`
@@ -1283,6 +1246,111 @@ When complete, output: PROVENANCE BACKFILL READY
 
 ---
 
+## Phase 11b: Hook Fixture Characterization (was 2b.i)
+
+**Objective:** Rewrite `fixtures.yaml` §9.1 and `test/expected/hook-outputs/` to match what the v0.5.0 hooks actually emit, using deterministic sandbox-staged inputs (fixed git history, staged `.edikt/config.yaml`, staged plan files) so fixture diffs are reproducible. Flip `EDIKT_ENABLE_HOOK_JSON_TESTS=1` once tests pass. This turns Phase 2 tests into a **characterization suite** of today's hooks — a regression net, not an aspirational contract.
+**Model:** `sonnet`
+**Max Iterations:** 5
+**Completion Promise:** `HOOK CHARACTERIZATION READY`
+**Evaluate:** true
+**Dependencies:** Phase 2, Phase 7
+**Context Needed:**
+- `templates/hooks/*.sh` (the 9 lifecycle hooks — current production behavior is the spec)
+- `test/fixtures/hook-payloads/*.json` (existing 21 payloads — adapt or replace)
+- `test/expected/hook-outputs/*.expected.json` (existing 21 expected outputs — rewrite to actual emissions)
+- `test/unit/hooks/_runner.sh` + `test/unit/hooks/test_*.sh` (test wiring already in place from Phase 2)
+- `docs/product/specs/SPEC-004-v050-stability/fixtures.yaml` §9.1 (record-by-record `_note` updates)
+- `docs/product/specs/SPEC-004-v050-stability/spec.md` §9.1 (Layer 1 contract — note the inversion: fixtures conform to hooks, not the other way around)
+- Phase 7 outputs (M4 rule recompile may have shifted `instructions-loaded.sh` observable state)
+
+**Acceptance Criteria:**
+- [ ] For each hook, the fixture payload includes any sandbox staging needed (e.g. a real `test/fixtures/projects/mid-plan/` directory with a staged plan file consumed by `user-prompt-submit.sh`).
+- [ ] Expected-output fixtures encode exact strings the v0.5.0 hooks emit, verified by piping the payload to the hook script and comparing.
+- [ ] `EDIKT_ENABLE_HOOK_JSON_TESTS=1` is the default in `test/run.sh`. All 9 hook suites pass (no SKIPs).
+- [ ] 10/10 consecutive sandbox runs produce identical output for every fixture (no time-dependent text, no path leakage). Time-stamped or path-leaking emissions are normalized to placeholders before diffing.
+- [ ] `fixtures.yaml` §9.1 is updated; each record's `_note` field explains why the expected output is what it is (characterization, not prescription).
+- [ ] Any fixture pair that cannot be characterized deterministically (e.g. random IDs, model nondeterminism) is removed with a `_note` explaining why, rather than flaking the suite.
+- [ ] `test/run.sh` no longer suggests "awaiting Phase 2b" anywhere; the gate is removed and the env var becomes opt-out for local debugging only.
+
+**Prompt:**
+```
+You are implementing Phase 11b: hook fixture characterization.
+
+The bet from Phase 2: fixtures encode the aspirational JSON-protocol
+contract from SPEC-004 §9.1. The hooks emit plaintext today. We chose
+to characterize hooks (rewrite fixtures to match production) rather
+than rewrite hooks (which 2b.ii defers to v0.6.0). This phase does
+the fixture rewrite.
+
+Context to read:
+- All 9 templates/hooks/*.sh (the 21 fixtures map to these)
+- test/unit/hooks/_runner.sh (the test harness — already correct,
+  do not change)
+- test/unit/hooks/test_*.sh (one per hook, all currently SKIP-gated
+  on EDIKT_ENABLE_HOOK_JSON_TESTS)
+- test/fixtures/hook-payloads/*.json (21 inputs)
+- test/expected/hook-outputs/*.expected.json (21 outputs to rewrite)
+- fixtures.yaml §9.1 (the spec for what each fixture encodes)
+
+Implementation:
+
+1. For each hook, run it once with each existing payload and capture
+   the actual stdout. If stdout is empty (silent no-op), the expected
+   output should be `{}` per the runner's empty→{} convention.
+
+2. Diagnose any payload that produces nondeterministic output:
+   - session-start.sh reads git log → stage a fixed-history fixture
+     repo under test/fixtures/projects/git-history/ and have the
+     fixture payload point cwd at it
+   - subagent-stop.sh writes events.jsonl with timestamps → either
+     use jq to strip ts before diffing, or pre-set a clock via
+     EDIKT_NOW env var if the hook honors one (add the env var hook
+     if it doesn't)
+   - any path-leaking output → normalize $TEST_SANDBOX paths to
+     <SANDBOX> via a sed pass in the runner before diff
+
+3. Rewrite each *.expected.json to the actual (normalized)
+   emission. Use jq -S . to canonicalize key order.
+
+4. If a payload is genuinely impossible to characterize
+   deterministically (e.g. relies on a clock the hook doesn't
+   parameterize), remove the pair and document in fixtures.yaml's
+   _note field why. Do not weaken the runner's diff to "best effort."
+
+5. Update fixtures.yaml §9.1 — each record's _note explains *why*
+   the output is what it is. e.g. "subagent-stop emits gate_fired
+   event when severity is critical AND .edikt/config.yaml has
+   gates.security: critical (config staged in fixture sandbox)".
+
+6. Remove the EDIKT_ENABLE_HOOK_JSON_TESTS gate:
+   - test/run.sh: remove any reference to the env var (it's no
+     longer needed; tests run by default)
+   - test/unit/hooks/test_*.sh: remove the early-exit SKIP block
+   - test/unit/hooks/_runner.sh: remove the comment about awaiting
+     Phase 2b (now historical)
+   - For local debugging convenience, leave the env var as opt-OUT:
+     EDIKT_SKIP_HOOK_TESTS=1 → skip. Inverted polarity, default off.
+
+7. Run ./test/run.sh 10 times. All 9 hook suites must PASS, all
+   suite outputs must be byte-identical (after normalization).
+
+Pitfalls:
+- Do not weaken the runner. If a hook emits nondeterministic output,
+  fix the hook to honor a clock env var or remove the fixture —
+  never relax the diff to tolerate noise.
+- Do not change templates/hooks/*.sh in this phase. Behavior changes
+  belong in 2b.ii (v0.6.0). The only exception: adding an EDIKT_NOW
+  env var hook if it's strictly to make tests deterministic — and
+  even then, prefer normalizing in the runner if possible.
+- Re-verify against Phase 7's M4 output. If M4 changed what
+  instructions-loaded.sh observes (governance.md content), the
+  fixture must use the v0.5.0 governance.md, not pre-migration state.
+
+When complete, output: HOOK CHARACTERIZATION READY
+```
+
+---
+
 ## Phase 12: Layer 2 Agent SDK Integration Tests + Regression Museum
 
 **Objective:** Stand up `test/integration/` with pytest + `claude-agent-sdk` (Python), fuzzy-match snapshot helper, failure-log persistence for `claude-replay`, retry/backoff + skip-on-outage, and the regression museum (one test per v0.4.0–v0.4.3 bug). Every regression test asserts it covers a specific code path.
@@ -1532,6 +1600,7 @@ When complete, output: HOMEBREW READY
 - [ ] NFS/WSL1 probe in `edikt doctor`: detects filesystem type under `$EDIKT_ROOT`, warns with documented workaround from config-spec.md §7 if risky fs detected.
 - [ ] `.github/workflows/test.yml` created: on PR → Layers 1+3 (unit + sandbox), ~3-minute CI gate, free of API cost. On tag push → Layer 2 (integration), requires `ANTHROPIC_API_KEY` secret.
 - [ ] All three CI layers are blocking — tag cannot ship without all passing.
+- [ ] Hook unit tests (Phase 11b output) run by default in CI — no `EDIKT_ENABLE_HOOK_JSON_TESTS=1` opt-in flag in the workflow. Confirms Phase 11b's gate removal landed.
 - [ ] `test/unit/test_docs_sanity.sh`: greps all docs for outdated install snippets (`raw.githubusercontent.com/...main/install.sh` without version reference should be allowed; explicit v0.4.x hardcoded should fail), stale version references, broken markdown link targets.
 
 **Prompt:**
