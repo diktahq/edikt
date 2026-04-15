@@ -15,8 +15,9 @@ printf '0.5.0\n' >"$src/VERSION"
 printf '# x\n' >"$src/commands/edikt/context.md"
 
 # Extract all hook script names from the real settings template.
+# The template uses ${EDIKT_HOOK_DIR}/<name>.sh (parameterized for Phase 8).
 HOOKS_TMPL="$PROJECT_ROOT/templates/settings.json.tmpl"
-HOOK_NAMES=$(grep -oE '\.edikt/hooks/[a-z-]+\.sh' "$HOOKS_TMPL" | sed 's|.*/||' | sort -u)
+HOOK_NAMES=$(grep -oE 'EDIKT_HOOK_DIR\}/[a-z-]+\.sh' "$HOOKS_TMPL" | sed 's|.*/||' | sort -u)
 
 [ -n "$HOOK_NAMES" ] && pass "found hook names in settings.json.tmpl" || fail "no hook names found"
 

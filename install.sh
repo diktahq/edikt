@@ -133,12 +133,23 @@ fi
 
 # ─── Root resolution ────────────────────────────────────────────────────────
 # Matches bin/edikt's EDIKT_ROOT resolution so both see the same layout.
+PROJECT_ROOT=""
 if [ "$INSTALL_MODE" = "project" ]; then
+  PROJECT_ROOT="$(pwd)"
   EDIKT_ROOT="$(pwd)/.edikt"
   CLAUDE_HOME_DIR="$(pwd)/.claude"
 else
   EDIKT_ROOT="${EDIKT_HOME:-${HOME}/.edikt}"
   CLAUDE_HOME_DIR="${CLAUDE_HOME:-${HOME}/.claude}"
+fi
+
+# Hook directory used to substitute ${EDIKT_HOOK_DIR} in settings.json.tmpl.
+# Global mode: $HOME/.edikt/hooks  (stable path via symlink chain)
+# Project mode: <project-root>/.edikt/hooks  (absolute, project-scoped)
+if [ "$INSTALL_MODE" = "project" ]; then
+  EDIKT_HOOK_DIR="${PROJECT_ROOT}/.edikt/hooks"
+else
+  EDIKT_HOOK_DIR="${HOME}/.edikt/hooks"
 fi
 
 # ─── State detection ────────────────────────────────────────────────────────
@@ -463,6 +474,34 @@ dryrun_do() {
   dim "would-run: $1"
 }
 
+# ─── settings.json writer ─────────────────────────────────────────────────────
+# Reads $EDIKT_ROOT/templates/settings.json.tmpl, substitutes ${EDIKT_HOOK_DIR}
+# with the resolved absolute hook path, and writes the result atomically to
+# $CLAUDE_HOME_DIR/settings.json.
+#
+# The template uses ${EDIKT_HOOK_DIR} as a placeholder — not a real env var.
+# sed substitutes it at install time so the resulting settings.json has
+# absolute paths (no shell expansion required at hook-fire time).
+write_settings_json() {
+  tmpl="$EDIKT_ROOT/templates/settings.json.tmpl"
+  dest="$CLAUDE_HOME_DIR/settings.json"
+  if [ ! -f "$tmpl" ]; then
+    warn "settings.json.tmpl not found at $tmpl — skipping settings.json write"
+    return 0
+  fi
+  mkdir -p "$CLAUDE_HOME_DIR" || return $EX_PERMISSION
+  tmp="${dest}.tmp.$$"
+  # Use | as sed delimiter to avoid conflicts with path separators.
+  sed "s|\${EDIKT_HOOK_DIR}|${EDIKT_HOOK_DIR}|g" "$tmpl" >"$tmp" || {
+    rm -f "$tmp" 2>/dev/null || true
+    warn "settings.json substitution failed — skipping"
+    return 0
+  }
+  mv -f "$tmp" "$dest"
+  dim "wrote $dest (hook dir: $EDIKT_HOOK_DIR)"
+  return 0
+}
+
 # ─── Flow orchestration ─────────────────────────────────────────────────────
 run_launcher_step() {
   # Args: subcommand and its args. Honors EDIKT_INSTALL_SOURCE pass-through.
@@ -491,6 +530,7 @@ do_fresh_install() {
     fi
     dryrun_do "$EDIKT_ROOT/bin/edikt install $TAG"
     dryrun_do "$EDIKT_ROOT/bin/edikt use $TAG"
+    dryrun_do "write $CLAUDE_HOME_DIR/settings.json (hook dir: $EDIKT_HOOK_DIR)"
     return 0
   fi
 
@@ -504,6 +544,7 @@ do_fresh_install() {
   fi
   run_launcher_step install "$TAG" || return $?
   run_launcher_step use "$TAG" || return $?
+  write_settings_json || return $?
 }
 
 do_legacy_v04() {
@@ -527,6 +568,7 @@ do_legacy_v04() {
     dryrun_do "$EDIKT_ROOT/bin/edikt migrate --dry-run"
     dryrun_do "$EDIKT_ROOT/bin/edikt install $TAG"
     dryrun_do "$EDIKT_ROOT/bin/edikt use $TAG"
+    dryrun_do "write $CLAUDE_HOME_DIR/settings.json (hook dir: $EDIKT_HOOK_DIR)"
     return 0
   fi
 
@@ -542,6 +584,7 @@ do_legacy_v04() {
   run_launcher_step migrate --yes || return $?
   run_launcher_step install "$TAG" || return $?
   run_launcher_step use "$TAG" || return $?
+  write_settings_json || return $?
   printf '%bMigration complete. Run %b\`edikt doctor\`%b to verify.%b\n' "$GREEN" "$BOLD" "$RESET$GREEN" "$RESET"
 }
 
@@ -594,6 +637,7 @@ do_current_v05() {
     fi
   fi
   run_launcher_step use "$TAG" || return $?
+  write_settings_json || return $?
 }
 
 # ─── Main ───────────────────────────────────────────────────────────────────
