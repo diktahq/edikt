@@ -1039,6 +1039,13 @@ migrate_m2_claudemd_sentinels() {
     _dry="$1"
     _f="$EDIKT_ROOT/CLAUDE.md"
     [ -f "$_f" ] || return 0
+    # Safety: refuse to operate through a symlink. cp would dereference it
+    # and mv -f would clobber the symlink target, not the link itself.
+    # The user must resolve the symlink manually before re-running migrate.
+    if [ -L "$_f" ]; then
+        log_err "M2: CLAUDE.md is a symlink — migration refuses to follow it. Resolve manually, then re-run 'edikt migrate'."
+        return 1
+    fi
     # Detection: must contain BOTH HTML markers; if neither is present we are
     # already on the new format (or never had sentinels) — skip silently.
     if ! grep -q '<!-- edikt:start -->' "$_f" 2>/dev/null; then
@@ -1094,10 +1101,30 @@ migrate_m3_flat_commands() {
     _flat_dir="$CLAUDE_ROOT/commands/edikt"
     _payload_dir="$EDIKT_ROOT/current/commands/edikt"
     [ -d "$_flat_dir" ] || return 0
-    [ -d "$_payload_dir" ] || return 0
+    # #10: Guard against a broken symlink on $EDIKT_ROOT/current. A broken
+    # symlink means [ -d ] returns false even though the path exists as a
+    # link entry. Distinguish "payload dir not present — M3 is a no-op here"
+    # from "payload dir ought to exist but is a broken symlink". We detect
+    # the broken-symlink case by checking whether $EDIKT_ROOT/current is a
+    # symlink that doesn't resolve, which signals a corrupted install.
+    if ! [ -d "$_payload_dir" ]; then
+        if [ -L "$EDIKT_ROOT/current" ] && ! [ -e "$EDIKT_ROOT/current" ]; then
+            log_err "M3: \$EDIKT_ROOT/current is a broken symlink — cannot determine namespaced replacements. Run 'edikt doctor' to inspect."
+            return 1
+        fi
+        # No payload dir but symlink is absent or resolves fine — M3 simply
+        # has no namespaced replacements to compare against; skip silently.
+        return 0
+    fi
     _custom_dir="$EDIKT_ROOT/custom"
 
-    _matches=""
+    # #1: Use a temp file (one flat<TAB>replacement per line) instead of a
+    # space-separated string accumulator so filenames containing whitespace
+    # (e.g. "my plan.md") are handled safely.
+    _match_file=$(mktemp -t edikt-m3-matches-XXXXXX)
+    # Ensure the temp file is cleaned up even on early return.
+    # shellcheck disable=SC2064
+    trap "rm -f '$_match_file'" RETURN
     for _flat in "$_flat_dir"/*.md; do
         [ -f "$_flat" ] || continue
         # Skip symlinks — those are the v0.5.0-namespaced layout's own.
@@ -1106,22 +1133,23 @@ migrate_m3_flat_commands() {
         # Find a same-basename file deeper in the payload tree.
         _replacement=$(find "$_payload_dir" -mindepth 2 -type f -name "$_base" 2>/dev/null | head -1)
         [ -n "$_replacement" ] || continue
-        _matches="$_matches $_flat|$_replacement"
+        printf '%s\t%s\n' "$_flat" "$_replacement" >>"$_match_file"
     done
-    [ -n "$_matches" ] || return 0
-
-    if [ "$_dry" -eq 1 ]; then
-        for _pair in $_matches; do
-            _flat=${_pair%%|*}
-            _repl=${_pair##*|}
-            log_info "M3 (flat commands): would compare $_flat vs $_repl"
-        done
+    # If no matches found the temp file is empty.
+    if ! [ -s "$_match_file" ]; then
+        rm -f "$_match_file"
         return 0
     fi
 
-    for _pair in $_matches; do
-        _flat=${_pair%%|*}
-        _repl=${_pair##*|}
+    if [ "$_dry" -eq 1 ]; then
+        while IFS="$(printf '\t')" read -r _flat _repl; do
+            log_info "M3 (flat commands): would compare $_flat vs $_repl"
+        done <"$_match_file"
+        rm -f "$_match_file"
+        return 0
+    fi
+
+    while IFS="$(printf '\t')" read -r _flat _repl; do
         _flat_sha=$(sha256_file "$_flat" 2>/dev/null) || _flat_sha=""
         _repl_sha=$(sha256_file "$_repl" 2>/dev/null) || _repl_sha=""
         if [ -n "$_flat_sha" ] && [ "$_flat_sha" = "$_repl_sha" ]; then
@@ -1150,7 +1178,8 @@ migrate_m3_flat_commands() {
                 '"step":"M3","action":"preserved","file":"'"$_dest"'"'
         fi
         MIGRATE_RAN_M3=1
-    done
+    done <"$_match_file"
+    rm -f "$_match_file"
     return 0
 }
 
@@ -1190,12 +1219,12 @@ migrate_m5_config_additions() {
         log_err "M5: failed to seed temp file"
         return 1
     }
-    # Ensure trailing newline before appending blocks.
+    # Ensure trailing newline before appending blocks. Unconditional append is
+    # safe for YAML — trailing newlines are semantically irrelevant — and avoids
+    # the subtle od -c / command-substitution pitfall where a file ending in the
+    # literal text "\n" (two bytes) would be incorrectly detected as newline-terminated.
     if [ -s "$_tmp" ]; then
-        _last_byte=$(tail -c 1 "$_tmp" | od -An -c | tr -d ' ')
-        if [ "$_last_byte" != "\\n" ]; then
-            printf '\n' >>"$_tmp"
-        fi
+        printf '\n' >>"$_tmp"
     fi
 
     for _key in $_missing; do
@@ -1315,6 +1344,27 @@ _print_secondary_summary() {
     if [ "$MIGRATE_RAN_M5" -eq 1 ]; then echo "  M5: config.yaml keys added"; _ran_any=1; fi
     if [ "$MIGRATE_RAN_M4" -eq 1 ]; then echo "  M4: compile schema marked pending (deferred to Phase 7b)"; _ran_any=1; fi
     [ "$_ran_any" -eq 0 ] && echo "  (M2-M6: no signals detected)"
+    # Print restore instructions whenever backups were written (M2 or M5 ran),
+    # so users know how to undo without needing an --undo subcommand.
+    if [ "$MIGRATE_RAN_M2" -eq 1 ] || [ "$MIGRATE_RAN_M5" -eq 1 ]; then
+        echo ""
+        echo "Migration backups retained at: $MIGRATE_BACKUP_DIR/"
+        if [ "$MIGRATE_RAN_M2" -eq 1 ]; then
+            echo "  CLAUDE.md.pre-m2    — M2 original"
+        fi
+        if [ "$MIGRATE_RAN_M5" -eq 1 ]; then
+            echo "  config.yaml.pre-m5  — M5 original"
+        fi
+        echo ""
+        echo "To restore manually:"
+        if [ "$MIGRATE_RAN_M2" -eq 1 ]; then
+            _m2_backup="$MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2"
+            echo "  cp $_m2_backup <path-to-CLAUDE.md>"
+        fi
+        if [ "$MIGRATE_RAN_M5" -eq 1 ]; then
+            echo "  cp $MIGRATE_BACKUP_DIR/config.yaml.pre-m5 $EDIKT_ROOT/config.yaml"
+        fi
+    fi
     return 0
 }
 
@@ -1698,8 +1748,13 @@ EOF
         _rc=$?
         release_lock
         if [ "$_rc" -ne 0 ]; then
+            emit_event migration_partial_failure \
+                '"step":"secondary","rc":'"$_rc"',"backup":"'"${MIGRATE_BACKUP_DIR:-}"'"'
+            log_err "secondary migration(s) failed (rc=$_rc). Backups at ${MIGRATE_BACKUP_DIR:-$EDIKT_ROOT/backups/}/. Re-run 'edikt migrate' to retry, or 'edikt doctor' to inspect."
             return "$_rc"
         fi
+        echo ""
+        echo "Migration complete."
         echo ""
         echo "Migration summary:"
         _print_secondary_summary
@@ -1914,10 +1969,24 @@ EOF
     log_info "migration complete: $MIGRATE_VERSION activated"
 
     # Chain into M2-M6 now that the versioned layout is in place. These
-    # share the same lock and backup dir created above. Failures here are
-    # logged but do not roll back M1 — M1 is the load-bearing transition;
-    # M2-M6 are repeatable and can be re-run with `edikt migrate` later.
-    _run_secondary_migrations 0 || log_warn "secondary migrations reported a failure — re-run 'edikt migrate' to retry"
+    # share the same lock and backup dir created above. M1 is load-bearing
+    # and already committed; M2-M6 are repeatable. A failure here does NOT
+    # roll back M1, but does propagate a non-zero exit so install.sh and the
+    # user are not misled into believing the full migration succeeded.
+    _sec_rc=0
+    _run_secondary_migrations 0 || _sec_rc=$?
+    if [ "$_sec_rc" -ne 0 ]; then
+        emit_event migration_partial_failure \
+            '"step":"secondary","rc":'"$_sec_rc"',"backup":"'"$MIGRATE_BACKUP_DIR"'"'
+        log_err "secondary migration(s) failed (rc=$_sec_rc). Backups at $MIGRATE_BACKUP_DIR/. Re-run 'edikt migrate' to retry, or 'edikt doctor' to inspect."
+        echo ""
+        echo "Migration summary (partial — M1 succeeded, secondary step(s) failed):"
+        echo "  M1: flat → versioned (target $MIGRATE_VERSION)"
+        _print_secondary_summary
+        return "$_sec_rc"
+    fi
+    echo ""
+    echo "Migration complete."
     echo ""
     echo "Migration summary:"
     echo "  M1: flat → versioned (target $MIGRATE_VERSION)"
