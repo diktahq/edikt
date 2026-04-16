@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import build_synth_v030, run_migrate
+from .helpers import build_synth_v030, run_migrate
 
 
 def test_v030_m5_and_m4(sandbox_home):
@@ -24,9 +24,9 @@ def test_v030_idempotent_after_compile_marker(sandbox_home):
     build_synth_v030(sb)
 
     # Pretend Phase 7b's compile invocation has already updated governance.md
-    # by injecting the v2 sentinel — M4 must NOT re-fire on the second run.
+    # by injecting the v2 frontmatter key — M4 must NOT re-fire on the second run.
     gov = sb["claude_home"] / "rules" / "governance.md"
-    gov.write_text("<!-- compile-schema: v2 -->\n" + gov.read_text())
+    gov.write_text("---\ncompile_schema_version: 2\n---\n" + gov.read_text())
 
     proc = run_migrate(sb, "--yes")
     assert proc.returncode == 0, proc.stderr

@@ -61,7 +61,12 @@ assert_file_not_exists "$PROJECT_ROOT/.dof/config.yaml" "No .dof/ directory"
 assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "SessionStart" "settings.json.tmpl has SessionStart hook"
 assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "PreToolUse" "settings.json.tmpl has PreToolUse hook"
 assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "Stop" "settings.json.tmpl has Stop hook"
-assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "PreCompact" "settings.json.tmpl has PreCompact hook"
+# PreCompact removed in v0.5.0 per ADR-014 (hook deleted entirely)
+assert_file_not_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "PreCompact" "settings.json.tmpl has no PreCompact hook (removed per ADR-014)"
+# v0.5.0 new events MUST be wired
+for event in SessionEnd SubagentStart TaskCompleted WorktreeCreate WorktreeRemove; do
+    assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "$event" "settings.json.tmpl wires $event"
+done
 assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "Write|Edit" "PreToolUse hook targets Write|Edit"
 assert_file_contains "$PROJECT_ROOT/templates/settings.json.tmpl" "PostToolUse" "settings.json.tmpl has PostToolUse hook"
 assert_file_contains "$PROJECT_ROOT/templates/hooks/session-start.sh" "git log" "SessionStart hook is git-aware"

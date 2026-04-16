@@ -79,6 +79,10 @@ edikt uses Claude Code's platform primitives — path-conditional rules, lifecyc
 
 The launcher (`bin/edikt`) is POSIX sh. On Windows, run inside WSL2. The payload installs to `~/.edikt/` inside the WSL filesystem. Claude Code for Windows accesses it through the WSL path.
 
+### Claude Code parity
+
+edikt tracks Claude Code feature adoption in [docs/internal/claude-code-parity.md](docs/internal/claude-code-parity.md). The v0.5.0 baseline is Claude Code v2.1.111 (April 2026). Hook protocol, agent frontmatter fields (`effort`, `maxTurns`, `disallowedTools`, `initialPrompt`), conditional hook `if`, and the full PostCompact / SubagentStart / TaskCompleted / WorktreeCreate event set are all adopted. Plugin packaging is a v0.6.0+ candidate.
+
 ---
 
 [License](LICENSE) · [Changelog](CHANGELOG.md) · [edikt.dev](https://edikt.dev)

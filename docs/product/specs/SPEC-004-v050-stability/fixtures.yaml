@@ -299,9 +299,14 @@ scenarios:
       - entity: file
         records:
 
-          # session-start-with-edikt: REMOVED (Phase 11b).
-          # Hook emits a plaintext banner ("📋 edikt project detected…") — not JSON.
-          # Will become testable after Phase 2b.ii migrates it to the JSON protocol.
+          # session-start-with-edikt: PENDING RE-ADD (ADR-014 Phase 15).
+          # Hook now emits JSON additionalContext (ADR-014). Fixture blocked on
+          # expanding _staged_runner.sh to provision git history + a recent
+          # MEMORY.md file that reliably triggers the non-silent path across
+          # machines. Expected content shape (when re-added):
+          #   {"additionalContext":"📋 edikt project detected. Run /edikt:context to load project context before writing code."}
+          # verified_by: run `session-start.sh` in staged dir with edikt config
+          # present and no memory file (simplest deterministic path).
 
           - path: session-start-no-edikt.expected.json
             format: json
@@ -394,10 +399,11 @@ scenarios:
             content: {}
             _note: stop_hook_active=true → hook exits 0 silently. Loop-prevention invariant.
 
-          # subagent-stop-critical: REMOVED (Phase 11b).
+          # subagent-stop-critical: REMOVED (Phase 11b — still blocked).
           # Blocking message embeds git user name/email and timestamps.
-          # Nondeterministic across machines and sessions — cannot be characterized.
-          # The gate-block path will be testable after Phase 2b.ii adds clock parameterization.
+          # ADR-014 Phase 15 migrated output to JSON but did NOT address the
+          # nondeterminism. Re-adding requires _staged_runner.sh to export
+          # stable test env vars for git identity + clock. Separate follow-up.
 
           - path: subagent-stop-warning.expected.json
             format: json
@@ -412,9 +418,12 @@ scenarios:
             content: { continue: true }
             _note: OK verdict, no gate, no systemMessage → {"continue": true}.
 
-          # pre-compact: REMOVED (Phase 11b).
-          # Hook always emits a plaintext warning string — not JSON.
-          # Will become testable after Phase 2b.ii migrates to JSON protocol.
+          # pre-compact: REMOVED PERMANENTLY (ADR-014 Phase 15).
+          # The pre-compact hook has been DELETED entirely — its single echo
+          # reminder was superseded by /edikt:session, which is more
+          # comprehensive. templates/hooks/pre-compact.sh no longer exists.
+          # Settings template `PreCompact` block also removed. No fixture pair
+          # will be re-added; this record documents the deletion.
 
           - path: post-compact-with-plan.expected.json
             format: json

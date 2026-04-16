@@ -11,6 +11,7 @@ disallowedTools:
   - Edit
 maxTurns: 15
 effort: high
+initialPrompt: "Read the acceptance criteria, the implementation diff, and any tests. Judge each criterion independently before responding."
 ---
 <!-- Subagent mode. Bash execution may be denied by the parent session's permission sandbox regardless of this agent's `tools:` frontmatter. If the phase requires test execution, prefer headless mode (evaluator-headless.md) invoked via `claude -p`. -->
 

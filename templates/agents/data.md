@@ -10,6 +10,7 @@ disallowedTools:
   - Edit
 maxTurns: 10
 effort: medium
+initialPrompt: "Read the data model artifacts in the active spec and relevant ADRs. Note privacy and retention constraints before responding."
 ---
 
 You are a data engineering specialist. You design data models, build reliable pipelines, and ensure data quality — so the business can make decisions on data it can trust.

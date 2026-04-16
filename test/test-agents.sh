@@ -153,4 +153,25 @@ for old in principal-architect principal-dba principal-ux principal-data staff-e
     fi
 done
 
+# ============================================================
+# initialPrompt coverage (ADR-014 Phase 17)
+# Every user-facing agent template must carry a non-empty initialPrompt
+# with positive framing (no NEVER / MUST NOT / DO NOT).
+# ============================================================
+
+for agent_file in "$AGENTS_DIR"/*.md; do
+    base=$(basename "$agent_file")
+    case "$base" in _*) continue ;; esac
+    if grep -q '^initialPrompt:' "$agent_file"; then
+        pass "${base} has initialPrompt field"
+    else
+        fail "${base} missing initialPrompt field"
+    fi
+    if grep -E '^initialPrompt:.*(NEVER|MUST NOT|DO NOT|DON'"'"'T)' "$agent_file" >/dev/null 2>&1; then
+        fail "${base} initialPrompt uses negative framing"
+    else
+        pass "${base} initialPrompt uses positive framing"
+    fi
+done
+
 test_summary

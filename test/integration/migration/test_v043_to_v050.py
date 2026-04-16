@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import build_synth_v043, run_migrate
+from .helpers import build_synth_v043, run_migrate
 
 
 def test_v043_only_m4(sandbox_home):

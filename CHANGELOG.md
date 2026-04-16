@@ -37,6 +37,20 @@
 
 - `~/.edikt/` layout changed from flat to versioned. Run `edikt migrate --yes` to upgrade from v0.4.x. See [Migrating from v0.4](website/guides/migrating-from-v0.4.md).
 - `features.auto-format`, `features.signal-detection`, `features.plan-injection` config keys must now be explicit in `.edikt/config.yaml`; hooks default-on when absent.
+- Hook output migrated from plaintext to JSON protocol (ADR-014). User-visible message content is preserved byte-for-byte inside `{"systemMessage": ...}` / `{"additionalContext": ...}` wrappers. No action required unless you consumed raw hook stdout in custom tooling.
+- `pre-compact.sh` hook removed. Its single echo reminder is covered by `/edikt:session`. Remove `PreCompact` from any manual `.claude/settings.json` customizations.
+
+### Claude Code parity (ADR-014)
+
+- **Hook protocol migration.** 7 plaintext-emitting hooks (`pre-tool-use`, `session-start`, `post-tool-use`, `post-compact`, `subagent-stop`, `stop-failure`, `user-prompt-submit`) now emit JSON conforming to the Claude Code hook protocol. Characterization fixtures regenerated via `verified_by` commands per SPEC-004 §14.
+- **New hook events.** Settings template wires `SessionEnd`, `SubagentStart`, `TaskCompleted`, `WorktreeCreate`, `WorktreeRemove` (v2.1.78–v2.1.84). Each ships with a characterization fixture pair.
+- **pre-tool-use `updatedInput` transformation.** Hook now emits `{"decision": "block"}` when an edit would damage `[edikt:start]: #` or `[edikt:directives:start]: #` sentinel blocks, protecting compiled governance from accidental user edits.
+- **task-created plan-phase tracking.** `TaskCreated` / `TaskCompleted` emit structured events to `~/.edikt/events.jsonl` so plan progress can be reconstructed.
+- **Agent `initialPrompt` rollout.** 17 agents gained the `initialPrompt` frontmatter field; 3 already had it. All use positive framing per Opus 4.7 best-practices guidance.
+- **Opt-in statusline.** New `statusLine` block in the settings template emits `ADRs: N | INVs: M | Drift: K` when `.edikt/config.yaml: features.statusline: true`.
+- **Preprocessor hardening.** The `!` live block in 5 commands (`adr:new`, `invariant:new`, `sdlc:prd`, `sdlc:plan`, `sdlc:spec`) is now cwd-agnostic, zsh-safe (uses `find` instead of glob), and applies the correct `${BASE:-docs}` fallback. New regression test suite in `test/unit/test-preprocessor-robustness.sh` and `test/integration/regression/test_preprocessor_cwd_and_shell.py`.
+- **Prompt-caching env var guidance.** `website/getting-started.md` documents `ENABLE_PROMPT_CACHING_1H` and `FORCE_PROMPT_CACHING_5M` (v2.1.108) for long sessions with heavy governance reads.
+- Full adoption matrix at [docs/internal/claude-code-parity.md](docs/internal/claude-code-parity.md).
 
 ### Migration notes
 

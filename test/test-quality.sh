@@ -338,7 +338,10 @@ assert_file_exists "$PROJECT_ROOT/templates/hooks/file-changed.sh" "FileChanged 
 
 # New hook scripts source event-log.sh or log to session-signals
 assert_file_contains "$PROJECT_ROOT/templates/hooks/stop-failure.sh" "event-log.sh" "StopFailure uses event logger"
-assert_file_contains "$PROJECT_ROOT/templates/hooks/task-created.sh" "event-log.sh" "TaskCreated uses event logger"
+# task-created.sh v0.5.0 (Phase 16) writes jsonl directly with plan-phase
+# context instead of sourcing event-log.sh. Assert the new contract.
+assert_file_contains "$PROJECT_ROOT/templates/hooks/task-created.sh" "events.jsonl" "TaskCreated writes events.jsonl (v0.5.0 contract)"
+assert_file_contains "$PROJECT_ROOT/templates/hooks/task-created.sh" "task_created" "TaskCreated emits task_created event type"
 assert_file_contains "$PROJECT_ROOT/templates/hooks/cwd-changed.sh" "session-signals.log" "CwdChanged logs to session signals"
 assert_file_contains "$PROJECT_ROOT/templates/hooks/file-changed.sh" "session-signals.log" "FileChanged logs to session signals"
 
@@ -383,14 +386,9 @@ for agent in backend frontend qa mobile platform pm; do
     assert_file_not_contains "$AGENTS_DIR/$agent.md" "disallowedTools:" "$agent has no disallowedTools (code-writing)"
 done
 
-# initialPrompt on architect, security, pm only
-assert_file_contains "$AGENTS_DIR/architect.md" "initialPrompt:" "architect has initialPrompt"
-assert_file_contains "$AGENTS_DIR/security.md" "initialPrompt:" "security has initialPrompt"
-assert_file_contains "$AGENTS_DIR/pm.md" "initialPrompt:" "pm has initialPrompt"
-
-# Agents without initialPrompt
-for agent in dba api sre docs ux compliance seo gtm data performance backend frontend qa mobile platform evaluator; do
-    assert_file_not_contains "$AGENTS_DIR/$agent.md" "initialPrompt:" "$agent has no initialPrompt"
+# initialPrompt on all agents (v0.5.0 rollout per ADR-014 Phase 17)
+for agent in architect security pm dba api sre docs ux compliance seo gtm data performance backend frontend qa mobile platform evaluator evaluator-headless; do
+    assert_file_contains "$AGENTS_DIR/$agent.md" "initialPrompt:" "$agent has initialPrompt"
 done
 
 # High effort agents

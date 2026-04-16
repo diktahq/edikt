@@ -9,7 +9,7 @@ allowed-tools:
   - Bash
   - Glob
 ---
-!`PRD_DIR=$(grep "^  prds:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$PRD_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); PRD_DIR="${BASE}/product/prds"; fi; COUNT=$(ls "${PRD_DIR}/"PRD-*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${PRD_DIR}/"PRD-*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext PRD number: PRD-%s\nExisting PRDs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext PRD number: PRD-001\nExisting PRDs: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  prds:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/product/prds"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; COUNT=$(find "$DIR" -maxdepth 1 -type f -name "PRD-*.md" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type f -name "PRD-*.md" 2>/dev/null | sort | xargs -I{} basename {} .md | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext PRD number: PRD-%s\nExisting PRDs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
 
 # edikt:sdlc:prd
 
@@ -52,12 +52,17 @@ The correct next PRD number is provided at the top of this prompt in the `<!-- e
 
 ### 3. Clarify Requirements
 
-If `$ARGUMENTS` is vague or missing, ask 2-3 focused questions:
-- Who is this for? (which user type)
-- What problem does it solve?
-- What does success look like?
+If `$ARGUMENTS` is vague or missing, present all clarifying questions in a **single batched message** per Opus 4.7 best-practices guidance. Use this format:
 
-If `$ARGUMENTS` is clear enough, proceed directly.
+```
+I need a few answers before writing the PRD. Answer any subset — defaults apply for skipped [optional] items.
+
+1. [required] Who is this for? (which user type)
+2. [required] What problem does it solve?
+3. [optional — default: "measurable user outcome"] What does success look like?
+```
+
+If `$ARGUMENTS` is clear enough, skip the interview and proceed directly.
 
 ### 4. Write the PRD
 

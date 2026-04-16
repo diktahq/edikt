@@ -12,7 +12,7 @@ import os
 import textwrap
 from pathlib import Path
 
-from conftest import (
+from .helpers import (
     _write,
     _versioned_seed,
     build_synth_v010,

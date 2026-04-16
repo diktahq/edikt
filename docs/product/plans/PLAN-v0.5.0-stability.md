@@ -5,9 +5,10 @@
 **Task:** Implement SPEC-004 (v0.5.0 stability release) — testing infrastructure, versioning & rollback, Homebrew distribution, init provenance, multi-version migration.
 **Source spec:** `docs/product/specs/SPEC-004-v050-stability/spec.md`
 **Source PRD:** `docs/product/prds/PRD-002-v050-stability-release.md`
-**Total Phases:** 14
-**Estimated Cost:** ~$3.21 (3 opus + 10 sonnet + 1 haiku)
+**Total Phases:** 19
+**Estimated Cost:** ~$3.62 (3 opus + 14 sonnet + 2 haiku)
 **Created:** 2026-04-14
+**Extended:** 2026-04-16 (Phases 15-17 added per ADR-014; Phase 18 added for preprocessor hardening; Phase 19 added for interview-batching polish per Opus 4.7 best-practices guidance — see `docs/internal/claude-code-parity.md`)
 
 ## Progress
 
@@ -29,8 +30,21 @@
 | 12    | done | 1/5 | 2026-04-16 |
 | 13    | done | 1/5 | 2026-04-16 |
 | 14    | done | 1/5 | 2026-04-16 |
+| 15    | done (partial — 2 of 3 excluded fixtures remain excluded per _staged_runner limitations; documented in fixtures.yaml §9.1) | 1/5 | 2026-04-16 |
+| 16    | done | 1/5 | 2026-04-16 |
+| 17    | done | 1/5 | 2026-04-16 |
+| 18    | done | 1/5 | 2026-04-16 |
+| 19    | done | 1/5 | 2026-04-16 |
 
-**Deferred to v0.6.0:** Phase 2b.ii (hook semantic rewrites — subagent-stop structured evaluator input per ADR-010, session-start/user-prompt wording alignment, stop-hook command renames). See `docs/internal/plans/ROADMAP.md` v0.6.0 section.
+**ADR-014 (2026-04-16) supersedes ADR-011** — hook JSON protocol migration is now v0.5.0 scope (Phases 15-17). Previous "Deferred to v0.6.0" note for Phase 2b.ii is retracted — hook semantic rewrites (subagent-stop structured evaluator input, session-start/user-prompt wording alignment, stop-hook command renames) land in Phase 15. See `docs/internal/claude-code-parity.md` for full parity matrix.
+
+**Still deferred to v0.6.0:**
+- Plugin packaging as distribution path
+- Full SDLC rework (including sidecar making per-phase implementation instructions more specific)
+- Auto mode hooks — react to Claude Code auto-mode state, adjust hook verbosity accordingly
+- Subagent-delegation ADR — formalize "when to delegate to a specialist vs. inline" per Opus 4.7 subagent-spawning guidance
+
+See `docs/internal/plans/ROADMAP.md` v0.6.0 section.
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
@@ -53,6 +67,11 @@
 | 12 | Layer 2 integration tests + regression museum | sonnet | Pytest + SDK + fuzzy-match snapshots + code-path assertions | $0.08 |
 | 13 | Homebrew formula + release automation | sonnet | Ruby DSL + homebrew-releaser + tap CI isolation | $0.08 |
 | 14 | Docs + website refresh + CI + doctor --report | sonnet | Writing quality + cross-link verification + observability | $0.08 |
+| 15 | Hook JSON protocol migration (7 hooks + pre-compact deletion + 3 fixture re-adds) | sonnet | Bash + JSON escaping is landmine territory; characterization discipline required by ADR-014 | $0.08 |
+| 16 | New hook events (SessionEnd, SubagentStart, TaskCompleted, WorktreeCreate, WorktreeRemove) + behavior refinements (pre-tool-use updatedInput, task-created plan-phase tracking) | sonnet | Multiple new scripts, each needs characterization fixture pair | $0.08 |
+| 17 | Agent initialPrompt rollout (16 agents) + opt-in statusline + prompt-caching env docs + parity CHANGELOG | haiku | Mostly mechanical rollout + doc writing; no novel logic | $0.02 |
+| 18 | Preprocessor hardening + regression tests (5 commands) | sonnet | Shell-portability landmines (zsh nomatch, cwd assumptions, silent grep/awk/tr fallthrough); test design needs judgment on which failure modes to assert | $0.08 |
+| 19 | Interview batching polish (5 interview-driven commands) | sonnet | Optional UX polish per Opus 4.7 best-practices; judgment call per command on which questions are gap-fill vs. must-answer | $0.08 |
 
 ## Execution Strategy
 
@@ -75,6 +94,11 @@ All phases run **sequentially** per user decision. No parallel waves.
 | 12    | 2, 7, 10, 11b | -         |
 | 13    | 3, 5      | -             |
 | 14    | All (incl. 11b — CI gate flips `EDIKT_ENABLE_HOOK_JSON_TESTS=1`) | - |
+| 15    | 11b (characterization baseline) | - |
+| 16    | 15        | -             |
+| 17    | None (independent; agent + docs surface) | 15, 16 |
+| 18    | None (independent; command preprocessor surface) | 15, 16, 17 |
+| 19    | None (independent; command body edits) | 15, 16, 17, 18 |
 
 ## Artifact Flow
 
@@ -95,6 +119,11 @@ All phases run **sequentially** per user decision. No parallel waves.
 | 12 | `test/integration/**`, regression museum, `test/integration/failures/` | 14 (CI gate) |
 | 13 | `Formula/edikt.rb` in `diktahq/homebrew-tap`, `.github/workflows/release.yml`, GitHub Release tarballs | 14 (docs link brew instructions) |
 | 14 | README, website guides, CHANGELOG, `.github/workflows/test.yml`, `edikt doctor --report` | Release cut |
+| 15 | Migrated `templates/hooks/{pre-tool-use,session-start,post-tool-use,post-compact,subagent-stop,stop-failure,user-prompt-submit}.sh` (JSON output); `templates/hooks/pre-compact.sh` REMOVED; `templates/settings.json.tmpl` (PreCompact block removed); regenerated `test/expected/hook-outputs/*.expected.json`; re-added fixtures for session-start-with-edikt + subagent-stop-critical; `fixtures.yaml` §9.1 updated | 16, 17 |
+| 16 | `templates/hooks/{session-end,subagent-start,task-completed,worktree-create,worktree-remove}.sh` (NEW); `pre-tool-use.sh` (+ updatedInput); `task-created.sh` (+ plan-phase tracking); `templates/settings.json.tmpl` (5 new event blocks); new characterization fixtures | 17 |
+| 17 | `templates/agents/*.md` (16 files, +initialPrompt); `templates/settings.json.tmpl` (opt-in statusLine block); `website/getting-started.md` + `README.md` (prompt-caching env vars, parity); `CHANGELOG.md` (v0.5.0 parity entry); `test/test-agents.sh` (initialPrompt assertion) | Release cut |
+| 18 | Hardened preprocessor blocks in `commands/adr/new.md`, `commands/invariant/new.md`, `commands/sdlc/prd.md`, `commands/sdlc/plan.md`, `commands/sdlc/spec.md`; new `test/unit/test-preprocessor-robustness.sh` + `test/integration/regression/test_preprocessor_cwd_and_shell.py` | Release cut |
+| 19 | Revised interview sections in `commands/sdlc/plan.md` (§4), `commands/adr/new.md` (§3d), `commands/invariant/new.md`, `commands/sdlc/prd.md`, `commands/sdlc/spec.md` — batched gap-question presentation | Release cut |
 
 ## Pre-Flight Review Summary
 
@@ -1710,3 +1739,661 @@ When complete, output: DOCS CI READY
 ```
 
 ---
+
+## Phase 15: Hook JSON Protocol Migration (ADR-014)
+
+**Objective:** Migrate the 7 plaintext-emitting edikt hooks to emit Claude Code JSON protocol (`{"systemMessage": …}`, `{"additionalContext": …}`, `{"decision": …}`); delete the `pre-compact.sh` stub; re-add the 3 fixture pairs ADR-011 excluded; regenerate every migrated hook's expected output via its `verified_by` command.
+**Model:** `sonnet`
+**Max Iterations:** 5
+**Completion Promise:** `HOOK JSON MIGRATION COMPLETE`
+**Evaluate:** true
+**Dependencies:** 11b (characterization baseline — fixtures must be passing against current behavior before wrapping them)
+**Context Needed:**
+- `docs/architecture/decisions/ADR-014-hook-json-wrapping-in-stability-scope.md` — scope, constraints, forbidden moves
+- `docs/architecture/decisions/ADR-011-hook-characterization-over-protocol-migration.md` — test infrastructure rules that carry forward (opt-out polarity, runner immutability, staged_runner extension)
+- `docs/product/specs/SPEC-004-v050-stability/spec.md` §14.1, §14.2, §14.7 — target field per hook + fixture discipline
+- `docs/product/specs/SPEC-004-v050-stability/fixtures.yaml` §9.1 — fixture records to update
+- `templates/hooks/{pre-tool-use,session-start,post-tool-use,post-compact,subagent-stop,stop-failure,user-prompt-submit}.sh` — migration targets
+- `templates/hooks/pre-compact.sh` — deletion target
+- `templates/settings.json.tmpl` — PreCompact block removal
+- `test/unit/hooks/_runner.sh` — MUST NOT be modified (ADR-011 directive carried forward)
+- `test/expected/hook-outputs/*.expected.json` — regenerated after migration
+
+**Acceptance Criteria:**
+- [ ] All 7 target hook scripts emit JSON on stdout. Verified: `for h in pre-tool-use session-start post-tool-use post-compact subagent-stop stop-failure user-prompt-submit; do cat test/fixtures/hook-payloads/${h}*.json 2>/dev/null | bash templates/hooks/${h}.sh | python3 -c 'import json,sys; json.loads(sys.stdin.read())' || exit 1; done` exits 0.
+- [ ] `templates/hooks/pre-compact.sh` does NOT exist. Verified: `test ! -f templates/hooks/pre-compact.sh`
+- [ ] `templates/settings.json.tmpl` contains no `PreCompact` block. Verified: `! grep -q '"PreCompact"' templates/settings.json.tmpl`
+- [ ] User-visible message content is preserved byte-for-byte inside JSON wrappers. Verified: for each migrated hook, the plaintext content that was echoed pre-migration appears as the value of `systemMessage` or `additionalContext` post-migration (no rewording). Reviewer greps diff output and confirms only JSON wrapping deltas, no string-content deltas.
+- [ ] All fixture expected outputs were regenerated by running hooks against payloads (no hand-authoring). Verified: `fixtures.yaml` §9.1 `verified_by` commands match the actual regeneration commands, and re-running each `verified_by` reproduces the expected file byte-for-byte.
+- [ ] Session-start-with-edikt and subagent-stop-critical fixture pairs are re-added to `fixtures.yaml` §9.1 with JSON-wrapped expected outputs and `verified_by` fields. The pre-compact fixture pair is removed with a `_note` explaining the hook deletion.
+- [ ] `test/unit/hooks/_runner.sh` is byte-identical to its pre-phase state. Verified: `git diff test/unit/hooks/_runner.sh` is empty.
+- [ ] All hook unit tests pass without `EDIKT_SKIP_HOOK_TESTS=1`. Verified: `for t in test/unit/hooks/test_*.sh; do bash "$t" || exit 1; done`
+- [ ] Integration test suite passes unchanged. Verified: `cd test/integration && pytest` exits 0.
+- [ ] E2E tests pass. Verified: `./test/run.sh` exits 0 without any hook-related failures in the output.
+
+**Prompt:**
+```
+Migrate 7 edikt hook scripts from plaintext stdout to JSON output conforming
+to the Claude Code hook protocol. Delete the pre-compact stub. Re-add the 3
+fixture pairs ADR-011 excluded. Regenerate all migrated expected outputs.
+
+HARD CONSTRAINTS (from ADR-014 + ADR-011 carried forward):
+1. Migration is transport-only. User-visible message content MUST be preserved
+   byte-for-byte inside the JSON wrapping. NEVER reword messages as part of this
+   phase. String-content changes are separate commits with separate fixtures.
+2. Expected outputs MUST be regenerated by running the hook against the payload
+   (`cat payload.json | bash templates/hooks/<hook>.sh > expected.json`). NEVER
+   hand-author expected files.
+3. `test/unit/hooks/_runner.sh` MUST NOT be modified. CWD-dependent staging
+   stays in `_staged_runner.sh`.
+4. The hook test gate remains opt-out (`EDIKT_SKIP_HOOK_TESTS=1`). Do NOT
+   restore the opt-in polarity.
+5. INV-001: pure markdown + YAML + shell. No compiled code introduced.
+
+PER-HOOK MIGRATION (target field per SPEC-004 §14.1):
+  pre-tool-use.sh          → {"systemMessage": <existing warning>}
+  session-start.sh         → {"additionalContext": <banner text>}
+  post-tool-use.sh         → {"systemMessage": <existing output>}
+  post-compact.sh          → {"additionalContext": <plan-phase re-injection>}
+  subagent-stop.sh         → mixed: {"systemMessage": ...} on advisory paths;
+                             {"decision": "block", "reason": "..."} on blocking
+                             path (subagent-stop-critical fixture)
+  stop-failure.sh          → {"systemMessage": <error text>}
+  user-prompt-submit.sh    → {"additionalContext": <active-phase banner>}
+
+BASH ESCAPING DISCIPLINE:
+- Use `printf '{"systemMessage":"%s"}\n' "$MSG"` with `$MSG` pre-escaped via
+  `python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().rstrip()))'`
+  piped input if the message contains quotes, newlines, or non-ASCII. Bare
+  bash string interpolation WILL produce invalid JSON on edge-case messages.
+- For multi-line output (post-compact re-injection), build the JSON with
+  python3 inline: `python3 -c 'import json; print(json.dumps({"additionalContext": "..."}))'`
+- Add a helper `templates/hooks/_json.sh` with a `emit_system_message` function
+  if the same pattern repeats across 3+ hooks. Keep it tiny.
+
+DELETE pre-compact.sh:
+- Remove the file entirely: `rm templates/hooks/pre-compact.sh`
+- Remove the "PreCompact" block from `templates/settings.json.tmpl`
+- Update `fixtures.yaml` §9.1: remove the pre-compact fixture pair, add a
+  `_removed` record with `_note: "Hook deleted in v0.5.0 — stub superseded by
+  /edikt:session. See ADR-014 + SPEC-004 §14.1."`
+
+RE-ADD 3 FIXTURE PAIRS (per ADR-011 debt closure):
+- session-start-with-edikt: payload unchanged from ADR-011 era; expected
+  output is the new JSON-wrapped banner. verified_by:
+  `cat test/fixtures/hook-payloads/session-start-with-edikt.json |
+   bash templates/hooks/session-start.sh`
+- subagent-stop-critical: the BLOCKED-path fixture. Originally excluded for
+  embedding git user identity + timestamps. Resolve by exporting test env
+  vars at fixture-run time (see Phase 11b's _staged_runner pattern — DO NOT
+  modify _runner.sh). verified_by captures stable output.
+- pre-compact: NOT re-added — hook is deleted. Record removal with _note.
+
+TEST COVERAGE (no regressions — user requirement):
+- UNIT: all existing hook unit tests (test/unit/hooks/test_*.sh) pass against
+  new JSON output. Regenerate expected files via verified_by. No new test
+  files needed — the characterization suite already covers every hook.
+- INTEGRATION: test/integration/ pytest suite must pass unchanged. If any
+  integration test fails, it means an integration test was asserting on
+  plaintext stdout shape — fix the assertion to match JSON shape (these
+  changes are in test code, not plan code).
+- E2E: ./test/run.sh must pass. Capture any newly-failing test-*.sh scripts
+  and fix their assertions the same way.
+- REGRESSION MUSEUM: if a test in test/integration/regression/ fires on this
+  change, read its header comment and decide whether the bug it reproduces
+  is still reproduced (if so, fix). Never delete regression tests.
+
+VERIFICATION BEFORE DECLARING DONE:
+1. `bash -n templates/hooks/*.sh` — all scripts syntactically valid
+2. All acceptance criteria pass
+3. `git diff test/expected/hook-outputs/` review — every diff line is JSON
+   wrapping, no string-content diffs. (If reviewer sees a string diff, that's
+   a phase bug — go back and fix.)
+4. `./test/run.sh` passes end-to-end
+
+When complete, output: HOOK JSON MIGRATION COMPLETE
+```
+
+---
+
+## Phase 16: New Hook Events + Behavior Refinements (ADR-014)
+
+**Objective:** Add 5 new Claude Code hook events (SessionEnd, SubagentStart, TaskCompleted, WorktreeCreate, WorktreeRemove) with scripts + settings template + characterization fixtures; add `updatedInput` transformation to `pre-tool-use.sh` to protect sentinel blocks; wire plan-phase tracking into `task-created.sh` + `TaskCompleted` closes the loop.
+**Model:** `sonnet`
+**Max Iterations:** 5
+**Completion Promise:** `NEW EVENTS AND REFINEMENTS COMPLETE`
+**Evaluate:** true
+**Dependencies:** 15 (JSON protocol baseline must be in place — all new hooks emit JSON from day one)
+**Context Needed:**
+- `docs/architecture/decisions/ADR-014-hook-json-wrapping-in-stability-scope.md` — directive permitting new events in v0.5.0 provided each has a fixture pair
+- `docs/product/specs/SPEC-004-v050-stability/spec.md` §14.3 — per-event responsibilities
+- `docs/internal/claude-code-parity.md` — adoption rows for each event (confirms CC version availability)
+- `templates/settings.json.tmpl` — event block additions (output from Phase 15)
+- `templates/hooks/task-created.sh` — behavior refinement target
+- `templates/hooks/pre-tool-use.sh` — updatedInput transformation target (already JSON post-Phase 15)
+- `templates/hooks/subagent-stop.sh` — pair for the new `subagent-start.sh`
+
+**Acceptance Criteria:**
+- [ ] 5 new hook scripts exist and emit valid JSON: `templates/hooks/{session-end,subagent-start,task-completed,worktree-create,worktree-remove}.sh`. Verified: each file exists, `bash -n` passes, and piping a minimal payload produces parsable JSON.
+- [ ] `templates/settings.json.tmpl` wires all 5 new events with commands pointing to `${EDIKT_HOOK_DIR}/<hook>.sh`. Verified: `jq '.hooks | keys' templates/settings.json.tmpl` includes SessionEnd, SubagentStart, TaskCompleted, WorktreeCreate, WorktreeRemove.
+- [ ] `pre-tool-use.sh` blocks edits to lines matching `[edikt:start]: #` or `[edikt:directives:start]: #` sentinels. Verified: fixture payload targeting a sentinel line produces `{"decision": "block", "reason": ...}`; non-sentinel payload produces prior behavior (allow or systemMessage). Characterization fixture pair covers both paths.
+- [ ] `task-created.sh` appends a JSON line to `~/.edikt/events.jsonl` with `{ts, task, phase}`. `task-completed.sh` appends matching `{ts, task, phase, status}` record. Verified: fixture runs both hooks and greps the resulting jsonl for the expected structure.
+- [ ] Each of the 7 new/modified hook behaviors has a characterization fixture pair in `test/fixtures/hook-payloads/` + `test/expected/hook-outputs/`, and `fixtures.yaml` §9.1 records each with a `verified_by` command.
+- [ ] Worktree hooks are idempotent: running `worktree-create.sh` twice against the same payload does not duplicate state; `worktree-remove.sh` tolerates missing state (exits 0).
+- [ ] All hook unit tests (existing + new) pass without `EDIKT_SKIP_HOOK_TESTS=1`. Verified: `for t in test/unit/hooks/test_*.sh; do bash "$t" || exit 1; done`
+- [ ] Integration tests pass. Verified: `cd test/integration && pytest` exits 0.
+- [ ] E2E: `./test/run.sh` exits 0.
+
+**Prompt:**
+```
+Add 5 new Claude Code hook events and 2 behavior refinements to edikt. Each
+addition MUST ship with a characterization fixture pair per ADR-014.
+
+NEW HOOK SCRIPTS:
+
+1. `templates/hooks/session-end.sh` (~40 lines)
+   - Read payload from stdin: expects session_id, cwd
+   - Flush ~/.edikt/events.jsonl atomically (rotate to events-<date>.jsonl if size > 10MB)
+   - Write session summary to .edikt/state/last-session.json:
+     {ts, session_id, cwd, phase_touched, adrs_touched, plans_touched}
+     (derive phase/adr/plan touches by grepping events.jsonl for the session_id)
+   - Emit {"systemMessage": "Session summary saved to .edikt/state/last-session.json"}
+
+2. `templates/hooks/subagent-start.sh` (~30 lines)
+   - Pair with existing subagent-stop.sh
+   - Inject governance context as additionalContext: list of active ADRs/INVs
+     relevant to the subagent's subagent_type (read from payload)
+   - Emit {"additionalContext": "..."}
+
+3. `templates/hooks/task-completed.sh` (~25 lines)
+   - Pair with existing task-created.sh (about to be refined)
+   - Read payload: task_id, task_name, status (success/failure)
+   - Append to ~/.edikt/events.jsonl: {ts, event:"task_completed", task_id, task_name, status, phase}
+     (phase resolved by looking up the earlier task_created event for this task_id)
+   - Emit {"continue": true}
+
+4. `templates/hooks/worktree-create.sh` (~50 lines)
+   - Read payload: new worktree path, branch name
+   - If .edikt/config.yaml exists in parent repo: copy to new worktree (idempotent — test
+     for existing file first)
+   - Copy .claude/settings.json (hook block) to new worktree; rewrite hook paths if
+     they were project-relative in the parent (use substitution logic from Phase 9)
+   - Emit {"systemMessage": "edikt governance copied to new worktree: <path>"}
+
+5. `templates/hooks/worktree-remove.sh` (~20 lines)
+   - Read payload: worktree path
+   - Append teardown event to ~/.edikt/events.jsonl
+   - Exit 0 even if worktree already absent (tolerate race)
+   - Emit {"continue": true}
+
+BEHAVIOR REFINEMENTS:
+
+A. `pre-tool-use.sh` — add updatedInput transformation
+   - Currently emits {"systemMessage": "⚠ ..."} for missing project-context.md
+   - NEW: if tool_name is Write or Edit AND the tool_input's file_path is a
+     .md file AND the edit would modify a sentinel line:
+       - Sentinel patterns: `[edikt:start]: #`, `[edikt:end]: #`,
+         `[edikt:directives:start]: #`, `[edikt:directives:end]: #`
+     - Emit {"decision": "block", "reason": "edikt sentinel block is
+       auto-generated. Edit the source artifact (ADR/invariant) and run
+       /edikt:gov:compile instead. (ADR-014)"}
+   - Non-sentinel edits: preserve existing systemMessage behavior
+   - Detection: use jq or python3 to parse the tool_input, diff old_string /
+     new_string against the sentinel regex
+
+B. `task-created.sh` — wire plan-phase tracking
+   - Currently 18 lines, minimal
+   - NEW: on task creation, read the active plan file (derive via
+     .edikt/config.yaml:paths.plans or default docs/plans/ — pick the most
+     recently modified PLAN-*.md)
+   - Parse the Progress table to find the current in-progress phase number
+   - Append to ~/.edikt/events.jsonl:
+     {ts, event:"task_created", task_id, task_name, phase:<n or null>}
+   - Emit {"continue": true}
+
+FIXTURE DISCIPLINE (ADR-014):
+For EACH new hook and EACH refined behavior path (updatedInput, task-created+completed),
+add a fixture pair:
+  - test/fixtures/hook-payloads/<hook>[-<scenario>].json
+  - test/expected/hook-outputs/<hook>[-<scenario>].expected.json
+  - fixtures.yaml §9.1 entry with verified_by command
+Regenerate expected by running hook against payload. NEVER hand-author.
+
+For hooks with nondeterministic output (timestamps, git identity), use the
+_staged_runner.sh pattern established in Phase 11b — export stable test env
+vars. DO NOT modify _runner.sh.
+
+TEST COVERAGE (no regressions):
+- UNIT: add test/unit/hooks/test_<hook>.sh for each new hook; add scenario
+  assertions to existing test_pre_tool_use.sh and test_task_created.sh
+- INTEGRATION: add pytest cases for worktree lifecycle (create → remove),
+  session-end summary generation, sentinel-block edit blocking
+- E2E: ./test/run.sh must pass with all new assertions
+
+VERIFICATION:
+1. `bash -n templates/hooks/*.sh` — all scripts syntactically valid
+2. All 5 new events appear in `templates/settings.json.tmpl`
+3. All acceptance criteria pass
+4. No existing test regresses
+
+When complete, output: NEW EVENTS AND REFINEMENTS COMPLETE
+```
+
+---
+
+## Phase 17: initialPrompt Rollout + Opt-in Statusline + Parity Docs
+
+**Objective:** Roll out `initialPrompt` frontmatter to the remaining 16 agent templates; add opt-in `statusLine` block to settings template with governance health fields; document prompt-caching env vars in `/edikt:init` guidance and `website/getting-started.md`; write v0.5.0 parity entry in CHANGELOG.md; link parity tracker from README.
+**Model:** `haiku`
+**Max Iterations:** 5
+**Completion Promise:** `PARITY ROLLOUT COMPLETE`
+**Evaluate:** true
+**Dependencies:** None (independent surface — agents, docs, optional settings block). Runs in parallel with 15, 16.
+**Context Needed:**
+- `docs/internal/claude-code-parity.md` — row definitions for initialPrompt (🟡 → ✅), statusline (❌ → ✅), env var docs (❌ → ✅)
+- `docs/product/specs/SPEC-004-v050-stability/spec.md` §14.4, §14.5, §14.6
+- `templates/agents/security.md`, `templates/agents/pm.md`, `templates/agents/architect.md` — reference for initialPrompt shape
+- `templates/agents/_registry.yaml` — source of truth for agent list (skip `_substitutions.yaml` — not an agent)
+- `templates/settings.json.tmpl` — statusLine block addition target
+- `README.md`, `website/getting-started.md`, `website/index.md`, `CHANGELOG.md` — doc surfaces
+- `commands/init.md` (or `commands/sdlc/init.md`) — env var guidance target
+
+**Acceptance Criteria:**
+- [ ] All 19 agent templates in `templates/agents/*.md` (excluding `_registry.yaml` and `_substitutions.yaml`) contain a non-empty `initialPrompt:` frontmatter field. Verified: `for f in templates/agents/*.md; do grep -q '^initialPrompt:' "$f" || echo "MISSING: $f"; done` produces no output.
+- [ ] Each `initialPrompt` cites at least one domain-relevant ADR or INV by identifier (ADR-NNN or INV-NNN). Verified: grep of initialPrompt values shows ADR/INV reference per agent. (Reviewer confirms relevance — this is a binary check on presence, not semantic quality.)
+- [ ] `templates/settings.json.tmpl` contains a `statusLine` block. The block is opt-in via `.edikt/config.yaml: features.statusline: true` — verified by init behavior in tests.
+- [ ] Statusline block includes `refreshInterval: 30` and references governance-health command emitting ADR/INV/drift counts. Verified: `jq '.statusLine' templates/settings.json.tmpl` returns non-null with `refreshInterval` field.
+- [ ] `README.md` includes a Claude Code Parity section (or equivalent) with a link to `docs/internal/claude-code-parity.md` and a one-line summary of v0.5.0 parity scope.
+- [ ] `website/getting-started.md` documents `ENABLE_PROMPT_CACHING_1H` and `FORCE_PROMPT_CACHING_5M` env vars with a one-paragraph explanation of when each helps.
+- [ ] `CHANGELOG.md` has a v0.5.0 entry covering: hook JSON protocol migration (ADR-014), new hook events (SessionEnd, SubagentStart, TaskCompleted, WorktreeCreate, WorktreeRemove), pre-tool-use sentinel protection, task-phase tracking, initialPrompt rollout, opt-in statusline, prompt-caching env var guidance.
+- [ ] `commands/init.md` (or the equivalent init command file) mentions the prompt-caching env vars in its setup guidance.
+- [ ] `test/test-agents.sh` (or equivalent — check existing test for agent validation) asserts every agent template has a non-empty `initialPrompt` field. Test passes.
+- [ ] All existing tests continue to pass. Verified: `./test/run.sh` exits 0; `cd test/integration && pytest` exits 0.
+- [ ] No broken cross-links in updated docs. Verified: run existing `test/unit/test-docs.sh` (if present) or equivalent cross-link checker.
+- [ ] Each agent's `initialPrompt` uses positive framing per Opus 4.7 best-practices guidance. Verified: `grep -E '(NEVER|MUST NOT|DO NOT|DON'"'"'T)' templates/agents/*.md` matches zero lines within `initialPrompt:` field values. (Governance directives elsewhere in the agent body may still use NEVER — this applies only to the `initialPrompt` frontmatter field.)
+- [ ] `docs/internal/claude-code-parity.md` has an `xhigh` evaluation row in the Agent Frontmatter table with per-agent verdict (adopted / stay-at-high / not-applicable) for the 6 agents currently at `effort: high`: security, qa, architect, evaluator, performance, compliance.
+
+**Prompt:**
+```
+Roll out three parity items: (A) initialPrompt across 16 agents, (B) opt-in
+statusline, (C) docs for prompt-caching env vars + parity tracker link +
+CHANGELOG entry.
+
+This phase is mostly mechanical. Do not introduce novel logic. Do not
+change hook behavior (that's Phases 15–16).
+
+A. INITIALPROMPT ROLLOUT (16 agents)
+  Agents currently missing the field:
+    api, backend, compliance, data, dba, docs, evaluator, frontend, gtm,
+    mobile, performance, platform, qa, seo, sre, ux
+  (security.md, pm.md, architect.md already have initialPrompt — use them
+  as reference.)
+
+  For each target agent:
+  - Add a top-level `initialPrompt:` YAML field in frontmatter, value is a
+    one-line string (use YAML block scalar `|` if multi-line needed)
+  - Content template:
+      "Before responding: (1) read the most recent accepted ADRs in
+      docs/architecture/decisions/ (filter by domain={domain}); (2) cite
+      ADR-NNN/INV-NNN in your reasoning when a decision applies;
+      (3) defer to compiled governance in .claude/rules/ over memory."
+  - Replace `{domain}` with the agent's actual domain (api → API contracts,
+    dba → database schema + migrations, etc. — use the agent's existing
+    `description` field as the source of truth for its domain).
+  - Keep each initialPrompt under 240 chars so it doesn't dominate the
+    agent's context budget.
+
+  DO NOT reword or restructure any other frontmatter field. DO NOT modify
+  agent body content.
+
+B. OPT-IN STATUSLINE
+  Add a `statusLine` block to `templates/settings.json.tmpl`:
+  ```json
+  "statusLine": {
+    "command": "${EDIKT_HOOK_DIR}/status-line.sh",
+    "refreshInterval": 30
+  }
+  ```
+  Create `templates/hooks/status-line.sh` (~40 lines):
+  - Read .edikt/config.yaml: features.statusline. If != "true", exit 0 with
+    empty output (opt-in)
+  - Count accepted ADRs (grep status: accepted docs/architecture/decisions/*.md)
+  - Count active invariants (grep status: active docs/architecture/invariants/*.md)
+  - Count drift (read last /edikt:sdlc:drift report if cached, else 0)
+  - Emit plain text: "ADRs: <n> | INVs: <m> | Drift: <k>"
+
+  NOTE: settings.json's statusLine uses a COMMAND OUTPUT string, not JSON
+  wrapping — the statusline surface is different from hook stdout. Do not
+  wrap in {"systemMessage": ...}. Plain text.
+
+  Fixture pair: test/fixtures/hook-payloads/status-line-enabled.json (config
+  opt-in on), status-line-disabled.json (opt-out). Expected outputs match
+  actual runs.
+
+C. PROMPT-CACHING ENV VARS + PARITY DOCS
+
+  website/getting-started.md — add a subsection "Prompt caching":
+    - Explain `ENABLE_PROMPT_CACHING_1H`: extends cache to 1h for high-churn
+      governance reads (long sessions with rule re-injection)
+    - Explain `FORCE_PROMPT_CACHING_5M`: useful in CI where 5m TTL is enough
+    - Example: `export ENABLE_PROMPT_CACHING_1H=1` before long implementation
+      sessions where edikt rules get hit often
+
+  README.md — add a "Claude Code Parity" section near the bottom:
+    - Two-sentence summary: edikt tracks Claude Code feature adoption in
+      docs/internal/claude-code-parity.md and targets v2.1.111 as the v0.5.0
+      baseline.
+    - Link to parity tracker.
+
+  CHANGELOG.md — add v0.5.0 entry under a top-level "## [v0.5.0] — YYYY-MM-DD":
+    - Covers: launcher, versioned layout, Homebrew (existing Phases 1-14 work)
+    - PLUS parity items: hook JSON migration (ADR-014), 5 new hook events,
+      pre-tool-use sentinel protection, task-phase tracking, initialPrompt
+      rollout, opt-in statusline, prompt-caching env var docs
+    - Reference: "See docs/internal/claude-code-parity.md for full adoption
+      matrix."
+
+  commands/init.md — in the setup guidance section, add one paragraph on
+  prompt-caching env vars with a link to website/getting-started.md.
+
+TEST COVERAGE:
+- UNIT: add test/test-agents.sh assertion:
+    `for f in templates/agents/*.md; do
+       case "$(basename "$f")" in _registry.yaml|_substitutions.yaml) continue;; esac
+       grep -q '^initialPrompt:' "$f" || { echo "agent missing initialPrompt: $f"; exit 1; }
+     done`
+- UNIT: add test for statusline opt-in:
+    config with features.statusline:true produces non-empty output
+    config without the key produces empty output
+- DOCS: test/unit/test-docs.sh (or equivalent) greps README for parity link,
+  getting-started for env var names, CHANGELOG for v0.5.0 entry structure
+- E2E: ./test/run.sh must pass including new assertions
+
+VERIFICATION:
+1. `yq '.initialPrompt' templates/agents/*.md` returns 19 non-null values
+2. `jq '.statusLine' templates/settings.json.tmpl` returns non-null
+3. `grep -n '## \[v0.5.0\]' CHANGELOG.md` finds the new entry
+4. All acceptance criteria pass
+5. No regressions in existing tests
+
+When complete, output: PARITY ROLLOUT COMPLETE
+```
+
+---
+
+## Phase 18: Preprocessor Hardening + Regression Tests
+
+**Objective:** Fix three latent bugs in the `!` live-block preprocessor used by 5 commands (`/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:sdlc:prd`, `/edikt:sdlc:plan`, `/edikt:sdlc:spec`). Add regression tests that run under both bash and zsh, from varied cwds, with missing/partial config, to catch this class of bug for any future command using the same pattern.
+**Model:** `sonnet`
+**Max Iterations:** 5
+**Completion Promise:** `PREPROCESSOR HARDENED`
+**Evaluate:** true
+**Dependencies:** None (independent; command preprocessor surface)
+**Context Needed:**
+- `commands/adr/new.md`, `commands/invariant/new.md`, `commands/sdlc/prd.md`, `commands/sdlc/plan.md`, `commands/sdlc/spec.md` — preprocessor lines to replace
+- `test/test-preprocessing-counters.sh` — existing test covers pattern correctness (ADR-*.md vs *.md) but not runtime robustness. Augment, do not replace.
+- `.edikt/config.yaml` — reference for `base:` + `paths.*` structure
+
+**Acceptance Criteria:**
+- [ ] All 5 commands' `!` preprocessor blocks wrap execution in `bash -c '…'` so the inner logic runs under bash regardless of the user's login shell. Verified: `grep -l "^!\`bash -c" commands/adr/new.md commands/invariant/new.md commands/sdlc/prd.md commands/sdlc/plan.md commands/sdlc/spec.md` lists all 5 files.
+- [ ] All 5 commands' preprocessors locate `.edikt/config.yaml` by walking up from `$PWD` rather than assuming cwd. Verified: when run with cwd = project subdirectory, preprocessor still resolves paths correctly.
+- [ ] All 5 commands' preprocessors use `find … -name '<PREFIX>-*.md'` instead of `ls '<DIR>/'<PREFIX>-*.md`, eliminating the zsh `nomatch` trap. Verified: running each preprocessor under zsh with an empty target directory produces no shell errors and outputs counter = 0.
+- [ ] `BASE` defaults to `"docs"` when `base:` is absent from config. Verified: running preprocessor with a test config lacking a `base:` line still produces a valid path. (The old `|| echo "docs"` fallback was broken because `||` binds to `tr`, not the pipeline.)
+- [ ] New unit test `test/unit/test-preprocessor-robustness.sh` exercises each of the 5 preprocessors under all 4 failure scenarios: (a) zsh login shell, (b) cwd = project subdirectory, (c) config missing `base:`, (d) config entirely absent (expect graceful no-op output with `(none yet)` fallback). Test passes.
+- [ ] New integration test `test/integration/regression/test_preprocessor_cwd_and_shell.py` executes the preprocessor via the same mechanism Claude Code uses (backtick evaluation under user shell), from `/tmp` and from a project subdirectory, and asserts no zsh-level error output (`(eval):` lines) appears. Test passes.
+- [ ] `test/test-preprocessing-counters.sh` (existing) continues to pass — the prefix-based counting guarantee from v0.4.x is preserved.
+- [ ] Running the fixed preprocessor from the current project produces `Next ADR number: ADR-015` (or current next) and lists all existing ADRs — verified interactively as part of Phase evaluation.
+- [ ] Documentation: add a short note to `CLAUDE.md` or `docs/internal/preprocessor-contract.md` describing the hardened pattern and the 4 failure modes it protects against, so future commands follow the same template.
+- [ ] `./test/run.sh` passes end-to-end; `cd test/integration && pytest` passes.
+
+**Prompt:**
+```
+Fix three orthogonal bugs in the live-block preprocessor used by 5 commands,
+then add regression tests that will catch this class of bug for any future
+command using the same pattern.
+
+THE THREE BUGS (all confirmed reproducible):
+
+1. CWD ASSUMPTION — the preprocessor opens `.edikt/config.yaml` relative to
+   $PWD. When Claude Code invokes the command and $PWD is not the project
+   root (happens via Skill tool invocation at least), the grep for
+   `^  decisions:` returns empty, the fallback grep for `^base:` also
+   returns empty, and the resulting glob path starts with `/` instead of
+   `docs/`. The existing `|| echo "docs"` fallback does NOT fire.
+
+2. BROKEN FALLBACK — the line
+     BASE=$(grep "^base:" .edikt/config.yaml | awk '{print $2}' | tr -d '"' || echo "docs")
+   looks like it defaults BASE to "docs" when grep finds nothing, but `||`
+   binds to `tr` (the last command in the pipeline), not to the pipeline
+   itself. `tr` exits 0 on empty input, so the fallback never fires. BASE
+   stays empty.
+
+3. ZSH NOMATCH — the glob
+     ls "$ADR_DIR/"ADR-*.md 2>/dev/null
+   suppresses ls's stderr but NOT zsh's "no matches found" shell error,
+   which fires at glob-expansion time, before ls runs. When the user's
+   login shell is zsh (very common), the error leaks into the preprocessor
+   output:
+     (eval):1: no matches found: /architecture/decisions/ADR-*.md
+
+THE HARDENED PATTERN (single-line `!` block using `bash -c`):
+
+  !`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext <TYPE> number: <TYPE>-001\nExisting <TYPES>: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  <KEY>:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/<DEFAULT_SUBPATH>"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; COUNT=$(find "$DIR" -maxdepth 1 -type f -name "<PREFIX>-*.md" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type f -name "<PREFIX>-*.md" 2>/dev/null | sort | xargs -I{} basename {} .md | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext <TYPE> number: <TYPE>-%s\nExisting <TYPES>: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
+
+KEY PROPERTIES:
+- `bash -c` isolates execution from the user's shell (zsh, fish, etc.)
+- Upward config walk from $PWD means cwd doesn't matter
+- `"${BASE:-docs}"` is the correct parameter-expansion fallback
+- `find` instead of glob — zsh nomatch can't fire because no glob expands
+  at shell level
+- `case "$REL" in /*) … esac` handles both absolute config paths
+  (user set `decisions: /Users/me/foo`) and relative (user set
+  `decisions: docs/architecture/decisions`)
+- Graceful no-op output when config is entirely missing (new project)
+
+PER-COMMAND SUBSTITUTIONS:
+
+  adr/new.md           <KEY>=  decisions   <PREFIX>=ADR  <TYPE>=ADR  <TYPES>=ADRs  <DEFAULT_SUBPATH>=architecture/decisions
+  invariant/new.md     <KEY>=  invariants  <PREFIX>=INV  <TYPE>=INV  <TYPES>=invariants  <DEFAULT_SUBPATH>=architecture/invariants
+  sdlc/prd.md          <KEY>=  prds        <PREFIX>=PRD  <TYPE>=PRD  <TYPES>=PRDs  <DEFAULT_SUBPATH>=product/prds
+
+  sdlc/spec.md — SPECIAL: specs are directories containing spec.md, not
+  flat .md files. Adapt the find to:
+    find "$DIR" -maxdepth 2 -type d -name "SPEC-*" 2>/dev/null
+  and the existing extraction basename logic.
+
+  sdlc/plan.md — SPECIAL: picks the most recent plan, not a counter. Adapt
+  the find to:
+    PLAN=$(find "$DIR" -maxdepth 1 -type f -name "*.md" 2>/dev/null | xargs -I{} ls -t {} 2>/dev/null | head -1)
+  then carry forward the existing "parse in-progress phase" logic.
+
+TESTS:
+
+1. test/unit/test-preprocessor-robustness.sh (NEW) — shell test. For each
+   of the 5 commands, for each of these scenarios:
+     a) SHELL=bash, cwd=project root       → expect current state
+     b) SHELL=zsh, cwd=project root        → expect same output as (a)
+     c) SHELL=zsh, cwd=project subdirectory → expect same output as (a)
+     d) SHELL=zsh, cwd=/tmp                 → expect graceful no-op
+                                              ("Next X-001 / Existing: (none yet)")
+     e) SHELL=zsh, cwd=project root, config missing `base:` line
+                                            → expect default "docs" used
+     f) SHELL=zsh, cwd=project root, empty target directory
+                                            → expect COUNT=0, NEXT=001,
+                                              no "(eval):" error output
+   Extract each preprocessor's `!` block via sed, execute it via
+   `SHELL=<shell> bash -c "cd <cwd>; <block>"`, and assert on:
+     - exit code = 0
+     - stdout matches the expected regex
+     - stderr does NOT contain "(eval):" or "no matches found"
+
+2. test/integration/regression/test_preprocessor_cwd_and_shell.py (NEW) —
+   regression header per Phase 13 convention:
+     """
+     REGRESSION TEST — DO NOT DELETE.
+     Reproduces: v0.4.3 preprocessor glob fails under zsh with cwd !=
+     project root, outputting '(eval):1: no matches found: /architecture/
+     decisions/ADR-*.md' and falsely reporting 'Next ADR: ADR-001' when
+     13 ADRs exist.
+     Invariant: The live-block preprocessor MUST resolve paths cwd-
+     independently and MUST NOT leak shell errors into its output.
+     """
+   Spin up a temp project, run each command's preprocessor via
+   subprocess with SHELL=/bin/zsh and varied cwd, assert on output
+   cleanliness.
+
+3. test/test-preprocessing-counters.sh (EXISTING) — MUST continue to
+   pass unchanged. This test covers pattern correctness (prefix vs
+   wildcard), which is orthogonal to runtime robustness.
+
+4. Phase 14's CI test workflow picks up the new tests automatically via
+   test/run.sh's `test-*.sh` discovery and pytest's default collection.
+
+DOCS:
+
+Add `docs/internal/preprocessor-contract.md` (~40 lines) documenting:
+  - The 4 failure modes covered (cwd, shell, fallback, empty target)
+  - The hardened pattern template with placeholders
+  - Instructions for adding new commands with preprocessors
+
+VERIFICATION BEFORE DECLARING DONE:
+1. All 5 commands' preprocessors produce correct output from project root
+   under both bash and zsh
+2. All 5 commands' preprocessors produce correct output from /tmp (new project,
+   no config) — graceful no-op
+3. test/unit/test-preprocessor-robustness.sh passes (24 scenario × 5 command
+   combinations = 120 assertions)
+4. test/integration/regression/test_preprocessor_cwd_and_shell.py passes
+5. test/test-preprocessing-counters.sh still passes
+6. ./test/run.sh passes end-to-end
+
+When complete, output: PREPROCESSOR HARDENED
+```
+
+---
+
+## Phase 19: Interview Batching Polish (Opus 4.7 UX)
+
+**Objective:** Restructure the gap-question interview in 5 interview-driven commands (`/edikt:sdlc:plan`, `/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:sdlc:prd`, `/edikt:sdlc:spec`) from sequential one-question-at-a-time into batched presentation, per Opus 4.7 best-practices guidance on reducing user-turn overhead. This is UX polish, not a quality fix — the current interview produces correct output but burns round-trips.
+**Model:** `sonnet`
+**Max Iterations:** 5
+**Completion Promise:** `INTERVIEW BATCHING DONE`
+**Evaluate:** true
+**Dependencies:** None — can run any time. Marked after Phase 18 only to order the final release notes.
+**Context Needed:**
+- `commands/sdlc/plan.md` §4 — current interview guidance; adapt for batched presentation
+- `commands/adr/new.md` §3d — gap-question interview
+- `commands/invariant/new.md` — interview section
+- `commands/sdlc/prd.md` — interview section
+- `commands/sdlc/spec.md` — interview section
+- Anthropic blog: https://claude.com/blog/best-practices-for-using-claude-opus-4-7-with-claude-code — principle source
+
+**Acceptance Criteria:**
+- [ ] Each of the 5 commands' interview sections instructs Claude to present all gap questions in a single message (numbered list), with clear defaults documented for each question, and invite the user to answer any subset. Verified: grep each command for "one question at a time" / "ask one question" language — zero hits post-change.
+- [ ] Each command documents which questions are MUST-answer (blocking) vs. GAP (optional; default applied if skipped). Verified: every question in the revised interview sections has a label `[required]` or `[optional — default: <value>]`.
+- [ ] `/edikt:brainstorm` is EXPLICITLY OUT OF SCOPE and left unchanged. Exploratory brainstorm is a legitimate progressive-discovery workflow. Verified: `commands/brainstorm.md` has no diff from its pre-phase state.
+- [ ] No command loses the ability to interview — the change is presentation, not removal. Verified: each command still has an interview section with 3-6 questions covering the same intent/constraint/acceptance-criteria gaps as before.
+- [ ] Each revised interview section includes a worked example of the batched message Claude should produce, so the intent is clear to future command maintainers.
+- [ ] Existing tests covering the commands pass. Verified: `./test/run.sh` passes; `test/integration/test_spec_preprocessing.py` and any command-specific pytest cases pass.
+- [ ] No regression in plan-file output quality. Verified: running `/edikt:sdlc:plan` against a known-good scenario (e.g., a reference spec) produces a plan with the same structural completeness as before (same sections present, same AC shape, same model assignment).
+
+**Prompt:**
+```
+Convert 5 interview-driven commands from sequential Q&A to batched
+presentation. This is UX polish, not a correctness fix.
+
+SOURCE PRINCIPLE (Anthropic, April 2026):
+  "Every user turn adds reasoning overhead. Batch your questions and give
+  the model the context it needs to keep moving."
+
+THE CURRENT PATTERN (example from commands/sdlc/plan.md §4):
+  "Ask 3-6 targeted questions to clarify requirements. Adapt to task type."
+  → Claude asks Q1, waits for answer, asks Q2, waits for answer, ...
+  → 6 round-trips for a 6-question interview.
+
+THE TARGET PATTERN:
+  Claude presents ALL gap questions in a single message as a numbered list.
+  Each question is labeled:
+    [required] — blocking; default not acceptable; user must answer
+    [optional — default: <value>] — default applied if user skips
+  User answers any subset in a single reply. Claude proceeds with defaults
+  for skipped optional questions. For skipped required questions, Claude
+  re-asks only those.
+
+  Example target output for /edikt:sdlc:plan:
+    "I need a few answers before writing the plan. Answer any subset —
+    I'll apply defaults for anything skipped.
+
+    1. [required] What's the primary outcome of this work? (one sentence)
+    2. [optional — default: no feature flag] Should this ship behind a
+       feature flag?
+    3. [optional — default: full-stack rewrite] Refactor incrementally,
+       all at once, or something in between?
+    4. [optional — default: backward compatible] Any backward-compat
+       constraints I should know about?
+    5. [optional — default: existing test frameworks] Any testing
+       preferences?
+    6. [required] Any specific files or modules I must not touch?"
+
+PER-COMMAND APPLICATION:
+
+1. commands/sdlc/plan.md §4 (Interview: ask 3-6 targeted questions):
+   Rewrite to prescribe the batched format. Include the example above.
+   Preserve the existing adapt-to-task-type table (feature / refactor /
+   bug / etc.) — those are still the right questions, just asked in one
+   message.
+
+2. commands/adr/new.md §3d (Interview for gaps):
+   Currently: "Ask ONE focused question per missing element."
+   → Change to: "Present all gap questions in one message. Ask in a
+   numbered list with [required]/[optional — default: X] labels. Accept
+   a single reply."
+   Keep the 4 gap categories (Context, Alternatives, Trade-offs,
+   Confirmation). Each becomes one question.
+
+3. commands/invariant/new.md — mirror adr/new.md's approach.
+
+4. commands/sdlc/prd.md — PRD commands typically have longer interviews
+   (target outcome, metrics, scope, non-goals, constraints). Batch them,
+   mark most as [optional — default: X].
+
+5. commands/sdlc/spec.md — specs inherit most context from the accepted
+   PRD; the interview is shorter. Batch any remaining gap questions.
+
+EXPLICITLY UNCHANGED:
+- /edikt:brainstorm — exploratory-by-design, progressive discovery is
+  the point. Do not touch.
+- Non-interview sections of any command — do not restructure anything
+  else.
+- Pre-flight specialist review (plan §8) — already fan-out pattern, which
+  is the Opus 4.7 recommended pattern for concurrent work.
+
+TEST COVERAGE:
+- No new tests required. The change is prompt-level; behavior is the
+  same (plan still generated, ADR still captured, etc.).
+- Verify existing integration tests (test/integration/test_sdlc_*.py,
+  test/integration/test_e2e_*.py) still pass.
+- Add one lightweight assertion to test/test-quality.sh (or create it if
+  missing):
+    grep -l "ask ONE\|one question at a time\|ask one focused question" \
+      commands/sdlc/plan.md commands/adr/new.md commands/invariant/new.md \
+      commands/sdlc/prd.md commands/sdlc/spec.md | wc -l
+  Expect: 0 matches (the old pattern language is gone).
+
+DOCS:
+- Update docs/internal/claude-code-parity.md with a row under a new
+  "Interactive UX" section:
+    Batched interview presentation | Opus 4.7 guidance (2026-04) | ✅ adopted | v0.5.0 | Interview sections in 5 commands rewritten for batched gap-question presentation.
+
+VERIFICATION:
+1. Each of the 5 commands reads cleanly — the batched-presentation intent
+   is explicit and includes a worked example
+2. Existing command-driven tests still pass
+3. The legacy language grep returns zero matches
+4. No files outside the 5 commands + parity tracker changed
+
+When complete, output: INTERVIEW BATCHING DONE
+```
+
+---
+

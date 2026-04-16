@@ -40,11 +40,12 @@ else
     fail "invariant/new.md should use INV-*.md prefix pattern, not *.md"
 fi
 
-# SPEC: must glob SPEC-*/spec.md
-if grep -q 'SPEC-\*/spec\.md' "$PROJECT_ROOT/commands/sdlc/spec.md" 2>/dev/null; then
-    pass "spec.md uses SPEC-*/spec.md prefix pattern"
+# SPEC: must glob SPEC-* directories (ADR-014 Phase 18 migrated from `ls SPEC-*/spec.md`
+# to `find ... -type d -name "SPEC-*"` for zsh compatibility)
+if grep -qE 'SPEC-\*|"SPEC-\*"' "$PROJECT_ROOT/commands/sdlc/spec.md" 2>/dev/null; then
+    pass "spec.md targets SPEC-* directories"
 else
-    fail "spec.md should use SPEC-*/spec.md prefix pattern"
+    fail "spec.md should target SPEC-* directories via find -type d"
 fi
 
 # ============================================================
@@ -220,11 +221,12 @@ for cmd in $PREPROC_CMDS; do
         fail "$name: missing argument-hint in frontmatter"
     fi
 
-    # awk '{print $2}' must be inside single quotes (not corrupted)
-    if grep '^!`' "$cmd" | grep -q "awk '{print \$2}'"; then
+    # awk must extract $2 — accept both single-quoted `awk '{print $2}'` (legacy)
+    # and double-quoted `awk "{print \$2}"` (ADR-014 Phase 18 hardened pattern
+    # uses bash -c with single-quoted outer, so awk is double-quoted inside).
+    if grep '^!`' "$cmd" | grep -qE "awk '?\"?\{print[[:space:]]+\\\\?\\\$2\}\"?'?"; then
         pass "$name: awk pattern intact"
     else
-        # Some commands may not use awk — only fail if they have awk at all
         if grep '^!`' "$cmd" | grep -q "awk"; then
             fail "$name: awk pattern corrupted in preprocessing"
         else

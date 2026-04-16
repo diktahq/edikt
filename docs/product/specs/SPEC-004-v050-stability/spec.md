@@ -8,8 +8,8 @@ implements: PRD-002
 source_prd: docs/product/prds/PRD-002-v050-stability-release.md
 created_at: 2026-04-14T00:00:00Z
 references:
-  adrs: [ADR-001, ADR-005, ADR-006]
-  invariants: [INV-001]
+  adrs: [ADR-001, ADR-005, ADR-006, ADR-008, ADR-011, ADR-014]
+  invariants: [INV-001, INV-002]
 ---
 
 # SPEC-004: v0.5.0 Stability Release
@@ -736,6 +736,69 @@ demonstrably different.
 
 No CODEOWNERS enforcement. Header + PR discipline.
 
+### 14. Hook protocol migration + Claude Code parity (ADR-014)
+
+ADR-014 supersedes ADR-011 and moves hook JSON-wrapping migration into v0.5.0 scope. This section adds to the spec what that entails, plus the rest of the Claude Code v2.1.72–v2.1.111 parity work (tracked in full at `docs/internal/claude-code-parity.md`).
+
+#### 14.1 Hook JSON-wrapping migration
+
+**7 hooks** currently emit plaintext to stdout and MUST be wrapped in the Claude Code hook protocol by the v0.5.0 release. The wrapping preserves user-visible message content byte-for-byte — this is a transport change, not a content change.
+
+| Hook | Current | Target | Primary field |
+|---|---|---|---|
+| `pre-tool-use.sh` | `echo '⚠ ...'` | `{"systemMessage": "⚠ ..."}` | `systemMessage` |
+| `session-start.sh` | banner text | `{"additionalContext": "..."}` | `additionalContext` |
+| `post-tool-use.sh` | mixed echoes | `{"systemMessage": "..."}` | `systemMessage` |
+| `post-compact.sh` | plan-phase re-injection text | `{"additionalContext": "..."}` | `additionalContext` |
+| `subagent-stop.sh` | multi-path outputs | `{"systemMessage": ...}` + `{"decision": ...}` where blocking | mixed |
+| `stop-failure.sh` | error echoes | `{"systemMessage": "..."}` | `systemMessage` |
+| `user-prompt-submit.sh` | active-phase banner | `{"additionalContext": "..."}` | `additionalContext` |
+
+**`pre-compact.sh`** is **deleted** (stub — 4 lines, emits a reminder `/edikt:session` already covers better). The hook declaration is removed from `templates/settings.json.tmpl`. This is not a migration target.
+
+**Already JSON-emitting** (no migration): `phase-end-detector.sh`, `headless-ask.sh`, `file-changed.sh`, `stop-hook.sh`.
+
+**Log-only side effects** (no stdout, no migration): `cwd-changed.sh`, `instructions-loaded.sh`, `event-log.sh`, `task-created.sh`.
+
+#### 14.2 Fixture re-additions (closing ADR-011's debt)
+
+The 3 fixture pairs ADR-011 removed MUST be re-added to `fixtures.yaml` §9.1 with characterized JSON expected outputs and populated `verified_by` commands:
+
+- `pre-compact` pair → removed entirely (hook is being deleted); `fixtures.yaml` §9.1 records the deletion with a `_note` explaining the stub removal
+- `session-start-with-edikt` pair → JSON-wrapped `additionalContext`, `verified_by: cat payload.json | bash templates/hooks/session-start.sh`
+- `subagent-stop-critical` pair → JSON-wrapped output with timestamps/git-identity stubbed via test env vars (removes the original nondeterminism that caused exclusion)
+
+#### 14.3 Hook behavior refinements (newly permissible under ADR-014)
+
+- **`pre-tool-use.sh`** — add `updatedInput` transformation. Block edits that would damage `[edikt:start]: #` / `[edikt:directives:start]: #` sentinel blocks; emit `{"decision": "block", "reason": "..."}` or `{"decision": "allow", "updatedInput": "..."}`.
+- **`task-created.sh`** — wire plan-phase tracking. Append `{ts, task, phase}` to `~/.edikt/events.jsonl` so `TaskCompleted` can close the loop.
+- **New hook events** added to `templates/settings.json.tmpl` with matching scripts:
+  - `SessionEnd` → flush event log, write session summary to `.edikt/state/last-session.json`
+  - `SubagentStart` → inject subagent governance context (paired with existing `subagent-stop.sh`)
+  - `TaskCompleted` → close loop on `TaskCreated`, emit plan-phase progress event
+  - `WorktreeCreate` → initialize `.edikt/` in new worktree (copy or symlink config); emit welcome banner
+  - `WorktreeRemove` → log teardown event
+
+Each new hook script MUST have a corresponding characterization fixture pair before ship.
+
+#### 14.4 Agent frontmatter — `initialPrompt` rollout
+
+16 of 19 agents currently lack `initialPrompt`. Roll out the field to all remaining agents. Each agent receives a one-line governance-aware initial prompt citing its domain's active ADRs/INVs. Mechanical change — covered by a test that asserts every agent in `templates/agents/*.md` (except `_registry.yaml`, `_substitutions.yaml`) has the field.
+
+#### 14.5 Opt-in statusline
+
+New `statusLine` block in `templates/settings.json.tmpl` (opt-in via `.edikt/config.yaml: features.statusline: true`). Fields surfaced: active ADR count, active INV count, drift count, current plan phase. Uses `refreshInterval: 30` per Claude Code v2.1.80.
+
+#### 14.6 Prompt-caching env var guidance
+
+`/edikt:init` guidance (and `website/getting-started.md`) documents `ENABLE_PROMPT_CACHING_1H` and `FORCE_PROMPT_CACHING_5M` (v2.1.108). Documentation-only — no installer behavior change.
+
+#### 14.7 Test impact
+
+All changes in 14.1–14.5 MUST have characterization fixtures before ship. The `EDIKT_SKIP_HOOK_TESTS=1` opt-out polarity from ADR-011 carries forward per ADR-014. Test suite MUST pass without that variable set.
+
+Migration of fixture expected outputs is mechanical: for each migrated hook, run the hook against its payload and capture actual output as the new expected file (`cat payload.json | bash templates/hooks/${hook}.sh > expected/${hook}.expected.json`). Hand-authored expected outputs are forbidden.
+
 ## File-Level Changes
 
 | Area | Files modified / added | Nature |
@@ -769,6 +832,17 @@ No CODEOWNERS enforcement. Header + PR discipline.
 | Docs | `CHANGELOG.md` | v0.5.0 entry by bundle |
 | Migration fixtures | `test/integration/migration/fixtures/v0.1.0/`, `v0.1.4/`, `v0.2.0/`, `v0.3.0/`, `v0.4.3/` (NEW) | Frozen-install snapshots |
 | Migration tests | `test/integration/migration/test_*.py` (NEW, one per source version) | New |
+| Hook migration | `templates/hooks/pre-tool-use.sh`, `session-start.sh`, `post-tool-use.sh`, `post-compact.sh`, `subagent-stop.sh`, `stop-failure.sh`, `user-prompt-submit.sh` | JSON-wrapping migration (ADR-014) |
+| Hook deletion | `templates/hooks/pre-compact.sh` (REMOVED); `templates/settings.json.tmpl` (PreCompact block removed) | Stub removal |
+| Hook behavior | `templates/hooks/pre-tool-use.sh` (+ updatedInput), `task-created.sh` (+ plan-phase tracking) | Behavior expansion (ADR-014) |
+| New hook scripts | `templates/hooks/session-end.sh`, `subagent-start.sh`, `task-completed.sh`, `worktree-create.sh`, `worktree-remove.sh` (NEW) | New events |
+| Settings template | `templates/settings.json.tmpl` | Add SessionEnd, SubagentStart, TaskCompleted, WorktreeCreate, WorktreeRemove; remove PreCompact; add opt-in statusLine |
+| Agent frontmatter | `templates/agents/*.md` (16 files) | Add `initialPrompt` field |
+| Fixtures — re-added | `test/fixtures/hook-payloads/session-start-with-edikt.json`, `subagent-stop-critical.json`; matching expected files | Characterized JSON pairs |
+| Fixtures — new events | `test/fixtures/hook-payloads/session-end*.json`, `subagent-start*.json`, `task-completed*.json`, `worktree-*.json` + expected | New events coverage |
+| Tests — hook migration | `test/unit/hooks/test_*.sh` for each migrated hook (regenerate expected via `verified_by`) | Existing tests updated |
+| Tests — agent frontmatter | `test/unit/test-agents.sh` or equivalent (NEW assertion for `initialPrompt` presence) | New assertion |
+| Parity tracker | `docs/internal/claude-code-parity.md` (NEW) | Adoption matrix + review log |
 
 ## Dependencies
 
@@ -791,6 +865,9 @@ The plan phase will sequence these. Suggested order (lowest risk first):
 6. **Layer 2 Agent SDK tests** — depends on launcher + init provenance for fixture setup.
 7. **Homebrew tap + release automation** — depends on all of the above.
 8. **Regression museum backfill** — written concurrently with fixes in earlier phases.
+9. **Hook JSON migration (ADR-014)** — 7 hooks wrapped, `pre-compact` deleted, 3 fixture pairs re-added, new events (SessionEnd / SubagentStart / TaskCompleted / WorktreeCreate / WorktreeRemove), `pre-tool-use.sh` updatedInput, `task-created.sh` plan-phase tracking. Gated by Layer 1 hook tests from Phase 1.
+10. **Agent `initialPrompt` rollout** — 16 agents updated. Mechanical, covered by new test assertion.
+11. **Opt-in statusline + prompt-caching env var docs** — template + doc-only. Lowest risk of parity block; ship last.
 
 ## Testing Strategy
 
@@ -810,8 +887,10 @@ How we test this spec itself:
 - Windows native install
 - Mock/replay mode for tests
 - Auto-migration across major layout changes beyond the one in FR-018
-- Remaining v0.5.0 roadmap items (moved to v0.6.0)
+- Plugin packaging as a distribution path (v0.6.0+ candidate, see parity tracker)
+- Full SDLC rework (v0.6.0 scope)
 - Deterministic tool ordering or cost caps in integration tests
+- Hook events deliberately skipped per parity review: `FileChanged`-based ADR/invariant watching, `ConfigChange`, `PermissionRequest`/`PermissionDenied`, `Notification`, `TeammateIdle`, `Elicitation` (rationale in `docs/internal/claude-code-parity.md`)
 
 ## Decisions Locked (from PRD)
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # edikt: SessionStart hook — git-aware session summary
 # Surfaces what changed since last session and which specialist agents are relevant.
+#
+# Output format: Claude Code hook protocol JSON
+#   {"additionalContext": "..."}
+# Migration: ADR-014 Phase 15 — plaintext echoes wrapped in JSON, content
+# preserved byte-for-byte.
 
 set -uo pipefail
 
@@ -17,6 +22,12 @@ if [ -f "$LOG_FILE" ]; then
     mv "$LOG_FILE" "${LOG_FILE}.prev" 2>/dev/null || true
 fi
 
+# Emit a message as JSON additionalContext and exit 0
+emit() {
+    python3 -c 'import json,sys; print(json.dumps({"additionalContext":sys.argv[1]}))' "$1"
+    exit 0
+}
+
 ENCODED=$(echo "$PWD" | sed 's|/|-|g')
 MEMORY="$HOME/.claude/projects/${ENCODED}/memory/MEMORY.md"
 
@@ -30,25 +41,22 @@ fi
 # If git analysis is disabled, fall back to simple age check
 if grep -q 'session-summary: false' .edikt/config.yaml 2>/dev/null; then
   if [ ! -f "$MEMORY" ]; then
-    echo "📋 edikt project detected. Run /edikt:context to load project context before writing code."
+    emit "📋 edikt project detected. Run /edikt:context to load project context before writing code."
   elif [ "$AGE" -gt 7 ]; then
-    echo "⚠️  edikt memory is ${AGE}d old. Run /edikt:context to refresh."
+    emit "⚠️  edikt memory is ${AGE}d old. Run /edikt:context to refresh."
   else
-    echo "📋 edikt project — memory ${AGE}d old. Run /edikt:context to load context."
+    emit "📋 edikt project — memory ${AGE}d old. Run /edikt:context to load context."
   fi
-  exit 0
 fi
 
 # No memory file yet
 if [ ! -f "$MEMORY" ]; then
-  echo "📋 edikt project detected. Run /edikt:context to load project context before writing code."
-  exit 0
+  emit "📋 edikt project detected. Run /edikt:context to load project context before writing code."
 fi
 
 # Stale memory — skip git analysis, just warn
 if [ "$AGE" -gt 7 ]; then
-  echo "⚠️  edikt memory is ${AGE}d old. Run /edikt:context to refresh."
-  exit 0
+  emit "⚠️  edikt memory is ${AGE}d old. Run /edikt:context to refresh."
 fi
 
 # Get changed files since last session
@@ -56,8 +64,7 @@ MTIME=$(date -r "$MEMORY" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || stat -f '%Sm' -t '
 CHANGED=$(git log --since="$MTIME" --name-only --pretty=format: 2>/dev/null | grep -v '^$' | sort -u)
 
 if [ -z "$CHANGED" ]; then
-  echo "📋 edikt — ${AGE}d since last session. Run /edikt:context to load context."
-  exit 0
+  emit "📋 edikt — ${AGE}d since last session. Run /edikt:context to load context."
 fi
 
 # Classify by domain
@@ -78,8 +85,9 @@ SUMMARY=$(echo "$SUMMARY" | sed 's/, $//')
 AGENTS=$(echo "$AGENTS"   | sed 's/, $//')
 
 if [ -n "$AGENTS" ]; then
-  printf '📋 edikt — since your last session (%sd ago):\n   %s changed\n   Relevant agents: %s\n   Run /edikt:context to load full project context.\n' \
-    "$AGE" "$SUMMARY" "$AGENTS"
+  MSG=$(printf '📋 edikt — since your last session (%sd ago):\n   %s changed\n   Relevant agents: %s\n   Run /edikt:context to load full project context.' \
+    "$AGE" "$SUMMARY" "$AGENTS")
+  emit "$MSG"
 else
-  echo "📋 edikt — ${AGE}d since last session. Run /edikt:context to load context."
+  emit "📋 edikt — ${AGE}d since last session. Run /edikt:context to load context."
 fi
