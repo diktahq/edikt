@@ -16,6 +16,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # contaminating the developer's real ~/.edikt/ or ~/.claude/ — which is
 # critical when edikt itself is installed on the dev machine and a live
 # Claude Code session may be running in parallel.
+#
+# IMPORTANT: preserve the REAL HOME and CLAUDE_HOME before sandboxing.
+# Layer 2 SDK tests (pytest) spawn the claude CLI which needs the user's
+# real commands (~/.claude/commands/edikt/) and subscription credentials.
+# The sandbox is correct for shell tests (launcher, hooks) but wrong for
+# SDK tests — those need the real install.
+REAL_HOME="${HOME}"
+REAL_CLAUDE_HOME="${CLAUDE_HOME:-${HOME}/.claude}"
+
 TEST_SANDBOX="$(mktemp -d -t edikt-test-XXXXXX)"
 export HOME="$TEST_SANDBOX/home"
 export EDIKT_HOME="$HOME/.edikt"
@@ -134,7 +143,10 @@ if [ "${SKIP_INTEGRATION:-0}" != "1" ] && [ -d "$SCRIPT_DIR/integration" ] && \
     echo ""
     echo -e "${BOLD}[integration]${NC}"
     SUITE_COUNT=$((SUITE_COUNT + 1))
-    if ! (cd "$SCRIPT_DIR/integration" && pytest -v); then
+    # Restore the real CLAUDE_HOME so the claude CLI subprocess can find
+    # installed edikt commands (~/.claude/commands/edikt/) and credentials.
+    # EDIKT_HOME stays sandboxed — SDK tests don't write to it.
+    if ! (cd "$SCRIPT_DIR/integration" && HOME="$REAL_HOME" CLAUDE_HOME="$REAL_CLAUDE_HOME" pytest -v); then
         FAILED_SUITES=$((FAILED_SUITES + 1))
     fi
 elif [ "${SKIP_INTEGRATION:-0}" = "1" ]; then

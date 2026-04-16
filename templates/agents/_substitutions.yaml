@@ -1,0 +1,22 @@
+# templates/agents/_substitutions.yaml
+# Path substitution table for agent templates installed by /edikt:init.
+#
+# During init, for each entry: if config.paths.<config_key> is set and differs
+# from `default`, every occurrence of the default path string in the template
+# is replaced with the configured value before the file is written to
+# .claude/agents/<name>.md.
+#
+# Hashing rule (SPEC-004 §7): the md5 is computed against the raw template
+# BEFORE substitution. Substitutions are a presentation detail; the hash
+# anchors the template version for upgrade comparison.
+substitutions:
+  decisions:
+    default: "docs/architecture/decisions"
+    config_key: "paths.decisions"
+  invariants:
+    default: "docs/architecture/invariants"
+    config_key: "paths.invariants"
+  # specs, prds, plans, guidelines were registered here but none of the
+  # agent templates contain these path strings — the substitution never fires.
+  # Removed to keep the table honest. If a future agent template references
+  # one of these paths, add it back here alongside the template change.

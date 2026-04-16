@@ -138,7 +138,7 @@ Specific consequences locked in by this decision:
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: 83c129e887a07ed5343884dcf6964a5635bb0875ea3ecf2456208b20f97bb57b
+source_hash: 98ae95c994d78bd66729026cf81dd0eaaf7ea4bcce5a9f9abc778e38c7ce02ca
 directives_hash: e007fa6fac5dd6ad482dd43cf43ff9ae29996594d06022849a2b01b90ee94b77
 compiler_version: "0.4.3"
 paths:

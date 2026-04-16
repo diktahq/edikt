@@ -26,7 +26,7 @@
 | 10    | done | 1/5 | 2026-04-15 |
 | 11    | done | 1/5 | 2026-04-15 |
 | 11b   | done (characterize hooks: fixtures rewritten against actual behavior, sandbox-staged, gate replaced with opt-out `EDIKT_SKIP_HOOK_TESTS=1`) | 1/5 | 2026-04-15 |
-| 12    | pending | 0/5 | -      |
+| 12    | done | 1/5 | 2026-04-16 |
 | 13    | pending | 0/5 | -      |
 | 14    | pending | 0/5 | -      |
 
@@ -1380,7 +1380,7 @@ When complete, output: HOOK CHARACTERIZATION READY
   - `test_v043_evaluator_blocked.py` (58ce609) — evaluator invoked under permission sandbox → returns BLOCKED, not silent PASS.
 - [ ] Every regression test carries a bold header comment per SPEC-004 §13 (DO NOT DELETE + bug commit + fix commit + invariant preserved).
 - [ ] `test/integration/` wired into `test/run.sh` as an opt-in branch (runs only when `SKIP_INTEGRATION != 1`).
-- [ ] API key handling: missing `ANTHROPIC_API_KEY` causes the runner to fail loudly (exit 1), not silent-skip. Per SRE #4 and test-strategy.md "no silent skips".
+- [x] Auth handling: no claude session AND no `ANTHROPIC_API_KEY` causes SDK tests to fail loudly (exit 1); regression museum tests run freely without any auth. The SDK uses the claude CLI subscription session — `ANTHROPIC_API_KEY` is the CI/headless fallback only. (Spec said API key only — corrected during implementation.)
 
 **Prompt:**
 ```
