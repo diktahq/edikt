@@ -531,10 +531,16 @@ class TestPhaseEndDetectorSidecar:
             f"unexpected evaluator output: {combined!r}"
         )
 
-    def test_sidecar_missing_does_not_crash_hook(self, tmp_path: Path) -> None:
-        """If the sidecar is missing, the hook falls back to plan markdown (no crash)."""
+    def test_sidecar_missing_warns_user_with_recovery_command(self, tmp_path: Path) -> None:
+        """Missing sidecar must warn the user and show --sidecar-only recovery command.
+
+        Silent fallback trains users to ignore the gap. The correct behavior:
+        surface a systemMessage explaining what's missing and exactly how to fix it.
+        The hook still runs evaluation (falls back to plan markdown) but the user
+        knows they're losing evaluation history.
+        """
         project = self._make_project_with_plan(tmp_path, in_progress_phase=1)
-        # Delete the sidecar.
+        # Delete the sidecar to simulate the missing-sidecar scenario.
         sidecar = project / "docs" / "plans" / "PLAN-test-criteria.yaml"
         sidecar.unlink()
 
@@ -545,6 +551,16 @@ class TestPhaseEndDetectorSidecar:
         assert result.returncode == 0, (
             "Missing criteria sidecar must not crash the hook; "
             f"stderr: {result.stderr!r}"
+        )
+        combined = result.stdout + result.stderr
+        assert "sidecar" in combined.lower(), (
+            "Hook must mention 'sidecar' in its output when the sidecar is missing; "
+            f"got: {combined!r}"
+        )
+        assert "--sidecar-only" in combined, (
+            "Hook must include the --sidecar-only recovery command so the user "
+            "knows how to restore evaluation tracking; "
+            f"got: {combined!r}"
         )
 
     def test_no_edikt_project_exits_silently(self, tmp_path: Path) -> None:
