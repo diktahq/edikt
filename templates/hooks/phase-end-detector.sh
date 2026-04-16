@@ -136,29 +136,73 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$HOME/.edikt" 2>/dev/null || true
 echo "{\"ts\":\"${TIMESTAMP}\",\"event\":\"phase_completion_detected\",\"plan\":\"$(basename "$PLAN_FILE")\",\"phase\":${PHASE_NUM}}" >> "$HOME/.edikt/events.jsonl" 2>/dev/null || true
 
-# ─── Warn if criteria sidecar is missing ─────────────────────────────────────
-# A missing sidecar means fail_count, last_evaluated, and block_reason cannot
-# be tracked. Evaluation still runs (falling back to plan markdown) but the
-# user should know they're losing history and have a path to recover it.
+# ─── Auto-generate criteria sidecar if missing ───────────────────────────────
+# The sidecar is where evaluation value lives: fail_count, verify commands,
+# block_reason, last_evaluated. Falling back to plan markdown means every
+# evaluation is untracked. Try to generate the sidecar first; only fall back
+# (and warn) if generation itself fails.
 if [ -z "$SIDECAR" ]; then
-  python3 - "$PHASE_NUM" "$(basename "$PLAN_FILE")" <<'PYEOF'
+  _SIDECAR_GEN_STATUS="not_attempted"
+
+  # Try to generate using claude -p if available.
+  _claude_bin=""
+  if command -v claude >/dev/null 2>&1; then
+    _claude_bin="claude"
+  fi
+
+  if [ -n "$_claude_bin" ] && [ "${EDIKT_EVALUATOR_DRY_RUN:-0}" != "1" ]; then
+    python3 - "$PLAN_STEM" <<'PYEOF'
+import json, sys
+stem = sys.argv[1]
+print(f"🔧  Evaluation history missing for {stem}.md — rebuilding it now...", flush=True)
+PYEOF
+    if "$_claude_bin" -p "/edikt:sdlc:plan --sidecar-only $PLAN_STEM" >/dev/null 2>&1; then
+      _SIDECAR_GEN_STATUS="attempted"
+      # Re-scan for the sidecar — it should now exist.
+      for dir in "$PLAN_DIR" "$BASE/product/plans" "docs/plans" "docs/product/plans"; do
+        [ -d "$dir" ] || continue
+        CANDIDATE="$dir/${PLAN_STEM}-criteria.yaml"
+        if [ -f "$CANDIDATE" ]; then
+          SIDECAR="$CANDIDATE"
+          _SIDECAR_GEN_STATUS="success"
+          break
+        fi
+      done
+    else
+      _SIDECAR_GEN_STATUS="failed"
+    fi
+  fi
+
+  # If still missing (generation failed, claude unavailable, or dry-run): warn.
+  if [ -z "$SIDECAR" ]; then
+    python3 - "$PHASE_NUM" "$(basename "$PLAN_FILE")" "$_SIDECAR_GEN_STATUS" <<'PYEOF'
 import json, sys
 phase_num = sys.argv[1]
 plan_name = sys.argv[2]
+gen_status = sys.argv[3] if len(sys.argv) > 3 else "not_attempted"
 stem = plan_name.replace(".md", "")
+
+if gen_status == "failed":
+    extra = "edikt tried to rebuild it automatically but couldn't."
+elif gen_status == "attempted":
+    extra = "edikt tried to rebuild it automatically but the file wasn't created."
+else:
+    extra = ""
+
 msg = (
-    f"⚠️  Criteria sidecar not found for {plan_name}.\n"
-    f"    Expected: {stem}-criteria.yaml (sibling of the plan file)\n"
+    f"⚠️  Phase {phase_num} — evaluation history not found for {plan_name}.\n"
+    + (f"    {extra}\n" if extra else "")
+    + f"\n"
+    f"    Your work is still being evaluated. But without the history file,\n"
+    f"    edikt can't track repeated failures, block reasons, or when each\n"
+    f"    check was last run — so the evaluator starts fresh every time.\n"
     f"\n"
-    f"    Evaluation will proceed using plan markdown, but fail_count,\n"
-    f"    last_evaluated, and block_reason cannot be tracked this run.\n"
-    f"\n"
-    f"    To restore tracking, regenerate the sidecar:\n"
+    f"    To rebuild it:\n"
     f"      /edikt:sdlc:plan --sidecar-only {stem}"
 )
-# Prepend to any existing system message rather than replacing it.
 print(json.dumps({"systemMessage": msg}))
 PYEOF
+  fi
 fi
 
 # ─── Dry run mode (for testing) ───────────────────────────────────────────────

@@ -553,15 +553,22 @@ class TestPhaseEndDetectorSidecar:
             f"stderr: {result.stderr!r}"
         )
         combined = result.stdout + result.stderr
-        assert "sidecar" in combined.lower(), (
-            "Hook must mention 'sidecar' in its output when the sidecar is missing; "
+        # The message must use plain language the user understands.
+        assert "evaluation history" in combined.lower() or "history" in combined.lower(), (
+            "Hook must use plain language ('evaluation history') not jargon ('sidecar'); "
             f"got: {combined!r}"
         )
         assert "--sidecar-only" in combined, (
-            "Hook must include the --sidecar-only recovery command so the user "
-            "knows how to restore evaluation tracking; "
+            "Hook must surface the --sidecar-only recovery command; "
             f"got: {combined!r}"
         )
+        # Must NOT use internal jargon in the user-facing message.
+        jargon = ["criteria sidecar", "fail_count", "block_reason", "last_evaluated"]
+        for term in jargon:
+            assert term not in combined, (
+                f"Hook must not expose internal jargon {term!r} to the user; "
+                f"got: {combined!r}"
+            )
 
     def test_no_edikt_project_exits_silently(self, tmp_path: Path) -> None:
         """Hook must exit 0 silently in a non-edikt project."""

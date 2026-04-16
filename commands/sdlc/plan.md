@@ -33,7 +33,7 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 - `$ARGUMENTS` — Optional. Any of: a task description, ticket ID, SPEC identifier, plan name, or nothing (triggers interview)
 - `--eval-only {phase}` — Re-run evaluation for a specific phase in the active plan without re-running the generator. Used to recover from BLOCKED verdicts (ADR-010) after fixing the underlying cause (e.g. switching `evaluator.mode` to headless). `{phase}` is the phase number (1-indexed). Optionally combine with `--plan {slug}` to disambiguate when multiple plans exist. Cannot be combined with a positional task argument.
 - `--plan {slug}` — Optional companion to `--eval-only`. Names the plan file by slug (e.g. `v0.4.3-evaluator-headless-default`) when multiple plans exist in `docs/plans/` or `docs/product/plans/`.
-- `--sidecar-only [PLAN-slug]` — Regenerate the criteria sidecar from an existing plan file without touching the plan markdown. Reads acceptance criteria from `PLAN-{slug}.md`, writes `PLAN-{slug}-criteria.yaml` as a sibling. Merges with existing sidecar data — preserves `fail_count`, `status`, `last_evaluated`, and `block_reason` for criteria that already have entries (identified by `id`). New criteria get `status: pending`, `fail_count: 0`. Use when the sidecar is missing (deleted, or plan predates v0.5.0) and you want to restore evaluation tracking. If `PLAN-slug` is omitted, uses the most recent plan file.
+- `--sidecar-only [PLAN-slug]` — Rebuild the evaluation history file for an existing plan without changing the plan itself. Use when edikt says "evaluation history not found" and you want to restore full tracking (retry counts, failure reasons, last-checked timestamps). If the history file partly exists, the rebuild merges in — it preserves any evaluation results already recorded and adds fresh entries for any new acceptance criteria. If `PLAN-slug` is omitted, uses the most recent plan file.
 
 ## Instructions
 
@@ -484,10 +484,11 @@ When a phase completes (generator outputs the completion promise):
 
 ### Sidecar-Only Flow
 
-Invoked when `$ARGUMENTS` contains `--sidecar-only`. Regenerates the criteria
-sidecar from an existing plan file without touching the plan markdown. Use when
-the sidecar is missing (deleted, or the plan predates v0.5.0) and you want to
-restore evaluation history tracking.
+Invoked when `$ARGUMENTS` contains `--sidecar-only`. Rebuilds the evaluation
+history file from an existing plan without touching the plan. Use when edikt
+reports "evaluation history not found" after a phase completes — this restores
+retry tracking, failure reasons, and last-checked timestamps so the evaluator
+runs with full context instead of starting from scratch every time.
 
 1. **Locate the plan file:**
    - If a slug follows `--sidecar-only` (e.g. `--sidecar-only PLAN-auth`): find
@@ -523,13 +524,13 @@ restore evaluation history tracking.
 
 5. **Output:**
    ```
-   ✅ Criteria sidecar regenerated: {path}
+   ✅ Evaluation history rebuilt: {path}
       {n} phases, {m} acceptance criteria
 
-      Preserved from existing sidecar: {k} criteria with evaluation history
-      New criteria (no prior data):    {j} criteria
+      Kept from previous history:  {k} checks (retry counts and results preserved)
+      Added fresh:                 {j} new checks (no prior data)
 
-      Evaluation tracking is now active for {plan-name}.
+      edikt will now track retries, failure reasons, and timestamps for {plan-name}.
    ```
 
 ---
