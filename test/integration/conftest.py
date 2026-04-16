@@ -614,6 +614,139 @@ def project_with_accepted_prd(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
+def project_with_spec_and_artifacts(tmp_path: Path) -> Path:
+    """Project with an accepted spec AND pre-generated artifact files.
+
+    Used by the plan command E2E test — plan reads both spec and artifacts
+    to produce a phase-covered plan with criteria sidecar.
+    """
+    project = tmp_path / "project-spec-artifacts"
+    project.mkdir()
+    (project / ".edikt").mkdir()
+    (project / ".edikt" / "config.yaml").write_text(
+        textwrap.dedent(
+            """\
+            edikt_version: 0.5.0
+            base: docs
+            stack: []
+            paths:
+              decisions: docs/architecture/decisions
+              plans: docs/plans
+              specs: docs/product/specs
+              prds: docs/product/prds
+            gates:
+              quality-gates: true
+            """
+        )
+    )
+    spec_dir = project / "docs" / "product" / "specs" / "SPEC-001-user-auth"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "spec.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            type: spec
+            id: SPEC-001
+            title: User authentication — OAuth2
+            status: accepted
+            database_type: postgresql
+            source_prd: PRD-001
+            ---
+
+            # SPEC-001: User authentication
+
+            ## Components
+
+            1. OAuth2 callback handler — validates token, creates session
+            2. Session middleware — validates cookie, expires after 24h
+            3. Rate limiter — 5 attempts per 60 seconds per IP
+
+            ## Acceptance Criteria
+
+            - AC-001: POST /auth/google returns 302 on valid token
+            - AC-002: Expired session cookie returns 401
+            - AC-003: 6th attempt in 60s returns 429
+            """
+        )
+    )
+    # Pre-seed artifacts so plan can reference them.
+    contracts_dir = spec_dir / "contracts"
+    contracts_dir.mkdir()
+    (contracts_dir / "api.yaml").write_text(
+        textwrap.dedent(
+            """\
+            openapi: "3.1.0"
+            info:
+              title: User Auth API
+              version: "1.0"
+            paths:
+              /auth/google:
+                post:
+                  summary: OAuth2 callback
+                  responses:
+                    "302": {description: Redirect on success}
+                    "401": {description: Invalid token}
+              /auth/logout:
+                post:
+                  summary: Logout
+                  responses:
+                    "200": {description: Logged out}
+            """
+        )
+    )
+    (spec_dir / "data-model.schema.yaml").write_text(
+        textwrap.dedent(
+            """\
+            $schema: "https://json-schema.org/draft/2020-12/schema"
+            title: UserSession
+            type: object
+            properties:
+              id: {type: string}
+              user_id: {type: string}
+              expires_at: {type: string, format: date-time}
+            required: [id, user_id, expires_at]
+            """
+        )
+    )
+    (spec_dir / "test-strategy.md").write_text(
+        textwrap.dedent(
+            """\
+            # Test Strategy — SPEC-001
+
+            ## Unit tests
+            - OAuth token validation logic
+            - Session expiry logic
+            - Rate limit counter
+
+            ## Integration tests
+            - Full OAuth2 callback flow
+            - Session middleware with real cookies
+            """
+        )
+    )
+    (project / "docs" / "architecture" / "decisions").mkdir(parents=True)
+    (project / "docs" / "plans").mkdir(parents=True)
+    (project / "CLAUDE.md").write_text(
+        textwrap.dedent(
+            """\
+            # Project
+
+            [edikt:start]: # managed by edikt
+            ## edikt
+
+            ### Project
+            Test project for SDLC artifacts + plan E2E tests.
+
+            ### Build & Test Commands
+            No build commands — test fixture.
+            [edikt:end]: #
+            """
+        )
+    )
+    return project
+
+
+@pytest.fixture()
 def project_for_governance_chain(tmp_path: Path) -> Path:
     """Empty project ready for an ADR → compile → governance chain test.
 
