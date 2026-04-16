@@ -33,10 +33,14 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
 - `$ARGUMENTS` — Optional. Any of: a task description, ticket ID, SPEC identifier, plan name, or nothing (triggers interview)
 - `--eval-only {phase}` — Re-run evaluation for a specific phase in the active plan without re-running the generator. Used to recover from BLOCKED verdicts (ADR-010) after fixing the underlying cause (e.g. switching `evaluator.mode` to headless). `{phase}` is the phase number (1-indexed). Optionally combine with `--plan {slug}` to disambiguate when multiple plans exist. Cannot be combined with a positional task argument.
 - `--plan {slug}` — Optional companion to `--eval-only`. Names the plan file by slug (e.g. `v0.4.3-evaluator-headless-default`) when multiple plans exist in `docs/plans/` or `docs/product/plans/`.
+- `--sidecar-only [PLAN-slug]` — Regenerate the criteria sidecar from an existing plan file without touching the plan markdown. Reads acceptance criteria from `PLAN-{slug}.md`, writes `PLAN-{slug}-criteria.yaml` as a sibling. Merges with existing sidecar data — preserves `fail_count`, `status`, `last_evaluated`, and `block_reason` for criteria that already have entries (identified by `id`). New criteria get `status: pending`, `fail_count: 0`. Use when the sidecar is missing (deleted, or plan predates v0.5.0) and you want to restore evaluation tracking. If `PLAN-slug` is omitted, uses the most recent plan file.
 
 ## Instructions
 
-0. **Eval-Only routing** — if `$ARGUMENTS` contains `--eval-only N`, skip the interview, codebase analysis, pre-flight specialist review, and phase generation entirely. Route to the **Eval-Only Flow** section in the Reference and stop after it runs. See that section for the isolated flow.
+0. **Routing** — check for special flags before anything else:
+
+   - If `$ARGUMENTS` contains `--eval-only N`: skip interview, codebase analysis, pre-flight review, and phase generation. Route to the **Eval-Only Flow** section in the Reference and stop.
+   - If `$ARGUMENTS` contains `--sidecar-only`: route to the **Sidecar-Only Flow** section in the Reference and stop. Do not generate or modify the plan file.
 
 1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read evaluator configuration from `.edikt/config.yaml`:
    - `evaluator.preflight` (default: `true`) — whether to run pre-flight criteria validation
@@ -94,6 +98,21 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
      If the user picks 2: stop and output:
      `Review and accept the draft artifacts, then run /edikt:sdlc:plan again.`
    - If artifacts exist and are accepted, read them as planning context.
+   - **If NO artifacts exist** (spec folder contains only `spec.md`):
+     ```
+     ⚠️ No spec artifacts found for {SPEC-ID}.
+        Coverage checks (endpoint, event, migration, test strategy) will be skipped.
+        Without artifacts the plan may miss implementation phases.
+
+        Options:
+        1. Proceed without artifact coverage (plan will note the gap)
+        2. Stop — run /edikt:sdlc:artifacts {SPEC-ID} first, then re-run /edikt:sdlc:plan
+     ```
+     If the user picks 1: proceed, add to `## Known Risks`:
+     ```markdown
+     - No spec artifacts generated. Run /edikt:sdlc:artifacts {SPEC-ID} to add coverage.
+     ```
+     If the user picks 2: output `Run /edikt:sdlc:artifacts {SPEC-ID} to generate artifacts, then re-run /edikt:sdlc:plan.` and stop.
    - **Inventory all artifacts** — scan the spec directory for every file (excluding `spec.md` itself). Build an artifact inventory:
      ```bash
      ls {spec_dir}/*.yaml {spec_dir}/*.md {spec_dir}/*.mmd {spec_dir}/*.sql {spec_dir}/contracts/*.yaml {spec_dir}/migrations/*.sql 2>/dev/null | grep -v spec.md
@@ -462,6 +481,58 @@ When a phase completes (generator outputs the completion promise):
 
    State is saved in the plan file — nothing is lost.
    ```
+
+### Sidecar-Only Flow
+
+Invoked when `$ARGUMENTS` contains `--sidecar-only`. Regenerates the criteria
+sidecar from an existing plan file without touching the plan markdown. Use when
+the sidecar is missing (deleted, or the plan predates v0.5.0) and you want to
+restore evaluation history tracking.
+
+1. **Locate the plan file:**
+   - If a slug follows `--sidecar-only` (e.g. `--sidecar-only PLAN-auth`): find
+     `{paths.plans}/PLAN-auth*.md`. Reject if none found.
+   - If no slug: use the most recent `PLAN-*.md` in `{paths.plans}/` or
+     `docs/product/plans/`. If multiple plans exist and no slug given, list them
+     and ask the user to specify: `Multiple plans found — which one?`
+   - If no plan exists at all: `[FAIL] No plan file found. Run /edikt:sdlc:plan first.`
+
+2. **Read the existing sidecar (if any):**
+   - Load `PLAN-{slug}-criteria.yaml` if it exists. This is the merge base.
+   - For each criterion in the existing sidecar, preserve: `id`, `status`,
+     `fail_count`, `fail_reason`, `block_reason`, `last_evaluated`, `verify`.
+   - If the sidecar does not exist: start from scratch (all criteria `status: pending`).
+
+3. **Extract criteria from the plan markdown:**
+   - For each phase: read the phase number, title, and all acceptance criteria
+     bullet points.
+   - Assign IDs: `AC-{phase}.{seq}` (1-indexed within each phase).
+   - For each criterion:
+     - If a matching `id` exists in the merge base: keep existing fields.
+     - If it is a new criterion (not in merge base): set `status: pending`,
+       `fail_count: 0`, `fail_reason: null`, `block_reason: null`,
+       `last_evaluated: null`, `verify: null`.
+
+4. **Write the sidecar:**
+   - Write `PLAN-{slug}-criteria.yaml` to the same directory as the plan.
+   - Schema: `plan: {slug}`, `generated: {now ISO8601}`, `last_evaluated: null`,
+     `phases: [{phase, title, status, attempt, criteria: [{id, text, status,
+     fail_count, fail_reason, block_reason, last_evaluated, verify}]}]`.
+   - Use `status: pending` for phases where all criteria are pending; use the
+     most-advanced criterion status for phases with mixed evaluation history.
+
+5. **Output:**
+   ```
+   ✅ Criteria sidecar regenerated: {path}
+      {n} phases, {m} acceptance criteria
+
+      Preserved from existing sidecar: {k} criteria with evaluation history
+      New criteria (no prior data):    {j} criteria
+
+      Evaluation tracking is now active for {plan-name}.
+   ```
+
+---
 
 ### Eval-Only Flow
 

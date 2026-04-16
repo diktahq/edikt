@@ -136,6 +136,31 @@ TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$HOME/.edikt" 2>/dev/null || true
 echo "{\"ts\":\"${TIMESTAMP}\",\"event\":\"phase_completion_detected\",\"plan\":\"$(basename "$PLAN_FILE")\",\"phase\":${PHASE_NUM}}" >> "$HOME/.edikt/events.jsonl" 2>/dev/null || true
 
+# ─── Warn if criteria sidecar is missing ─────────────────────────────────────
+# A missing sidecar means fail_count, last_evaluated, and block_reason cannot
+# be tracked. Evaluation still runs (falling back to plan markdown) but the
+# user should know they're losing history and have a path to recover it.
+if [ -z "$SIDECAR" ]; then
+  python3 - "$PHASE_NUM" "$(basename "$PLAN_FILE")" <<'PYEOF'
+import json, sys
+phase_num = sys.argv[1]
+plan_name = sys.argv[2]
+stem = plan_name.replace(".md", "")
+msg = (
+    f"⚠️  Criteria sidecar not found for {plan_name}.\n"
+    f"    Expected: {stem}-criteria.yaml (sibling of the plan file)\n"
+    f"\n"
+    f"    Evaluation will proceed using plan markdown, but fail_count,\n"
+    f"    last_evaluated, and block_reason cannot be tracked this run.\n"
+    f"\n"
+    f"    To restore tracking, regenerate the sidecar:\n"
+    f"      /edikt:sdlc:plan --sidecar-only {stem}"
+)
+# Prepend to any existing system message rather than replacing it.
+print(json.dumps({"systemMessage": msg}))
+PYEOF
+fi
+
 # ─── Dry run mode (for testing) ───────────────────────────────────────────────
 
 if [ "${EDIKT_EVALUATOR_DRY_RUN:-0}" = "1" ]; then
