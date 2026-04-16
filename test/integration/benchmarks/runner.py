@@ -178,17 +178,62 @@ def build_project(tmp_path: Path, setup: dict[str, Any] | None) -> Path:
     cfg = {**default_config, **(setup.get("config") or {})}
     (edikt_dir / "config.yaml").write_text(yaml.dump(cfg))
 
-    # CLAUDE.md with edikt sentinel so slash commands work.
-    (project / "CLAUDE.md").write_text(textwrap.dedent("""\
-        # Project
+    # Replicate a real edikt-installed project. The model should see the
+    # same layout, rules, agents, settings, and CLAUDE.md a user would.
+    import shutil
+    import re as _re
+    repo_root = Path(__file__).resolve().parents[3]
 
-        [edikt:start]: # managed by edikt
-        ## edikt
+    # 1. Copy compiled rules (produced by /edikt:gov:compile).
+    repo_rules = repo_root / ".claude" / "rules"
+    if repo_rules.is_dir():
+        shutil.copytree(repo_rules, project / ".claude" / "rules")
 
-        ### Project
-        Benchmark test project.
-        [edikt:end]: #
-        """))
+    # 2. Copy dogfooded agents.
+    repo_agents = repo_root / ".claude" / "agents"
+    if repo_agents.is_dir():
+        shutil.copytree(repo_agents, project / ".claude" / "agents")
+
+    # 3. Copy settings (permissions, hooks, etc.). The local overrides
+    #    settings.local.json stay out — those are per-machine.
+    repo_settings = repo_root / ".claude" / "settings.json"
+    if repo_settings.is_file():
+        (project / ".claude").mkdir(exist_ok=True)
+        shutil.copy2(repo_settings, project / ".claude" / "settings.json")
+
+    # 4. Real .edikt/config.yaml (overrides the synthetic one written above
+    #    unless the case provides a config override).
+    if not (setup.get("config")):
+        real_cfg = repo_root / ".edikt" / "config.yaml"
+        if real_cfg.is_file():
+            shutil.copy2(real_cfg, edikt_dir / "config.yaml")
+
+    # 5. Copy real ADRs and invariants so the model can read them when the
+    #    routing table sends it to docs/architecture/.
+    for src_rel, dst_rel in (
+        ("docs/architecture/decisions", "docs/architecture/decisions"),
+        ("docs/architecture/invariants", "docs/architecture/invariants"),
+    ):
+        src = repo_root / src_rel
+        if src.is_dir():
+            dst = project / dst_rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(src, dst, dirs_exist_ok=True)
+
+    # 6. CLAUDE.md with the real edikt sentinel block from the repo (intent
+    #    table, "Before Writing Code", etc.) so the model gets the exact same
+    #    context a real user's CLAUDE.md provides.
+    repo_claudemd = (repo_root / "CLAUDE.md").read_text() if (repo_root / "CLAUDE.md").exists() else ""
+    block_match = _re.search(
+        r"\[edikt:start\].*?\[edikt:end\]: #",
+        repo_claudemd, flags=_re.DOTALL,
+    )
+    edikt_block = block_match.group(0) if block_match else (
+        "[edikt:start]: # managed by edikt\n## edikt\n[edikt:end]: #"
+    )
+    (project / "CLAUDE.md").write_text(
+        f"# Project\n\nBenchmark test project for edikt governance compliance.\n\n{edikt_block}\n"
+    )
 
     # Ensure governance directories exist.
     for sub in ("architecture/decisions", "architecture/invariants",
@@ -248,11 +293,21 @@ def score_case(
 
     v = case.verify
 
-    # must_mention: all substrings must appear
+    # must_mention: each entry must be present. A string is a single
+    # substring check; a list is a disjunction (any alternative matches).
+    # Disjunctions let the rubric match the directive's literal language
+    # without brittle phrase matching — which is the right call for Opus 4.7's
+    # strict literal instruction-following.
+    combined_lc = combined.lower()
     for phrase in v.must_mention:
-        if phrase not in combined:
-            reasons.append(f"missing expected phrase: {phrase!r}")
-            failed = True
+        if isinstance(phrase, list):
+            if not any(alt.lower() in combined_lc for alt in phrase):
+                reasons.append(f"missing any of: {phrase!r}")
+                failed = True
+        else:
+            if phrase.lower() not in combined_lc:
+                reasons.append(f"missing expected phrase: {phrase!r}")
+                failed = True
 
     # must_cite: model must reference the directive by ID
     for directive_id in v.must_cite:
@@ -326,6 +381,7 @@ async def run_case_against_model(
         cwd=str(project_dir),
         setting_sources=["user", "project"],
         model=model,
+        effort="medium",
     )
 
     async def _run():
