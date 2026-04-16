@@ -1,0 +1,520 @@
+plan: PLAN-SPEC-005-directive-hardening
+generated: 2026-04-17T00:05:00Z
+last_evaluated: null
+
+phases:
+  - phase: 1
+    title: "ADR-015 — Tier-2 tooling carve-out"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-1.1
+        text: "ADR-015 file exists with status: accepted, 8-section body, populated sentinel block with all required fields"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "test -f docs/architecture/decisions/ADR-015-tier-2-tooling.md && grep -q 'status: accepted' docs/architecture/decisions/ADR-015-tier-2-tooling.md && grep -q '\\[edikt:directives:start\\]' docs/architecture/decisions/ADR-015-tier-2-tooling.md"
+      - id: AC-1.2
+        text: "Decision section states three tier-2 rules (INV-001 for core, opt-in install, isolated uninstall)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -E '(INV-001|opt-in|isolated)' docs/architecture/decisions/ADR-015-tier-2-tooling.md | wc -l | awk '{exit !($1 >= 3)}'"
+      - id: AC-1.3
+        text: "Consequences section references SPEC-005 Layer 5 and /edikt:gov:benchmark"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -q 'SPEC-005' docs/architecture/decisions/ADR-015-tier-2-tooling.md && grep -q 'gov:benchmark' docs/architecture/decisions/ADR-015-tier-2-tooling.md"
+      - id: AC-1.4
+        text: "/edikt:gov:compile post-write exits 0 with no contradictions"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "echo 'run /edikt:gov:compile and confirm exit 0 + clean output'"
+      - id: AC-1.5
+        text: "Compiled governance.md contains a directive citing ADR-015"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -q 'ADR-015' .claude/rules/governance.md"
+
+  - phase: 2
+    title: "/edikt:doctor source-file check"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-2.1
+        text: "AC-004: doctor exits non-zero with literal missing path when routed source file absent"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_doctor_source_check.py::test_missing_source_fails -q"
+      - id: AC-2.2
+        text: "New check adds <100ms overhead on 20-ADR repo"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_doctor_source_check.py::test_performance -q"
+      - id: AC-2.3
+        text: "All-present state emits a single green-tick line"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_doctor_source_check.py::test_clean_state -q"
+      - id: AC-2.4
+        text: "Integration test at test/integration/test_doctor_source_check.py exists"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "test -f test/integration/test_doctor_source_check.py"
+
+  - phase: 3
+    title: "/edikt:adr:review soft-language scan + --backfill"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-3.1
+        text: "AC-012: All six soft-language markers flagged with harder-phrasing suggestion"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_adr_review_soft_language_markers.py -q"
+      - id: AC-3.2
+        text: "AC-022: --backfill proposes 2-3 phrases per eligible ADR, writes only on y approval"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_adr_review_backfill.py -q"
+      - id: AC-3.3
+        text: "--backfill skips single-sentence directives (not eligible)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_adr_review_backfill.py::test_single_sentence_skipped -q"
+      - id: AC-3.4
+        text: "Post-backfill ADRs pass test_adr_sentinel_integrity.py (source_hash + directives_hash valid)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_adr_sentinel_integrity.py -q"
+
+  - phase: 4
+    title: "/edikt:adr:new canonical_phrases + behavioral_signal prompts"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-4.1
+        text: "AC-011: /edikt:adr:new prompts for both new sentinel fields and writes them"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_adr_new_interview.py::test_both_fields_written -q"
+      - id: AC-4.2
+        text: "Skipped prompts produce empty values, never errors"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_adr_new_interview.py::test_skip_produces_empty -q"
+      - id: AC-4.3
+        text: "Values round-trip through /edikt:gov:compile"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_adr_new_interview.py::test_round_trip_through_compile -q"
+      - id: AC-4.4
+        text: "New prompts land after existing decision-capture, before template fill-in"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -A2 'Step 5' commands/adr/new.md | head -5"
+
+  - phase: 5
+    title: "Sentinel parser extension"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-5.1
+        text: "AC-001: Every ADR in docs/architecture/decisions/ parses successfully; round-trip preserves byte-equal"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_parse_every_repo_adr_succeeds -q"
+      - id: AC-5.2
+        text: "AC-002a: Missing canonical_phrases parses as [], no exception"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_missing_canonical_phrases_defaults -q"
+      - id: AC-5.3
+        text: "Missing behavioral_signal parses as {}, no exception"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_missing_behavioral_signal_defaults -q"
+      - id: AC-5.4
+        text: "Nested refuse_edit_matching_frontmatter parses with all 3 required sub-fields"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_refuse_edit_matching_frontmatter -q"
+      - id: AC-5.5
+        text: "Malformed YAML raises with line number in error message"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_malformed_yaml_raises -q"
+
+  - phase: 6
+    title: "Shared directive-quality sub-procedure"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-6.1
+        text: "commands/gov/_shared-directive-checks.md exists with leading underscore note"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "test -f commands/gov/_shared-directive-checks.md && head -5 commands/gov/_shared-directive-checks.md | grep -q 'Not a top-level'"
+      - id: AC-6.2
+        text: "AC-002b: Length vs canonical_phrases warning fires on >1 declarative sentence + empty"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_shared_directive_checks.py::test_multi_sentence_no_phrases_warns -q"
+      - id: AC-6.3
+        text: "AC-002c: Substring-match warning fires when canonical_phrase not in body"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_shared_directive_checks.py::test_phrase_not_in_body -q"
+      - id: AC-6.4
+        text: "AC-003c: no-directives reason validator rejects short/forbidden reasons"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_shared_directive_checks.py::test_reason_validator -q"
+      - id: AC-6.5
+        text: "Compile and review produce byte-identical warning output for same input"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_shared_directive_checks.py::test_caller_parity -q"
+      - id: AC-6.6
+        text: "AC-021: v0.6.0 compile is warn-only — exits 0 with FR-003a warnings"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_shared_directive_checks.py::test_compile_exits_zero_on_warnings -q"
+
+  - phase: 7
+    title: "Compile orphan detection + history state + gitignore"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-7.1
+        text: "AC-003: First detection warns, consecutive blocks, no-directives resolves"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_compile_orphan_detection.py::test_warn_block_resolve -q"
+      - id: AC-7.2
+        text: "AC-003b: Orphan set change resets consecutive counter"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_compile_orphan_detection.py::test_reset_on_set_change -q"
+      - id: AC-7.3
+        text: "AC-017: compile-history.json written via tempfile + atomic rename; crash leaves previous intact"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_compile_orphan_detection.py::test_atomic_rename_failure -q"
+      - id: AC-7.4
+        text: "AC-018: Unparseable history treated as absent; rewrites cleanly"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_compile_orphan_detection.py::test_unparseable_history -q"
+      - id: AC-7.5
+        text: "AC-019: .gitignore appender covers all three scenarios (absent, no-entry, present)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_compile_orphan_detection.py::test_gitignore_appender -q"
+
+  - phase: 8
+    title: "Attack prompt catalog (4 templates)"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-8.1
+        text: "AC-008: Exactly four template files ship with documented signal types"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "ls templates/attacks/*.md | wc -l | grep -q '^5$'"
+      - id: AC-8.2
+        text: "AC-013: Generated prompts use substring inputs verbatim, no glob metacharacters"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_substring_only -q"
+      - id: AC-8.3
+        text: "AC-020: Each template passes discriminative-power test (good-pass-rate > bad-pass-rate on stubbed model)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_discriminative_power -q"
+      - id: AC-8.4
+        text: "AC-025: refuse_edit_matching_frontmatter correctly scores matching vs non-matching files"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_inv002_coverage -q"
+      - id: AC-8.5
+        text: "templates/attacks/README.md contains security review checklist"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -q 'security review' templates/attacks/README.md"
+
+  - phase: 9
+    title: "/edikt:gov:benchmark command + Python helper + tier-2 install"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-9.1
+        text: "AC-005: Pre-flight shows all 5 required fields and Y/n prompt"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_preflight.py::test_preflight_content_and_prompt -q"
+      - id: AC-9.2
+        text: "AC-005b: Targeted single-directive run auto-skips pre-flight"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_preflight.py::test_targeted_skips_prompt -q"
+      - id: AC-9.3
+        text: "AC-005c: No model configured exits 2 with literal message"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_preflight.py::test_no_model_exits_2 -q"
+      - id: AC-9.4
+        text: "AC-006a: Streamed progress matches [N/total] id verdict — summary (elapseds) format"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_execution.py::test_progress_format -q"
+      - id: AC-9.5
+        text: "AC-006b: SIGINT between directives exits ≤ 5s with clean SDK session closure"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_execution.py::test_sigint_idle -q"
+      - id: AC-9.6
+        text: "AC-006c: SIGINT mid-call exits ≤ 5s, no orphaned claude subprocess"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_sigint_mid_call.py -q"
+      - id: AC-9.7
+        text: "AC-007: Failure output has six greppable headers + suggested fix + re-run in correct order"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_failure_output.py -q"
+      - id: AC-9.8
+        text: "AC-009: Directive without behavioral_signal is skipped with clear message; no model call"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_execution.py::test_missing_signal_skipped -q"
+      - id: AC-9.9
+        text: "AC-010: Sandbox builder byte-equal to runner.py::build_project on 4 fixture shapes"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_sandbox_parity.py -q"
+      - id: AC-9.10
+        text: "AC-014: Multi-failure output prints all full reports then summary index table"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_multi_failure.py -q"
+      - id: AC-9.11
+        text: "AC-015: summary.json + attack-log.jsonl match data-model.schema.yaml schemas"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_report_schema.py -q"
+      - id: AC-9.12
+        text: "AC-016: Exit 0 on directive failures, exit != 0 on infrastructure failures"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_advisory_exit.py -q"
+      - id: AC-9.13
+        text: "AC-023: install.sh excludes benchmark; edikt install benchmark adds it; uninstall preserves tier-1"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py -q"
+      - id: AC-9.14
+        text: "AC-024: ADR-015 exists and is referenced from SPEC-005 frontmatter"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "test -f docs/architecture/decisions/ADR-015-tier-2-tooling.md && grep -q 'ADR-015' docs/product/specs/SPEC-005-directive-hardening-and-gov-benchmark/spec.md"
+
+  - phase: 10
+    title: "Dogfood run + migration release notes"
+    status: pending
+    attempt: 0
+    criteria:
+      - id: AC-10.1
+        text: "Benchmark installed and executed against this repo's governance; baseline report written"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "ls docs/reports/governance-benchmark-*/summary.json | tail -1"
+      - id: AC-10.2
+        text: "CHANGELOG.md v0.6.0 entry includes Added, Migration, Baseline, Known risks sections"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -A 50 'v0.6.0' CHANGELOG.md | grep -E '(Added|Migration|Baseline|Known risks)' | wc -l | awk '{exit !($1 >= 4)}'"
+      - id: AC-10.3
+        text: "Migration notes cover warn-only v0.6.0 + --backfill + v0.7.0 ratchet"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "grep -E '(warn-only|--backfill|v0.7.0)' CHANGELOG.md | wc -l | awk '{exit !($1 >= 3)}'"
+      - id: AC-10.4
+        text: "End-to-end test test_e2e_v060_release.py passes the full install → compile orphan → doctor → benchmark chain"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_e2e_v060_release.py -q"
+      - id: AC-10.5
+        text: "Tier-1 commands unchanged after tier-2 install + uninstall"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_e2e_v060_release.py::test_tier1_unchanged -q"
