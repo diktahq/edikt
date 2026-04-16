@@ -110,6 +110,32 @@ Edit `.edikt/config.yaml`, then run `/edikt:init` again. edikt regenerates rules
 
 Delete `.claude/rules/` and `.edikt/config.yaml`, then run `/edikt:init` again. Or run `/edikt:doctor` to diagnose the issue first.
 
+## How do I roll back a bad release?
+
+```bash
+edikt rollback
+```
+
+This reverts `~/.edikt/current` to the previous generation. Note: rollback is payload-only. Migrations (the structural changes that happen when upgrading from v0.4.x to v0.5.0) are permanent and are not reversed by rollback. If you need to go back further than one generation, use `edikt use <version>` with a version from `edikt list`.
+
+## Can I pin edikt per project?
+
+Yes. Run from inside the project directory:
+
+```bash
+edikt upgrade --pin v0.5.0
+```
+
+The pin is stored in `~/.edikt/lock.yaml` (global mode) or `.edikt/lock.yaml` (project mode). Subsequent `edikt upgrade` calls are no-ops until you clear it with `edikt upgrade --pin clear`.
+
+## What happened to my old `~/.edikt/hooks/`?
+
+v0.5.0 migrated the flat layout to a versioned one. Your hooks are now at `~/.edikt/versions/0.5.0/hooks/` and `~/.edikt/hooks` is a symlink to `~/.edikt/current/hooks`. Nothing was deleted. Run `edikt doctor` to verify the symlink health.
+
+## Why did `brew upgrade edikt` run but `edikt upgrade` still says there's an update?
+
+They update different things. `brew upgrade edikt` updates the launcher binary (`bin/edikt`) — the small shell script that manages payload versions. `edikt upgrade` updates the payload — templates, commands, hooks, agents. They're versioned independently. After `brew upgrade edikt`, run `edikt upgrade` to also update the payload.
+
 ---
 
 Still have questions? [Open an issue on GitHub](https://github.com/diktahq/edikt/issues).

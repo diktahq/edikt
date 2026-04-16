@@ -79,6 +79,51 @@ Recommendations:
   1. go.md outdated — run /edikt:gov:rules-update
 ```
 
+## Launcher-level checks (v0.5.0)
+
+`/edikt:doctor` also probes the launcher's install health. These checks run against the versioned layout at `~/.edikt/`:
+
+| Check | Pass | Action |
+|---|---|---|
+| `~/.edikt/current` symlink valid | ✅ | — |
+| `current` target exists | ✅ | Suggest `edikt use <version>` |
+| `lock.yaml` parseable | ✅ | — |
+| `manifest.yaml` present in active version | ✅ | Suggest `edikt install` |
+| SHA256 of `bin/edikt` matches manifest | ✅ | Suggest `edikt install` |
+| `edikt` on PATH | ✅ | Print PATH placement |
+| NFS / WSL1 filesystem detected | ⚠ | Warn with workaround |
+
+## `--report` bundle
+
+Generate a shareable debug bundle:
+
+```bash
+edikt doctor --report
+```
+
+Writes `~/.edikt/reports/doctor-<timestamp>.txt` containing: version info, symlink health, manifest integrity check, events.jsonl tail (last 50 lines), system info (OS, shell, filesystem type under `$EDIKT_ROOT`). Share the report path when filing issues.
+
+## `--backfill-provenance`
+
+Add `edikt_template_hash` to agents installed before v0.5.0:
+
+```bash
+edikt doctor --backfill-provenance
+```
+
+Assumes the installed file matches the template from the `edikt_version` recorded in your config. Review the proposed hashes before confirming. This enables the provenance-first upgrade flow for pre-v0.5.0 agents.
+
+## NFS / WSL1 workaround
+
+If `edikt doctor` reports "symlinks not supported on this filesystem":
+
+1. Move `~/.edikt/` to a POSIX-compatible filesystem (ext4, APFS)
+2. Set `EDIKT_ROOT` to the new location:
+   ```bash
+   export EDIKT_ROOT=/path/on/posix/fs/.edikt
+   ```
+3. Add to your shell profile
+
 ## Natural language triggers
 
 - "is edikt set up correctly?"

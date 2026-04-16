@@ -18,11 +18,26 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 
 ## 1. Install
 
+### macOS / Linux (via Homebrew — recommended)
+
+```bash
+brew install diktahq/tap/edikt
+edikt install
+```
+
+### Any platform (via curl)
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
 ```
 
-Copies commands to `~/.claude/commands/edikt/` and templates to `~/.edikt/templates/`. No dependencies, no build step, no runtime — just files.
+Installs the launcher (`bin/edikt`) and fetches the payload (templates, commands, hooks) to `~/.edikt/`. No dependencies, no build step, no runtime — just files.
+
+**Upgrading from v0.4.x?** See [Migrating from v0.4](guides/migrating-from-v0.4.md).
+
+**Want to pin a version or roll back?** See [Upgrade and rollback](guides/upgrade-and-rollback.md).
+
+**Using Homebrew?** See [Homebrew install](guides/homebrew.md) for the two-tier update model.
 
 ## 2. Open a project in Claude Code
 
@@ -239,3 +254,11 @@ All behaviors are [configurable](/governance/features) — set any to `false` in
 ---
 
 **Questions?** See the [FAQ](/faq) or [open an issue on GitHub](https://github.com/diktahq/edikt/issues).
+
+---
+
+## What's next
+
+- [Upgrade and rollback](guides/upgrade-and-rollback.md) — keep edikt current, roll back if needed
+- [Migrating from v0.4](guides/migrating-from-v0.4.md) — if you're upgrading from v0.4.x
+- [Homebrew install](guides/homebrew.md) — two-tier update model explained
