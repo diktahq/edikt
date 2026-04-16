@@ -56,7 +56,7 @@ dev-off:
 ## dev-check: confirm which version is active in the sandbox
 dev-check:
 	@$(EDIKT) version
-	@$(EDIKT) doctor
+	@$(EDIKT) doctor; true  # warnings expected in sandbox (no manifest, no global symlink)
 
 # ─── Testing ──────────────────────────────────────────────────────────────────
 
