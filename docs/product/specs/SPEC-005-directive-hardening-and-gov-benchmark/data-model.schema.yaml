@@ -1,0 +1,335 @@
+# Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+# edikt:artifact type=data-model spec=SPEC-005 status=draft reviewed_by=dba
+# created_at=2026-04-16T23:35:00Z
+# Note: "collection" here is a file path — edikt stores structured JSON on disk, not in a DB.
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Extended directive sentinel block (embedded in ADR markdown files)
+# ─────────────────────────────────────────────────────────────────────────────
+directive_sentinel_block:
+  collection: "docs/architecture/decisions/ADR-*.md :: [edikt:directives:start]..[edikt:directives:end]"
+  title: "Directive sentinel block — extended"
+  type: object
+  description: >
+    Three-list schema (ADR-008) extended with canonical_phrases and behavioral_signal.
+    Parsed from YAML between the [edikt:directives:start]: # and [edikt:directives:end]: # markers.
+  required:
+    - paths
+    - scope
+    - directives
+    - manual_directives
+    - suppressed_directives
+    - source_hash
+    - directives_hash
+  properties:
+    paths:
+      type: array
+      description: "Glob paths the directive applies to. Existing ADR-007 field."
+      items: { type: string }
+    scope:
+      type: array
+      description: "Lifecycle scopes (e.g., implementation, review). Existing ADR-007 field."
+      items: { type: string, enum: [planning, design, review, implementation, all] }
+    directives:
+      type: array
+      description: "Auto-generated enforcement directives, regenerated on every compile. Existing ADR-008 field."
+      items: { type: string }
+    manual_directives:
+      type: array
+      description: "Human-authored directives preserved across compiles. Existing ADR-008 field."
+      items: { type: string }
+    suppressed_directives:
+      type: array
+      description: "Directive IDs to suppress from auto-generation. Existing ADR-008 field."
+      items: { type: string }
+    canonical_phrases:
+      type: array
+      description: >
+        NEW (SPEC-005 FR-001). Short substrings (2–5 words) a compliant refusal
+        will echo verbatim. Preserved across compiles. Missing = [].
+      items:
+        type: string
+        minLength: 1
+        maxLength: 80
+    behavioral_signal:
+      type: object
+      description: >
+        NEW (SPEC-005 FR-002). Observable compliance contract. Missing = {}.
+        Substring matching only (no globs) per Non-Goals.
+      properties:
+        refuse_to_write:
+          type: array
+          description: "Path substrings the model must not pass to Write/Edit."
+          items: { type: string }
+        refuse_tool:
+          type: array
+          description: "Tool names the model must not invoke."
+          items: { type: string, enum: [Write, Edit, Bash, Task, WebFetch, WebSearch] }
+        cite:
+          type: array
+          description: "Directive IDs (INV-NNN, ADR-NNN) the model must reference in its refusal."
+          items: { type: string, pattern: "^(INV|ADR)-[0-9]{3}$" }
+        refuse_edit_matching_frontmatter:
+          type: object
+          description: >
+            Structural predicate — refuse Edit on files whose frontmatter matches.
+            Specifically designed for INV-002 ("ADRs are immutable once accepted").
+          properties:
+            path_glob:
+              type: string
+              description: "File glob pattern (e.g., docs/architecture/decisions/ADR-*.md)."
+            frontmatter_key:
+              type: string
+              description: "Frontmatter field to match on."
+            frontmatter_value:
+              type: string
+              description: "Required value at that field."
+          required: [path_glob, frontmatter_key, frontmatter_value]
+    source_hash:
+      type: string
+      description: "SHA-256 of the ADR body. Integrity field per ADR-008."
+      pattern: "^[a-f0-9]{64}$"
+    directives_hash:
+      type: string
+      description: "SHA-256 of the compiled directives list. Integrity field per ADR-008."
+      pattern: "^[a-f0-9]{64}$"
+  indexes:
+    - fields: [source_hash]
+      reason: "Detect stale compilation when ADR body changes."
+    - fields: [directives_hash]
+      reason: "Detect hand-edits to auto-generated directives (ADR-008 invariant)."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Compile history state
+# ─────────────────────────────────────────────────────────────────────────────
+compile_history:
+  collection: ".edikt/state/compile-history.json"
+  title: "Compile history — orphan ADR tracking"
+  type: object
+  description: >
+    Persists the orphan ADR set from the most recent compile run.
+    Drives the warn-then-block semantics in FR-004. Written via
+    write-to-tempfile + atomic rename (AC-017). Unparseable = absent
+    (AC-018). Must be gitignored (AC-019).
+  required:
+    - schema_version
+    - last_compile_at
+    - orphan_adrs
+  properties:
+    schema_version:
+      type: integer
+      const: 1
+      description: "Bumped on breaking changes to this file's format."
+    last_compile_at:
+      type: string
+      format: date-time
+      description: "ISO 8601 timestamp of the most recent compile."
+    edikt_version:
+      type: string
+      description: "Optional — which edikt version wrote this file. Useful for debugging."
+    orphan_adrs:
+      type: array
+      description: >
+        ADR IDs that produced zero compiled directives in the last run.
+        Empty array = clean state. Compile uses superset-or-equal comparison
+        against this list to decide warn vs block.
+      items:
+        type: string
+        pattern: "^ADR-[0-9]{3}$"
+      uniqueItems: true
+  indexes:
+    - fields: [last_compile_at]
+      reason: "Ordering by most-recent-first if multiple history files are preserved for debugging."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. Benchmark summary report
+# ─────────────────────────────────────────────────────────────────────────────
+benchmark_summary:
+  collection: "docs/reports/governance-benchmark-<timestamp>/summary.json"
+  title: "Benchmark run summary"
+  type: object
+  description: >
+    Written by /edikt:gov:benchmark at end of run (AC-015). Top-level keys
+    are non-negotiable — they are the feed for Phase 2 catalog-tuning telemetry
+    (opt-in, documented separately).
+  required:
+    - edikt_version
+    - target_model
+    - timestamp
+    - directive_count
+    - runs_per_directive
+    - tokens
+    - overall
+    - directives
+  properties:
+    edikt_version:
+      type: string
+      description: "edikt release that produced this report. Required for Phase 2 telemetry."
+    target_model:
+      type: string
+      description: "Model ID benchmarked against (e.g., claude-opus-4-7). Required for telemetry."
+    timestamp:
+      type: string
+      format: date-time
+      description: "ISO 8601 start-of-run timestamp."
+    methodology_version:
+      type: string
+      description: "Version of the benchmark scoring methodology (bumps on contract changes)."
+      default: "0.1"
+    directive_count:
+      type: integer
+      minimum: 0
+      description: "Total directives tested in this run."
+    runs_per_directive:
+      type: integer
+      minimum: 1
+      default: 1
+      description: "N value. Always 1 in v1 per Non-Goals."
+    tokens:
+      type: object
+      required: [estimated, actual]
+      properties:
+        estimated:
+          type: integer
+          description: "Pre-flight token estimate."
+        actual:
+          type: integer
+          description: "Post-run actual token usage sum."
+    overall:
+      type: object
+      required: [pass, fail, skipped]
+      properties:
+        pass: { type: integer, minimum: 0 }
+        fail: { type: integer, minimum: 0 }
+        skipped:
+          type: integer
+          minimum: 0
+          description: "Directives with no behavioral_signal (AC-009)."
+    directives:
+      type: array
+      description: "One entry per tested directive (excludes skipped ones)."
+      items:
+        type: object
+        required: [id, signal_type, verdict, elapsed_ms]
+        properties:
+          id:
+            type: string
+            pattern: "^(INV|ADR)-[0-9]{3}$"
+          signal_type:
+            type: string
+            enum:
+              - refuse_tool_use
+              - refuse_file_pattern
+              - must_cite
+              - refuse_edit_matching_frontmatter
+          verdict:
+            type: string
+            enum: [PASS, FAIL]
+          elapsed_ms:
+            type: integer
+            minimum: 0
+          summary:
+            type: string
+            description: "One-line diagnosis for failures. Omitted on PASS."
+          root_cause:
+            type: string
+            description: "Known-pattern mapping. Present only on FAIL."
+            enum:
+              - soft-language
+              - missing-canonical-phrases
+              - id-not-in-directive-body
+              - directive-body-not-loaded
+              - other
+          suggested_fix:
+            type: object
+            description: "Present only on FAIL."
+            properties:
+              canonical_phrases:
+                type: array
+                items: { type: string }
+              rewritten_directive:
+                type: string
+          reasons:
+            type: array
+            description: "Raw failing check reasons — audit trail."
+            items: { type: string }
+  indexes:
+    - fields: [timestamp]
+      reason: "Reports accumulate chronologically; filesystem sort by name is implicit."
+    - fields: [target_model]
+      reason: "Phase 2 telemetry aggregation across runs."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. Attack log (one-row-per-run JSONL, mirrors summary.json's directives[])
+# ─────────────────────────────────────────────────────────────────────────────
+attack_log_row:
+  collection: "docs/reports/governance-benchmark-<timestamp>/attack-log.jsonl"
+  title: "Attack log entry — one per directive run"
+  type: object
+  description: >
+    JSONL row capturing the full input + output for a single directive run.
+    Written alongside summary.json for audit and Phase 2 catalog tuning.
+    Row count MUST equal directives tested (skipped excluded) × runs_per_directive.
+  required:
+    - directive_id
+    - signal_type
+    - run_index
+    - attack_prompt
+    - tool_calls
+    - assistant_text
+    - verdict
+    - elapsed_ms
+  properties:
+    directive_id:
+      type: string
+      pattern: "^(INV|ADR)-[0-9]{3}$"
+    signal_type:
+      type: string
+      enum:
+        - refuse_tool_use
+        - refuse_file_pattern
+        - must_cite
+        - refuse_edit_matching_frontmatter
+    run_index:
+      type: integer
+      minimum: 0
+      description: "Zero-based run index. Always 0 at N=1."
+    attack_prompt:
+      type: string
+      description: "Exact prompt sent to the model."
+    tool_calls:
+      type: array
+      description: "Model tool calls during this run — feeds scoring."
+      items:
+        type: object
+        required: [tool_name]
+        properties:
+          tool_name: { type: string }
+          tool_input: {}
+    assistant_text:
+      type: string
+      description: "Concatenated assistant text output — feeds citation scoring."
+    written_paths:
+      type: array
+      description: "Paths the model attempted to write/edit."
+      items: { type: string }
+    verdict:
+      type: string
+      enum: [PASS, FAIL]
+    reasons:
+      type: array
+      items: { type: string }
+    elapsed_ms:
+      type: integer
+      minimum: 0
+    api_ms:
+      type: integer
+      minimum: 0
+      description: "SDK-reported API time for this run."
+  indexes:
+    - fields: [directive_id]
+      reason: "Targeted re-run extracts rows for a single directive."
+    - fields: [verdict]
+      reason: "Failure aggregation for the summary index table."

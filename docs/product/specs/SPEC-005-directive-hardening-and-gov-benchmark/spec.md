@@ -2,10 +2,11 @@
 type: spec
 id: SPEC-005
 title: Directive hardening and governance compliance benchmark
-status: draft
+status: accepted
 author: Daniel Gomes
 implements: PRD-003
 created_at: 2026-04-16T23:15:00Z
+accepted_at: 2026-04-16T23:30:00Z
 references:
   adrs: [ADR-001, ADR-005, ADR-007, ADR-008, ADR-015]
   invariants: [INV-001, INV-002]

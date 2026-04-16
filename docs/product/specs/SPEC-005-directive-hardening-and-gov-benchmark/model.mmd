@@ -1,0 +1,161 @@
+%% Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
+%% edikt:artifact type=domain-model spec=SPEC-005 status=draft reviewed_by=architect
+%% created_at=2026-04-16T23:35:00Z
+%% Domain model for directive hardening + governance benchmark. Storage is flat files;
+%% the classes below capture semantic relationships, not DB rows.
+classDiagram
+    class Directive {
+        <<aggregate root>>
+        +String id
+        +String body
+        +List~String~ paths
+        +List~Scope~ scope
+        +List~String~ canonicalPhrases
+        +BehavioralSignal behavioralSignal
+        +String sourceHash
+        +String directivesHash
+        +hasBehavioralSignal() bool
+        +isOrphan() bool
+        +citedInText(text) bool
+    }
+
+    class BehavioralSignal {
+        <<value object>>
+        +List~String~ refuseToWrite
+        +List~ToolName~ refuseTool
+        +List~DirectiveId~ cite
+        +FrontmatterPredicate refuseEditMatchingFrontmatter
+        +isEmpty() bool
+        +signalType() SignalType
+    }
+
+    class CanonicalPhrase {
+        <<value object>>
+        +String text
+        +isSubstringOf(body) bool
+    }
+
+    class FrontmatterPredicate {
+        <<value object>>
+        +String pathGlob
+        +String frontmatterKey
+        +String frontmatterValue
+        +matches(file) bool
+    }
+
+    class Scope {
+        <<enumeration>>
+        planning
+        design
+        review
+        implementation
+        all
+    }
+
+    class SignalType {
+        <<enumeration>>
+        refuse_tool_use
+        refuse_file_pattern
+        must_cite
+        refuse_edit_matching_frontmatter
+    }
+
+    class AttackTemplate {
+        <<aggregate root>>
+        +SignalType signalType
+        +String promptTemplate
+        +List~String~ requiredInputs
+        +render(signal) String
+    }
+
+    class BenchmarkRun {
+        <<aggregate root>>
+        +String edikTVersion
+        +String targetModel
+        +DateTime timestamp
+        +Integer runsPerDirective
+        +TokenBudget tokens
+        +List~BenchmarkResult~ results
+        +overall() OverallCounts
+        +summary() Summary
+    }
+
+    class BenchmarkResult {
+        +DirectiveId directiveId
+        +SignalType signalType
+        +Verdict verdict
+        +Integer elapsedMs
+        +List~ToolCall~ toolCalls
+        +String assistantText
+        +RootCause rootCause
+        +SuggestedFix suggestedFix
+    }
+
+    class SuggestedFix {
+        <<value object>>
+        +List~String~ canonicalPhrases
+        +String rewrittenDirective
+    }
+
+    class TokenBudget {
+        <<value object>>
+        +Integer estimated
+        +Integer actual
+    }
+
+    class Verdict {
+        <<enumeration>>
+        PASS
+        FAIL
+    }
+
+    class RootCause {
+        <<enumeration>>
+        soft_language
+        missing_canonical_phrases
+        id_not_in_directive_body
+        directive_body_not_loaded
+        other
+    }
+
+    class CompileHistory {
+        <<aggregate root>>
+        +Integer schemaVersion
+        +DateTime lastCompileAt
+        +Set~DirectiveId~ orphanAdrs
+        +isFirstDetection(current) bool
+        +isConsecutive(current) bool
+        +write(path)
+        +readOrEmpty(path) CompileHistory
+    }
+
+    class Sandbox {
+        <<aggregate root>>
+        +Path rootPath
+        +CopyRules claudeRules
+        +CopyAgents claudeAgents
+        +CopySettings claudeSettings
+        +CopyAdrs architectureDecisions
+        +CopyInvariants architectureInvariants
+        +build(sourceProject) Path
+    }
+
+    Directive *-- BehavioralSignal : "contains"
+    Directive *-- "0..*" CanonicalPhrase : "contains"
+    Directive --> Scope : "scoped by"
+    BehavioralSignal *-- FrontmatterPredicate : "optionally contains"
+    BehavioralSignal --> SignalType : "resolves to"
+
+    AttackTemplate --> SignalType : "covers"
+    AttackTemplate ..> BehavioralSignal : "reads"
+
+    BenchmarkRun *-- "0..*" BenchmarkResult : "aggregates"
+    BenchmarkRun *-- TokenBudget : "contains"
+    BenchmarkResult --> Directive : "evaluates"
+    BenchmarkResult --> Verdict : "produces"
+    BenchmarkResult --> RootCause : "diagnoses"
+    BenchmarkResult *-- SuggestedFix : "includes on FAIL"
+
+    CompileHistory o-- "0..*" Directive : "tracks orphans of"
+
+    Sandbox ..> BenchmarkRun : "provides isolation for"
