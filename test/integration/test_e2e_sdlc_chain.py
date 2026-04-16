@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from conftest import with_retry
+from helpers import with_retry
 
 
 def _all_written_content(tool_calls: list[dict]) -> str:
@@ -41,18 +41,6 @@ def _all_written_content(tool_calls: list[dict]) -> str:
     )
 
 
-@pytest.mark.xfail(
-    reason=(
-        "BUG: /edikt:sdlc:spec invoked through claude-agent-sdk produces no output "
-        "when user settings are loaded. SDK stream shows [SystemMessage, UserMessage, "
-        "ResultMessage] with no AssistantMessage — Claude is never invoked. "
-        "The command is intercepted and terminated silently before any LLM call. "
-        "Contrasts with /edikt:sdlc:plan and /edikt:adr:new which work correctly. "
-        "Investigate: UserPromptSubmit or PreToolUse hook blocking spec command. "
-        "Track: open issue before v0.5.0 GA."
-    ),
-    strict=False,  # xfail but don't fail the suite if it accidentally passes
-)
 @pytest.mark.asyncio
 async def test_sdlc_spec_from_accepted_prd(
     project_with_accepted_prd: Path,

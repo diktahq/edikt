@@ -23,7 +23,7 @@ from typing import Any
 import pytest
 import yaml
 
-from conftest import with_retry
+from helpers import with_retry
 
 _FM_RE = __import__("re").compile(r"^---\n(.*?)\n---", __import__("re").DOTALL)
 

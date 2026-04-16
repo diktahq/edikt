@@ -33,7 +33,7 @@ from typing import Any
 import pytest
 import yaml
 
-from conftest import with_retry
+from helpers import with_retry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PHASE_END_HOOK = REPO_ROOT / "templates" / "hooks" / "phase-end-detector.sh"

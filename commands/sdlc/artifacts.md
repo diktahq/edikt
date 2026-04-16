@@ -2,17 +2,27 @@
 name: edikt:sdlc:artifacts
 description: "Generate implementable artifacts from an accepted spec"
 effort: high
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - Agent
 ---
 
 # edikt:spec-artifacts
 
 Generate implementable artifacts (data model, API contracts, migrations, test strategy) from an accepted technical specification. Each artifact is reviewed by the appropriate domain specialist.
 
-CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
-```
-⚠️  This command requires user interaction and cannot run in plan mode.
-Exit plan mode first, then run the command again.
-```
+CRITICAL: Check immediately whether you are in plan mode:
+- If you are in plan mode (you can only describe actions, not perform them), output exactly this and stop:
+  ```
+  ⚠️  /edikt:sdlc:artifacts requires interactive input and cannot run in plan mode.
+  Exit plan mode first, then run /edikt:sdlc:artifacts again.
+  ```
+- If you are not in plan mode, proceed normally with artifact generation.
 
 ## Arguments
 
