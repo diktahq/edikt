@@ -1,0 +1,118 @@
+# Agent registry — maps stacks to recommended agents
+# Format: category: [agent-slugs]
+#
+# Used by edikt:init to select which agents to install based on detected stack.
+# Agent templates are at templates/agents/{slug}.md
+# No agent has a model: field — model is per plan phase.
+
+# Always installed for every project
+always:
+  - architect
+  - docs
+  - qa
+
+# Installed for most non-trivial projects
+common:
+  - sre
+  - security
+  - pm
+  - api
+
+# Installed when these languages/frameworks are detected
+go:
+  - backend
+  - dba
+
+typescript:
+  - frontend
+  - backend
+
+python:
+  - backend
+  - dba
+
+php:
+  - backend
+
+ruby:
+  - backend
+
+java:
+  - backend
+  - dba
+
+rust:
+  - backend
+
+# Frontend frameworks
+react:
+  - frontend
+  - ux
+
+nextjs:
+  - frontend
+  - ux
+  - seo
+
+vue:
+  - frontend
+  - ux
+
+angular:
+  - frontend
+  - ux
+
+svelte:
+  - frontend
+  - ux
+
+# Mobile
+react-native:
+  - mobile
+  - ux
+
+flutter:
+  - mobile
+  - ux
+
+swift:
+  - mobile
+
+kotlin:
+  - mobile
+
+# Infrastructure triggers
+docker:
+  - platform
+
+kubernetes:
+  - platform
+  - sre
+
+terraform:
+  - platform
+
+# Content/web triggers
+web:
+  - seo
+  - gtm
+
+# Data triggers
+data-pipeline:
+  - data
+
+# Installed when project-context.md mentions these keywords
+security-keywords:
+  - security
+
+compliance-keywords:
+  - compliance
+
+# Available but not auto-installed — add with /edikt:agents add {slug}
+optional:
+  - performance
+  - data
+  - compliance
+  - mobile
+  - seo
+  - gtm

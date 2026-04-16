@@ -20,7 +20,7 @@
 | 5     | done | 1/5 | 2026-04-15 |
 | 6     | done | 1/5 | 2026-04-15      |
 | 7a    | done | 1/5 | 2026-04-15 |
-| 7b    | pending (split — run capture.sh, commit real fixtures, wire M4 to compile invocation) | 0/5 | - |
+| 7b    | done | 1/5 | 2026-04-16 |
 | 8     | done | 1/5 | 2026-04-15 |
 | 9     | done | 1/5 | 2026-04-15 |
 | 10    | done | 1/5 | 2026-04-15 |

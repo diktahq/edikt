@@ -280,6 +280,61 @@ def build_synth_v043(sandbox: dict) -> None:
     )
 
 
+# ─── Real fixture loader ─────────────────────────────────────────────────────
+
+FIXTURE_ROOT = REPO_ROOT / "test" / "integration" / "migration" / "fixtures"
+
+
+def load_real_fixture(sandbox: dict, tag: str) -> bool:
+    """Load a byte-for-byte captured fixture into sandbox.
+
+    Copies fixtures/<tag>/edikt/ → sandbox EDIKT_HOME and
+    fixtures/<tag>/commands/ → sandbox CLAUDE_HOME/commands/edikt/.
+    Replaces the '${HOME}' placeholder written by capture.sh with the
+    actual sandbox home path so hooks resolve correctly.
+
+    Returns True if the fixture exists, False if it is absent (allows
+    tests to skip cleanly when capture.sh hasn't been run yet).
+    """
+    fixture_dir = FIXTURE_ROOT / tag
+    if not fixture_dir.exists():
+        return False
+
+    edikt_src = fixture_dir / "edikt"
+    commands_src = fixture_dir / "commands"
+    edikt_home: Path = sandbox["edikt_home"]
+    claude_home: Path = sandbox["claude_home"]
+    real_home: str = str(sandbox["home"])
+
+    if edikt_src.exists():
+        shutil.copytree(str(edikt_src), str(edikt_home), dirs_exist_ok=True)
+    if commands_src.exists():
+        cmd_dest = claude_home / "commands" / "edikt"
+        cmd_dest.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(str(commands_src), str(cmd_dest), dirs_exist_ok=True)
+
+    # Replace the ${HOME} placeholder with the real sandbox home.
+    placeholder = "${HOME}"
+    for f in edikt_home.rglob("*"):
+        if f.is_file():
+            try:
+                text = f.read_text(errors="replace")
+                if placeholder in text:
+                    f.write_text(text.replace(placeholder, real_home))
+            except (OSError, UnicodeDecodeError):
+                pass
+    for f in (claude_home / "commands").rglob("*"):
+        if f.is_file():
+            try:
+                text = f.read_text(errors="replace")
+                if placeholder in text:
+                    f.write_text(text.replace(placeholder, real_home))
+            except (OSError, UnicodeDecodeError):
+                pass
+
+    return True
+
+
 # ─── Migrate runner ─────────────────────────────────────────────────────────
 
 
