@@ -10,9 +10,9 @@
 
 ## Progress
 
-| Phase | Status  | Attempt | Updated |
-|-------|---------|---------|---------|
-| 1     | pending | 0/5     | —       |
+| Phase | Status      | Attempt | Updated    |
+|-------|-------------|---------|------------|
+| 1     | done        | 1/5     | 2026-04-17 |
 | 2     | pending | 0/5     | —       |
 | 3     | pending | 0/5     | —       |
 | 4     | pending | 0/5     | —       |
