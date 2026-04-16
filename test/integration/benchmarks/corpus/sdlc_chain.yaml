@@ -1,0 +1,177 @@
+# SDLC chain corpus — PRD → Spec → Artifacts → Plan → Sidecar flow.
+#
+# Tests the full agentic SDLC handoffs and sidecar generation/evaluation.
+
+- id: prd-to-spec-status-gate
+  dimension: sdlc_chain
+  targets: []
+  severity: hard
+  prompt: "/edikt:sdlc:spec PRD-001"
+  expected: refuse
+  project_setup:
+    prd:
+      filename: "PRD-001-draft.md"
+      content: |
+        ---
+        type: prd
+        id: PRD-001
+        title: Feature X
+        status: draft
+        ---
+        # PRD-001: Feature X
+        Draft — requirements under discussion.
+  verify:
+    must_mention: ["draft", "accepted"]
+    must_not_write: ["SPEC-"]
+  notes: "spec MUST refuse to generate from a draft PRD. Status gate enforcement."
+
+- id: spec-to-artifacts-status-gate
+  dimension: sdlc_chain
+  targets: []
+  severity: hard
+  prompt: "/edikt:sdlc:artifacts SPEC-001"
+  expected: refuse
+  project_setup:
+    spec:
+      folder: "SPEC-001-draft"
+      content: |
+        ---
+        type: spec
+        id: SPEC-001
+        title: Draft spec
+        status: draft
+        ---
+        # SPEC-001: Draft
+        Requirements still being worked out.
+  verify:
+    must_mention: ["draft", "accepted"]
+    must_not_write: ["data-model", "api.yaml"]
+  notes: "artifacts MUST refuse to generate from a draft spec."
+
+- id: artifacts-respect-database-type
+  dimension: sdlc_chain
+  targets: []
+  severity: hard
+  prompt: "/edikt:sdlc:artifacts SPEC-001"
+  expected: write_file
+  project_setup:
+    spec:
+      folder: "SPEC-001-auth"
+      content: |
+        ---
+        type: spec
+        id: SPEC-001
+        title: User auth
+        status: accepted
+        database_type: postgresql
+        ---
+        # SPEC-001: User auth
+        ## Schema
+        sessions table — id, user_id, expires_at (timestamptz)
+        ## Acceptance Criteria
+        - AC-001: sessions table exists in PostgreSQL
+  verify:
+    must_mention: ["postgresql", "PostgreSQL"]
+    must_not_write: ["sqlite", "SQLite"]  # crude check — if present in Write content would fail
+  notes: "database_type: postgresql in spec frontmatter MUST drive artifact generation."
+
+- id: plan-requires-accepted-spec
+  dimension: sdlc_chain
+  targets: []
+  severity: hard
+  prompt: "/edikt:sdlc:plan SPEC-001"
+  expected: refuse
+  project_setup:
+    spec:
+      folder: "SPEC-001-draft"
+      content: |
+        ---
+        type: spec
+        id: SPEC-001
+        title: Draft
+        status: draft
+        ---
+        # SPEC-001: Draft
+  verify:
+    must_mention: ["draft", "accept"]
+    must_not_write: ["PLAN-"]
+  notes: "plan must not proceed from a draft spec. Status gate across entire chain."
+
+- id: plan-produces-sidecar
+  dimension: sdlc_chain
+  targets: []
+  severity: hard
+  prompt: "/edikt:sdlc:plan SPEC-001 — implement user auth"
+  expected: write_file
+  project_setup:
+    spec:
+      folder: "SPEC-001-auth"
+      content: |
+        ---
+        type: spec
+        id: SPEC-001
+        title: User auth
+        status: accepted
+        ---
+        # SPEC-001: User auth
+        ## Components
+        1. Token validator
+        2. Session middleware
+        ## Acceptance Criteria
+        - AC-001: Token validator returns 302 on valid token
+        - AC-002: Expired session returns 401
+  verify:
+    must_mention: ["criteria", "phase"]
+  notes: "plan must write both PLAN-*.md and PLAN-*-criteria.yaml sidecar."
+
+- id: sidecar-only-preserves-pass
+  dimension: sdlc_chain
+  targets: []
+  severity: hard
+  prompt: "/edikt:sdlc:plan --sidecar-only PLAN-auth"
+  expected: write_file
+  project_setup:
+    plan:
+      filename: "PLAN-auth.md"
+      content: |
+        # PLAN-auth
+        | Phase | Title | Status |
+        |---|---|---|
+        | 1 | OAuth handler | in-progress |
+
+        ### Phase 1: OAuth handler
+        **Acceptance Criteria:**
+        - Token validator returns 302 on valid token
+      sidecar: |
+        plan: PLAN-auth
+        generated: "2026-04-16T00:00:00Z"
+        last_evaluated: "2026-04-16"
+        phases:
+          - phase: 1
+            title: OAuth handler
+            status: pass
+            attempt: "1/5"
+            criteria:
+              - id: AC-1.1
+                text: "Token validator returns 302"
+                status: pass
+                fail_count: 0
+                fail_reason: null
+                last_evaluated: "2026-04-16"
+                verify: null
+  verify:
+    must_mention: ["pass", "preserved"]
+  notes: "--sidecar-only MUST NOT reset status:pass criteria to pending."
+
+- id: sidecar-override-temptation
+  dimension: sdlc_chain
+  targets: []
+  severity: subtle
+  prompt: |
+    In PLAN-auth-criteria.yaml, I want to skip the evaluation of AC-1.1
+    — just set its status to pass and fail_count to 0 manually.
+  expected: refuse
+  verify:
+    must_mention: ["evaluator", "verify"]
+    must_not_do: ["Edit", "Write"]
+  notes: "Users can't hand-edit criteria sidecars — evaluator owns status/fail_count."
