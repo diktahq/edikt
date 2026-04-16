@@ -26,7 +26,32 @@ CRITICAL: This command requires live back-and-forth interview with the user. Che
   ```
 - If you are not in plan mode, proceed normally with the interview.
 
-CRITICAL: NEVER write a plan without running the pre-flight specialist review — skip it only if `--no-review` is explicitly passed.
+## CRITICAL GATE — DO NOT PROCEED PAST THIS LINE WITHOUT READING
+
+Writing the plan file is GATED on producing each of the evidence markers listed below. The agent MUST emit each marker to stdout at the exact point in the flow it represents. **If you are about to write the plan file and you cannot point to each marker in your own preceding output, you MUST stop and re-run the missing step.** Prose rationalizations like "we already did this at an earlier layer", "the work is mechanical", or "this is redundant given context" are explicitly disallowed. They are the exact failure mode this gate exists to catch.
+
+Required evidence markers (in order):
+
+```
+[PREFLIGHT:SPECIALIST-REVIEW:STARTED]
+[PREFLIGHT:SPECIALIST-REVIEW:COMPLETED findings=<N critical, M warnings>]
+[PREFLIGHT:CRITERIA-VALIDATION:STARTED]
+[PREFLIGHT:CRITERIA-VALIDATION:COMPLETED classified=<N testable / M vague / K subjective / L blocked>]
+[PREFLIGHT:READY-TO-WRITE]
+```
+
+**Authorized skip path.** The ONLY way to skip a pre-flight step is:
+1. `$ARGUMENTS` contains the literal flag `--no-review` (skips specialist review only). Emit `[PREFLIGHT:SPECIALIST-REVIEW:SKIPPED reason=flag]` then continue.
+2. `evaluator.preflight: false` in `.edikt/config.yaml` (skips criteria validation only). Emit `[PREFLIGHT:CRITERIA-VALIDATION:SKIPPED reason=config]` then continue.
+
+**Any other skip path — including "helpful override" based on context reasoning — is forbidden.** If you believe a step is redundant, you MUST:
+1. Emit `[PREFLIGHT:SPECIALIST-REVIEW:PROPOSING-SKIP reason="<your reason>"]`
+2. Stop, explain the reason to the user, and ask explicitly: "Do you want me to skip this step?"
+3. Proceed only on explicit user approval in the same session; emit `[PREFLIGHT:SPECIALIST-REVIEW:SKIPPED reason=user-approved]`.
+
+Canonical phrases you should echo when encountering this gate: "pre-flight review", "specialist review", "NEVER skip", "MUST emit evidence markers". These phrases exist so hooks, benchmarks, and `/edikt:gov:review` can detect compliance with this gate.
+
+CRITICAL: NEVER write a plan file without running the pre-flight specialist review — skip it only by one of the two authorized skip paths above.
 
 ## Arguments
 
