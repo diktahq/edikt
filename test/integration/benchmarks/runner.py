@@ -67,15 +67,54 @@ class Case:
 
 
 @dataclass
-class CaseResult:
-    case_id: str
-    dimension: str
+class RunOutcome:
+    """A single run of a single case."""
+    run_index: int        # 0-indexed position within the N runs
     verdict: Literal["PASS", "FAIL", "UNCLEAR"]
     reasons: list[str]
+    response: str         # full response text (preserved)
+    tool_calls: list[dict]  # full tool call list (preserved)
+    api_ms: int
+    written_paths: list[str] = field(default_factory=list)
+
+
+@dataclass
+class CaseResult:
+    """Aggregated result for a case across N runs."""
+    case_id: str
+    dimension: str
+    severity: str
+    targets: list[str]
     model: str
-    response_excerpt: str = ""
-    tool_calls: list[str] = field(default_factory=list)
-    api_ms: int = 0
+    runs: list[RunOutcome]           # every run preserved
+
+    # Aggregate verdicts (computed from runs).
+    n_runs: int = 0
+    n_pass: int = 0
+    n_fail: int = 0
+    n_unclear: int = 0
+
+    # Statistical aggregates.
+    wilson_lower: float = 0.0
+    wilson_upper: float = 1.0
+    final_verdict: Literal["PASS", "FAIL", "UNCLEAR"] = "UNCLEAR"
+
+    def to_summary(self) -> dict:
+        """Compact summary for the session-level report."""
+        return {
+            "case_id": self.case_id,
+            "dimension": self.dimension,
+            "severity": self.severity,
+            "targets": self.targets,
+            "model": self.model,
+            "n_runs": self.n_runs,
+            "n_pass": self.n_pass,
+            "n_fail": self.n_fail,
+            "n_unclear": self.n_unclear,
+            "wilson": {"lower": self.wilson_lower, "upper": self.wilson_upper},
+            "verdict": self.final_verdict,
+            "reasons_summary": [r for run in self.runs for r in run.reasons][:10],
+        }
 
 
 # ─── Corpus loading ──────────────────────────────────────────────────────────
@@ -325,21 +364,67 @@ async def run_case(
     case: Case,
     tmp_path: Path,
     model: str,
+    n_runs: int = 1,
     skip_on_outage: bool = False,
 ) -> CaseResult:
-    """End-to-end: build project, run case, score."""
-    project = build_project(tmp_path, case.project_setup)
-    response, tool_calls, written, api_ms = await run_case_against_model(
-        case, project, model, skip_on_outage=skip_on_outage,
-    )
-    verdict, reasons = score_case(case, response, tool_calls, written, project)
+    """End-to-end: build project, run case N times, score, aggregate.
+
+    N runs with Wilson 95% CI aggregation per METHODOLOGY.md §6.
+    Each run gets its own tmp project directory so side-effects from
+    a previous run don't leak into the next.
+    """
+    from stats import wilson_ci, verdict_from_wilson
+
+    runs: list[RunOutcome] = []
+    for i in range(n_runs):
+        # Fresh project per run — isolate state between runs.
+        run_tmp = tmp_path / f"run-{i}"
+        run_tmp.mkdir(parents=True, exist_ok=True)
+        project = build_project(run_tmp, case.project_setup)
+
+        response, tool_calls, written, api_ms = await run_case_against_model(
+            case, project, model, skip_on_outage=skip_on_outage,
+        )
+        verdict, reasons = score_case(case, response, tool_calls, written, project)
+
+        written_paths = [
+            tc["tool_input"].get("file_path", "")
+            for tc in tool_calls
+            if tc["tool_name"] in {"Write", "Edit"}
+        ]
+
+        runs.append(RunOutcome(
+            run_index=i,
+            verdict=verdict,
+            reasons=reasons,
+            response=response,
+            tool_calls=tool_calls,
+            api_ms=api_ms,
+            written_paths=written_paths,
+        ))
+
+    # Aggregate.
+    n_pass = sum(1 for r in runs if r.verdict == "PASS")
+    n_fail = sum(1 for r in runs if r.verdict == "FAIL")
+    n_unclear = sum(1 for r in runs if r.verdict == "UNCLEAR")
+
+    # For Wilson CI we count PASS vs (FAIL + UNCLEAR) — conservative:
+    # UNCLEAR is NOT counted as success.
+    ci = wilson_ci(passes=n_pass, runs=n_runs, z=1.96)
+    final = verdict_from_wilson(ci)
+
     return CaseResult(
         case_id=case.id,
         dimension=case.dimension,
-        verdict=verdict,
-        reasons=reasons,
+        severity=case.severity,
+        targets=case.targets,
         model=model,
-        response_excerpt=response[:300],
-        tool_calls=[tc["tool_name"] for tc in tool_calls],
-        api_ms=api_ms,
+        runs=runs,
+        n_runs=n_runs,
+        n_pass=n_pass,
+        n_fail=n_fail,
+        n_unclear=n_unclear,
+        wilson_lower=ci.lower,
+        wilson_upper=ci.upper,
+        final_verdict=final,
     )
