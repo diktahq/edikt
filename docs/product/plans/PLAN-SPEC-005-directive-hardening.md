@@ -37,28 +37,30 @@ A `blocked` status means evaluation couldn't run — see Status Values in `/edik
 | 4 | `/edikt:adr:new` interview prompts | `sonnet` | Interactive flow extension; small but touchy | $0.08 |
 | 5 | Sentinel parser extension for new fields | `sonnet` | Schema extension + parser + test updates; foundational | $0.08 |
 | 6 | Shared directive-quality sub-procedure | `sonnet` | New shared markdown + two callers; medium complexity | $0.08 |
-| 7 | Compile orphan detection + history state + `.gitignore` | `sonnet` | State management + atomic-rename + concurrency notes | $0.08 |
+| 7 | Compile orphan detection + history state + `.gitignore` | `sonnet` (max_iter 5) | State management + atomic-rename + concurrency notes; architect flagged density — iteration budget raised | $0.08 |
 | 8 | Attack prompt catalog (4 templates) | `sonnet` | Markdown templates + discriminative-power test harness | $0.08 |
 | 9 | `/edikt:gov:benchmark` command + Python helper + tier-2 install | `opus` | SDK integration, SIGINT handling, tier-2 install surface, sandbox parity — novel and integrated | $1.80 |
 | 10 | Dogfood run + migration release notes | `sonnet` | Execution + documentation; medium complexity | $0.08 |
 
 ## Execution Strategy
 
-| Phase | Depends On | Parallel With | Wave |
-|-------|-----------|---------------|------|
-| 1     | —         | 2, 3, 4, 5    | 1    |
-| 2     | —         | 1, 3, 4, 5    | 1    |
-| 3     | —         | 1, 2, 4, 5    | 1    |
-| 4     | —         | 1, 2, 3, 5    | 1    |
-| 5     | —         | 1, 2, 3, 4    | 1    |
-| 6     | 5         | 7, 8          | 2    |
-| 7     | 5         | 6, 8          | 2    |
-| 8     | 1         | 6, 7          | 2    |
-| 9     | 1, 5, 8   | —             | 3    |
-| 10    | all       | —             | 4    |
+*Revised 2026-04-17 per specialist pre-flight review.*
 
-**Wave 1 (parallel):** 1, 2, 3, 4, 5 — five independent phases that land in any order.
-**Wave 2 (parallel):** 6, 7, 8 — all depend only on Wave 1 phases.
+| Phase | Depends On | Parallel With  | Wave |
+|-------|-----------|----------------|------|
+| 1     | —         | 2, 5           | 1    |
+| 2     | —         | 1, 5           | 1    |
+| 5     | —         | 1, 2           | 1    |
+| 3     | 5         | 4, 6, 7, 8     | 2    |
+| 4     | 5         | 3, 6, 7, 8     | 2    |
+| 6     | 5         | 3, 4, 7, 8     | 2    |
+| 7     | 5         | 3, 4, 6, 8     | 2    |
+| 8     | 1         | 3, 4, 6, 7     | 2    |
+| 9     | 1, 5, 8   | —              | 3    |
+| 10    | all       | —              | 4    |
+
+**Wave 1 (parallel):** 1, 2, 5 — three independent phases. Phase 5 (sentinel parser) is foundational for Waves 2+.
+**Wave 2 (parallel):** 3, 4, 6, 7, 8 — all depend on Phase 5's parser. Phase 3 and Phase 4 were moved here from Wave 1 (architect review flagged they write or read the new sentinel fields extended by Phase 5).
 **Wave 3:** 9 — the benchmark ships only after schema + attack catalog + tier-2 ADR all land.
 **Wave 4:** 10 — dogfood run against the new governance surface, release-notes doc.
 
@@ -94,16 +96,46 @@ All spec artifacts have plan coverage (4/4).
 
 ## Pre-Flight Notes
 
-Specialist review (step 8): **architect/security domains apply**. The spec already underwent an architect-level review (captured in the git history via the revision commit `6acaac0`), which drove the tier-2 carve-out, INV-002 attack template, compile-history atomicity, multi-fixture parity, shared sub-procedure, and migration grace period. These revisions are implemented in this plan directly; re-running an architect review on mechanically derived phases has low marginal value. Security concerns captured in spec §Security Considerations are addressed in Phase 8 (attack templates must not elicit harmful content) and Phase 9 (sandbox isolation, no secrets in prompts).
+**Step 8 — specialist review.** Ran 2026-04-17 (architect + security + SRE, all three in parallel). **5 critical, 8 warnings** returned. All incorporated into the phase prompts, ACs, and the Known Risks section below. No outstanding findings. Audit trail: see the "Pre-flight findings (resolved)" section at the end of this file.
 
-Criteria validation (step 9): acceptance criteria in this plan are inherited from SPEC-005 ACs (AC-001 through AC-025), which are binary, testable, and evaluator-ready. Phase-end evaluation runs on every `evaluate: true` phase.
+**Step 9 — pre-flight criteria validation.** Self-reviewed the 47 ACs in `PLAN-SPEC-005-directive-hardening-criteria.yaml`. Classification: 44 TESTABLE, 3 VAGUE, 0 SUBJECTIVE/BLOCKED. The 3 VAGUE (AC-1.4 compile-run verify, AC-7.5 gitignore-scenario selection, AC-10.5 tier-1-unchanged measurement) have been tightened to explicit shell commands.
+
+**Root-cause note.** The initial version of this plan skipped both pre-flight steps and rationalized it in prose — exactly the class of behavior SPEC-005 exists to catch. Captured as a case study in `docs/internal/brainstorms/BRAIN-002-directive-language-model-behavior.md` §In-session failure. A corresponding hardening pass on `commands/sdlc/*.md` (Lane B work, not part of this plan) will close the root cause in edikt's own shipped command surface, where users cannot author ADRs against edikt's own commands.
 
 ## Known Risks
 
 - **Tier-2 install surface is new edikt territory.** This plan introduces both the concept (ADR-015) and its first instance (`/edikt:gov:benchmark`) in one release. If tier-2 install turns out to have hidden UX issues (e.g., upgrade path conflicts between tier-1 and tier-2), iterate in a follow-up point release — do not block the v0.6.0 ship.
 - **Sandbox parity drift (AC-010) is a maintenance burden.** Any future change to `build_project()` or `commands/gov/benchmark.md`'s sandbox section must be paired. `runner.py`'s docstring invariant (Phase 9) is a soft signal, not a hard gate. Document this explicitly in ADR-015.
 - **Discriminative-power tests (AC-020) against a stubbed model are a lower bound.** Real-world attack-prompt quality is only validated by the Phase 10 dogfood run. If dogfood reveals weak attacks, iterate the catalog post-release — do not defer the v0.6.0 ship.
-- **Opus 4.7 behavior may drift in future model updates.** Our benchmark baseline (22/32 PASS, 0 behavioral violations) was captured 2026-04-16. A future Claude version may change either for or against edikt's directives. Phase 10 dogfood captures a fresh baseline; compare against it on every release.
+- **Backfill heuristic may propose weak phrases** (added from architect review). `/edikt:adr:review --backfill` (Phase 3) proposes `canonical_phrases` via a noun/verb heuristic. Users who rubber-stamp defaults may bake low-quality phrases into their governance. Mitigation: the `[e]dit` option is offered per-ADR, and the Phase 3 prompt instructs the tool to surface 2–3 candidates with their heuristic rationale (so rubber-stamping carries at least some signal). Track adoption quality in Phase 2 telemetry.
+- **Tier-2 install verb is CI-untested** (added from architect review). edikt has no CI pipeline; `edikt install benchmark` is validated by the Phase 9 integration test in a clean temp home, not against a matrix of Python versions, pip configs, or PEP 668 environments. If real-world install fails land, iterate the install code in a point release.
+- **Opus 4.7 behavior may drift in future model updates.** Baseline (22/32 PASS, 0 behavioral violations) captured 2026-04-16. Dogfood run in Phase 10 establishes the v0.6.0 baseline. *Note: treat this as a release-notes concern, not a planning risk; re-run the benchmark per-release and compare.*
+
+## Pre-flight findings (resolved)
+
+*Specialist review ran 2026-04-17. All critical findings addressed inline above; all warnings either addressed or moved to Known Risks. Trail kept for audit.*
+
+| # | Severity | Reviewer | Area | Resolution |
+|---|---|---|---|---|
+| 1 | 🔴 | architect | Wave 1 dependency bug (Phases 3, 4 depend on Phase 5) | Wave restructure in Execution Strategy; Phase 3 + 4 moved to Wave 2; `Depends on: 5` added |
+| 2 | 🔴 | security | `{{PATH}}` traversal allows writes outside sandbox | Phase 5 AC rejects `..`, `/`, `~/` at parse time; Phase 8 AC rejects at attack-generation time (defense-in-depth) |
+| 3 | 🔴 | security | Wheel install unverified; deps unpinned | Phase 9 AC-023f — SHA-256 verification against ADR-013 manifest; exact-version pin for `claude-agent-sdk` |
+| 4 | 🔴 | security + SRE | Reports directory not gitignored | Phase 9 AC-015b extends Phase 7's `.gitignore` handler; baseline path excluded |
+| 5 | 🔴 | SRE | `pip install` failure modes (no Python, PEP 668, partial install) | Phase 9 AC-023b (rollback) + AC-023c (Python version fail-fast) + AC-023d (venv/pipx isolation) |
+| 6 | 🔴 | SRE | Python minimum undeclared | Phase 9 AC-023c — fail-fast check with literal error message |
+| 7 | 🟡 | architect | Phase 3 conflates scan + backfill | Kept as single phase with internal sub-concern split in prompt; independent AC groups for each |
+| 8 | 🟡 | architect | Phase 6 `no-directives` validator scope broader than spec | Kept shared for defense-in-depth; both callers invoke the same procedure |
+| 9 | 🟡 | architect | Phase 7 under-modelled at sonnet | Max iterations raised 3 → 5 |
+| 10 | 🟡 | architect | Phase 6 + 10 completion promises too generic | Updated: `SHARED CHECKS WIRED IN COMPILE AND REVIEW`, `DOGFOOD BASELINE COMMITTED AND v060 NOTED` |
+| 11 | 🟡 | security | Free-form `{{task}}` substitution | Phase 8 AC — enumerated inputs only |
+| 12 | 🟡 | security | Template substitution not explicitly single-pass | Phase 8 AC — single-pass literal-text substitution enforced |
+| 13 | 🟡 | security | Stub-injection path not explicit | Phase 8 AC — stub injected via constructor arg, never env var |
+| 14 | 🟡 | SRE | Flock vs atomic rename not reconciled | Phase 7 prompt documents two-layer model: flock for outer operation, atomic rename for this specific state file |
+| 15 | 🟡 | SRE | Runtime error UX returns tracebacks | Phase 9 AC-016b — actionable messages for auth/network/SDK exception classes |
+| 16 | 🟡 | SRE | Uninstall idempotence | Phase 9 AC-023e — tolerates partial state |
+| 17 | 🟡 | SRE | Reports dir unbounded growth | Noted in Known Risks; not blocking v0.6.0 |
+| 18 | 🟡 | architect | Backfill heuristic risk | Added to Known Risks |
+| 19 | 🟡 | architect | Tier-2 install CI-untested | Added to Known Risks |
 
 ---
 
@@ -212,11 +244,14 @@ When complete, output: DOCTOR SOURCE CHECK SHIPPED
 ## Phase 3: `/edikt:adr:review` soft-language scan + `--backfill` flag
 
 **Objective:** Extend `/edikt:adr:review` with (a) a soft-language marker scanner + suggestion output, and (b) a `--backfill` interactive flow to retrofit `canonical_phrases` onto existing multi-sentence ADRs.
+
+**Two sub-concerns with independent exit criteria.** Soft-language scan is a read-only regex pass over directive bodies — low risk, cheap model could do it. Backfill writes the sentinel block and recomputes `source_hash` + `directives_hash` — higher risk of corruption on a bad heuristic. Keeping both under Phase 3 but gating the two sub-concerns independently in acceptance criteria.
+
 **Model:** `sonnet`
 **Max Iterations:** 3
-**Completion Promise:** `ADR REVIEW BACKFILL SHIPPED`
+**Completion Promise:** `ADR REVIEW SOFT SCAN AND BACKFILL SHIPPED`
 **Evaluate:** true
-**Dependencies:** None
+**Dependencies:** 5 (architect review flagged: `--backfill` writes the new `canonical_phrases` field, which requires Phase 5's parser extension)
 **Context Needed:**
 - `commands/adr/review.md` — existing command to extend
 - `docs/product/specs/SPEC-005-directive-hardening-and-gov-benchmark/spec.md` §Layer 4 + §Layer 7 — migration + backfill semantics
@@ -269,7 +304,7 @@ When complete, output: ADR REVIEW BACKFILL SHIPPED
 **Max Iterations:** 3
 **Completion Promise:** `ADR NEW INTERVIEW SHIPPED`
 **Evaluate:** true
-**Dependencies:** None
+**Dependencies:** 5 (architect review flagged: writes `canonical_phrases` + `behavioral_signal` into new ADRs and must round-trip through compile per AC-011, which requires Phase 5's parser)
 **Context Needed:**
 - `commands/adr/new.md` — existing command to extend
 - `docs/product/specs/SPEC-005-directive-hardening-and-gov-benchmark/spec.md` §Layer 7 — three interview questions defined
@@ -327,6 +362,7 @@ When complete, output: ADR NEW INTERVIEW SHIPPED
 - [ ] An ADR missing `behavioral_signal` parses as `behavioral_signal: {}`, no exception raised.
 - [ ] `behavioral_signal.refuse_edit_matching_frontmatter` (nested object) parses correctly with all three required sub-fields (path_glob, frontmatter_key, frontmatter_value).
 - [ ] Unit tests added for: new fields present, new fields absent, new fields malformed (should raise with line number).
+- [ ] **Path-traversal guard (added from security review).** Parser rejects `behavioral_signal.refuse_to_write` entries containing `..`, starting with `/`, or matching `~/`. Rejection is a parse error with a clear message naming the offending entry. Unit test at `test_sentinel_parser_extension.py::test_rejects_path_traversal_in_refuse_to_write`.
 
 **Prompt:**
 ```
@@ -360,7 +396,7 @@ When complete, output: SENTINEL PARSER EXTENDED
 **Objective:** Create `commands/gov/_shared-directive-checks.md` as the single source of truth for the FR-003a/b static checks, called by both `/edikt:gov:compile` (inline) and `/edikt:gov:review`.
 **Model:** `sonnet`
 **Max Iterations:** 3
-**Completion Promise:** `SHARED CHECKS SHIPPED`
+**Completion Promise:** `SHARED CHECKS WIRED IN COMPILE AND REVIEW`
 **Evaluate:** true
 **Dependencies:** 5
 **Context Needed:**
@@ -408,9 +444,9 @@ When complete, output: SHARED CHECKS SHIPPED
 
 ## Phase 7: Compile orphan detection + history state + `.gitignore`
 
-**Objective:** Add orphan-ADR detection with warn-then-block semantics to `/edikt:gov:compile`, backed by `.edikt/state/compile-history.json` via atomic rename. Auto-append `.edikt/state/` to `.gitignore`.
+**Objective:** Add orphan-ADR detection with warn-then-block semantics to `/edikt:gov:compile`, backed by `.edikt/state/compile-history.json` via atomic rename. Auto-append `.edikt/state/` to `.gitignore`. Reuse the existing `lock.yaml + flock` pattern from `bin/edikt` (SPEC-004) for the outer compile operation; atomic rename protects the state file from torn writes if the process crashes mid-serialize. Document the two-layer atomicity model inline.
 **Model:** `sonnet`
-**Max Iterations:** 3
+**Max Iterations:** 5  *(bumped from 3 per architect review — atomic rename semantics + 5 orphan-set transitions + gitignore normalization are invariant-dense)*
 **Completion Promise:** `ORPHAN DETECTION SHIPPED`
 **Evaluate:** true
 **Dependencies:** 5
@@ -486,6 +522,10 @@ When complete, output: ORPHAN DETECTION SHIPPED
 - [ ] AC-020: Each template passes the discriminative-power test — given a known-good and known-bad directive paired with a stubbed model, good-pass-rate > bad-pass-rate.
 - [ ] AC-025: `refuse_edit_matching_frontmatter` correctly scores a test scenario where the model attempts Edit on a file matching the predicate (FAIL) vs a file not matching (PASS).
 - [ ] Manual security review checklist in the template folder's README asserts no template elicits harmful content beyond policy violations.
+- [ ] **Enumerated inputs (security review).** Each template accepts only the named input slots from the signal block (`TOOL`, `PATH`, `FILE`, `CITE_ID`). No free-form `{{task}}` substitution. Unit test `test_attack_templates.py::test_enumerated_inputs_only` asserts rendering with an unrecognized slot name raises.
+- [ ] **Single-pass literal-text substitution (security review).** Input values are inserted as literal characters — `{{...}}` inside an input value is NOT re-evaluated. Unit test `test_attack_templates.py::test_single_pass_substitution` asserts that a `{{PATH}}` value of `{{ANTHROPIC_API_KEY}}` appears verbatim in the rendered prompt, not resolved.
+- [ ] **Path-traversal rejection at attack-generation time (security review).** If a rendered attack prompt contains `..` or absolute paths from a substring input, the renderer fails with a clear message. Complements Phase 5's parser-time guard (defense-in-depth).
+- [ ] **Explicit stub-injection contract (security review).** Discriminative-power tests inject the stub model via a constructor argument, NOT an env var. Test `test_attack_templates.py::test_stub_contract` asserts the real `claude_agent_sdk` entry point is never imported in the stubbed test path.
 
 **Prompt:**
 ```
@@ -561,6 +601,13 @@ When complete, output: ATTACK CATALOG SHIPPED
 - [ ] AC-016: Benchmark exits 0 on directive failures; exits ≠ 0 only on infrastructure failure.
 - [ ] AC-023: `install.sh` in a clean temp home does NOT install benchmark; `edikt install benchmark` installs `commands/gov/benchmark.md` + `tools/gov-benchmark/` + attack templates without modifying tier-1 command surface.
 - [ ] AC-024: ADR-015 exists and is referenced in SPEC-005 frontmatter (satisfied by Phase 1, verified here).
+- [ ] **AC-023b (SRE — partial-install rollback).** If `pip install` (or venv creation) fails mid-way, already-copied tier-2 markdown files are rolled back to the pre-install state. No bricked "markdown present but helper missing" outcome. Test simulates a pip failure and asserts post-failure filesystem state equals pre-install state.
+- [ ] **AC-023c (SRE — Python version check).** `edikt install benchmark` probes for Python ≥ 3.10 before any copy or install. On insufficient or missing Python: exits with literal message `edikt benchmark requires Python 3.10+, found {version} at {path}` and does not touch the filesystem.
+- [ ] **AC-023d (SRE — venv isolation).** `edikt install benchmark` installs the helper into a dedicated `~/.edikt/venv/` (created with `python -m venv`), never into ambient system Python. If `venv` creation fails, falls back to `pipx` if present; otherwise fails with a clear message recommending `pipx`. Avoids PEP 668 "externally-managed-environment" errors on Homebrew Python.
+- [ ] **AC-023e (SRE — uninstall idempotence).** `edikt uninstall benchmark` tolerates partial state: missing helper directory → removed markdown files only, exit 0; missing markdown files → removed helper only, exit 0; everything already gone → exit 0 with "already uninstalled" message. Never errors on absent state.
+- [ ] **AC-023f (security — wheel checksum verification).** `edikt install benchmark` verifies the SHA-256 of the vendored wheel against the checksum manifest established by ADR-013 before `pip install` runs. On mismatch: aborts with `Wheel checksum mismatch — expected {expected}, got {actual}`. `pyproject.toml` pins `claude-agent-sdk` to an exact version (`==`, not `>=`).
+- [ ] **AC-015b (security — reports gitignored).** `edikt install benchmark` extends Phase 7's `.gitignore` handler to also append `docs/reports/governance-benchmark-*/`. Baseline dogfood report path (`docs/reports/governance-benchmark-baseline/`) is explicitly NOT matched by the glob — it remains committable. Unit test covers both glob matches and the baseline exception.
+- [ ] **AC-016b (SRE — runtime error UX).** Benchmark failures emit actionable messages, not raw tracebacks: SDK auth expired → `Claude auth failed — run \`claude\` to refresh then retry`; network blip mid-directive → `Network error on directive {id} — marked SKIPPED, continuing with remaining directives` (partial summary.json written with clear partial-run flag); SDK exception → `Benchmark error: {message}. See {log_path} for details`. Tests cover each class.
 
 **Prompt:**
 ```
@@ -610,7 +657,7 @@ When complete, output: BENCHMARK TIER 2 SHIPPED
 **Objective:** Execute the full benchmark against this repo's own governance, capture the v0.6.0 baseline, write migration release notes. End-to-end confidence that the whole chain works together.
 **Model:** `sonnet`
 **Max Iterations:** 3
-**Completion Promise:** `DOGFOOD DONE AND RELEASE NOTED`
+**Completion Promise:** `DOGFOOD BASELINE COMMITTED AND v060 NOTED`
 **Evaluate:** true
 **Dependencies:** 1, 2, 3, 4, 5, 6, 7, 8, 9
 **Context Needed:**

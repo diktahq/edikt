@@ -39,7 +39,7 @@ phases:
         fail_reason: null
         block_reason: null
         last_evaluated: null
-        verify: "echo 'run /edikt:gov:compile and confirm exit 0 + clean output'"
+        verify: "bash -c 'set -e; ./bin/edikt compile > /tmp/edikt-compile.log 2>&1; grep -vq -i contradiction /tmp/edikt-compile.log'"
       - id: AC-1.5
         text: "Compiled governance.md contains a directive citing ADR-015"
         status: pending
@@ -208,6 +208,14 @@ phases:
         block_reason: null
         last_evaluated: null
         verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_malformed_yaml_raises -q"
+      - id: AC-5.6
+        text: "Parser rejects path-traversal metacharacters in behavioral_signal.refuse_to_write (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/governance/test_sentinel_parser_extension.py::test_rejects_path_traversal_in_refuse_to_write -q"
 
   - phase: 6
     title: "Shared directive-quality sub-procedure"
@@ -301,13 +309,13 @@ phases:
         last_evaluated: null
         verify: "pytest test/integration/test_compile_orphan_detection.py::test_unparseable_history -q"
       - id: AC-7.5
-        text: "AC-019: .gitignore appender covers all three scenarios (absent, no-entry, present)"
+        text: "AC-019: .gitignore appender covers absent, no-entry, and already-present scenarios"
         status: pending
         fail_count: 0
         fail_reason: null
         block_reason: null
         last_evaluated: null
-        verify: "pytest test/integration/test_compile_orphan_detection.py::test_gitignore_appender -q"
+        verify: "pytest test/integration/test_compile_orphan_detection.py -k 'gitignore_absent or gitignore_no_entry or gitignore_already_present' -q"
 
   - phase: 8
     title: "Attack prompt catalog (4 templates)"
@@ -354,6 +362,38 @@ phases:
         block_reason: null
         last_evaluated: null
         verify: "grep -q 'security review' templates/attacks/README.md"
+      - id: AC-8.6
+        text: "Enumerated inputs only — no free-form {{task}} substitution (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_enumerated_inputs_only -q"
+      - id: AC-8.7
+        text: "Single-pass literal-text substitution — {{...}} in input values is not re-evaluated (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_single_pass_substitution -q"
+      - id: AC-8.8
+        text: "Attack-generation rejects path-traversal metacharacters in substring inputs (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_path_traversal_rejected -q"
+      - id: AC-8.9
+        text: "Stub model injected via constructor argument; real SDK entry never imported in stubbed test path (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_attack_templates.py::test_stub_contract -q"
 
   - phase: 9
     title: "/edikt:gov:benchmark command + Python helper + tier-2 install"
@@ -472,6 +512,62 @@ phases:
         block_reason: null
         last_evaluated: null
         verify: "test -f docs/architecture/decisions/ADR-015-tier-2-tooling.md && grep -q 'ADR-015' docs/product/specs/SPEC-005-directive-hardening-and-gov-benchmark/spec.md"
+      - id: AC-9.15
+        text: "AC-023b: partial-install rollback — pip install failure restores pre-install filesystem state (SRE review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py::test_partial_install_rollback -q"
+      - id: AC-9.16
+        text: "AC-023c: Python version fail-fast with literal message on insufficient/missing Python (SRE review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py::test_python_version_check -q"
+      - id: AC-9.17
+        text: "AC-023d: helper installed into ~/.edikt/venv/ (or pipx fallback) — never ambient system Python (SRE review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py::test_venv_isolation -q"
+      - id: AC-9.18
+        text: "AC-023e: uninstall tolerates partial state — missing helper, missing markdown, or both → exit 0 (SRE review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py::test_uninstall_idempotent -q"
+      - id: AC-9.19
+        text: "AC-023f: wheel SHA-256 verified against ADR-013 manifest; claude-agent-sdk exact-version pin (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py::test_wheel_checksum_verified -q && grep -E 'claude-agent-sdk==[0-9]+\\.[0-9]+\\.[0-9]+' tools/gov-benchmark/pyproject.toml"
+      - id: AC-9.20
+        text: "AC-015b: .gitignore appender covers docs/reports/governance-benchmark-*/ with baseline exception (security review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_install_tier2.py::test_reports_gitignored -q"
+      - id: AC-9.21
+        text: "AC-016b: runtime errors emit actionable messages, not raw tracebacks — auth/network/SDK exception (SRE review)"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        block_reason: null
+        last_evaluated: null
+        verify: "pytest test/integration/test_benchmark_advisory_exit.py -k 'auth or network or sdk_exception' -q"
 
   - phase: 10
     title: "Dogfood run + migration release notes"
@@ -511,10 +607,10 @@ phases:
         last_evaluated: null
         verify: "pytest test/integration/test_e2e_v060_release.py -q"
       - id: AC-10.5
-        text: "Tier-1 commands unchanged after tier-2 install + uninstall"
+        text: "Tier-1 commands unchanged after tier-2 install + uninstall (SHA-256 checksums of every file under ~/.claude/commands/edikt/{adr,gov,sdlc,docs,guideline}/*.md pre-install equal checksums post-uninstall)"
         status: pending
         fail_count: 0
         fail_reason: null
         block_reason: null
         last_evaluated: null
-        verify: "pytest test/integration/test_e2e_v060_release.py::test_tier1_unchanged -q"
+        verify: "pytest test/integration/test_e2e_v060_release.py::test_tier1_checksums_unchanged -q"
