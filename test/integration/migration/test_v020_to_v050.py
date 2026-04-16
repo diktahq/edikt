@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from conftest import build_synth_v020, run_migrate
+from .helpers import build_synth_v020, run_migrate
 
 
 def test_v020_m5_gates_and_m4_pending(sandbox_home):

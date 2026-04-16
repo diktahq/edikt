@@ -2,7 +2,7 @@
 type: adr
 id: ADR-011
 title: Hook test suite uses characterization fixtures, not aspirational protocol fixtures
-status: accepted
+status: superseded-by-ADR-014
 decision-makers: [Daniel Gomes]
 created_at: 2026-04-15T00:00:00Z
 references:
@@ -14,7 +14,7 @@ references:
 
 # ADR-011: Hook test suite uses characterization fixtures, not aspirational protocol fixtures
 
-**Status:** Accepted
+**Status:** Superseded by ADR-014
 **Date:** 2026-04-15
 **Decision-makers:** Daniel Gomes
 

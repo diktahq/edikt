@@ -9,7 +9,7 @@ allowed-tools:
   - Bash
   - Glob
 ---
-!`ADR_DIR=$(grep "^  decisions:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$ADR_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); for d in "${BASE}/architecture/decisions" "${BASE}/decisions"; do [ -d "$d" ] && ADR_DIR="$d" && break; done; [ -z "$ADR_DIR" ] && ADR_DIR="${BASE}/architecture/decisions"; fi; COUNT=$(ls "${ADR_DIR}/"ADR-*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${ADR_DIR}/"ADR-*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext ADR number: ADR-%s\nExisting ADRs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext ADR number: ADR-001\nExisting ADRs: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  decisions:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/architecture/decisions"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; COUNT=$(find "$DIR" -maxdepth 1 -type f -name "ADR-*.md" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type f -name "ADR-*.md" 2>/dev/null | sort | xargs -I{} basename {} .md | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext ADR number: ADR-%s\nExisting ADRs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
 
 # edikt:adr:new
 
@@ -182,7 +182,7 @@ After scanning:
 - Skip or truncate the interview. Use the source pool to fill the ADR body directly.
 - The interview becomes "fill gaps", not "start from scratch". Ask ONLY about things not present in the source pool.
 
-#### 3d. Interview for gaps
+#### 3d. Interview for gaps (batched presentation per Opus 4.7 guidance)
 
 Based on the source pool and framing, identify what's missing for a complete ADR:
 - **Context** — what problem is this solving? (Often in the source pool already if a spec was referenced)
@@ -190,7 +190,23 @@ Based on the source pool and framing, identify what's missing for a complete ADR
 - **Trade-offs** — what are we accepting? (Rarely in specs, usually needs interview)
 - **Confirmation** — how will we know this is working? (Rarely in specs)
 
-Ask ONE focused question per missing element. Do not ask about things the source pool already covers. If the source pool is comprehensive enough that no interview is needed, skip directly to 3e.
+**Present ALL gap questions in a single message as a numbered list — do NOT ask one-at-a-time.** Every user turn adds reasoning overhead; batching respects the user's attention budget. Each question must be labeled:
+- `[required]` — blocking; the ADR cannot be written without this
+- `[optional — default: <value>]` — default applied silently if skipped
+
+Accept a single reply covering any subset. For skipped `[optional]` questions, apply the documented default. For skipped `[required]` questions, re-ask only those.
+
+Skip the interview entirely when the source pool covers all four elements.
+
+Example batched message:
+```
+I need a few answers before writing ADR-NNN. Answer any subset — defaults apply for skipped [optional] items.
+
+1. [required] What specifically is being decided? (one sentence)
+2. [optional — default: two alternatives inferred from framing] What other approaches did you consider?
+3. [optional — default: no explicit trade-offs] What are you accepting by choosing this?
+4. [optional — default: "runtime behavior matches spec"] How will we verify this decision is being followed?
+```
 
 **Examples:**
 

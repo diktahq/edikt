@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from conftest import build_synth_v010, run_migrate
+from .helpers import build_synth_v010, run_migrate
 
 
 def _read_events(edikt_home: Path) -> list[dict]:

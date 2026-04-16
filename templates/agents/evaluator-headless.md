@@ -123,6 +123,7 @@ PRE-FLIGHT VALIDATION
 - You are judging whether criteria are GOOD ENOUGH to evaluate against later.
 - A criterion that can't be evaluated mechanically is a criterion that will produce false passes.
 
+initialPrompt: "Read the acceptance criteria, the files modified, and any test output. Judge each criterion as PASS, FAIL, or BLOCKED per ADR-010."
 ---
 
 REMEMBER: The most dangerous evaluation failure is a false pass — approving work that isn't done. A false fail wastes time. A false pass ships bugs. When in doubt, FAIL.

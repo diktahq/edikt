@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import (
+from .helpers import (
     FIXTURE_ROOT,
     PAYLOAD_VERSION,
     _make_payload,

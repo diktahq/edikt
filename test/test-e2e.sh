@@ -89,19 +89,27 @@ else
     fail "Expected 20 agents, found $AGENT_COUNT"
 fi
 
-# Verify hook count (15 hooks including headless-ask and phase-end-detector)
-# 15 event hooks + 1 utility (event-log.sh) = 16
+# Verify hook count (v0.5.0 per ADR-014: removed pre-compact.sh; added
+# session-end, subagent-start, task-completed, worktree-create,
+# worktree-remove, status-line; original 16 − 1 + 6 = 21)
 HOOK_COUNT=$(ls "$INSTALL_HOME/templates/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-if [ "$HOOK_COUNT" -eq 16 ]; then
-    pass "16 hook scripts installed (15 hooks + event-log utility)"
+if [ "$HOOK_COUNT" -eq 21 ]; then
+    pass "21 hook scripts installed (v0.5.0 event set + status-line + utilities)"
 else
-    fail "Expected 16 hook files, found $HOOK_COUNT"
+    fail "Expected 21 hook files, found $HOOK_COUNT"
 fi
 
-# Verify all hooks listed in install.sh exist as files
-for hook in session-start pre-tool-use post-tool-use pre-compact stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask; do
+# Verify all v0.5.0 hooks exist as files (pre-compact REMOVED per ADR-014)
+for hook in session-start pre-tool-use post-tool-use stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask session-end subagent-start task-completed worktree-create worktree-remove status-line; do
     assert_file_exists "$INSTALL_HOME/templates/hooks/${hook}.sh" "Hook script exists: ${hook}.sh"
 done
+
+# pre-compact.sh MUST NOT exist in v0.5.0 (ADR-014 deletion)
+if [ ! -f "$INSTALL_HOME/templates/hooks/pre-compact.sh" ]; then
+    pass "pre-compact.sh removed per ADR-014"
+else
+    fail "pre-compact.sh should be removed per ADR-014"
+fi
 
 # Verify evaluator agent exists
 assert_file_exists "$INSTALL_HOME/templates/agents/evaluator.md" "Evaluator agent installed"
@@ -223,7 +231,7 @@ assert_file_contains "$INIT_PROJECT/CLAUDE.md" "edikt:start" "CLAUDE.md has star
 assert_file_contains "$INIT_PROJECT/CLAUDE.md" "edikt:end" "CLAUDE.md has end sentinel"
 
 # Verify settings.json has all hook events
-for event in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop StopFailure SubagentStop PreCompact PostCompact InstructionsLoaded TaskCreated CwdChanged FileChanged; do
+for event in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop StopFailure SubagentStop PostCompact InstructionsLoaded TaskCreated CwdChanged FileChanged SessionEnd SubagentStart TaskCompleted WorktreeCreate WorktreeRemove; do
     if python3 -c "
 import json, sys
 s = json.load(open('$INIT_PROJECT/.claude/settings.json'))

@@ -12,7 +12,7 @@ allowed-tools:
   - Bash
   - Agent
 ---
-!`SPEC_DIR=$(grep "^  specs:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$SPEC_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); SPEC_DIR="${BASE}/product/specs"; fi; COUNT=$(ls -d "${SPEC_DIR}/"SPEC-*/spec.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls -d "${SPEC_DIR}/"SPEC-*/spec.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {} | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext SPEC number: SPEC-%s\nExisting specs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext SPEC number: SPEC-001\nExisting specs: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  specs:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/product/specs"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; COUNT=$(find "$DIR" -maxdepth 1 -type d -name "SPEC-*" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type d -name "SPEC-*" 2>/dev/null | sort | xargs -I{} basename {} | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext SPEC number: SPEC-%s\nExisting specs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
 
 # edikt:spec
 
@@ -87,20 +87,24 @@ Read the project-context.md for project identity and stack.
 
 Read any relevant ADRs that might constrain the spec (match ADR titles against the PRD's topic).
 
-### 4. Interview
+### 4. Interview (batched presentation per Opus 4.7 guidance)
 
-Ask 2-4 questions specific to what you found in the codebase. These questions should prove you understood the project, not just the PRD.
+Present 2-4 codebase-specific questions in a **single batched message** — not sequentially. Batching respects the user's attention budget; sequential questioning inflates turn count with no quality gain for planning-phase interviews. The questions should prove you understood the project, not just the PRD.
 
-Good questions reference what you found:
-- "The codebase has 3 ADRs about error handling. Should this spec follow ADR-002 (wrapped errors) or propose a different approach?"
-- "I see a hexagonal architecture with `domain/`, `port/`, `adapter/` layers. Should this feature follow the same pattern?"
-- "There's no existing test infrastructure for integration tests. Should the spec include setting that up?"
+Format each question with a label:
+- `[required]` — blocking; the spec cannot be written without this decision
+- `[optional — default: <inferred from codebase>]` — default applied silently if skipped
 
-Bad questions are generic:
+Good questions reference what you found in the codebase:
+- `[required] The codebase has 3 ADRs about error handling. Should this spec follow ADR-002 (wrapped errors) or propose a different approach?`
+- `[optional — default: same as existing] I see a hexagonal architecture with \`domain/\`, \`port/\`, \`adapter/\` layers. Should this feature follow the same pattern?`
+- `[required] There's no existing test infrastructure for integration tests. Should the spec include setting that up?`
+
+Bad questions are generic — skip these, you can infer the answer:
 - "What language should we use?" (you can see the stack)
 - "What's the project about?" (you read project-context.md)
 
-Wait for the user's answers before proceeding.
+Accept a single user reply covering any subset. Apply defaults for skipped `[optional]` items. Re-ask only `[required]` items that were not answered.
 
 ### 5. Show Outline
 

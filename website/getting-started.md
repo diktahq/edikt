@@ -257,6 +257,26 @@ All behaviors are [configurable](/governance/features) — set any to `false` in
 
 ---
 
+## Prompt caching for long sessions
+
+Claude Code exposes two environment variables that extend the prompt cache TTL beyond the 5-minute default. If you run long implementation sessions where edikt's rule packs + CLAUDE.md get re-read on every turn, these pay for themselves quickly:
+
+| Variable | What it does | When to use |
+|---|---|---|
+| `ENABLE_PROMPT_CACHING_1H=1` | Extends cache TTL to 1 hour | Long sessions (>30min) where you revisit the same governance context repeatedly — plan execution phases, multi-file refactors |
+| `FORCE_PROMPT_CACHING_5M=1` | Forces 5-minute caching even when Claude Code would otherwise skip | CI runs and short review sessions where you want deterministic caching behavior |
+
+Set these in your shell profile or on a per-session basis:
+
+```bash
+export ENABLE_PROMPT_CACHING_1H=1
+claude  # start a long-session with extended caching
+```
+
+These variables are read by Claude Code itself; edikt doesn't change its behavior based on them.
+
+---
+
 ## What's next
 
 - [Upgrade and rollback](guides/upgrade-and-rollback.md) — keep edikt current, roll back if needed

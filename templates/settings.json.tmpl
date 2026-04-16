@@ -77,16 +77,6 @@
         ]
       }
     ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${EDIKT_HOOK_DIR}/pre-compact.sh"
-          }
-        ]
-      }
-    ],
     "PostCompact": [
       {
         "hooks": [
@@ -137,6 +127,60 @@
           }
         ]
       }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/session-end.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/subagent-start.sh"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/task-completed.sh"
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/worktree-create.sh"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/worktree-remove.sh"
+          }
+        ]
+      }
     ]
+  },
+  "statusLine": {
+    "command": "${EDIKT_HOOK_DIR}/status-line.sh",
+    "refreshInterval": 30
   }
 }
