@@ -13,15 +13,15 @@
 | Phase | Status      | Attempt | Updated    |
 |-------|-------------|---------|------------|
 | 1     | done        | 1/5     | 2026-04-17 |
-| 2     | pending | 0/5     | —       |
-| 3     | pending | 0/5     | —       |
-| 4     | pending | 0/5     | —       |
-| 5     | pending | 0/5     | —       |
-| 6     | pending | 0/5     | —       |
-| 7     | pending | 0/5     | —       |
-| 8     | pending | 0/5     | —       |
-| 9     | pending | 0/5     | —       |
-| 10    | pending | 0/5     | —       |
+| 2     | done        | 1/5     | 2026-04-17 |
+| 3     | pending     | 0/5     | —          |
+| 4     | pending     | 0/5     | —          |
+| 5     | done        | 1/5     | 2026-04-17 |
+| 6     | pending     | 0/5     | —          |
+| 7     | pending     | 0/5     | —          |
+| 8     | pending     | 0/5     | —          |
+| 9     | pending     | 0/5     | —          |
+| 10    | pending     | 0/5     | —          |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
