@@ -150,7 +150,7 @@ if [ -z "$SIDECAR" ]; then
     _claude_bin="claude"
   fi
 
-  if [ -n "$_claude_bin" ] && [ "${EDIKT_EVALUATOR_DRY_RUN:-0}" != "1" ]; then
+  if [ -n "$_claude_bin" ] && [ "${EDIKT_EVALUATOR_DRY_RUN:-0}" != "1" ] && [ "${EDIKT_SKIP_SIDECAR_REGEN:-0}" != "1" ]; then
     python3 - "$PLAN_STEM" <<'PYEOF'
 import json, sys
 stem = sys.argv[1]

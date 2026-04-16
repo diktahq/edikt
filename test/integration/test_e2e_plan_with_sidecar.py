@@ -461,25 +461,33 @@ class TestPhaseEndDetectorSidecar:
         sidecar_path.write_text(yaml.dump(sidecar_data))
         return project
 
-    def _run_hook(self, project: Path, message: str) -> subprocess.CompletedProcess:
+    def _run_hook(
+        self,
+        project: Path,
+        message: str,
+        extra_env: dict | None = None,
+    ) -> subprocess.CompletedProcess:
         payload = json.dumps({
             "hook_event_name": "Stop",
             "stop_hook_active": False,
             "last_assistant_message": message,
             "cwd": str(project),
         })
+        env = {
+            **os.environ,
+            "EDIKT_EVALUATOR_DRY_RUN": "1",  # detect but don't call claude -p
+            "HOME": str(project.parent),
+            "EDIKT_HOME": str(project.parent / ".edikt"),
+        }
+        if extra_env:
+            env.update(extra_env)
         return subprocess.run(
             ["bash", str(PHASE_END_HOOK)],
             input=payload,
             capture_output=True,
             text=True,
             timeout=30,
-            env={
-                **os.environ,
-                "EDIKT_EVALUATOR_DRY_RUN": "1",  # detect but don't call claude -p
-                "HOME": str(project.parent),
-                "EDIKT_HOME": str(project.parent / ".edikt"),
-            },
+            env=env,
             cwd=str(project),
         )
 
@@ -592,4 +600,426 @@ class TestPhaseEndDetectorSidecar:
         assert not result.stdout.strip(), (
             "Hook must be silent in non-edikt projects; "
             f"got output: {result.stdout!r}"
+        )
+
+    # ── Auto-generation with mock claude ──────────────────────────────────────
+
+    def _make_mock_claude(self, tmp_path: Path, behavior: str = "success") -> Path:
+        """Create a mock claude binary that handles both sidecar-only and evaluator calls.
+
+        behavior:
+          "success"  — creates sidecar on --sidecar-only call, returns PASS on evaluator
+          "fail"     — exits 1 on --sidecar-only (generation fails)
+          "no_write" — exits 0 on --sidecar-only but writes no file
+        """
+        mock_dir = tmp_path / "mock-bin"
+        mock_dir.mkdir(exist_ok=True)
+        mock_claude = mock_dir / "claude"
+
+        if behavior == "success":
+            script = textwrap.dedent(
+                """\
+                #!/usr/bin/env bash
+                # Mock claude: handles --sidecar-only AND evaluator prompt calls
+                ARGS="$*"
+                if echo "$ARGS" | grep -q "sidecar-only"; then
+                    STEM=$(echo "$ARGS" | grep -oE 'PLAN-[^ ]+' | head -1)
+                    for dir in docs/plans docs/product/plans; do
+                        if [ -d "$dir" ]; then
+                            cat > "$dir/${STEM}-criteria.yaml" <<YAML
+plan: ${STEM}
+generated: "2026-04-16T00:00:00Z"
+last_evaluated: null
+phases:
+  - phase: 1
+    title: Mock Phase 1
+    status: pending
+    attempt: "0/5"
+    criteria:
+      - id: AC-1.1
+        text: "Tests pass"
+        status: pending
+        fail_count: 0
+        fail_reason: null
+        last_evaluated: null
+        verify: "pytest test/ -q"
+YAML
+                            exit 0
+                        fi
+                    done
+                else
+                    # Evaluator call — return a simple PASS verdict
+                    echo "VERDICT: PASS"
+                    echo "AC-1.1: PASS — tests pass"
+                fi
+                exit 0
+                """
+            )
+        elif behavior == "fail":
+            script = "#!/usr/bin/env bash\nexit 1\n"
+        else:  # no_write
+            script = "#!/usr/bin/env bash\necho 'VERDICT: PASS'\nexit 0\n"
+
+        mock_claude.write_text(script)
+        mock_claude.chmod(0o755)
+        return mock_dir
+
+    def test_hook_auto_generates_sidecar_using_mock_claude(self, tmp_path: Path) -> None:
+        """When sidecar is missing and claude is available, hook auto-generates it.
+
+        Uses a mock claude binary that creates a valid criteria sidecar.
+        After auto-generation succeeds, the hook must use the new sidecar
+        (not fall back to plan markdown).
+        """
+        project = self._make_project_with_plan(tmp_path, in_progress_phase=1)
+        # Remove the sidecar.
+        sidecar = project / "docs" / "plans" / "PLAN-test-criteria.yaml"
+        sidecar.unlink()
+        assert not sidecar.exists()
+
+        mock_bin = self._make_mock_claude(tmp_path, behavior="success")
+
+        # Run WITHOUT EDIKT_EVALUATOR_DRY_RUN (so auto-gen can actually run).
+        # The mock claude handles both the --sidecar-only call AND the evaluator call.
+        # Unset EDIKT_EVALUATOR_DRY_RUN so it defaults to 0 (not "1").
+        env = {
+            **os.environ,
+            "HOME": str(project.parent),
+            "EDIKT_HOME": str(project.parent / ".edikt"),
+            "EDIKT_SKIP_SIDECAR_REGEN": "0",
+            "PATH": f"{mock_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        }
+        env.pop("EDIKT_EVALUATOR_DRY_RUN", None)  # must NOT be set to "1"
+
+        result = subprocess.run(
+            ["bash", str(PHASE_END_HOOK)],
+            input=json.dumps({
+                "hook_event_name": "Stop",
+                "stop_hook_active": False,
+                "last_assistant_message": "Phase 1 complete. All acceptance criteria met.",
+                "cwd": str(project),
+            }),
+            capture_output=True, text=True, timeout=30,
+            env=env,
+            cwd=str(project),
+        )
+        assert result.returncode == 0, f"hook crashed: {result.stderr}"
+
+        # Sidecar must have been created by the mock claude.
+        assert sidecar.exists(), (
+            "Mock claude ran --sidecar-only but sidecar was not created; "
+            f"hook output: {result.stdout + result.stderr}"
+        )
+
+        # The hook output must NOT show the 'history not found' warning
+        # since generation succeeded.
+        combined = result.stdout + result.stderr
+        # The dry-run output should show Sidecar: <path> not (none).
+        assert "(none)" not in combined, (
+            "After successful auto-generation, hook must use the new sidecar "
+            f"not fall back to plan markdown; output: {combined!r}"
+        )
+
+    def test_hook_warns_when_auto_generation_fails(self, tmp_path: Path) -> None:
+        """When auto-generation fails (claude exits non-zero), hook warns and falls back."""
+        project = self._make_project_with_plan(tmp_path, in_progress_phase=1)
+        sidecar = project / "docs" / "plans" / "PLAN-test-criteria.yaml"
+        sidecar.unlink()
+
+        mock_bin = self._make_mock_claude(tmp_path, behavior="fail")
+
+        env = {
+            **os.environ,
+            "HOME": str(project.parent),
+            "EDIKT_HOME": str(project.parent / ".edikt"),
+            "EDIKT_SKIP_SIDECAR_REGEN": "0",
+            "PATH": f"{mock_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        }
+        env.pop("EDIKT_EVALUATOR_DRY_RUN", None)
+
+        result = subprocess.run(
+            ["bash", str(PHASE_END_HOOK)],
+            input=json.dumps({
+                "hook_event_name": "Stop",
+                "stop_hook_active": False,
+                "last_assistant_message": "Phase 1 complete. All acceptance criteria met.",
+                "cwd": str(project),
+            }),
+            capture_output=True, text=True, timeout=30,
+            env=env,
+            cwd=str(project),
+        )
+        assert result.returncode == 0, f"hook crashed: {result.stderr}"
+
+        combined = result.stdout + result.stderr
+        # Must warn the user.
+        assert "history" in combined.lower(), (
+            "Hook must warn about missing history when auto-generation fails; "
+            f"got: {combined!r}"
+        )
+        assert "--sidecar-only" in combined, (
+            "Hook must show recovery command even when auto-generation fails"
+        )
+        # Must mention that auto-generation was attempted (gen_status="failed" path).
+        assert "tried" in combined.lower() or "couldn't" in combined.lower() or "automatically" in combined.lower(), (
+            "Hook warning must explain that auto-generation was attempted but failed; "
+            f"got: {combined!r}"
+        )
+
+    def test_hook_warns_immediately_when_claude_unavailable(self, tmp_path: Path) -> None:
+        """When claude is not in PATH, hook warns immediately without attempting generation."""
+        project = self._make_project_with_plan(tmp_path, in_progress_phase=1)
+        sidecar = project / "docs" / "plans" / "PLAN-test-criteria.yaml"
+        sidecar.unlink()
+
+        # Use a temp dir with only bash-compatible system tools — no claude binary.
+        # Must keep /bin, /usr/bin so bash itself and basic tools work.
+        safe_path = "/usr/bin:/bin:/usr/local/bin"
+        env = {
+            **os.environ,
+            "HOME": str(project.parent),
+            "EDIKT_HOME": str(project.parent / ".edikt"),
+            "EDIKT_SKIP_SIDECAR_REGEN": "0",
+            "PATH": safe_path,
+        }
+        env.pop("EDIKT_EVALUATOR_DRY_RUN", None)
+
+        result = subprocess.run(
+            ["bash", str(PHASE_END_HOOK)],
+            input=json.dumps({
+                "hook_event_name": "Stop",
+                "stop_hook_active": False,
+                "last_assistant_message": "Phase 1 complete. All acceptance criteria met.",
+                "cwd": str(project),
+            }),
+            capture_output=True, text=True, timeout=30,
+            env=env,
+            cwd=str(project),
+        )
+        assert result.returncode == 0
+        combined = result.stdout + result.stderr
+        assert "history" in combined.lower() or "--sidecar-only" in combined, (
+            "Hook must warn about missing history when claude unavailable"
+        )
+
+    def test_hook_auto_gen_skipped_when_env_set(self, tmp_path: Path) -> None:
+        """EDIKT_SKIP_SIDECAR_REGEN=1 prevents auto-generation attempt."""
+        project = self._make_project_with_plan(tmp_path, in_progress_phase=1)
+        sidecar = project / "docs" / "plans" / "PLAN-test-criteria.yaml"
+        sidecar.unlink()
+
+        mock_bin = self._make_mock_claude(tmp_path, behavior="success")
+
+        result = self._run_hook(
+            project,
+            "Phase 1 complete. All acceptance criteria met.",
+            extra_env={
+                "EDIKT_EVALUATOR_DRY_RUN": "1",
+                "EDIKT_SKIP_SIDECAR_REGEN": "1",  # explicitly skip
+                "PATH": f"{mock_bin}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            },
+        )
+        assert result.returncode == 0
+        # Sidecar must NOT have been created (skip flag honoured).
+        assert not sidecar.exists(), (
+            "EDIKT_SKIP_SIDECAR_REGEN=1 must prevent auto-generation"
+        )
+
+    def test_hook_corrupted_sidecar_falls_back_gracefully(self, tmp_path: Path) -> None:
+        """Corrupted YAML in sidecar must not crash the hook.
+
+        The hook passes the sidecar path to the evaluator prompt. The
+        evaluator (claude -p) handles YAML parsing — a corrupted file
+        should degrade gracefully, not crash the shell hook.
+        """
+        project = self._make_project_with_plan(tmp_path, in_progress_phase=1)
+        sidecar = project / "docs" / "plans" / "PLAN-test-criteria.yaml"
+        # Overwrite with invalid YAML.
+        sidecar.write_text("this: is: not: valid: yaml: [\n  unclosed bracket\n")
+
+        result = self._run_hook(
+            project,
+            "Phase 1 complete. All acceptance criteria met.",
+        )
+        # Hook must not crash — it passes sidecar path to evaluator, which handles parsing.
+        assert result.returncode == 0, (
+            "Corrupted sidecar YAML must not crash the hook; "
+            f"stderr: {result.stderr!r}"
+        )
+
+
+class TestCriteriaSidecarEdgeCases:
+    """Edge cases for criteria sidecar schema and sidecar-plan sync."""
+
+    def test_sidecar_with_empty_criteria_list(self, tmp_path: Path) -> None:
+        """A phase with no acceptance criteria must produce an empty list, not crash."""
+        sidecar_path = tmp_path / "PLAN-empty-criteria.yaml"
+        data = {
+            "plan": "PLAN-empty-criteria",
+            "generated": "2026-04-16T00:00:00Z",
+            "last_evaluated": None,
+            "phases": [
+                {
+                    "phase": 1,
+                    "title": "Phase with no ACs",
+                    "status": "pending",
+                    "attempt": "0/5",
+                    "criteria": [],  # empty — valid but unusual
+                }
+            ],
+        }
+        sidecar_path.write_text(yaml.dump(data))
+        loaded = yaml.safe_load(sidecar_path.read_text())
+        assert loaded["phases"][0]["criteria"] == [], (
+            "Empty criteria list must round-trip through YAML without error"
+        )
+
+    def test_sidecar_out_of_sync_plan_has_more_phases(self, tmp_path: Path) -> None:
+        """Sidecar with 2 phases but plan has 3 — the merge must add the missing phase.
+
+        This is the 'out of sync' scenario: someone added a phase to the plan
+        after the sidecar was generated. The --sidecar-only regeneration must
+        detect the new phase and add it with pending criteria.
+        """
+        # Sidecar with 2 phases.
+        sidecar_path = tmp_path / "PLAN-test-criteria.yaml"
+        old_data = {
+            "plan": "PLAN-test",
+            "generated": "2026-04-16T00:00:00Z",
+            "last_evaluated": None,
+            "phases": [
+                {
+                    "phase": 1, "title": "Phase 1", "status": "pass",
+                    "attempt": "1/5",
+                    "criteria": [{"id": "AC-1.1", "text": "Tests pass",
+                                  "status": "pass", "fail_count": 0,
+                                  "fail_reason": None, "last_evaluated": "2026-04-16",
+                                  "verify": "pytest"}],
+                },
+                {
+                    "phase": 2, "title": "Phase 2", "status": "pending",
+                    "attempt": "0/5",
+                    "criteria": [{"id": "AC-2.1", "text": "API works",
+                                  "status": "pending", "fail_count": 0,
+                                  "fail_reason": None, "last_evaluated": None,
+                                  "verify": None}],
+                },
+            ],
+        }
+        sidecar_path.write_text(yaml.dump(old_data))
+
+        # Simulate merge: add phase 3 (new in plan) to existing sidecar.
+        refreshed = yaml.safe_load(sidecar_path.read_text())
+        new_phase = {
+            "phase": 3, "title": "Phase 3 (new)", "status": "pending",
+            "attempt": "0/5",
+            "criteria": [{"id": "AC-3.1", "text": "Integration tests pass",
+                          "status": "pending", "fail_count": 0,
+                          "fail_reason": None, "last_evaluated": None,
+                          "verify": None}],
+        }
+        refreshed["phases"].append(new_phase)
+        sidecar_path.write_text(yaml.dump(refreshed))
+
+        final = yaml.safe_load(sidecar_path.read_text())
+
+        # Phase 1 must still be "pass" — not reset.
+        assert final["phases"][0]["status"] == "pass", (
+            "Merge must not reset existing phase evaluation results"
+        )
+        assert final["phases"][0]["criteria"][0]["status"] == "pass", (
+            "Existing passing criterion must not be reset to pending on merge"
+        )
+
+        # Phase 3 must now exist with pending status.
+        assert len(final["phases"]) == 3, "merged sidecar must have 3 phases"
+        assert final["phases"][2]["status"] == "pending", (
+            "New phase added by merge must start as pending"
+        )
+
+    def test_sidecar_fail_count_persists_across_merge(self, tmp_path: Path) -> None:
+        """fail_count on a failing criterion must survive a --sidecar-only merge.
+
+        If a criterion has fail_count: 2 and the plan is re-generated
+        (e.g. to add a new phase), the merge must not reset fail_count to 0.
+        Losing failure history would allow failing criteria to be retried
+        indefinitely past the threshold.
+        """
+        sidecar_path = tmp_path / "PLAN-fc-criteria.yaml"
+        data = {
+            "plan": "PLAN-fc",
+            "generated": "2026-04-16T00:00:00Z",
+            "last_evaluated": None,
+            "phases": [{
+                "phase": 1, "title": "Phase 1", "status": "fail",
+                "attempt": "2/5",
+                "criteria": [{
+                    "id": "AC-1.1", "text": "Tests pass", "status": "fail",
+                    "fail_count": 2, "fail_reason": "pytest exit 1",
+                    "last_evaluated": "2026-04-16", "verify": "pytest",
+                }],
+            }],
+        }
+        sidecar_path.write_text(yaml.dump(data))
+
+        # Simulate merge (no changes to existing criteria).
+        loaded = yaml.safe_load(sidecar_path.read_text())
+        sidecar_path.write_text(yaml.dump(loaded))
+
+        final = yaml.safe_load(sidecar_path.read_text())
+        ac = final["phases"][0]["criteria"][0]
+        assert ac["fail_count"] == 2, (
+            "fail_count must not be reset to 0 during sidecar merge; "
+            f"got: {ac['fail_count']}"
+        )
+        assert ac["fail_reason"] == "pytest exit 1", (
+            "fail_reason must be preserved during merge"
+        )
+
+    def test_sidecar_phase_status_worst_case_propagation(self, tmp_path: Path) -> None:
+        """Phase status must reflect the worst-case criterion status.
+
+        If any criterion in a phase is 'fail', the phase is 'fail'.
+        If any is 'blocked' (but none 'fail'), the phase is 'blocked'.
+        Only if all are 'pass' is the phase 'pass'.
+        """
+        sidecar_path = tmp_path / "PLAN-ws-criteria.yaml"
+
+        # Mixed: pass + fail → phase should be fail.
+        data = {
+            "plan": "PLAN-ws",
+            "generated": "2026-04-16T00:00:00Z",
+            "last_evaluated": None,
+            "phases": [{
+                "phase": 1, "title": "Phase 1", "status": "fail",
+                "attempt": "1/5",
+                "criteria": [
+                    {"id": "AC-1.1", "text": "Tests pass", "status": "pass",
+                     "fail_count": 0, "fail_reason": None,
+                     "last_evaluated": "2026-04-16", "verify": None},
+                    {"id": "AC-1.2", "text": "Lint clean", "status": "fail",
+                     "fail_count": 1, "fail_reason": "ruff exit 1",
+                     "last_evaluated": "2026-04-16", "verify": None},
+                ],
+            }],
+        }
+        sidecar_path.write_text(yaml.dump(data))
+        loaded = yaml.safe_load(sidecar_path.read_text())
+
+        # Phase status must reflect worst case.
+        phase = loaded["phases"][0]
+        criterion_statuses = {c["status"] for c in phase["criteria"]}
+        if "fail" in criterion_statuses:
+            expected_phase_status = "fail"
+        elif "blocked" in criterion_statuses:
+            expected_phase_status = "blocked"
+        elif all(s == "pass" for s in criterion_statuses):
+            expected_phase_status = "pass"
+        else:
+            expected_phase_status = "in-progress"
+
+        assert phase["status"] == expected_phase_status, (
+            f"Phase status must reflect worst-case criterion: "
+            f"criteria={criterion_statuses}, "
+            f"expected phase={expected_phase_status!r}, got {phase['status']!r}"
         )
