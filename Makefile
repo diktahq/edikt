@@ -2,25 +2,24 @@
 #
 # SANDBOX SAFETY
 # --------------
-# Most targets use EDIKT_ROOT=.sandbox/ to keep all edikt state local
-# to the repo directory. Your real ~/.edikt/ and ~/.claude/ are never
-# touched unless you explicitly use a *-global target.
+# `make dev` sandboxes the payload (hooks, templates, agents) in .sandbox/
+# but Claude Code commands still come from ~/.claude/commands/edikt/.
+#
+# `make dev-full` also swaps the commands: backs up the installed commands,
+# symlinks ~/.claude/commands/edikt → repo commands/, and restores on dev-off.
+# This is the recommended target for working on command files.
 #
 # .sandbox/ is gitignored. Run `make sandbox-clean` to start fresh.
 
-REPO_ROOT   := $(shell pwd)
-SANDBOX_DIR := $(REPO_ROOT)/.sandbox
-PYTHON      := python3
-PYTEST      := $(PYTHON) -m pytest
+REPO_ROOT    := $(shell pwd)
+SANDBOX_DIR  := $(REPO_ROOT)/.sandbox
+CLAUDE_CMDS  := $(HOME)/.claude/commands/edikt
+CMDS_BACKUP  := $(SANDBOX_DIR)/commands-backup
+PYTHON       := python3
+PYTEST       := $(PYTHON) -m pytest
 
-# ─── Sandbox helpers ──────────────────────────────────────────────────────────
-
-# Activate a sandboxed edikt environment.
-# EDIKT_ROOT points inside the repo; HOME stays real (SDK tests need it).
-SANDBOX_ENV := EDIKT_ROOT=$(SANDBOX_DIR)
-
-# Launcher from this repo (not the globally installed one).
-EDIKT := $(SANDBOX_ENV) $(REPO_ROOT)/bin/edikt
+# Launcher from this repo, payload in sandbox.
+EDIKT := EDIKT_ROOT=$(SANDBOX_DIR) $(REPO_ROOT)/bin/edikt
 
 .PHONY: sandbox sandbox-clean sandbox-status
 
@@ -30,33 +29,101 @@ sandbox:
 	@echo "Sandbox ready at $(SANDBOX_DIR)"
 
 ## sandbox-clean: destroy the sandbox and start fresh
-sandbox-clean:
+sandbox-clean: dev-full-off
 	@rm -rf $(SANDBOX_DIR)
 	@echo "Sandbox removed."
 
 ## sandbox-status: show what's installed in the sandbox
 sandbox-status:
-	@$(EDIKT) list 2>/dev/null || echo "(sandbox is empty — run 'make dev' first)"
+	@$(EDIKT) list 2>/dev/null || echo "(sandbox is empty — run 'make dev-full' first)"
 
 # ─── Local development ────────────────────────────────────────────────────────
 
-.PHONY: dev dev-off dev-check
+.PHONY: dev dev-full dev-full-off dev-off dev-check
 
-## dev: link the sandbox to this repo's working tree (live edits, no reinstall)
+## dev: sandbox payload only (hooks, templates, agents) — commands still from ~/.claude
 dev: sandbox
 	@$(EDIKT) dev link $(REPO_ROOT)
 	@echo ""
-	@echo "Dev mode active. Edits to templates/, commands/, hooks/ are live."
-	@echo "Run 'make dev-off' to deactivate."
+	@echo "Payload sandbox active (hooks, templates, agents from repo)."
+	@echo "Commands still come from ~/.claude/commands/edikt/ (installed version)."
+	@echo "For command changes use: make dev-full"
 
-## dev-off: deactivate dev mode in the sandbox
+## bin-link: symlink bin/edikt to ~/.local/bin/edikt so the 0.5.0 launcher
+##           is on PATH in any terminal (safe — ~/.local/bin is user-space)
+bin-link:
+	@mkdir -p $(HOME)/.local/bin
+	@if [ -L "$(HOME)/.local/bin/edikt" ]; then \
+	  echo "Already linked: $(HOME)/.local/bin/edikt → $$(readlink $(HOME)/.local/bin/edikt)"; \
+	else \
+	  ln -s "$(REPO_ROOT)/bin/edikt" "$(HOME)/.local/bin/edikt"; \
+	  echo "✓ Linked: $(HOME)/.local/bin/edikt → $(REPO_ROOT)/bin/edikt"; \
+	  echo ""; \
+	  echo "Make sure ~/.local/bin is on PATH. Add to ~/.zshrc if needed:"; \
+	  echo '  export PATH="$$HOME/.local/bin:$$PATH"'; \
+	fi
+
+## bin-unlink: remove the ~/.local/bin/edikt symlink
+bin-unlink:
+	@rm -f "$(HOME)/.local/bin/edikt" && echo "✓ Removed ~/.local/bin/edikt"
+
+## dev-full: sandbox payload AND swap commands (full dev environment)
+##           backs up ~/.claude/commands/edikt, symlinks it to repo commands/
+dev-full: sandbox bin-link
+	@$(EDIKT) dev link $(REPO_ROOT)
+	@# Swap commands — back up installed, symlink repo
+	@if [ -L "$(CLAUDE_CMDS)" ]; then \
+	  echo "Commands already a symlink — skipping backup"; \
+	elif [ -d "$(CLAUDE_CMDS)" ]; then \
+	  echo "Backing up installed commands to $(CMDS_BACKUP)..."; \
+	  mkdir -p "$(SANDBOX_DIR)"; \
+	  cp -R "$(CLAUDE_CMDS)" "$(CMDS_BACKUP)"; \
+	  rm -rf "$(CLAUDE_CMDS)"; \
+	  ln -s "$(REPO_ROOT)/commands" "$(CLAUDE_CMDS)"; \
+	  echo "✓ ~/.claude/commands/edikt → $(REPO_ROOT)/commands"; \
+	else \
+	  ln -s "$(REPO_ROOT)/commands" "$(CLAUDE_CMDS)"; \
+	  echo "✓ ~/.claude/commands/edikt → $(REPO_ROOT)/commands (fresh link)"; \
+	fi
+	@echo ""
+	@echo "Full dev mode active:"
+	@echo "  payload  → .sandbox/ (hooks, templates, agents)"
+	@echo "  commands → $(REPO_ROOT)/commands"
+	@echo "  Edits are live. Run 'make dev-full-off' to restore."
+
+## dev-full-off: deactivate full dev mode, restore commands (keeps bin-link)
+##               run `make bin-unlink` separately when you install a real release
+dev-full-off:
+	@$(EDIKT) dev unlink 2>/dev/null || true
+	@# Restore commands
+	@if [ -L "$(CLAUDE_CMDS)" ] && [ -d "$(CMDS_BACKUP)" ]; then \
+	  rm -f "$(CLAUDE_CMDS)"; \
+	  cp -R "$(CMDS_BACKUP)" "$(CLAUDE_CMDS)"; \
+	  rm -rf "$(CMDS_BACKUP)"; \
+	  echo "✓ Restored installed commands to ~/.claude/commands/edikt/"; \
+	elif [ -L "$(CLAUDE_CMDS)" ]; then \
+	  rm -f "$(CLAUDE_CMDS)"; \
+	  echo "✓ Removed command symlink (no backup found — re-run install if needed)"; \
+	else \
+	  echo "(commands were not swapped, nothing to restore)"; \
+	fi
+
+## dev-off: deactivate payload sandbox only
 dev-off:
 	@$(EDIKT) dev unlink 2>/dev/null || echo "(no dev link active)"
 
-## dev-check: confirm which version is active in the sandbox
+## dev-check: confirm what's active
 dev-check:
+	@echo "=== Payload ==="
 	@$(EDIKT) version
-	@$(EDIKT) doctor; true  # warnings expected in sandbox (no manifest, no global symlink)
+	@$(EDIKT) doctor; true
+	@echo ""
+	@echo "=== Commands ==="
+	@if [ -L "$(CLAUDE_CMDS)" ]; then \
+	  echo "  ~/.claude/commands/edikt → $$(readlink $(CLAUDE_CMDS)) (repo symlink ✓)"; \
+	else \
+	  echo "  ~/.claude/commands/edikt = installed version (run 'make dev-full' to swap)"; \
+	fi
 
 # ─── Testing ──────────────────────────────────────────────────────────────────
 
@@ -101,9 +168,6 @@ test-all:
 	bash test/run.sh
 
 # ─── Global install (touches your real ~/.edikt/) ─────────────────────────────
-#
-# These targets are intentionally separate and clearly named.
-# They modify your real global installation.
 
 .PHONY: install-global dev-global dev-global-off
 
@@ -134,10 +198,21 @@ help:
 	@echo "edikt — development targets"
 	@echo "==========================="
 	@echo ""
-	@echo "SANDBOX (safe — uses .sandbox/ inside this repo, never touches ~/.edikt/):"
+	@echo "RECOMMENDED WORKFLOW:"
+	@echo "  make dev-full     — full sandbox (payload + commands from repo)"
+	@echo "  make dev          — payload only (hooks/templates/agents from repo)"
+	@echo "  make dev-check    — confirm what's active"
+	@echo "  make dev-full-off — restore everything"
+	@echo ""
+	@echo "TESTING (no API key needed):"
+	@echo "  make test         — fast offline suite (~30s)"
+	@echo "  make test-governance / test-regression / test-migration"
+	@echo "  make test-sdk     — needs ANTHROPIC_API_KEY or claude auth (~5min)"
+	@echo ""
+	@echo "ALL TARGETS:"
 	@grep -E '^## ' $(MAKEFILE_LIST) | grep -v 'global' | sed 's/## /  make /'
 	@echo ""
-	@echo "GLOBAL (modifies your real ~/.edikt/ — use carefully):"
+	@echo "GLOBAL (modifies real ~/.edikt/ — use carefully):"
 	@grep -E '^## .*global' $(MAKEFILE_LIST) | sed 's/## /  make /'
 	@echo ""
 
