@@ -19,6 +19,9 @@ test/experiments/long-running/*
 __pycache__/
 .pytest_cache/
 
+# local development sandbox (make dev)
+.sandbox/
+
 # local secrets — never commit
 .env
 .env.local
