@@ -89,6 +89,24 @@ for test_file in "$SCRIPT_DIR"/test-*.sh; do
     fi
 done
 
+# ─── Layer 2a: release tarball contract tests ───────────────────────────────
+# Phase 13 owns test/integration/release/test_*.sh. Validates tarball structure
+# and SHA256SUMS format against the release workflow's expected output.
+if [ -d "$SCRIPT_DIR/integration/release" ]; then
+    while IFS= read -r it_test; do
+        rel="${it_test#$SCRIPT_DIR/}"
+        suite_name="${rel%.sh}"
+        echo ""
+        echo -e "${BOLD}[$suite_name]${NC}"
+        SUITE_COUNT=$((SUITE_COUNT + 1))
+
+        chmod +x "$it_test"
+        if ! bash "$it_test" "$PROJECT_ROOT"; then
+            FAILED_SUITES=$((FAILED_SUITES + 1))
+        fi
+    done < <(find "$SCRIPT_DIR/integration/release" -type f -name 'test_*.sh' | sort)
+fi
+
 # ─── Layer 2a: shell-based integration tests (install.sh bootstrap) ─────────
 # Phase 5 owns test/integration/install/test_*.sh. Discovered the same way
 # as Layer 1 unit tests. Runs before the pytest branch so install-bootstrap

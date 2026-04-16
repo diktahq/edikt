@@ -1,0 +1,209 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — build tarballs and compute checksums, but do NOT open the Homebrew tap PR"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write  # upload release assets
+
+jobs:
+  # ─── Build tarballs and upload release assets ────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      launcher_sha256: ${{ steps.checksums.outputs.launcher_sha256 }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # workflow_dispatch: derive from latest tag
+            VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building release for v$VERSION"
+
+      - name: Build launcher tarball
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Launcher tarball: bin/edikt, LICENSE, README.md ONLY.
+          # Templates, commands, and hooks are fetched by `edikt install` at runtime.
+          tar -czf "edikt-v${VERSION}.tar.gz" bin/edikt LICENSE README.md
+          echo "Launcher tarball contents:"
+          tar -tzf "edikt-v${VERSION}.tar.gz"
+
+      - name: Build payload tarball
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Payload tarball: everything the launcher fetches on first install.
+          tar -czf "edikt-payload-v${VERSION}.tar.gz" \
+            templates/ commands/ install.sh
+          echo "Payload tarball entry count: $(tar -tzf "edikt-payload-v${VERSION}.tar.gz" | wc -l)"
+
+      - name: Compute SHA256SUMS
+        id: checksums
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sha256sum \
+            "edikt-v${VERSION}.tar.gz" \
+            "edikt-payload-v${VERSION}.tar.gz" \
+            > SHA256SUMS
+          echo "SHA256SUMS:"
+          cat SHA256SUMS
+          LAUNCHER_SHA=$(awk '/edikt-v[^-]/ {print $1}' SHA256SUMS)
+          echo "launcher_sha256=$LAUNCHER_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            edikt-v${{ steps.version.outputs.version }}.tar.gz
+            edikt-payload-v${{ steps.version.outputs.version }}.tar.gz
+            SHA256SUMS
+          fail_on_unmatched_files: true
+
+  # ─── Bump the Homebrew tap formula on a staging branch ───────────────────────
+  bump-tap:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+    outputs:
+      pr_number: ${{ steps.open-pr.outputs.pr_number }}
+
+    steps:
+      - name: Clone tap
+        run: |
+          git clone https://x-access-token:${{ secrets.TAP_GITHUB_TOKEN }}@github.com/diktahq/homebrew-tap.git tap
+          cd tap
+          git config user.name  "edikt-bot"
+          git config user.email "bot@edikt.dev"
+
+      - name: Create staging branch
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          BRANCH="edikt-bump-v${VERSION}"
+          cd tap
+          git checkout -b "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Patch Formula/edikt.rb
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          SHA="${{ needs.build.outputs.launcher_sha256 }}"
+          URL="https://github.com/diktahq/edikt/releases/download/v${VERSION}/edikt-v${VERSION}.tar.gz"
+          cd tap
+          # Patch url and sha256 — scope strictly to edikt.rb, never touch verikt.rb.
+          sed -i \
+            -e "s|url \".*\"|url \"${URL}\"|" \
+            -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
+            -e "s|version \".*\"|version \"${VERSION}\"|" \
+            Formula/edikt.rb
+          echo "Patched Formula/edikt.rb:"
+          cat Formula/edikt.rb
+          # Safety: verikt.rb must be byte-identical to HEAD.
+          git diff Formula/verikt.rb && {
+            echo "::error::verikt.rb was modified — aborting"
+            exit 1
+          } || true
+
+      - name: Commit and push staging branch
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          cd tap
+          git add Formula/edikt.rb
+          git diff --staged --quiet && echo "No changes — formula already at this version" && exit 0
+          git commit -m "bump: edikt v${VERSION}"
+          git push origin "${{ env.branch }}"
+
+      - name: Open PR against main
+        id: open-pr
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          PR_URL=$(gh pr create \
+            --repo diktahq/homebrew-tap \
+            --head "${{ env.branch }}" \
+            --base main \
+            --title "bump: edikt v${VERSION}" \
+            --body "Automated formula bump from \`diktahq/edikt\` release workflow.
+
+**Version:** v${VERSION}
+**Launcher tarball:** \`edikt-v${VERSION}.tar.gz\`
+**SHA256:** \`${{ needs.build.outputs.launcher_sha256 }}\`
+
+This PR was opened by the release workflow and will auto-merge when tap CI passes.
+The \`verikt.rb\` formula is unchanged." \
+          )
+          PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "PR opened: $PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+  # ─── Wait for tap CI to pass ─────────────────────────────────────────────────
+  wait-tap-ci:
+    needs: [build, bump-tap]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+
+    steps:
+      - name: Poll tap PR checks
+        run: |
+          PR="${{ needs.bump-tap.outputs.pr_number }}"
+          MAX=20
+          INTERVAL=60
+          for i in $(seq 1 $MAX); do
+            echo "[$i/$MAX] Polling tap PR #$PR checks..."
+            STATUS=$(gh pr checks "$PR" \
+              --repo diktahq/homebrew-tap \
+              --json state \
+              --jq '.[] | .state' 2>/dev/null | sort -u)
+            echo "Check states: $STATUS"
+            if echo "$STATUS" | grep -q "FAILURE\|CANCELLED"; then
+              echo "::error::Tap CI failed — leaving PR open for human review"
+              exit 1
+            fi
+            if [ "$(echo "$STATUS" | sort -u)" = "SUCCESS" ]; then
+              echo "All tap CI checks passed"
+              exit 0
+            fi
+            [ "$i" -lt "$MAX" ] && sleep "$INTERVAL"
+          done
+          echo "::warning::Tap CI did not complete within $((MAX * INTERVAL / 60)) minutes"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+  # ─── Auto-merge on tap CI success ────────────────────────────────────────────
+  merge-tap-pr:
+    needs: [build, bump-tap, wait-tap-ci]
+    runs-on: ubuntu-latest
+    if: ${{ success() && github.event.inputs.dry_run != 'true' }}
+
+    steps:
+      - name: Merge staging PR into main
+        run: |
+          PR="${{ needs.bump-tap.outputs.pr_number }}"
+          gh pr merge "$PR" \
+            --repo diktahq/homebrew-tap \
+            --squash \
+            --delete-branch \
+            --subject "bump: edikt v${{ needs.build.outputs.version }}"
+          echo "Merged PR #$PR — edikt v${{ needs.build.outputs.version }} is live in the tap"
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
