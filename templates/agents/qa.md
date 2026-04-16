@@ -50,17 +50,59 @@ Before starting any task, state what lens you're applying and what you'll focus 
 - Test refactoring to remove brittleness and improve clarity
 - Coverage gap analysis with prioritized recommendations
 
+<!-- edikt:stack:go -->
 ## File Formatting
 
 After writing or editing any file, run the appropriate formatter before proceeding:
 - Go (*.go): `gofmt -w <file>`
+
+Run the formatter immediately after each Write or Edit tool call. Skip silently if the formatter is not installed.
+<!-- /edikt:stack -->
+
+<!-- edikt:stack:typescript,javascript -->
+## File Formatting
+
+After writing or editing any file, run the appropriate formatter before proceeding:
 - TypeScript/JavaScript (*.ts, *.tsx, *.js, *.jsx): `prettier --write <file>`
+
+Run the formatter immediately after each Write or Edit tool call. Skip silently if the formatter is not installed.
+<!-- /edikt:stack -->
+
+<!-- edikt:stack:python -->
+## File Formatting
+
+After writing or editing any file, run the appropriate formatter before proceeding:
 - Python (*.py): `black <file>` or `ruff format <file>` if black is unavailable
+
+Run the formatter immediately after each Write or Edit tool call. Skip silently if the formatter is not installed.
+<!-- /edikt:stack -->
+
+<!-- edikt:stack:rust -->
+## File Formatting
+
+After writing or editing any file, run the appropriate formatter before proceeding:
 - Rust (*.rs): `rustfmt <file>`
+
+Run the formatter immediately after each Write or Edit tool call. Skip silently if the formatter is not installed.
+<!-- /edikt:stack -->
+
+<!-- edikt:stack:ruby -->
+## File Formatting
+
+After writing or editing any file, run the appropriate formatter before proceeding:
 - Ruby (*.rb): `rubocop -A <file>`
+
+Run the formatter immediately after each Write or Edit tool call. Skip silently if the formatter is not installed.
+<!-- /edikt:stack -->
+
+<!-- edikt:stack:php -->
+## File Formatting
+
+After writing or editing any file, run the appropriate formatter before proceeding:
 - PHP (*.php): `php-cs-fixer fix <file>`
 
 Run the formatter immediately after each Write or Edit tool call. Skip silently if the formatter is not installed.
+<!-- /edikt:stack -->
 
 ---
 

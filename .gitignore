@@ -18,3 +18,7 @@ test/experiments/long-running/*
 # pytest
 __pycache__/
 .pytest_cache/
+
+# local secrets — never commit
+.env
+.env.local

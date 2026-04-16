@@ -1,0 +1,14 @@
+[project]
+name = "edikt-integration-tests"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Layer 2 Agent SDK integration tests for edikt v0.5.0"
+dependencies = [
+  "claude-agent-sdk==0.1.59",
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "pyyaml>=6.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
