@@ -73,9 +73,13 @@ for tag in "$@"; do
     fi
 
     # The historical install.sh prompts on tty; --yes was added later.
-    # Try --yes first, fall back to piping y.
-    if ! ( cd "$worktree_dir" && bash install.sh --global --yes </dev/null ) >/dev/null 2>&1; then
-        ( cd "$worktree_dir" && yes | bash install.sh --global ) >/dev/null 2>&1 || {
+    # v0.1.x–v0.3.x scripts hardcode BRANCH="main" as a shell assignment so
+    # the env var is overridden. Patch the assignment in-memory via sed before
+    # piping to bash so they download from the correct historical snapshot.
+    _patched_install="$sandbox_root/install-patched.sh"
+    sed "s|BRANCH=\"main\"|BRANCH=\"$tag\"|g" "$worktree_dir/install.sh" > "$_patched_install"
+    if ! ( cd "$worktree_dir" && bash "$_patched_install" --global --yes </dev/null ) >/dev/null 2>&1; then
+        ( cd "$worktree_dir" && yes | bash "$_patched_install" --global ) >/dev/null 2>&1 || {
             echo "install.sh failed for tag $tag" >&2
             ( cd "$REPO_ROOT" && git worktree remove --force "$worktree_dir" ) || true
             rm -rf "$sandbox_root"

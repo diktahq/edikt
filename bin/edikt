@@ -1311,32 +1311,49 @@ EOF
     return 0
 }
 
-# ─── M4: compile schema v1 → v2 (stub — Phase 7b will wire claude -p) ───────
-# Detection: .claude/rules/governance.md exists AND lacks the v2 sentinel
-# "<!-- compile-schema: v2 -->". The compile invocation itself is deferred
-# to Phase 7b; this stub records intent in $EDIKT_ROOT/.m4-pending so the
-# next compile run (or Phase 7b's automation) can act on it.
+# ─── M4: compile schema v1 → v2 ─────────────────────────────────────────────
+# Detection: .claude/rules/governance.md exists AND lacks compile_schema_version: 2
+# in its YAML frontmatter. Invokes `claude -p /edikt:gov:compile` to regenerate
+# governance.md with v2 sentinel blocks. Falls back to a .m4-pending marker
+# when the claude CLI is unavailable so the user can complete it manually.
 migrate_m4_compile_schema_v1_to_v2() {
     _dry="$1"
     _gov="$CLAUDE_ROOT/rules/governance.md"
     # Detection is scoped to $CLAUDE_ROOT — project-mode invocations resolve
-    # CLAUDE_ROOT to the project's .claude/ via env. We do NOT walk PWD
-    # here because that would falsely fire when the launcher runs from a
-    # repo that happens to ship its own governance.md at .claude/rules/.
+    # CLAUDE_ROOT to the project's .claude/ via env.
     [ -f "$_gov" ] || return 0
-    if grep -q '<!-- compile-schema: v2 -->' "$_gov" 2>/dev/null; then
+    if grep -q 'compile_schema_version: 2' "$_gov" 2>/dev/null; then
         return 0
     fi
-    # Already-pending marker → idempotent skip. Phase 7b's compile run will
-    # clear the marker by writing the v2 sentinel.
+    # Already-pending marker → skip (user will run compile manually).
     if [ -f "$EDIKT_ROOT/.m4-pending" ]; then
         return 0
     fi
     if [ "$_dry" -eq 1 ]; then
-        log_info "M4 (compile schema): would invoke compile to migrate rule schema (deferred to Phase 7b)"
+        log_info "M4 (compile schema): would invoke 'claude -p /edikt:gov:compile' to migrate governance.md to schema v2"
         return 0
     fi
-    log_info "M4 (compile schema): would invoke 'claude -p /edikt:gov:compile' — deferred to Phase 7b. Mark schema migration pending."
+    # Attempt live compile via claude CLI. Requires claude to be on PATH
+    # and authenticated. Non-fatal: falls back to .m4-pending marker.
+    _claude_bin=""
+    if command -v claude >/dev/null 2>&1; then
+        _claude_bin="claude"
+    fi
+    if [ -n "$_claude_bin" ]; then
+        log_info "M4 (compile schema): invoking 'claude -p /edikt:gov:compile' to upgrade governance.md to schema v2"
+        if "$_claude_bin" -p "/edikt:gov:compile" >/dev/null 2>&1; then
+            MIGRATE_RAN_M4=1
+            emit_event migration_step_completed \
+                '"step":"M4","action":"compiled","result":"schema_v2"'
+            log_ok "M4 (compile schema): governance.md upgraded to schema v2"
+            return 0
+        else
+            log_warn "M4: claude -p /edikt:gov:compile failed — falling back to .m4-pending marker"
+        fi
+    else
+        log_warn "M4: claude CLI not found — falling back to .m4-pending marker"
+    fi
+    # Fallback: mark pending so the user can run /edikt:gov:compile manually.
     : >"$EDIKT_ROOT/.m4-pending" || {
         log_warn "M4: could not write $EDIKT_ROOT/.m4-pending (non-fatal)"
         return 0
@@ -1344,6 +1361,7 @@ migrate_m4_compile_schema_v1_to_v2() {
     MIGRATE_RAN_M4=1
     emit_event migration_step_completed \
         '"step":"M4","action":"pending","marker":"'"$EDIKT_ROOT/.m4-pending"'"'
+    log_warn "M4: governance.md schema migration pending — run /edikt:gov:compile to complete"
     return 0
 }
 
