@@ -50,7 +50,7 @@ Override log format:
 GATE OVERRIDE
   Finding:    Hardcoded JWT secret in auth/handler.go:47
   Agent:      security
-  Approved:   daniel <hi@dcsg.me>
+  Approved:   alex <alex@example.com>
   Date:       2026-03-20
   Reason:     development environment only — will be removed before merge
 ```
