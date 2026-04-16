@@ -520,3 +520,129 @@ def project_with_customized_agents(tmp_path: Path) -> Path:
         )
     )
     return project
+
+
+@pytest.fixture()
+def project_with_accepted_prd(tmp_path: Path) -> Path:
+    """Project containing an accepted PRD ready for spec generation.
+
+    The PRD has ``status: accepted`` so /edikt:sdlc:spec can proceed without
+    a status-gate prompt. Used by the SDLC chain E2E test.
+    """
+    project = tmp_path / "project-sdlc"
+    project.mkdir()
+    (project / ".edikt").mkdir()
+    (project / ".edikt" / "config.yaml").write_text(
+        textwrap.dedent(
+            """\
+            edikt_version: 0.5.0
+            base: docs
+            stack: []
+            paths:
+              decisions: docs/architecture/decisions
+              invariants: docs/architecture/invariants
+              plans: docs/plans
+              prds: docs/product/prds
+              specs: docs/product/specs
+            gates:
+              quality-gates: true
+            """
+        )
+    )
+    # Pre-seed an accepted PRD so spec can proceed immediately.
+    prd_dir = project / "docs" / "product" / "prds"
+    prd_dir.mkdir(parents=True)
+    (prd_dir / "PRD-001-user-auth.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            type: prd
+            id: PRD-001
+            title: User authentication with OAuth2
+            status: accepted
+            created_at: 2026-04-16T00:00:00Z
+            ---
+
+            # PRD-001: User authentication with OAuth2
+
+            **Status:** Accepted
+
+            ## Problem
+
+            Users cannot log in. The application has no authentication layer.
+
+            ## Requirements
+
+            - FR-001: Users must be able to log in with Google OAuth2
+            - FR-002: Sessions must expire after 24 hours
+            - FR-003: Failed login attempts must be rate-limited
+
+            ## Acceptance Criteria
+
+            - AC-001: Login page renders with "Sign in with Google" button
+            - AC-002: Successful OAuth callback creates a session cookie
+            - AC-003: Expired sessions redirect to login page
+            """
+        )
+    )
+    # Create empty decision + invariant dirs so compile has valid paths.
+    (project / "docs" / "architecture" / "decisions").mkdir(parents=True)
+    (project / "docs" / "architecture" / "invariants").mkdir(parents=True)
+    (project / "docs" / "product" / "specs").mkdir(parents=True)
+    (project / "docs" / "plans").mkdir(parents=True)
+    # CLAUDE.md with edikt sentinel so Claude knows this is an edikt project.
+    (project / "CLAUDE.md").write_text(
+        textwrap.dedent(
+            """\
+            # Project
+
+            Test project for edikt SDLC chain integration tests.
+
+            [edikt:start]: # managed by edikt — do not edit this block manually
+            ## edikt
+
+            ### Project
+            A test project for the SDLC chain E2E test.
+
+            ### Build & Test Commands
+            No build commands — this is a test fixture.
+            [edikt:end]: #
+            """
+        )
+    )
+    return project
+
+
+@pytest.fixture()
+def project_for_governance_chain(tmp_path: Path) -> Path:
+    """Empty project ready for an ADR → compile → governance chain test.
+
+    Has the required directory structure so /edikt:adr:new and
+    /edikt:gov:compile can write to the correct locations, but starts with
+    no existing ADRs or compiled governance so the test can verify the
+    full chain from scratch.
+    """
+    project = tmp_path / "project-gov"
+    project.mkdir()
+    (project / ".edikt").mkdir()
+    (project / ".edikt" / "config.yaml").write_text(
+        textwrap.dedent(
+            """\
+            edikt_version: 0.5.0
+            base: docs
+            stack: []
+            paths:
+              decisions: docs/architecture/decisions
+              invariants: docs/architecture/invariants
+              plans: docs/plans
+            gates:
+              quality-gates: true
+            features:
+              signal-detection: true
+            """
+        )
+    )
+    (project / "docs" / "architecture" / "decisions").mkdir(parents=True)
+    (project / "docs" / "architecture" / "invariants").mkdir(parents=True)
+    (project / ".claude" / "rules").mkdir(parents=True)
+    return project
