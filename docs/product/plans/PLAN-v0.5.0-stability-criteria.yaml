@@ -45,594 +45,594 @@ phases:
 
   - phase: 2
     title: "Layer 1 Hook Unit Tests + Payload Fixtures"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-2.1
         text: "test/unit/hooks/ contains one test_<hook>.sh per lifecycle hook"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "ls test/unit/hooks/test_*.sh | wc -l | awk '$1 >= 9 { exit 0 } { exit 1 }'"
       - id: AC-2.2
         text: "test/fixtures/hook-payloads/ contains every JSON payload named in SPEC-004 §9.1 and fixtures.yaml (≥19)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "ls test/fixtures/hook-payloads/*.json | wc -l | awk '$1 >= 19 { exit 0 } { exit 1 }'"
       - id: AC-2.3
         text: "Every payload has a symmetric expected-output file"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/test_fixture_symmetry.sh"
       - id: AC-2.4
         text: "Each test pipes fixture JSON to hook and asserts exit code + stdout JSON"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -l 'cat.*\\.json.*|.*hooks/' test/unit/hooks/*.sh | wc -l | awk '$1 >= 9'"
       - id: AC-2.5
         text: "Negative-path fixtures exist and pass (hooks silent without .edikt/config.yaml)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -f test/fixtures/hook-payloads/session-start-no-edikt.json && test -f test/fixtures/hook-payloads/stop-clean.json"
       - id: AC-2.6
         text: "No fixture contains hardcoded user paths"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "! grep -r '/Users/\\|/home/' test/fixtures/hook-payloads/"
       - id: AC-2.7
         text: "Full suite runs cleanly under Phase 1 sandbox 10/10 consecutive"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "for i in 1 2 3 4 5 6 7 8 9 10; do ./test/run.sh 2>&1 | tail -1 | grep -q 'pass'; done"
 
   - phase: 3
     title: "Launcher Core + Versioned Layout + Symlinks"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-3.1
         text: "bin/edikt is POSIX sh (sh -n passes, no bash-isms)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "sh -n bin/edikt"
       - id: AC-3.2
         text: "EDIKT_ROOT resolution: env var > ancestor .edikt/bin/edikt > $HOME/.edikt"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_edikt_root_resolution.sh"
       - id: AC-3.3
         text: "MIN_PAYLOAD_VERSION constant defined and enforced on use"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'MIN_PAYLOAD_VERSION=' bin/edikt && bash test/unit/launcher/test_min_payload_refused.sh"
       - id: AC-3.4
         text: "Subcommands install, use, list, version, doctor, uninstall, rollback implemented per SPEC-004 §2"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "for cmd in install use list version doctor uninstall rollback; do bin/edikt $cmd --help 2>&1 | grep -q $cmd || exit 1; done"
       - id: AC-3.5
         text: "install verifies SHA256 from manifest, exits 2 on mismatch"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_install_checksum_mismatch.sh"
       - id: AC-3.6
         text: "use flips symlinks atomically, snapshots previous to backups/, updates lock.yaml"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_use_happy.sh"
       - id: AC-3.7
         text: "rollback reads lock.yaml:previous, exits 1 when unset"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_rollback_happy.sh && bash test/unit/launcher/test_rollback_no_previous.sh"
       - id: AC-3.8
         text: "lock.yaml and manifest.yaml schemas match config-spec.md §4.2 exactly"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_lock_manifest_schema.sh"
       - id: AC-3.9
         text: "flock serializes concurrent invocations; detects NFS ENOLCK cleanly"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_concurrent_invocation.sh"
       - id: AC-3.10
         text: "Phase 2 hook unit tests pass post-symlink installation"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "./test/run.sh 2>&1 | grep -q 'hook tests passed'"
 
   - phase: 4
     title: "M1 Migration (Flat → Versioned) with Staging + Trap + Abort"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-4.1
         text: "edikt migrate subcommand supports --dry-run, --yes, --abort flags"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bin/edikt migrate --help 2>&1 | grep -E 'dry-run|yes|abort' | wc -l | awk '$1 >= 3'"
       - id: AC-4.2
         text: "Detection triggers when ~/.edikt/hooks is a real dir and VERSION exists"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_migrate_detection.sh"
       - id: AC-4.3
         text: "--dry-run prints move plan, mutates nothing"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_migrate_dry_run.sh"
       - id: AC-4.4
         text: "Interactive mode prompts via /dev/tty; non-interactive without --yes refuses"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_migrate_prompt.sh"
       - id: AC-4.5
         text: "Staging dir + atomic swap; SIGINT/SIGTERM/EXIT traps trigger abort"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'trap.*migrate_abort' bin/edikt"
       - id: AC-4.6
         text: "kill -9 mid-migration recovers to byte-identical pre-state"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_migrate_crash_recovery.sh"
       - id: AC-4.7
         text: "--abort restores pre-migration state idempotently"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_migrate_abort_explicit.sh && bash test/unit/launcher/test_migrate_abort_nothing_to_do.sh"
       - id: AC-4.8
         text: "layout_migrated / migration_aborted events written to events.jsonl"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'layout_migrated' bin/edikt && grep -q 'migration_aborted' bin/edikt"
       - id: AC-4.9
         text: "Running migrate twice is a no-op on second call"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_migrate_idempotent.sh"
 
   - phase: 5
     title: "install.sh Rewrite — Canonical Cross-Major Upgrade Path"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-5.1
         text: "install.sh accepts --ref <tag> (default: latest stable tag via GitHub API)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'ref <tag>\\|--ref' install.sh"
       - id: AC-5.2
         text: "Detects legacy v0.4.x layout and prints migration banner"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/install/test_v043_cross_major_upgrade.sh"
       - id: AC-5.3
         text: "Fresh install writes launcher + invokes edikt install + use"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/install/test_fresh_install.sh"
       - id: AC-5.4
         text: "Already-v0.5.0 install is a no-op beyond tag fetch"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/install/test_v050_to_v050_noop.sh"
       - id: AC-5.5
         text: "Distinct exit codes: 0 success, 1 network, 2 permission, 3 version mismatch"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/install/test_install_exit_codes.sh"
       - id: AC-5.6
         text: "Re-entrant: idempotent with same args"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/install/test_install_idempotent.sh"
       - id: AC-5.7
         text: "PATH addition is idempotent (marker comment in rc files)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/install/test_install_path_idempotent.sh"
       - id: AC-5.8
         text: "EDIKT_EXPERIMENTAL gating removed (v0.5.0 is stable)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "! grep -q 'EDIKT_EXPERIMENTAL' install.sh"
 
   - phase: 6
     title: "Launcher Extended CLI + Slash-Upgrade Redirect"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-6.1
         text: "prune protects active and previous from deletion regardless of age"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_prune_keeps_active_previous.sh"
       - id: AC-6.2
         text: "upgrade handles minor-version jumps, refuses major with install.sh redirect"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_upgrade_minor.sh && bash test/unit/launcher/test_upgrade_major_redirects.sh"
       - id: AC-6.3
         text: "upgrade-pin updates .edikt/config.yaml edikt_version, preserves rest of file"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_upgrade_pin_inside_project.sh && bash test/unit/launcher/test_upgrade_pin_outside_project.sh"
       - id: AC-6.4
         text: "dev link / unlink work correctly, use versions/dev on link"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_dev_link.sh && bash test/unit/launcher/test_dev_unlink.sh"
       - id: AC-6.5
         text: "/edikt:upgrade slash command detects missing launcher or major jump and redirects"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'install.sh' commands/upgrade.md && grep -q 'major' commands/upgrade.md"
       - id: AC-6.6
         text: "Project pin warn fires when global version differs from pinned"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_pin_warn.sh"
 
   - phase: 7
     title: "Multi-Version Migration M2-M5 + Historical Fixture Capture"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-7.1
         text: "capture.sh produces fixtures for v0.1.0, v0.1.4, v0.2.0, v0.3.0, v0.4.3"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "for v in v0.1.0 v0.1.4 v0.2.0 v0.3.0 v0.4.3; do test -d test/integration/migration/fixtures/$v; done"
       - id: AC-7.2
         text: "Fixture capture is deterministic (re-run produces byte-identical output)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_capture_deterministic.sh"
       - id: AC-7.3
         text: "M2 rewrites HTML sentinels to markdown link-ref format"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_v010_to_v050.py"
       - id: AC-7.4
         text: "M3 deletes unmodified flat command names, preserves user-modified"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_v014_to_v050.py"
       - id: AC-7.5
         text: "M4 regenerates governance.md via /edikt:gov:compile after migration"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_v020_to_v050.py"
       - id: AC-7.6
         text: "M5 adds missing config.yaml keys, never removes or renames existing"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_v030_to_v050.py"
       - id: AC-7.7
         text: "Migration order enforced: M1 → M2 → M3 → M5 → M4"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -n 'M[12345]' bin/edikt | sort -k1n"
       - id: AC-7.8
         text: "M6 stub present with TODO Phase 11 marker"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'TODO.*Phase 11.*backfill' bin/edikt"
       - id: AC-7.9
         text: "capture.sh runs inside Phase 1 sandbox (no host $HOME contamination)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'TEST_SANDBOX\\|mktemp' test/integration/migration/capture.sh"
 
   - phase: 8
     title: "Project-Mode Install Parity"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-8.1
         text: "install.sh --project creates .edikt/{bin,versions,current,hooks,templates,lock.yaml}"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/project-mode/test_fresh_project_install.py"
       - id: AC-8.2
         text: "Launcher auto-detects project mode via ancestor .edikt/bin/edikt"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/project-mode/test_auto_detect_project.py"
       - id: AC-8.3
         text: "Project-mode settings.json hook paths are ${PROJECT_ROOT}/.edikt/hooks/*.sh"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/project-mode/test_hook_paths_project_relative.py"
       - id: AC-8.4
         text: "Project-mode migration scoped to project's .edikt/, global untouched"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/project-mode/test_project_migrate_v043.py"
       - id: AC-8.5
         text: "Global v0.5.0 + project v0.4.2 coexist without bidirectional sync"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/project-mode/test_project_vs_global_independence.py"
       - id: AC-8.6
         text: "edikt list inside project shows project versions by default; --global flag toggles"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/project-mode/test_list_context_sensitive.py"
 
   - phase: 9
     title: "Init Provenance — Path Substitution, Stack Filters, Hash Frontmatter"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-9.1
         text: "templates/agents/_substitutions.yaml exists with ≥6 entries"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -f templates/agents/_substitutions.yaml && grep -c '^  [a-z_-]*:' templates/agents/_substitutions.yaml | awk '$1 >= 6'"
       - id: AC-9.2
         text: "init substitutes paths.* from config into installed agents"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/init/test_init_paths_substituted.py"
       - id: AC-9.3
         text: "Stack markers present on backend.md, qa.md, frontend.md, mobile.md"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -l 'edikt:stack:' templates/agents/backend.md templates/agents/qa.md templates/agents/frontend.md templates/agents/mobile.md | wc -l | awk '$1 == 4'"
       - id: AC-9.4
         text: "Stack filter keeps matching blocks, drops non-intersecting ones"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/init/test_init_stack_go_only.py && bash test/integration/init/test_init_stack_multi.py"
       - id: AC-9.5
         text: "Unterminated stack markers warn and preserve content verbatim"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/init/test_init_unterminated_marker_warns.py"
       - id: AC-9.6
         text: "Every installed agent has edikt_template_hash and edikt_template_version frontmatter"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "for f in .claude/agents/*.md; do grep -q 'edikt_template_hash:' $f && grep -q 'edikt_template_version:' $f || exit 1; done"
       - id: AC-9.7
         text: "Hash is content-identity: same template produces same hash on any machine"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/init/test_init_hash_deterministic.py"
       - id: AC-9.8
         text: "edikt_template_version is written once at install, not bumped by later upgrades when hash matches"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/init/test_init_version_locked.py"
 
   - phase: 10
     title: "Upgrade Provenance-First Comparison Flow"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-10.1
         text: "commands/upgrade.md implements the flow in SPEC-004 §8 verbatim"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'stored_hash' commands/upgrade.md && grep -q 'current_template_hash' commands/upgrade.md"
       - id: AC-10.2
         text: "Fast-preserve path triggers when stored_hash == current_template_hash"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/upgrade/test_upgrade_preserves_customization_unchanged_template.py"
       - id: AC-10.3
         text: "3-way diff prompts user when template moved and user customized"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/upgrade/test_upgrade_3way_template_moved.py"
       - id: AC-10.4
         text: "Legacy fallback classifier runs for agents without provenance frontmatter"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/upgrade/test_upgrade_legacy_agent_uses_classifier.py"
       - id: AC-10.5
         text: "Safe-replace triggers when template moved and user hasn't modified"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/upgrade/test_upgrade_replaces_unchanged_user_file.py"
       - id: AC-10.6
         text: "Each test asserts the specific code path via assert_path_covered"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -l 'assert_path_covered' test/integration/upgrade/test_*.py | wc -l | awk '$1 >= 4'"
       - id: AC-10.7
         text: "upgrade_agent_preserved/replaced/conflict_resolved events emitted per upgrade"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -E 'upgrade_agent_(preserved|replaced|conflict_resolved)' commands/upgrade.md | wc -l | awk '$1 >= 3'"
 
   - phase: 11
     title: "M6 Provenance Backfill + doctor --backfill-provenance"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-11.1
         text: "edikt doctor --backfill-provenance flag exists"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bin/edikt doctor --help 2>&1 | grep -q 'backfill-provenance'"
       - id: AC-11.2
         text: "Backfill is opt-in; never runs automatically"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "! grep -q 'backfill_provenance()' bin/edikt | grep -v '--backfill-provenance'"
       - id: AC-11.3
         text: "Exact-match backfill writes hash from detected source template"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_m6_backfill_exact_match.py"
       - id: AC-11.4
         text: "Diverged file skips backfill with clear reason"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_m6_backfill_diverged_skips.py"
       - id: AC-11.5
         text: "Unknown version prompts user (or skips non-interactively)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_m6_backfill_unknown_version_prompts.py"
       - id: AC-11.6
         text: "After backfill, upgrade treats agent identically to v0.5.0-installed"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/migration/test_m6_backfilled_agent_upgrade_flow.py"
 
   - phase: 11b
@@ -761,138 +761,138 @@ phases:
 
   - phase: 13
     title: "Homebrew Formula + Release Automation"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-13.1
         text: "Release tarball (edikt-v<ver>.tar.gz) contains bin/edikt, LICENSE, README only"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/integration/release/test_tarball_contents.sh"
       - id: AC-13.2
         text: "Formula/edikt.rb passes brew audit --strict"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "echo 'brew audit --strict edikt (manual verification in tap repo)'"
       - id: AC-13.3
         text: ".github/workflows/release.yml triggers on v* tags and builds both tarballs"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -f .github/workflows/release.yml && grep -q 'tags:.*v\\*' .github/workflows/release.yml"
       - id: AC-13.4
         text: "homebrew-releaser opens PR on staging branch edikt-bump-<ver>, not main"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'edikt-bump' .github/workflows/release.yml"
       - id: AC-13.5
         text: "Auto-merge gated on staging CI (edikt + verikt smoke both pass)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'wait-for-ci\\|gh pr merge' .github/workflows/release.yml"
       - id: AC-13.6
         text: "verikt.rb byte-identical post-release (staging diff audit)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "echo 'staging diff audit (manual verification, tap PR review)'"
       - id: AC-13.7
         text: "workflow_dispatch dry-run input builds without opening PR"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'workflow_dispatch' .github/workflows/release.yml && grep -q 'dry_run' .github/workflows/release.yml"
 
   - phase: 14
     title: "Docs + Website Refresh + CI Test Workflow + doctor --report"
-    status: pending
-    attempt: "0/5"
+    status: done
+    attempt: "1/5"
     criteria:
       - id: AC-14.1
         text: "README.md install section rewritten with brew-first, curl fallback, upgrade section"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'brew install diktahq/tap/edikt' README.md && grep -q 'Upgrade' README.md"
       - id: AC-14.2
         text: "Three new website guides exist and cross-linked"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -f website/guides/upgrade-and-rollback.md && test -f website/guides/migrating-from-v0.4.md && test -f website/guides/homebrew.md"
       - id: AC-14.3
         text: "website/commands/upgrade.md, init.md, doctor.md updated/created"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -f website/commands/upgrade.md && test -f website/commands/init.md && test -f website/commands/doctor.md"
       - id: AC-14.4
         text: "FAQ has 4 new Q&As (rollback, pin, old hooks, brew vs edikt upgrade)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -c 'roll back\\|pin edikt\\|old .edikt/hooks\\|brew upgrade edikt' website/faq.md | awk '$1 >= 4'"
       - id: AC-14.5
         text: "CHANGELOG.md v0.5.0 entry structured by bundle with Breaking Changes + Migration Notes"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -A 5 '\\[0.5.0\\]' CHANGELOG.md | grep -E 'Testing|Versioning|Distribution|Init provenance'"
       - id: AC-14.6
         text: "Cross-link sanity test passes (every new guide linked from command + getting-started)"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/test_docs_crosslinks.sh"
       - id: AC-14.7
         text: "edikt doctor --report produces shareable bundle under reports/doctor-<ts>.txt"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "bash test/unit/launcher/test_doctor_report.sh"
       - id: AC-14.8
         text: "doctor detects NFS/WSL1 fs and warns with workaround link"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -q 'nfs\\|9p\\|refs' bin/edikt"
       - id: AC-14.9
         text: ".github/workflows/test.yml runs Layers 1+3 on PR, Layer 2 on tag"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -f .github/workflows/test.yml && grep -q 'pull_request' .github/workflows/test.yml && grep -q 'tags:.*v\\*' .github/workflows/test.yml"
       - id: AC-14.10
         text: "All three CI layers blocking — tag cannot ship on test failure"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "grep -L 'continue-on-error:.*true' .github/workflows/test.yml"
       - id: AC-14.11
         text: "test/unit/test_docs_sanity.sh flags stale install snippets and version refs"
-        status: pending
+        status: pass
         fail_count: 0
         fail_reason: null
-        last_evaluated: null
+        last_evaluated: "2026-04-16"
         verify: "test -x test/unit/test_docs_sanity.sh && bash test/unit/test_docs_sanity.sh"
