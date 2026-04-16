@@ -2,6 +2,14 @@
 name: edikt:sdlc:drift
 description: "Verify implementation matches spec, PRD, and ADRs"
 effort: high
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - Agent
 ---
 
 # edikt:sdlc:drift

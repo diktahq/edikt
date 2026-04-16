@@ -3,6 +3,14 @@ name: edikt:sdlc:spec
 description: "Technical specification from an accepted PRD"
 effort: high
 argument-hint: "<PRD identifier, e.g. PRD-005>"
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - Agent
 ---
 !`SPEC_DIR=$(grep "^  specs:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$SPEC_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); SPEC_DIR="${BASE}/product/specs"; fi; COUNT=$(ls -d "${SPEC_DIR}/"SPEC-*/spec.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls -d "${SPEC_DIR}/"SPEC-*/spec.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {} | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext SPEC number: SPEC-%s\nExisting specs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
 
@@ -10,11 +18,13 @@ argument-hint: "<PRD identifier, e.g. PRD-005>"
 
 Write a technical specification from an accepted PRD. The spec is the engineering response to a product requirement — it defines HOW to build what the PRD says to build.
 
-CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
-```
-⚠️  This command requires user interaction and cannot run in plan mode.
-Exit plan mode first, then run the command again.
-```
+CRITICAL: Check immediately whether you are in plan mode:
+- If you are in plan mode (you can only describe actions, not perform them), output exactly this and stop:
+  ```
+  ⚠️  /edikt:sdlc:spec requires interactive input and cannot run in plan mode.
+  Exit plan mode first, then run /edikt:sdlc:spec again.
+  ```
+- If you are not in plan mode, proceed normally with the spec generation.
 
 ## Arguments
 
