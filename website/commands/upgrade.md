@@ -1,6 +1,6 @@
 # /edikt:upgrade
 
-Upgrade edikt in this project — hooks, agents, and rule packs — to match the currently installed edikt version.
+Upgrade edikt in this project — hooks, agents, and rule packs — using the provenance-first flow. Detects what actually changed vs what you customized, and presents a 3-way diff when both sides diverged.
 
 ## Usage
 
@@ -140,6 +140,36 @@ git add .claude/ && git commit -m "chore: upgrade edikt to latest"
 ```
 
 Your team gets the upgrade on next pull — no manual steps needed.
+
+## Provenance-first upgrade (v0.5.0)
+
+v0.5.0 replaced the hash-diff classifier with a provenance-first upgrade flow. Every generated file now carries `edikt_template_hash` (MD5 of the source template before substitution). On upgrade:
+
+| Situation | Action |
+|---|---|
+| Template unchanged (`stored_hash == current_hash`) | Silent skip — your file is fine |
+| Template changed, you didn't edit | Auto-apply — you never touched it |
+| Template changed AND you edited | 3-way diff prompt — you decide |
+| File has `<!-- edikt:custom -->` | Always skip, regardless of template changes |
+| File has no `edikt_template_hash` (pre-v0.5.0) | Legacy classifier (v0.4.3 diff heuristic) |
+
+## Rollback
+
+After upgrade, revert the payload to the previous version:
+
+```bash
+edikt rollback
+```
+
+This is a launcher-level operation, not a command. See [Upgrade and rollback](../guides/upgrade-and-rollback.md).
+
+## Migration
+
+Upgrading from v0.4.x? See [Migrating from v0.4](../guides/migrating-from-v0.4.md).
+
+## Homebrew users
+
+`brew upgrade edikt` updates the launcher binary. `edikt upgrade` updates the payload. They're independent. See [Homebrew install](../guides/homebrew.md) for the full two-tier model.
 
 ## Natural language triggers
 

@@ -1,5 +1,49 @@
 # edikt changelog
 
+## v0.5.0 (2026-04-16)
+
+### Testing
+
+- **Layer 1 — Hook unit tests.** 9 hook test suites (session-start, stop-hook, post-compact, pre-compact, pre-tool-use, post-tool-use, user-prompt-submit, subagent-stop, instructions-loaded). Each pipes a JSON fixture directly to the real hook script and diffs the output. Runs by default; opt out with `EDIKT_SKIP_HOOK_TESTS=1`.
+- **Layer 2 — Agent SDK integration tests.** 6 tests covering `/edikt:init`, plan phase execution, post-compact context recovery, upgrade customization preservation, spec preprocessing, and evaluator blocked verdict. Run against real Claude via `claude-agent-sdk`. Auth via claude subscription session or `ANTHROPIC_API_KEY` (ADR-012). Regression museum: 4 tests locking in v0.4.x bugs.
+- **Layer 3 — Sandboxed runner.** All tests redirect `$HOME`, `$EDIKT_HOME`, and `$CLAUDE_HOME` to a per-run temp tree. No test contaminates the developer's live `~/.edikt/` or `~/.claude/`.
+- **Governance integrity tests.** Offline tests verifying ADR/invariant sentinel block hashes, routing table linkage, governance.md structure, config schema completeness, and feature toggle default-on behavior.
+- **Agent role tests.** Validates that read-only agents (evaluator, docs, architect) disallow Write/Edit, writer agents are not blocked, `maxTurns` is within bounds, and all registry slugs have template files.
+- **Config toggle tests.** Layer 1 tests for every `features.*` toggle — verifies the off state, the default-on state, and the no-config silent-exit behavior.
+- **Real payload hook smoke tests.** Installs real hooks from `templates/hooks/` (not stubs) and verifies they are executable and respond correctly to baseline payloads.
+- **CI gate.** `.github/workflows/test.yml`: Layers 1 + 3 on every PR (fast, free). Layer 2 on tag push (requires `ANTHROPIC_API_KEY` secret).
+
+### Versioning and rollback
+
+- **Shell launcher `edikt`.** `bin/edikt` is a POSIX sh launcher that manages versioned payload installs at `~/.edikt/versions/<tag>/`. Subcommands: `install`, `use`, `list`, `version`, `upgrade`, `rollback`, `prune`, `doctor`, `uninstall`, `dev link/unlink`, `migrate`.
+- **Versioned layout.** Payloads live at `~/.edikt/versions/<tag>/`. `current` symlink points at the active generation. `lock.yaml` tracks active, previous, and pinned versions.
+- **Multi-version migration.** M1 (flat→versioned), M2 (HTML→markdown-link sentinels), M3 (flat command names→namespaced), M5 (config.yaml schema additions), M4 (compile schema v1→v2). Run order enforced: M1→M2→M3→M5→M4.
+- **Rollback is payload-only.** `edikt rollback` reverts `current` to the previous generation. Migrations (M1-M5) are permanent and are not rolled back.
+- **`edikt migrate --dry-run`.** Shows the full migration chain without mutating anything.
+
+### Distribution
+
+- **Homebrew tap.** `brew install diktahq/tap/edikt` installs the launcher. `edikt install` fetches the payload. `brew upgrade edikt` updates the launcher; `edikt upgrade` updates the payload independently.
+- **Release automation.** `.github/workflows/release.yml` builds launcher + payload tarballs, generates `SHA256SUMS` (ADR-013), uploads as GitHub Release assets, bumps the Homebrew formula on a staging branch, waits for tap CI, auto-merges on success.
+
+### Init and provenance
+
+- **Provenance frontmatter.** Every generated file (agents, rules, CLAUDE.md block) carries `edikt_template_hash` (MD5 of the raw template before substitution) and `edikt_template_version` in its frontmatter.
+- **Upgrade provenance-first flow.** On upgrade, compares stored hash to current template hash. Unchanged template → silent skip. Template changed, user didn't edit → auto-apply. User edited + template moved → 3-way diff prompt (ADR-011 regression guard).
+- **`<!-- edikt:custom -->` marker.** Files marked with this are always skipped on upgrade, regardless of template changes.
+- **Stack filters and path substitutions.** `[if:stack:go]...[/if:stack:go]` markers filter agent sections. Path substitutions apply `_substitutions.yaml` defaults to configured paths.
+
+### Breaking changes
+
+- `~/.edikt/` layout changed from flat to versioned. Run `edikt migrate --yes` to upgrade from v0.4.x. See [Migrating from v0.4](website/guides/migrating-from-v0.4.md).
+- `features.auto-format`, `features.signal-detection`, `features.plan-injection` config keys must now be explicit in `.edikt/config.yaml`; hooks default-on when absent.
+
+### Migration notes
+
+See [website/guides/migrating-from-v0.4.md](website/guides/migrating-from-v0.4.md) for the full walkthrough.
+
+---
+
 ## v0.4.3 (2026-04-14)
 
 ### Bug fixes

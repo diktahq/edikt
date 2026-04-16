@@ -28,7 +28,7 @@
 | 11b   | done (characterize hooks: fixtures rewritten against actual behavior, sandbox-staged, gate replaced with opt-out `EDIKT_SKIP_HOOK_TESTS=1`) | 1/5 | 2026-04-15 |
 | 12    | done | 1/5 | 2026-04-16 |
 | 13    | done | 1/5 | 2026-04-16 |
-| 14    | pending | 0/5 | -      |
+| 14    | done | 1/5 | 2026-04-16 |
 
 **Deferred to v0.6.0:** Phase 2b.ii (hook semantic rewrites — subagent-stop structured evaluator input per ADR-010, session-start/user-prompt wording alignment, stop-hook command renames). See `docs/internal/plans/ROADMAP.md` v0.6.0 section.
 
