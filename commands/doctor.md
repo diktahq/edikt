@@ -30,7 +30,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 3. Run all checks in parallel where possible. Use the check definitions in the Reference section below. For each check, report `[ok]`, `[!!]`, or `[FAIL]` as defined there.
 
-4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Directive sentinel schema, Linter sync, Evaluator, edikt version.
+4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, Routed source files, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Directive sentinel schema, Linter sync, Evaluator, edikt version.
 
 5. Run the Decision Graph checks from the Reference section. Report findings inline with the other checks.
 
@@ -110,6 +110,60 @@ For each `.claude/rules/*.md` file that has the `edikt:generated` marker:
    - Installed version < registry version: `[!!] {name} outdated (installed: {old}, available: {new}) — run /edikt:rules-update`
    - No `version:` in installed file: `[!!] {name} has no version — may predate versioning`
    - Pack not in registry (custom rule): skip silently
+
+**Routed source files (SPEC-005 Phase 2, AC-004):**
+
+The compiled routing table in `.claude/rules/governance.md` and its topic files under `.claude/rules/governance/` cite ADRs and invariants via `(ref: ADR-NNN)` / `(ref: INV-NNN)` tails. This check walks the routing surface, extracts every cited ID, and verifies each source file exists and is readable at the expected path. Missing source = hard FAIL: the model's routing table points nowhere, and any directive that tells the model "read the relevant ADR" resolves to an empty disk lookup.
+
+Implementation:
+
+```bash
+python3 - <<'PY'
+import re, sys, os, glob, yaml
+from pathlib import Path
+
+# Resolve paths from config
+cfg = yaml.safe_load(open(".edikt/config.yaml"))
+paths = cfg.get("paths", {}) or {}
+base = cfg.get("base", "docs")
+decisions_dir = Path(paths.get("decisions") or f"{base}/architecture/decisions")
+invariants_dir = Path(paths.get("invariants") or f"{base}/architecture/invariants")
+
+# Collect every cited ID from the routing surface
+routing_files = []
+routing_files += list(Path(".claude/rules").glob("governance.md"))
+routing_files += list(Path(".claude/rules/governance").glob("*.md"))
+cited = set()
+cite_re = re.compile(r"\(ref:\s*(ADR-\d+|INV-\d+)\s*\)")
+for f in routing_files:
+    if not f.is_file():
+        continue
+    for m in cite_re.finditer(f.read_text()):
+        cited.add(m.group(1))
+
+# Resolve each ID to its expected source file
+missing = []
+resolved = 0
+for cid in sorted(cited):
+    prefix = "ADR" if cid.startswith("ADR") else "INV"
+    search_dir = decisions_dir if prefix == "ADR" else invariants_dir
+    matches = list(search_dir.glob(f"{cid}-*.md"))
+    if matches and matches[0].is_file():
+        resolved += 1
+    else:
+        missing.append((cid, str(search_dir / f"{cid}-*.md")))
+
+if missing:
+    for cid, expected in missing:
+        print(f"[FAIL] Missing source for routed directive: {cid} expected at {expected}")
+    sys.exit(1)
+print(f"[ok] Routed sources — {resolved} of {resolved} resolve")
+PY
+```
+
+- `[ok] Routed sources — {n} of {n} resolve` when every cited ID's source file exists.
+- `[FAIL] Missing source for routed directive: {ID} expected at {path}` — one line per missing source, with the literal expected path (path-resolution glob collapsed to the family prefix).
+- The check is O(n) in the count of cited IDs (typically ≤20) and must add ≤100ms to `/edikt:doctor` overhead on a realistic repo.
 
 **CLAUDE.md sentinel:**
 ```bash

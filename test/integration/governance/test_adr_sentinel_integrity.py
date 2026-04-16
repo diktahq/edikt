@@ -82,21 +82,42 @@ def _parse_block(block_yaml: str) -> dict:
     - Directive strings contain backtick-quoted paths — ` can't start a token
 
     The sentinel format is well-defined and small. Parse it line-by-line
-    with a simple state machine instead of relying on a full YAML parser.
+    with an indentation-aware state machine.
+
+    Schema (ADR-008 + SPEC-005):
+      Top level (indent 0)      — scalar | list | dict
+      Lists                     — "  - <item>" (indent 2, dash continuation)
+      Dicts (e.g. behavioral_signal) — indent 2 sub-keys, each scalar | list | dict
+      Nested dict (e.g. refuse_edit_matching_frontmatter) — indent 4 scalar sub-keys
+
+    SPEC-005 adds two optional top-level keys:
+      canonical_phrases — list of strings
+      behavioral_signal — dict containing refuse_to_write / refuse_tool / cite
+                          (all lists of strings) and optionally
+                          refuse_edit_matching_frontmatter (nested dict).
+
+    Missing SPEC-005 fields default to [] and {} respectively. Never raise.
     """
     if not block_yaml:
         return {}
 
     result: dict = {}
-    current_key: str | None = None
-    current_list: list | None = None
+    lines = block_yaml.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].rstrip()
 
-    for raw_line in block_yaml.splitlines():
-        line = raw_line.rstrip()
+        # Skip blank lines
+        if not line.strip():
+            i += 1
+            continue
 
-        # List item continuation.
-        if line.startswith("  - ") and current_list is not None:
-            current_list.append(line[4:])
+        # Only top-level (indent 0) lines are consumed here. Nested content is
+        # consumed by _consume_nested_block() below when a top-level key maps
+        # to a dict/list.
+        if line.startswith(" "):
+            # Orphaned indented line at top level — skip (defensive).
+            i += 1
             continue
 
         # Empty list shorthand: key: [] or key: [value, ...]
@@ -104,30 +125,192 @@ def _parse_block(block_yaml: str) -> dict:
         if m_empty:
             key = m_empty.group(1)
             inner = m_empty.group(2).strip()
-            result[key] = [i.strip() for i in inner.split(",")] if inner else []
-            current_key = None
-            current_list = None
+            result[key] = [t.strip() for t in inner.split(",")] if inner else []
+            i += 1
             continue
 
-        # Scalar key: value.
+        # Empty dict shorthand: key: {}
+        m_edict = re.match(r'^(\w[\w_-]*):\s*\{\s*\}\s*$', line)
+        if m_edict:
+            result[m_edict.group(1)] = {}
+            i += 1
+            continue
+
+        # Scalar: key: value
         m_scalar = re.match(r'^(\w[\w_-]*):\s+(.+)$', line)
         if m_scalar:
             key, value = m_scalar.group(1), m_scalar.group(2).strip().strip('"')
             result[key] = value
-            current_key = None
-            current_list = None
+            i += 1
             continue
 
-        # List header: key:\n  - ...
-        m_list = re.match(r'^(\w[\w_-]*):\s*$', line)
-        if m_list:
-            key = m_list.group(1)
-            result[key] = []
-            current_key = key
-            current_list = result[key]
+        # List or dict header: key: (no value; nested content follows)
+        m_header = re.match(r'^(\w[\w_-]*):\s*$', line)
+        if m_header:
+            key = m_header.group(1)
+            nested, consumed = _consume_nested_block(lines, i + 1, base_indent=2)
+            result[key] = nested
+            i += 1 + consumed
             continue
+
+        i += 1
+
+    # SPEC-005 backward-compatibility defaults. Missing = empty.
+    result.setdefault("canonical_phrases", [])
+    result.setdefault("behavioral_signal", {})
 
     return result
+
+
+def _consume_nested_block(
+    lines: list[str],
+    start: int,
+    base_indent: int,
+) -> tuple[list | dict, int]:
+    """Consume indented content belonging to a parent key at the given indent.
+
+    Returns (parsed_value, number_of_lines_consumed).
+
+    Detects list vs dict shape from the first non-blank indented line:
+      "<spaces>- " → list
+      "<spaces>key:" → dict
+
+    Recurses one level deeper for dict values that are themselves lists or dicts.
+    """
+    # Peek first non-blank line to determine shape
+    idx = start
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+
+    if idx == len(lines):
+        return [], idx - start
+
+    first = lines[idx]
+    indent = len(first) - len(first.lstrip(" "))
+    if indent < base_indent:
+        return [], idx - start  # Nothing indented belongs here
+
+    stripped = first.lstrip(" ")
+    if stripped.startswith("- "):
+        return _consume_list(lines, start, base_indent)
+    return _consume_dict(lines, start, base_indent)
+
+
+def _consume_list(lines: list[str], start: int, base_indent: int) -> tuple[list, int]:
+    """Consume a list body indented at base_indent with '- ' items."""
+    result: list = []
+    prefix = " " * base_indent + "- "
+    i = start
+    while i < len(lines):
+        raw = lines[i]
+        line = raw.rstrip()
+        if not line.strip():
+            i += 1
+            continue
+        # Break on dedent
+        if not (line.startswith(prefix) or line.startswith(" " * base_indent)):
+            break
+        if line.startswith(prefix):
+            item = line[len(prefix):].strip().strip('"')
+            result.append(item)
+            i += 1
+            continue
+        # Hit a more-indented or non-list-item line within nesting → stop
+        break
+    return result, i - start
+
+
+def _consume_dict(lines: list[str], start: int, base_indent: int) -> tuple[dict, int]:
+    """Consume a dict body indented at base_indent with 'key: value' entries."""
+    result: dict = {}
+    indent_spaces = " " * base_indent
+    i = start
+    while i < len(lines):
+        raw = lines[i]
+        line = raw.rstrip()
+        if not line.strip():
+            i += 1
+            continue
+        # Break on dedent (anything less indented than our base)
+        line_indent = len(raw) - len(raw.lstrip(" "))
+        if line_indent < base_indent:
+            break
+        # Must start at our base indent to be a direct child
+        if line_indent != base_indent:
+            break
+
+        content = line[base_indent:]
+
+        # Empty list shorthand
+        m_empty = re.match(r'^(\w[\w_-]*):\s*\[(.*)\]\s*$', content)
+        if m_empty:
+            key = m_empty.group(1)
+            inner = m_empty.group(2).strip()
+            result[key] = [t.strip() for t in inner.split(",")] if inner else []
+            i += 1
+            continue
+
+        # Empty dict shorthand
+        m_edict = re.match(r'^(\w[\w_-]*):\s*\{\s*\}\s*$', content)
+        if m_edict:
+            result[m_edict.group(1)] = {}
+            i += 1
+            continue
+
+        # Scalar
+        m_scalar = re.match(r'^(\w[\w_-]*):\s+(.+)$', content)
+        if m_scalar:
+            key, value = m_scalar.group(1), m_scalar.group(2).strip().strip('"')
+            result[key] = value
+            i += 1
+            continue
+
+        # Nested list or dict
+        m_header = re.match(r'^(\w[\w_-]*):\s*$', content)
+        if m_header:
+            key = m_header.group(1)
+            nested, consumed = _consume_nested_block(lines, i + 1, base_indent=base_indent + 2)
+            result[key] = nested
+            i += 1 + consumed
+            continue
+
+        # Unrecognized — break to avoid infinite loop
+        break
+    return result, i - start
+
+
+# SPEC-005 Phase 5 — path-traversal rejection (AC-5.6)
+
+_PATH_TRAVERSAL_PATTERNS = ("..", "~/")
+
+
+def validate_behavioral_signal(signal: dict) -> list[str]:
+    """Return a list of validation errors for a behavioral_signal dict.
+
+    Empty list = valid. Non-empty = caller should treat as a parse error with
+    one message per offending entry. Protects against path-traversal inputs
+    that would let an ADR author weaponize the benchmark runner (SPEC-005
+    security review, critical finding #2).
+    """
+    errors: list[str] = []
+    refuse_to_write = signal.get("refuse_to_write") or []
+    for entry in refuse_to_write:
+        if not isinstance(entry, str):
+            continue
+        if entry.startswith("/"):
+            errors.append(
+                f"behavioral_signal.refuse_to_write entry {entry!r} uses an absolute path; "
+                "substring matching only — paths must be relative substrings."
+            )
+            continue
+        for pat in _PATH_TRAVERSAL_PATTERNS:
+            if pat in entry:
+                errors.append(
+                    f"behavioral_signal.refuse_to_write entry {entry!r} contains {pat!r}; "
+                    "path-traversal metacharacters are rejected."
+                )
+                break
+    return errors
 
 
 def _body_without_block(text: str) -> str:
