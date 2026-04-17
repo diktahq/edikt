@@ -96,24 +96,70 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
     model_dir = _RESULTS_DIR / model_slug
     model_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Raw JSONL — every run of every case, verbatim.
+    # 1. Raw JSONL — every run of every case.
+    # INV-007 / audit HI-11: redact `tool_calls[*].tool_input.content`, length-cap
+    # `response`, and abort the write if credential-pattern regexes appear in any
+    # serialized field. Prevents benchmark results from committing verbatim file
+    # contents or leaked secrets into the repo.
+    import re as _re_cred
+    _CRED_PATTERNS = [
+        _re_cred.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+        _re_cred.compile(r"Bearer\s+[A-Za-z0-9_\-\.]{20,}"),
+        _re_cred.compile(r"-----BEGIN [A-Z ]+-----"),
+        _re_cred.compile(r"AKIA[0-9A-Z]{16}"),  # AWS access key ID
+        _re_cred.compile(r"ghp_[A-Za-z0-9]{36}"),  # GitHub PAT
+    ]
+    _RESPONSE_CAP = 4096
+
+    def _redact_run(run, case_id: str) -> dict:
+        # Length-cap response.
+        resp = run.response
+        if resp and len(resp) > _RESPONSE_CAP:
+            resp = resp[:_RESPONSE_CAP] + f"\n...<truncated: {len(run.response) - _RESPONSE_CAP} more chars>"
+        # Redact tool_input.content.
+        redacted_calls = []
+        for call in run.tool_calls:
+            call_copy = dict(call)
+            tool_input = call_copy.get("tool_input")
+            if isinstance(tool_input, dict) and "content" in tool_input:
+                content = tool_input["content"]
+                tool_input = dict(tool_input)
+                tool_input["content"] = f"<redacted:len={len(content) if isinstance(content, str) else 'n/a'}>"
+                call_copy["tool_input"] = tool_input
+            redacted_calls.append(call_copy)
+        return {
+            "case_id": case_id,
+            "run_index": run.run_index,
+            "verdict": run.verdict,
+            "reasons": run.reasons,
+            "response": resp,
+            "tool_calls": redacted_calls,
+            "api_ms": run.api_ms,
+            "written_paths": run.written_paths,
+        }
+
+    def _credential_check(blob: str, where: str) -> None:
+        for pat in _CRED_PATTERNS:
+            if pat.search(blob):
+                raise RuntimeError(
+                    f"[edikt benchmark] credential pattern matched in {where}: "
+                    f"{pat.pattern}. Refusing to write benchmark results to disk. "
+                    "Review the run output before retrying."
+                )
+
     jsonl_path = model_dir / f"{ts}-runs.jsonl"
     with jsonl_path.open("w") as fh:
         for cr in _results:
             for run in cr.runs:
-                fh.write(json.dumps({
-                    "case_id": cr.case_id,
+                payload = _redact_run(run, cr.case_id)
+                payload.update({
                     "dimension": cr.dimension,
                     "severity": cr.severity,
                     "targets": cr.targets,
-                    "run_index": run.run_index,
-                    "verdict": run.verdict,
-                    "reasons": run.reasons,
-                    "response": run.response,
-                    "tool_calls": run.tool_calls,
-                    "api_ms": run.api_ms,
-                    "written_paths": run.written_paths,
-                }) + "\n")
+                })
+                serialized = json.dumps(payload)
+                _credential_check(serialized, f"case {cr.case_id} run {run.run_index}")
+                fh.write(serialized + "\n")
 
     # 2. Aggregate summary JSON.
     summary_path = model_dir / f"{ts}-summary.json"
