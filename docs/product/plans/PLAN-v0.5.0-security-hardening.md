@@ -21,7 +21,7 @@
 | 1     | done   | 1/3     | 2026-04-17 |
 | 2     | done   | 1/5     | 2026-04-17 |
 | 3     | done   | 1/3     | 2026-04-17 |
-| 4     | -      | 0/5     | -       |
+| 4     | done (HI-4 closed via byte-range guard; LOW-3 hash anchor seeding deferred to compile) | 1/5 | 2026-04-17 |
 | 5     | -      | 0/5     | -       |
 | 6     | -      | 0/5     | -       |
 | 7     | done   | 1/3     | 2026-04-17 |
