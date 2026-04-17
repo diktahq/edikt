@@ -22,7 +22,7 @@
 | 2     | done   | 1/5     | 2026-04-17 |
 | 3     | done   | 1/3     | 2026-04-17 |
 | 4     | done (HI-4 closed via byte-range guard; LOW-3 hash anchor seeding deferred to compile) | 1/5 | 2026-04-17 |
-| 5     | -      | 0/5     | -       |
+| 5     | done (cosign signing + verification, release-asset URL, tag-shape gate, loud banner, README pinned; Homebrew tap production-gate deferred) | 1/5 | 2026-04-17 |
 | 6     | done (schema + agent prompts + evidence gate; grandfather routine in Phase 13) | 1/5 | 2026-04-17 |
 | 7     | done   | 1/3     | 2026-04-17 |
 | 8     | done   | 1/3     | 2026-04-17 |

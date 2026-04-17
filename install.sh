@@ -323,6 +323,50 @@ _sha256_file() {
   fi
 }
 
+# ADR-016: cosign verification of SHA256SUMS against the release workflow's
+# GitHub OIDC identity. If cosign is present and the bundle + SHA256SUMS are
+# available for the current tag, use them. Returns 0 on success, 1 on verify
+# failure (hard abort), 2 on missing-prerequisites (caller decides fallback).
+_cosign_verify_release_checksums() {
+  _tag="$1"
+  _checksums_out="$2"  # caller-provided path to write verified SHA256SUMS to
+
+  if ! command -v cosign >/dev/null 2>&1; then
+    return 2
+  fi
+
+  _release_base="https://github.com/${REPO}/releases/download/${_tag}"
+  _tmp_sums=$(mktemp)
+  _tmp_bundle=$(mktemp)
+
+  if ! curl -fsSL --retry 2 --max-time 20 "${_release_base}/SHA256SUMS" -o "$_tmp_sums" 2>/dev/null; then
+    rm -f "$_tmp_sums" "$_tmp_bundle"
+    return 2
+  fi
+  if ! curl -fsSL --retry 2 --max-time 20 "${_release_base}/SHA256SUMS.sig.bundle" -o "$_tmp_bundle" 2>/dev/null; then
+    rm -f "$_tmp_sums" "$_tmp_bundle"
+    return 2
+  fi
+
+  # The certificate identity must match the release workflow at any tag shape.
+  _identity_regex='^https://github\.com/diktahq/edikt/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'
+  if ! cosign verify-blob \
+      --bundle "$_tmp_bundle" \
+      --certificate-identity-regexp "$_identity_regex" \
+      --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+      "$_tmp_sums" >/dev/null 2>&1; then
+    rm -f "$_tmp_sums" "$_tmp_bundle"
+    error "cosign signature verification FAILED for ${_release_base}/SHA256SUMS"
+    error "this is a hard abort — a signed release's signature does not match expected identity."
+    error "do NOT set EDIKT_INSTALL_INSECURE=1 to bypass; the release may be tampered."
+    return 1
+  fi
+
+  cp "$_tmp_sums" "$_checksums_out"
+  rm -f "$_tmp_sums" "$_tmp_bundle"
+  return 0
+}
+
 # Verify observed hash against a reference file that may be a bare hex hash
 # or the standard "<hash>  <filename>" format (matches bin/edikt contract).
 _verify_launcher_checksum() {
@@ -387,21 +431,46 @@ stage_launcher() {
       fi
       rm -f "$_ref_tmp"
     else
-      # Fetch sibling .sha256 sidecar from the same raw URL.
-      _sidecar_url="${LAUNCHER_URL}.sha256"
-      _sidecar_tmp=$(mktemp)
-      if curl -fsSL --retry 2 --max-time 15 "$_sidecar_url" -o "$_sidecar_tmp" 2>/dev/null; then
-        if ! _verify_launcher_checksum "$_observed" "$_sidecar_tmp"; then
-          rm -f "$_sidecar_tmp"
-          return $EX_NETWORK
-        fi
-        rm -f "$_sidecar_tmp"
-      else
-        rm -f "$_sidecar_tmp" 2>/dev/null || true
-        if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
-          warn "launcher sidecar .sha256 unavailable — proceeding without integrity check (EDIKT_INSTALL_INSECURE=1)"
+      # ADR-016 path: fetch signed SHA256SUMS from the release, verify via
+      # cosign, grep the expected hash for the launcher filename.
+      _sums_tmp=$(mktemp)
+      _cosign_verify_release_checksums "$TAG" "$_sums_tmp"
+      _cosign_rc=$?
+      if [ "$_cosign_rc" -eq 0 ]; then
+        # Verified bundle. Grep for the launcher filename and compare.
+        _ref_tmp=$(mktemp)
+        if ! awk -v name="bin/edikt" '$2 == name || $2 ~ ("^\\*?" name "$") {print; exit}' "$_sums_tmp" > "$_ref_tmp" \
+             || [ ! -s "$_ref_tmp" ]; then
+          # No bin/edikt entry in SHA256SUMS for this release. The launcher
+          # may be published under a different name (edikt-v*.tar.gz). We
+          # can't verify the raw launcher URL against this SHA256SUMS;
+          # emit a clear message and fall back to legacy sidecar path.
+          rm -f "$_ref_tmp" "$_sums_tmp"
+          if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
+            warn "SHA256SUMS did not contain bin/edikt entry — proceeding without per-launcher verification (EDIKT_INSTALL_INSECURE=1)"
+          else
+            error "SHA256SUMS for release $TAG does not list bin/edikt — cannot verify launcher."
+            error "set EDIKT_INSTALL_INSECURE=1 to bypass (NOT recommended), or use a release >= v0.5.0."
+            return $EX_NETWORK
+          fi
         else
-          error "launcher sidecar .sha256 unavailable; set EDIKT_INSTALL_INSECURE=1 to override (not recommended)"
+          if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
+            rm -f "$_ref_tmp" "$_sums_tmp"
+            return $EX_NETWORK
+          fi
+          rm -f "$_ref_tmp" "$_sums_tmp"
+        fi
+      elif [ "$_cosign_rc" -eq 1 ]; then
+        # Cosign itself rejected the signature — hard abort (do NOT fall back).
+        return $EX_NETWORK
+      else
+        # Cosign unavailable or SHA256SUMS bundle not published for this tag.
+        if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
+          warn "cosign unavailable or SHA256SUMS.sig.bundle missing for $TAG — proceeding without signature verification (EDIKT_INSTALL_INSECURE=1)"
+          EDIKT_INSECURE_BANNER=1
+        else
+          error "cosign not available or SHA256SUMS.sig.bundle missing for $TAG."
+          error "install cosign (https://docs.sigstore.dev/cosign/installation) or set EDIKT_INSTALL_INSECURE=1 to bypass (NOT recommended)."
           return $EX_NETWORK
         fi
       fi
@@ -789,5 +858,13 @@ else
   printf '  Launcher: %s/bin/edikt\n' "$EDIKT_ROOT"
   printf '\n  Next: open a new shell (or source your rc) and run:\n'
   printf '    %bedikt doctor%b\n\n' "$BOLD" "$RESET"
+  # ADR-016 / MED-13: loud banner when the user opted out of integrity checks.
+  # Printed AFTER the success line so it's the last thing the user sees.
+  if [ "${EDIKT_INSECURE_BANNER:-0}" = "1" ] || [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
+    printf '%b%b⚠  INTEGRITY VERIFICATION WAS DISABLED%b\n' "$YELLOW" "$BOLD" "$RESET"
+    printf '%b   EDIKT_INSTALL_INSECURE=1 was honored — the downloaded launcher\n' "$YELLOW"
+    printf '   was NOT verified against a signed SHA256SUMS. TLS-only trust.\n'
+    printf '   Re-install with cosign available for full verification.%b\n\n' "$RESET"
+  fi
 fi
 exit $EX_OK
