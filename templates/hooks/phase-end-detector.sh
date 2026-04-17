@@ -331,21 +331,122 @@ with open(out, 'a', encoding='utf-8') as f:
     f.write(json.dumps({"ts": ts, "event": "phase_evaluation", "plan": plan, "phase": phase, "exit": exit_code}) + "\n")
 PY
 
-# Check verdict
-if echo "$EVAL_OUTPUT" | grep -qE 'VERDICT:\s*PASS|Result:\s*PASS|All criteria PASS'; then
-  python3 - "$PHASE_NUM" <<'PYEOF'
-import json, sys
-phase = sys.argv[1]
-print(json.dumps({"systemMessage": f"✓ Phase {phase} evaluation: PASS"}))
-PYEOF
-  exit 0
-fi
+# Parse the JSON verdict (ADR-018) and enforce the evidence gate.
+# The evaluator emits a structured JSON verdict as the first non-empty JSON
+# object in stdout. A PASS is rejected and forced to BLOCKED unless every
+# criterion whose id looks like a test-runner command has evidence_type
+# set to "test_run".
+export _EDIKT_EVAL_OUTPUT="$EVAL_OUTPUT"
+export _EDIKT_PHASE_NUM="$PHASE_NUM"
+export _EDIKT_SIDECAR="${SIDECAR:-}"
+python3 - <<'PY'
+import json
+import os
+import re
+import sys
 
-# Failure — surface to user
-python3 - "$PHASE_NUM" "$EVAL_OUTPUT" <<'PYEOF'
-import json, sys
-phase = sys.argv[1]
-output = sys.argv[2][:1500]
-msg = f"⚠️  Phase {phase} evaluation FAILED:\n{output}\n\nReview the findings and fix before marking the phase done."
+raw = os.environ.get("_EDIKT_EVAL_OUTPUT", "")
+phase = os.environ.get("_EDIKT_PHASE_NUM", "?")
+sidecar_path = os.environ.get("_EDIKT_SIDECAR", "")
+
+
+def _find_first_json_object(text: str) -> dict | None:
+    """Scan for the first balanced JSON object in text. Tolerates prose before/after."""
+    for m in re.finditer(r"\{", text):
+        depth = 0
+        for i in range(m.start(), len(text)):
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[m.start():i + 1])
+                    except json.JSONDecodeError:
+                        break
+    return None
+
+
+verdict_json = _find_first_json_object(raw)
+
+# Legacy fallback: if the evaluator emitted prose-only output with "VERDICT: PASS",
+# treat as BLOCKED — the new schema is mandatory post-ADR-018.
+if verdict_json is None or not isinstance(verdict_json.get("verdict"), str):
+    msg = (
+        f"⚠️  Phase {phase} evaluator did not emit a structured JSON verdict "
+        f"(ADR-018). Verdict treated as BLOCKED until the evaluator emits a "
+        f"schema-conforming object. Output head:\n{raw[:800]}"
+    )
+    print(json.dumps({"systemMessage": msg}))
+    sys.exit(0)
+
+verdict = verdict_json.get("verdict", "BLOCKED")
+criteria = verdict_json.get("criteria") or []
+meta = verdict_json.get("meta") or {}
+
+# Load the criteria sidecar to identify which criteria name a shell command.
+# A verify field containing pytest / bash / make / npm test / ./test/ is
+# interpreted as a test-run criterion that requires evidence_type=test_run.
+test_run_ids: set[str] = set()
+if sidecar_path and os.path.isfile(sidecar_path):
+    try:
+        with open(sidecar_path, encoding="utf-8") as f:
+            text = f.read()
+        # Lightweight YAML scan — the sidecar format has predictable shape.
+        for block in re.split(r"^\s*-\s+", text, flags=re.MULTILINE):
+            id_match = re.search(r"\bid:\s*['\"]?([A-Za-z0-9_.-]+)", block)
+            verify_match = re.search(r"\bverify:\s*['\"]?([^'\"\n]+)", block)
+            if id_match and verify_match:
+                verify = verify_match.group(1)
+                if re.search(r"\b(pytest|bash|make |npm test|\./test/|uv run)\b", verify):
+                    test_run_ids.add(id_match.group(1))
+    except OSError:
+        pass
+
+# Grandfathered verdicts bypass the gate.
+grandfathered = bool(meta.get("grandfathered"))
+
+# Evidence gate: if any required-test criterion lacks test_run evidence, force
+# verdict to BLOCKED with a listed reason.
+gate_violations: list[str] = []
+if not grandfathered and verdict == "PASS":
+    for c in criteria:
+        cid = c.get("id")
+        if cid in test_run_ids and c.get("evidence_type") != "test_run":
+            gate_violations.append(
+                f"{cid}: criterion names a shell command but evidence_type "
+                f"is {c.get('evidence_type', 'missing')!r}"
+            )
+
+if gate_violations:
+    verdict = "BLOCKED"
+    reason_list = "\n  - ".join(gate_violations)
+    msg = (
+        f"⚠️  Phase {phase} PASS was forced to BLOCKED by the ADR-018 "
+        f"evidence gate. test_run evidence is required for:\n  - {reason_list}\n\n"
+        "Re-run the evaluator with Bash available, or explicitly mark the "
+        "phase blocked in the plan."
+    )
+    print(json.dumps({"systemMessage": msg}))
+    sys.exit(0)
+
+if verdict == "PASS":
+    summary = f"✓ Phase {phase} evaluation: PASS"
+    if grandfathered:
+        summary += " (grandfathered from pre-v0.5.0 verdict)"
+    print(json.dumps({"systemMessage": summary}))
+    sys.exit(0)
+
+# BLOCKED / FAIL — surface to user. Include criterion-level detail.
+lines = [f"⚠️  Phase {phase} evaluation: {verdict}"]
+for c in criteria:
+    if c.get("status") != "met":
+        lines.append(
+            f"  - {c.get('id', '?')}: {c.get('status', '?')} — {c.get('evidence', '(no evidence)')}"
+        )
+        if c.get("notes"):
+            lines.append(f"      note: {c['notes']}")
+msg = "\n".join(lines) + "\n\nReview the findings and fix before marking the phase done."
 print(json.dumps({"systemMessage": msg}))
-PYEOF
+PY
