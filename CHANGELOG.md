@@ -69,8 +69,22 @@ A `/edikt:sdlc:review` and `/edikt:sdlc:drift` pass against the hardened branch 
 - **LOW-11 summary integrity sidecar.** Benchmark summary JSON files now ship with a sibling `.sha256` file; release decisions that depend on benchmark results can verify before trusting.
 - **Bash-vs-sh syntax check.** `install.sh` now uses `bash -n` (not `sh -n`) for the downloaded launcher since `bin/edikt` is bash.
 
+#### Governance: ADR-020 + ADR-021 — gov-compile tier-2 migration, Go binary (planned in v0.5.0, implemented in v0.5.x)
+
+**What's captured in v0.5.0:** the decision to migrate `/edikt:gov:compile`'s deterministic work to a tier-2 helper per ADR-015, and the language choice (Go) for every tier-2 helper per ADR-021. A clean-run compile of 40 source documents currently takes ~35 minutes with 153 LLM tool calls because every YAML parse, sentinel extraction, hash computation, and template render goes through the model. ADR-020 locks in the split; ADR-021 picks the language so every future tier-2 helper ships the same way — single static Go binary, no user-side runtime dependency, signed per ADR-016.
+
+- **Tier-2 Go binary** (`tools/gov-compile/`, opt-in via `edikt install gov-compile`): YAML/frontmatter parse, sentinel-block regex extraction, `source_hash`/`directives_hash` (ADR-008), three-list merge, topic grouping by `topic:` field, path glob generation, template rendering, orphan detection, cross-reference validation. Deterministic, byte-equal output across runs. Single static binary — no Python, no pipx, no venv.
+- **LLM retained for reasoning only**: one-shot sentinel generation for new artifacts, hand-edit conflict interview, composing contradiction-warning wording from a mechanically-detected contradiction list.
+- **Time targets:** no-op recompile < 500ms with zero LLM calls; full regenerate < 2s; new-ADR sentinel gen ~10s.
+- **Determinism guarantee:** byte-equal output given byte-equal input. CI will include a diff-equality test. Same-input, same-hash, fast-path skip works as ADR-008 originally intended.
+
+Implementation follows in v0.5.x via a dedicated SPEC + 5-phase PLAN (first phase adds the optional `topic:` field to existing sentinel blocks so the helper doesn't have to LLM-ask for grouping).
+
+Compiled governance now includes `governance/tooling.md` with the ADR-020 directives, and the routing table surfaces tier-2 / gov-compile / determinism keywords.
+
 #### Remaining follow-ups (not blocking v0.5.0)
 
+- **gov-compile tier-2 implementation.** Decision captured (ADR-020); Python helper, command rewrite, and determinism-equality test ship in v0.5.x.
 - **Markdown-embedded Python extraction** (10+ sites in `test/integration/`) will move to `test/_lib/` in a follow-up.
 - **Hash anchor seeding** for managed markdown regions (LOW-3) lands with the next `/edikt:gov:compile` pass.
 - **macOS ancestor-safe migration paths.** `O_NOFOLLOW` on macOS guards only the final path component. The v0.5.0 threat model is covered (swap-during-write window closed by pre-rename re-check) but fully ancestor-safe `openat`-style navigation is tracked for v0.6.x. See INV-005 "Known limitations".
