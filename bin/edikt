@@ -448,10 +448,54 @@ resolve_commands_target() {
     return 1
 }
 
+# Resolve the path that $EDIKT_ROOT/hooks should point at, adapting to the
+# active payload layout (PLAN-v0.5.0-stability Phase 20 — hooks sibling):
+#   - v0.4.x payload: ships a root `hooks/` directory → point at current/hooks
+#   - v0.5.x release tarball: ships only `templates/hooks/` (release.yml tars
+#     templates/ commands/ install.sh — no root hooks/) → point at
+#     current/templates/hooks
+#   - dev-linked payload: cmd_dev_link creates both current/hooks and
+#     current/templates/hooks symlinks into the source repo, so either shape
+#     resolves. Pick the root one for consistency with v0.4.x behaviour.
+#
+# settings.json embeds the resolved path at install time (EDIKT_HOOK_DIR
+# substitution), but the runtime $EDIKT_ROOT/hooks symlink is what survives
+# across use/rollback. Both must resolve to the same real hook files.
+#
+# Returns the resolved path on stdout; returns 1 on malformed payloads so
+# callers don't create dangling symlinks.
+resolve_hooks_target() {
+    if [ ! -e "$EDIKT_ROOT/current" ]; then
+        log_err "resolve_hooks_target: $EDIKT_ROOT/current does not exist"
+        return 1
+    fi
+    if [ -L "$EDIKT_ROOT/current" ] && [ ! -d "$EDIKT_ROOT/current/" ]; then
+        log_err "resolve_hooks_target: $EDIKT_ROOT/current is a broken symlink"
+        return 1
+    fi
+    # Prefer the v0.4.x root layout when the payload provides it (dev-link
+    # and v0.4.x releases). Fall back to templates/hooks for v0.5.x release
+    # tarballs which don't carry a root hooks/ directory.
+    if [ -d "$EDIKT_ROOT/current/hooks" ]; then
+        printf '%s' "current/hooks"
+        return 0
+    fi
+    if [ -d "$EDIKT_ROOT/current/templates/hooks" ]; then
+        printf '%s' "current/templates/hooks"
+        return 0
+    fi
+    log_err "resolve_hooks_target: $EDIKT_ROOT/current has neither hooks/ nor templates/hooks/ — payload is malformed"
+    return 1
+}
+
 ensure_external_symlinks() {
     # hooks and templates are stable external paths embedded in
     # settings.json. Repair on every install/use.
-    atomic_symlink current/hooks "$EDIKT_ROOT/hooks"
+    if _hooks_target=$(resolve_hooks_target); then
+        atomic_symlink "$_hooks_target" "$EDIKT_ROOT/hooks"
+    else
+        return 1
+    fi
     atomic_symlink current/templates "$EDIKT_ROOT/templates"
     mkdir -p "$CLAUDE_ROOT/commands"
     if _cmds_target=$(resolve_commands_target); then
@@ -1003,17 +1047,27 @@ _rollback_v050_host_files() {
     fi
 
     # Remove grandfather verdict stubs.
+    # POSIX-compatible: the obvious `find ... | while read` form runs the
+    # while in a subshell where `_removed_grand` updates would be lost.
+    # `done < <(...)` is bash process substitution and breaks `sh -n`
+    # parsing under /bin/sh (the script's required interpreter — see
+    # header). Use a tempfile redirect to preserve variable scope without
+    # bashisms.
     _removed_grand=0
+    _gv_list=$(mktemp 2>/dev/null) || _gv_list="${TMPDIR:-/tmp}/edikt-gv-$$"
     for _plans_root in "$PWD/docs/product/plans/verdicts" "$PWD/docs/plans/verdicts"; do
         [ -d "$_plans_root" ] || continue
+        find "$_plans_root" -name '*.json' 2>/dev/null > "$_gv_list" || true
         # Find JSON files with meta.grandfathered == true and delete them.
         while IFS= read -r _vf; do
+            [ -n "$_vf" ] || continue
             if python3 -c "import json,sys;d=json.loads(open(sys.argv[1]).read());sys.exit(0 if d.get('meta',{}).get('grandfathered') is True else 1)" "$_vf" 2>/dev/null; then
                 rm -f "$_vf"
                 _removed_grand=$((_removed_grand + 1))
             fi
-        done < <(find "$_plans_root" -name '*.json' 2>/dev/null)
+        done < "$_gv_list"
     done
+    rm -f "$_gv_list" 2>/dev/null || true
     if [ "$_removed_grand" -gt 0 ]; then
         log_info "  removed $_removed_grand grandfather verdict stub(s)"
     fi
