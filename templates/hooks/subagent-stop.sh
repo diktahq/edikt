@@ -22,12 +22,41 @@ fi
 # Read last assistant message from stdin
 INPUT=$(cat)
 
-# Extract agent name from the response.
-# NOTE (MED-11): this detection is content-based and therefore spoofable.
-# Phase 9 replaces it with structured SubagentStop payload fields. For now
-# we constrain the result to a known slug and never embed it in any shell
-# command — the AGENT_NAME value flows only into json.dumps-constructed JSON.
+# Prefer the structured agent identity from the SubagentStop payload (MED-11
+# fix). Claude Code populates `agent_name` / `tool_name` / `subagent_type`
+# fields that are NOT under attacker control. Only fall back to content
+# grep if those fields are absent (older Claude Code versions).
 AGENT_NAME=""
+PAYLOAD_AGENT=$(printf '%s' "$INPUT" | python3 -c 'import json,sys
+try:
+    d = json.load(sys.stdin)
+    # Try each canonical field. Values outside the known-slug allowlist are
+    # rejected — a payload declaring agent_name="security" when no such
+    # subagent ran cannot fire the security gate because Claude Code controls
+    # this field, not the assistant response.
+    for k in ("agent_name", "subagent_type", "tool_name", "agent"):
+        v = d.get(k)
+        if isinstance(v, str) and v:
+            print(v.strip().lower())
+            break
+except Exception:
+    pass' 2>/dev/null)
+if [ -n "$PAYLOAD_AGENT" ]; then
+    for _allowed in architect dba security api backend frontend qa sre platform docs pm ux data performance compliance mobile seo gtm; do
+        if [ "$PAYLOAD_AGENT" = "$_allowed" ]; then
+            AGENT_NAME="$_allowed"
+            break
+        fi
+    done
+fi
+
+# ── Content-grep fallback (legacy Claude Code) ──
+# If structured identity was absent, fall back to keyword grep. This is the
+# spoofable path — if it fires the gate, the event is logged with a provenance
+# note so post-hoc analysis can distinguish structured from grep-derived.
+AGENT_IDENTITY_SOURCE="structured"
+if [ -z "$AGENT_NAME" ]; then
+    AGENT_IDENTITY_SOURCE="grep-fallback"
 INPUT_LOWER=$(echo "$INPUT" | tr '[:upper:]' '[:lower:]')
 
 if echo "$INPUT_LOWER" | grep -qE "architect|architecture specialist"; then AGENT_NAME="architect"
@@ -64,6 +93,7 @@ fi
 if [ -z "$AGENT_NAME" ]; then
   AGENT_NAME=$(echo "$INPUT" | grep -oiE 'As (Staff |Senior |Principal )?[A-Za-z]+' | head -1 | awk '{print $NF}' | tr '[:upper:]' '[:lower:]')
 fi
+fi   # end of grep-fallback block (matches `if [ -z "$AGENT_NAME" ]; then` above)
 
 # If still no agent name, exit silently
 if [ -z "$AGENT_NAME" ]; then
@@ -154,9 +184,9 @@ if [ "$IS_GATE" = true ] && [ "$SEVERITY" = "critical" ]; then
   mkdir -p "$HOME/.edikt" 2>/dev/null || true
   # Write the full gate_fired event via json.dumps. All untrusted fields
   # (finding, git identity) ride as argv; never concatenated into a string.
-  python3 - "$GATE_TIMESTAMP" "$AGENT_NAME" "$SEVERITY" "$FINDING" "$FINDING_PREFIX" "$GIT_USER" "$GIT_EMAIL" "$HOME/.edikt/events.jsonl" <<'PY'
+  python3 - "$GATE_TIMESTAMP" "$AGENT_NAME" "$SEVERITY" "$FINDING" "$FINDING_PREFIX" "$GIT_USER" "$GIT_EMAIL" "$AGENT_IDENTITY_SOURCE" "$HOME/.edikt/events.jsonl" <<'PY'
 import json, sys
-ts, agent, sev, finding, prefix, user, email, out = sys.argv[1:9]
+ts, agent, sev, finding, prefix, user, email, identity_source, out = sys.argv[1:10]
 rec = {
     "ts": ts,
     "event": "gate_fired",
@@ -166,6 +196,7 @@ rec = {
     "finding_prefix": prefix,
     "user": user,
     "email": email,
+    "identity_source": identity_source,
 }
 with open(out, 'a', encoding='utf-8') as f:
     f.write(json.dumps(rec) + "\n")

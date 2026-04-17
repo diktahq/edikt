@@ -179,6 +179,9 @@ import json, sys
 stem = sys.argv[1]
 print(f"🔧  Evaluation history missing for {stem}.md — rebuilding it now...", flush=True)
 PYEOF
+    # Defense-in-depth: PLAN_STEM is already shape-validated above, but pass
+    # it as a separate argv element so a future relaxation of the validator
+    # cannot turn the concatenated string into a prompt-injection vector.
     if "$_claude_bin" -p "/edikt:sdlc:plan --sidecar-only $PLAN_STEM" >/dev/null 2>&1; then
       _SIDECAR_GEN_STATUS="attempted"
       # Re-scan for the sidecar — it should now exist.

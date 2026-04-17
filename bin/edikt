@@ -859,6 +859,14 @@ cmd_use() {
 
 # ─── Subcommand: rollback ───────────────────────────────────────────────────
 cmd_rollback() {
+    # Special form: `edikt rollback v0.5.0` — restores host files from the
+    # pre-v0.5.0 backup written by install.sh during the 0.4.x → 0.5.0 migration.
+    # Payload-only rollback (the default form) is unchanged below.
+    if [ "${1:-}" = "v0.5.0" ] || [ "${1:-}" = "0.5.0" ]; then
+        _rollback_v050_host_files
+        return $?
+    fi
+
     prev=$(lock_get previous)
     if [ -z "$prev" ]; then
         log_err "no previous version recorded in lock.yaml"
@@ -881,6 +889,70 @@ cmd_rollback() {
         '"from":"'"$cur"'","to":"'"$prev"'","backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'","reason":"user"'
 
     log_info "rolled back to $prev"
+    return 0
+}
+
+# ─── Rollback helper: v0.5.0 host-file restore ──────────────────────────────
+# Restores the user's pre-v0.5.0 ~/.claude/settings.json from the backup
+# install.sh wrote during the first 0.4.x → 0.5.0 install. Idempotent.
+# Removes grandfather verdict stubs created by the upgrade's grandfather
+# routine. Does NOT roll back payload versions — run `edikt use <tag>` for that.
+_rollback_v050_host_files() {
+    _marker="$HOME/.edikt/backup/pre-v0.5.0-marker"
+    if [ ! -f "$_marker" ]; then
+        log_err "rollback v0.5.0: no pre-v0.5.0 backup found at $_marker"
+        log_err "  this install has no prior-state backup to restore from."
+        return 1
+    fi
+    _backup_dir=$(head -1 "$_marker" 2>/dev/null | tr -d '[:space:]')
+    if [ -z "$_backup_dir" ] || [ ! -d "$_backup_dir" ]; then
+        log_err "rollback v0.5.0: backup directory $_backup_dir does not exist"
+        return 1
+    fi
+
+    # Restore ~/.claude/settings.json.
+    if [ -f "$_backup_dir/settings.json" ]; then
+        _claude_home="${CLAUDE_HOME:-$HOME/.claude}"
+        _target="$_claude_home/settings.json"
+        if [ -f "$_target" ]; then
+            cp -p "$_target" "$_backup_dir/settings.json.post-rollback" 2>/dev/null || true
+        fi
+        if cp -p "$_backup_dir/settings.json" "$_target"; then
+            log_info "  restored $_target from backup"
+        else
+            log_err "  failed to restore $_target"
+            return 1
+        fi
+    fi
+
+    # Drop the managed-region sidecar so the next install prompts fresh.
+    _sidecar="$HOME/.edikt/state/settings-managed.json"
+    if [ -f "$_sidecar" ]; then
+        rm -f "$_sidecar"
+        log_info "  removed $_sidecar (will be re-created on next install)"
+    fi
+
+    # Remove grandfather verdict stubs.
+    _removed_grand=0
+    for _plans_root in "$PWD/docs/product/plans/verdicts" "$PWD/docs/plans/verdicts"; do
+        [ -d "$_plans_root" ] || continue
+        # Find JSON files with meta.grandfathered == true and delete them.
+        while IFS= read -r _vf; do
+            if python3 -c "import json,sys;d=json.loads(open(sys.argv[1]).read());sys.exit(0 if d.get('meta',{}).get('grandfathered') is True else 1)" "$_vf" 2>/dev/null; then
+                rm -f "$_vf"
+                _removed_grand=$((_removed_grand + 1))
+            fi
+        done < <(find "$_plans_root" -name '*.json' 2>/dev/null)
+    done
+    if [ "$_removed_grand" -gt 0 ]; then
+        log_info "  removed $_removed_grand grandfather verdict stub(s)"
+    fi
+
+    # Keep the marker + backup dir so re-running rollback is idempotent and
+    # the user can audit what was restored.
+    log_info "rollback v0.5.0: complete"
+    log_info "  backup preserved at $_backup_dir (remove manually if desired)"
+    emit_event rollback_v050_performed '"backup_dir":"'"$_backup_dir"'"' 2>/dev/null || true
     return 0
 }
 
@@ -926,6 +998,25 @@ cmd_doctor() {
     if [ ! -w "$EDIKT_ROOT" ]; then
         echo "  ERROR: EDIKT_ROOT is not writable"
         err_n=$((err_n + 1))
+    fi
+
+    # python3 availability (required by hook scripts since v0.5.0 — INV-003).
+    # Every hook emits protocol JSON via python3 json.dumps. Without python3,
+    # hooks degrade silently instead of firing.
+    if command -v python3 >/dev/null 2>&1; then
+        _py_ver=$(python3 -c 'import sys; print(".".join(str(x) for x in sys.version_info[:2]))' 2>/dev/null)
+        echo "  python3:          $(command -v python3) (${_py_ver:-unknown})"
+    else
+        echo "  ERROR: python3 not on PATH — edikt hooks require python3 (INV-003 since v0.5.0)"
+        err_n=$((err_n + 1))
+    fi
+
+    # cosign availability (required for full signed-install verification per ADR-016).
+    if command -v cosign >/dev/null 2>&1; then
+        echo "  cosign:           $(command -v cosign)"
+    else
+        echo "  WARN: cosign not on PATH — installs require EDIKT_INSTALL_INSECURE=1 without it (ADR-016)"
+        warn_n=$((warn_n + 1))
     fi
 
     # Active version
@@ -2837,7 +2928,7 @@ EOF
     current_major=$(extract_major "$current_norm")
     latest_major=$(extract_major "$latest_norm")
     if [ "$latest_major" -ne "$current_major" ]; then
-        log_err "major upgrade detected (current v$current_norm, latest v$latest_norm) — run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash"
+        log_err "major upgrade detected (current v$current_norm, latest v$latest_norm) — run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v$latest_norm/install.sh | bash"
         return 1
     fi
 
@@ -2876,8 +2967,103 @@ EOF
     fi
 
     cmd_use "$latest_tag" || return $?
+
+    # ADR-018 grandfather routine: when upgrading ACROSS the v0.5.0 boundary,
+    # scan existing plans for "done" phases and seed structured verdict stubs
+    # so the new evidence gate doesn't regress them to BLOCKED on re-eval.
+    _current_major_minor=$(printf '%s' "$current_norm" | cut -d. -f1,2)
+    _latest_major_minor=$(printf '%s' "$latest_norm" | cut -d. -f1,2)
+    if [ "$_current_major_minor" = "0.4" ] && [ "$_latest_major_minor" = "0.5" ] || \
+       version_ge "0.5.0" "$current_norm" 2>/dev/null; then
+        _grandfather_phase_verdicts "$current_norm" || log_warn "grandfather: continued despite error"
+    fi
+
     log_info "upgrade complete: v$current_norm → v$latest_norm"
     return 0
+}
+
+# ADR-018 grandfather routine — called by cmd_upgrade when crossing the
+# v0.5.0 boundary. Walks plan files under the project's plans directory,
+# identifies "done" phases in their progress tables, and writes stub
+# verdict files at docs/product/plans/verdicts/<plan>/<phase>.json with
+# meta.grandfathered=true. Idempotent: skips phases that already have a
+# verdict file.
+_grandfather_phase_verdicts() {
+    _from_ver="$1"
+    # Walk ancestor dirs to find a project that has plans (dogfood or user project).
+    _plan_root=""
+    _pwd_dir="$PWD"
+    _home="${HOME:-/nonexistent}"
+    while [ "$_pwd_dir" != "/" ] && [ "$_pwd_dir" != "$_home" ]; do
+        if [ -d "$_pwd_dir/docs/product/plans" ] || [ -d "$_pwd_dir/docs/plans" ]; then
+            _plan_root="$_pwd_dir"
+            break
+        fi
+        _pwd_dir=$(dirname "$_pwd_dir")
+    done
+    if [ -z "$_plan_root" ]; then
+        return 0
+    fi
+    python3 - "$_plan_root" "$_from_ver" <<'PY' || return 1
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+plan_root = Path(sys.argv[1])
+from_ver = sys.argv[2]
+
+candidates = []
+for sub in ("docs/product/plans", "docs/plans"):
+    d = plan_root / sub
+    if d.is_dir():
+        candidates.extend(d.glob("PLAN-*.md"))
+
+if not candidates:
+    sys.exit(0)
+
+verdicts_root = plan_root / "docs" / "product" / "plans" / "verdicts"
+verdicts_root.mkdir(parents=True, exist_ok=True)
+
+count = 0
+for plan in candidates:
+    slug = plan.stem
+    text = plan.read_text(encoding="utf-8", errors="replace")
+    # Locate the progress table rows; match "| N | done | ..." or similar.
+    for m in re.finditer(r"^\|\s*([A-Za-z0-9_.-]+)\s*\|\s*done\b[^|]*\|", text, flags=re.MULTILINE):
+        phase_id = m.group(1)
+        verdict_dir = verdicts_root / slug
+        verdict_dir.mkdir(parents=True, exist_ok=True)
+        verdict_path = verdict_dir / f"{phase_id}.json"
+        if verdict_path.exists():
+            continue
+        stub = {
+            "verdict": "PASS",
+            "criteria": [
+                {
+                    "id": f"{phase_id}-grandfathered",
+                    "status": "met",
+                    "evidence_type": "manual",
+                    "evidence": f"grandfathered from edikt v{from_ver} — pre-ADR-018 verdict",
+                    "notes": "This phase's PASS predates the structured verdict schema. The evidence gate is bypassed on a one-time basis. Re-run the evaluator to replace this stub with a native verdict."
+                }
+            ],
+            "meta": {
+                "evaluator_mode": "headless",
+                "grandfathered": True,
+                "migrated_from": from_ver
+            }
+        }
+        with open(verdict_path, "w", encoding="utf-8") as f:
+            json.dump(stub, f, indent=2)
+            f.write("\n")
+        count += 1
+
+if count:
+    print(f"[edikt] grandfathered {count} plan phase verdict(s) for v0.5.0 compatibility. See {verdicts_root}")
+PY
 }
 
 # ─── Subcommand: upgrade-pin ────────────────────────────────────────────────
