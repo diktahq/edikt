@@ -73,6 +73,27 @@ while [ $# -gt 0 ]; do
   shift
 done
 
+# Validate --ref shape before it flows into any URL or git ref (INV-006, INV-008,
+# audit MED-9). A tag of `../../../etc/passwd` would compose into the launcher
+# URL; rejected here at argv time with a clear error.
+if [ -n "$REF_TAG" ]; then
+  case "$REF_TAG" in
+    v[0-9]*.[0-9]*.[0-9]*|[0-9]*.[0-9]*.[0-9]*) ;;
+    v[0-9]*.[0-9]*.[0-9]*-*|[0-9]*.[0-9]*.[0-9]*-*) ;;
+    *)
+      echo "error: --ref must match ^v?[0-9]+.[0-9]+.[0-9]+(-[A-Za-z0-9.-]+)? (got: $REF_TAG)" >&2
+      exit 2
+      ;;
+  esac
+  # Additionally reject traversal and whitespace regardless of the above shapes
+  case "$REF_TAG" in
+    *..*|*' '*|*$'\n'*|*$'\t'*|*/*|*\\*)
+      echo "error: --ref contains forbidden characters (got: $REF_TAG)" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 # ─── Colors / logging ───────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'

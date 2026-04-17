@@ -3049,6 +3049,20 @@ tier2_resolve_python() {
     # mutating PATH (which would also break POSIX utilities in the launcher).
     if [ -n "${EDIKT_TIER2_PYTHON:-}" ]; then
         _py="$EDIKT_TIER2_PYTHON"
+        # Shape-validate before use (INV-006, audit MED-5).
+        # Must be an absolute path, not under a scratch dir, executable.
+        case "$_py" in
+            /*) ;;
+            *)  log_err "EDIKT_TIER2_PYTHON must be an absolute path (got: $_py)"; return 1 ;;
+        esac
+        # Reject obvious scratch-dir roots where a local attacker could plant
+        # a binary (best effort — covers the common cases).
+        case "$_py" in
+            /tmp/*|/var/tmp/*|/var/folders/*)
+                log_err "EDIKT_TIER2_PYTHON under $_py is rejected (scratch-dir paths are not trusted)"
+                return 1
+                ;;
+        esac
         if [ ! -x "$_py" ]; then
             log_err "edikt benchmark requires Python 3.10+, found (none) at $_py"
             return 1
