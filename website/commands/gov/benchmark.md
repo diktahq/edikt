@@ -10,7 +10,7 @@ This is a **tier-2 command** — it requires a separate opt-in install before us
 ./bin/edikt install benchmark
 ```
 
-This installs `tools/gov-benchmark/` and its Python dependencies into an isolated virtualenv at `~/.edikt/venv/gov-benchmark/`. It is never bundled in `install.sh`. See [ADR-015](/architecture/adr-015) for the tier-1/tier-2 carve-out rationale.
+This installs `tools/gov-benchmark/` and its Python dependencies into an isolated virtualenv at `~/.edikt/venv/gov-benchmark/`. It is never bundled in `install.sh`. See [ADR-015](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-015-tier-2-tooling.md) for the tier-1/tier-2 carve-out rationale.
 
 ## Usage
 
@@ -137,4 +137,4 @@ FAIL results do not produce a non-zero exit. The benchmark measures your directi
 - [/edikt:adr:review --backfill](/commands/adr/review) — populate `canonical_phrases` and `behavioral_signal` on existing ADRs
 - [/edikt:adr:new](/commands/adr/new) — new ADRs capture `behavioral_signal` via interview prompts
 - [Sentinel Blocks](/governance/sentinels) — `behavioral_signal` schema reference
-- [ADR-015](/architecture/adr-015) — tier-1/tier-2 carve-out rationale
+- [ADR-015](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-015-tier-2-tooling.md) — tier-1/tier-2 carve-out rationale

@@ -14,16 +14,23 @@
 
 INPUT=$(cat)
 
-if [ -z "${INPUT:-}" ]; then exit 0; fi
-
 # Allowlisted bypasses: compile and migration legitimately edit inside
 # managed regions. These env vars are set by /edikt:gov:compile and
-# bin/edikt upgrade respectively.
+# bin/edikt upgrade respectively. They short-circuit before both the
+# sentinel guard and the advisory — neither is wanted inside compile.
 if [ "${EDIKT_COMPILE_IN_PROGRESS:-0}" = "1" ] || [ "${EDIKT_MIGRATION_IN_PROGRESS:-0}" = "1" ]; then
     printf '{"continue": true}'
     exit 0
 fi
 
+# Skip the sentinel guard when there is no payload on stdin. The advisory
+# block below still runs so project-setup nags fire even when the hook is
+# exercised without a payload (test harness, manual invocation).
+if [ -z "${INPUT:-}" ]; then
+    _EDIKT_SKIP_SENTINEL_GUARD=1
+fi
+
+if [ "${_EDIKT_SKIP_SENTINEL_GUARD:-0}" != "1" ]; then
 export _EDIKT_HOOK_INPUT="$INPUT"
 python3 - <<'PY'
 """Byte-range sentinel guard (INV-005).
@@ -163,6 +170,7 @@ for s, e, name in regions:
 
 _emit({"continue": True})
 PY
+fi
 
 # --- Project-context.md advisory ---
 if [ -f '.edikt/config.yaml' ] && [ ! -f 'docs/project-context.md' ]; then
