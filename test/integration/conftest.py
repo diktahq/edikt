@@ -52,12 +52,27 @@ def _load_dotenv() -> None:
     that are already set in the environment — explicit env vars always win.
     Create test/integration/.env with ANTHROPIC_API_KEY=sk-... and it will
     be picked up automatically. Never commit that file (.gitignore covers it).
+
+    Security (INV-006, audit MED-2): keys are allowlisted. A .env line setting
+    LD_PRELOAD, DYLD_*, PATH, PYTHONPATH, or similar would otherwise be forwarded
+    to every subprocess test fixture. Forbidden prefixes cause a loud error so
+    the policy is not silently suppressed.
     """
     env_file = _HERE / ".env"
     if not env_file.exists():
         env_file = REPO_ROOT / ".env"
     if not env_file.exists():
         return
+
+    # Allowlist: ANTHROPIC_*, CLAUDE_*, EDIKT_*. Explicit deny-list for known
+    # dangerous prefixes so typos produce a clear error instead of a silent skip.
+    import re as _re_env
+    allow_pat = _re_env.compile(r'^(ANTHROPIC_|CLAUDE_|EDIKT_)[A-Z0-9_]*$')
+    deny_prefixes = (
+        'LD_', 'DYLD_', 'PATH', 'PYTHONPATH', 'PYTHONSTARTUP',
+        'PYTHONHOME', 'PYTHONDONTWRITEBYTECODE',
+    )
+
     for line in env_file.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
@@ -65,7 +80,19 @@ def _load_dotenv() -> None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
+        if not key:
+            continue
+        # Loud failure on known-dangerous prefixes.
+        if any(key == p or key.startswith(p) for p in deny_prefixes):
+            raise RuntimeError(
+                f"[edikt tests] .env key {key!r} is in the deny-list "
+                f"({', '.join(deny_prefixes)}). Refusing to load — "
+                "remove the line or rename the variable."
+            )
+        if not allow_pat.match(key):
+            # Unknown key shape — skip silently (forward-compat).
+            continue
+        if key not in os.environ:
             os.environ[key] = value
 
 
@@ -96,16 +123,27 @@ def _claude_session_exists() -> bool:
     """Return True if the claude CLI has a stored subscription session.
 
     Claude Code stores sessions in ~/.claude/sessions/*.json (OAuth flow).
-    Also checks legacy credential file locations for older installs.
+    Security (INV-006, audit MED-3): session files must parse as JSON and
+    contain at least one credential-carrying field — an empty file dropped
+    by an attacker (who controls CLAUDE_HOME) would otherwise satisfy the
+    gate and mask real auth failures as upstream outages under
+    --skip-on-outage.
     """
     claude_home = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude")))
-    # OAuth session files (current Claude Code auth model)
+    required_fields = {"access_token", "refresh_token", "expiresAt", "token"}
     sessions_dir = claude_home / "sessions"
-    if sessions_dir.is_dir() and any(sessions_dir.glob("*.json")):
-        return True
-    # Legacy credential file locations
+    if sessions_dir.is_dir():
+        for p in sessions_dir.glob("*.json"):
+            try:
+                data = json.loads(p.read_text())
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(data, dict) and any(f in data for f in required_fields):
+                return True
+    # Legacy credential file locations — accept presence only if non-empty.
     for candidate in ("credentials", "auth.json", ".credentials", "session.json"):
-        if (claude_home / candidate).exists():
+        cand = claude_home / candidate
+        if cand.exists() and cand.stat().st_size > 0:
             return True
     return False
 
@@ -200,10 +238,35 @@ def pytest_runtest_makereport(
 # ─── Retry / backoff ─────────────────────────────────────────────────────────
 
 
-def _is_5xx(exc: Exception) -> bool:
-    """Return True if exc looks like an Anthropic API 5xx error."""
+def _is_retryable_upstream(exc: Exception) -> bool:
+    """Return True if exc is a retryable upstream error class.
+
+    Security (INV-006, audit LOW-9): whitelist by class, not by error text.
+    An auth error (401) would otherwise match no substring and fall through
+    to the "retry anyway" path — and with --skip-on-outage, an invalid
+    credential would be silently reported as an upstream outage.
+    """
+    # Prefer class-based matching.
+    name = exc.__class__.__name__
+    retryable_names = {
+        "OverloadedError", "InternalServerError", "APITimeoutError",
+        "APIConnectionError", "RateLimitError",
+    }
+    if name in retryable_names:
+        return True
+    # Text-based fallback — only for 5xx status codes, never auth/4xx.
     msg = str(exc).lower()
-    return "500" in msg or "502" in msg or "503" in msg or "504" in msg or "overloaded" in msg
+    if any(code in msg for code in ("500", "502", "503", "504")) and not any(
+        auth in msg for auth in ("401", "403", "invalid_api_key", "authentication")
+    ):
+        return True
+    if "overloaded" in msg:
+        return True
+    return False
+
+
+# Back-compat alias — some tests may import _is_5xx directly.
+_is_5xx = _is_retryable_upstream
 
 
 def _log_outage(exc: Exception) -> None:
@@ -239,14 +302,20 @@ async def with_retry(
         try:
             return await func()
         except Exception as exc:  # noqa: BLE001
+            # LOW-9: only retry if the error class is known-retryable.
+            # Auth errors and other 4xxs re-raise immediately — they are not
+            # transient and should not be counted against the retry budget
+            # or classified as upstream outages.
+            if not _is_retryable_upstream(exc):
+                raise
             last_exc = exc
-            is_5xx = _is_5xx(exc)
+            is_upstream = True
 
             if i < attempts - 1:
                 base = base_delays[min(i + 1, len(base_delays) - 1)]
                 jitter = random.uniform(0, base)
                 await asyncio.sleep(base + jitter)
-            elif is_5xx and skip_on_outage:
+            elif is_upstream and skip_on_outage:
                 _log_outage(exc)
                 pytest.skip(f"Upstream outage after {attempts} retries — {exc}")
 
@@ -310,12 +379,14 @@ def assert_tool_sequence(
         return
 
     if not snapshot_path.exists():
-        # First run — write the snapshot automatically only in local mode.
-        if os.environ.get("CI"):
-            raise AssertionError(
-                f"Snapshot {snapshot!r} missing. "
-                "Run tests locally with --update-snapshots to generate it."
-            )
+        # LOW-10: never auto-write a missing snapshot. A silent "first run"
+        # bake-in made it trivial for a drive-by contributor to lock in a
+        # regression as the expected output. Require the explicit flag.
+        raise AssertionError(
+            f"Snapshot {snapshot!r} missing. "
+            "Run tests with --update-snapshots or EDIKT_UPDATE_SNAPSHOTS=1 to generate it."
+        )
+        # Unreachable code preserved for reference only (never executes).
         SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
         snapshot_path.write_text(
             json.dumps(
