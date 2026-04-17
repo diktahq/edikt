@@ -2,7 +2,7 @@
 type: adr
 id: ADR-013
 title: Release artifacts use an aggregated SHA256SUMS file, not per-file sidecars
-status: accepted
+status: superseded-by-ADR-016
 decision-makers: [Daniel Gomes]
 created_at: 2026-04-16T00:00:00Z
 references:
@@ -14,7 +14,7 @@ references:
 
 # ADR-013: Release artifacts use an aggregated SHA256SUMS file, not per-file sidecars
 
-**Status:** Accepted
+**Status:** Superseded by ADR-016
 **Date:** 2026-04-16
 **Decision-makers:** Daniel Gomes
 
