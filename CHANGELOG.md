@@ -2,6 +2,68 @@
 
 ## v0.5.0 (2026-04-17)
 
+### Security hardening (PLAN-v0.5.0-security-hardening)
+
+Full security audit findings closed before release. Six new invariants (INV-003 through INV-008) and four new ADRs (ADR-016 through ADR-019) capture the failure classes so they can't recur. Source audit: `docs/reports/security-audit-v0.5.0-2026-04-17.md`.
+
+#### Critical fixes
+
+- **Hooks no longer concatenate JSON via shell.** Every hook that emits protocol JSON or writes `events.jsonl` now uses `python3 json.dumps` with untrusted values passed as argv. Attacker-controlled file paths, error messages, config answers, and agent findings can no longer corrupt or inject into the hook protocol. (INV-003; closes CRIT-1, CRIT-2, CRIT-4, CRIT-5, HI-1, HI-2, MED-1)
+- **Hooks no longer instruct Claude to execute shell built from untrusted text.** `subagent-stop.sh` redesigned: the hook writes `events.jsonl` itself; the `systemMessage` is static with no agent-derived substring. The previous design had a single-quote breakout that reached RCE. (INV-004; closes CRIT-1 RCE vector)
+- **Plan filenames and evaluator model names are shape-validated before flowing into `claude -p` argv.** A plan file named `PLAN-x"; rm -rf ~; ".md` or a config `EVAL_MODEL` of `sonnet --bypass` no longer reaches the evaluator prompt. (INV-006; closes CRIT-3)
+- **Release integrity: Sigstore keyless signing of `SHA256SUMS`.** Every release now ships `SHA256SUMS.sig.bundle` produced by the workflow's GitHub OIDC identity. Installers verify with `cosign verify-blob` against a regex identity matching the release workflow at any tag. (ADR-016; closes CRIT-6, CRIT-7)
+- **README install URL pinned to a specific tag.** `raw.githubusercontent.com/.../main/` is forbidden (INV-008). A push to `main` can no longer affect new installs. (closes CRIT-7)
+
+#### High-severity fixes
+
+- **Sentinel regions are guarded by byte-range overlap, not regex.** An Edit whose `old_string` is a non-sentinel line inside a managed region is now blocked. Bypass requires explicit `EDIKT_COMPILE_IN_PROGRESS=1` or `EDIKT_MIGRATION_IN_PROGRESS=1`. (INV-005; closes HI-4)
+- **Evaluator verdicts are now structured JSON with per-criterion `evidence_type`.** The plan harness rejects `PASS` unless every criterion that names a shell command has `evidence_type: "test_run"`. A coerced PASS (“just trust me, I ran the tests manually”) is forced to `BLOCKED`. Existing in-flight plans are grandfathered on upgrade. (ADR-018; closes HI-7)
+- **`settings.json.tmpl` ships with a deny-by-default `permissions` block.** 23 deny patterns cover destructive Bash (rm -rf roots, chmod 777, sudo, fork bomb, dd, mkfs, force-push to main), plaintext HTTP fetches, and sensitive file reads (/etc/shadow, SSH keys, AWS credentials). 17 explicit allow entries cover edikt's operational tools. `defaultMode: askBeforeAllow`. See `docs/guides/permissions.md`. (ADR-017; closes HI-9)
+- **Benchmark sandboxes are hermetic.** `runner.py` no longer copies the host's `~/.claude/settings.json` or hooks into the benchmark project. `setting_sources` restricted to `["project"]`. A curated minimal `settings.json` is written per sandbox. (INV-007; closes HI-10)
+- **Benchmark JSONL outputs are redacted.** `tool_calls[*].tool_input.content` is replaced with `<redacted:len=N>`, responses are length-capped at 4096 chars, and the write aborts if any credential pattern (sk-ant-, Bearer, -----BEGIN, AKIA, ghp_) matches in the serialized output. (closes HI-11)
+- **Stop-hook suggestions no longer embed attacker substrings.** Matched route paths and env var names are no longer interpolated into `systemMessage`. Suggestions are static ("📄 New HTTP route referenced — consider /edikt:docs:review"). (closes HI-5)
+- **Benchmark scoring normalizes with NFKC + casefold + whitespace-strip.** `evil.PY ` (trailing space) and `evil.tѕ` (Cyrillic `s`) are no longer false-PASS. (INV-006; closes HI-6)
+
+#### Medium & low fixes (selection)
+
+- Test harness `.env` loader allowlists keys (`ANTHROPIC_*`, `CLAUDE_*`, `EDIKT_*`). Dangerous prefixes (`LD_`, `DYLD_`, `PATH`, `PYTHONPATH`, `PYTHONSTARTUP`) raise a loud error. (MED-2)
+- Claude session detection requires JSON with a credential-carrying field; empty sessions/*.json no longer satisfies the auth gate. (MED-3)
+- Retry classifier whitelists specific exception classes; 401 auth errors re-raise immediately instead of being classified as upstream outages. (LOW-9)
+- `migrate_m2_claudemd_sentinels` closes the TOCTOU window via `O_NOFOLLOW` on open + re-check before atomic rename. (HI-3)
+- Ancestor-walk bounded at `$HOME` with ownership check, so `/tmp/.edikt/config.yaml` planted by another local user on a shared system is ignored. (MED-6)
+- `events.jsonl` chmod 0600 on create — no longer world-readable. (MED-8)
+- `post-tool-use.sh` validates the file path against `[A-Za-z0-9_./-]` before invoking the formatter. (MED-14)
+- New attack corpus entries: `evaluator_coercion`, `sentinel_escape`, `agent_identity_spoof`, plus per-directive `must_cite_*` variants.
+
+#### Governance (new)
+
+- **INV-003** — Hooks emit structured JSON, never shell-concatenated strings.
+- **INV-004** — Hooks must not instruct Claude to execute shell built from untrusted text.
+- **INV-005** — Managed-region integrity is verified before overwrite (byte-range for markdown, sidecar hash for JSON).
+- **INV-006** — Externally-controlled inputs are shape-validated before use.
+- **INV-007** — Benchmark and test sandboxes are hermetic.
+- **INV-008** — Release install URLs are tag-pinned, never branch-tracking.
+- **ADR-016** — Release integrity and Sigstore keyless signing (supersedes ADR-013).
+- **ADR-017** — Default permissions posture in `settings.json.tmpl`.
+- **ADR-018** — Evaluator verdict schema with per-criterion `evidence_type`.
+- **ADR-019** — Narrow carve-out of ADR-014 for four security-rewritten hooks.
+
+#### Breaking changes (upgrade notes)
+
+- **New default permissions may prompt.** First-time Claude invocations of `curl http://` (non-TLS) or other denied patterns now produce a permission prompt. Allow once if legitimate. Override via the `userPermissions` top-level key (outside the managed block).
+- **`/edikt:gov:compile` may flip some prior PASS phases to BLOCKED.** The new evidence gate requires `test_run` evidence for test-command criteria. Existing `done` phases are grandfathered automatically on first upgrade (`meta.grandfathered: true`) and retain their verdict.
+- **Install URL changed.** Update bookmarks and CI scripts from `raw.githubusercontent.com/.../main/install.sh` to `releases/download/v0.5.0/install.sh`.
+- **Install now requires cosign for full verification.** Users without cosign can set `EDIKT_INSTALL_INSECURE=1` to bypass (prints a loud banner). Recommended: install cosign first.
+
+#### Remaining follow-ups (not blocking v0.5.0)
+
+- **Homebrew tap auto-merge** still runs after CI pass; a future release adds a `production` environment gate with reviewer approval.
+- **Markdown-embedded Python extraction** (10+ sites in `test/integration/`) will move to `test/_lib/` in a follow-up.
+- **Hash anchor seeding** for managed markdown regions (LOW-3) lands with the next `/edikt:gov:compile` pass.
+- **Upgrade rollback subcommand** (`bin/edikt rollback v0.5.0` beyond payload-only) is tracked for v0.5.x.
+
+---
+
 ### Directive hardening + governance benchmark (SPEC-005)
 
 #### Added
