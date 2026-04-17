@@ -215,17 +215,22 @@ install-local:
 	    exit 1 ;; \
 	esac; \
 	echo "Installing working tree as $$TAG"; \
-	EDIKT_LAUNCHER_SOURCE="$(REPO_ROOT)/bin/edikt" \
+	echo "Building Go binary..."; \
+	cd $(REPO_ROOT)/tools/gov-compile && \
+	  CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tmp/edikt-install-local . && \
+	  cd $(REPO_ROOT); \
+	EDIKT_LAUNCHER_SOURCE="/tmp/edikt-install-local" \
 	EDIKT_INSTALL_SOURCE="$(REPO_ROOT)" \
 	EDIKT_RELEASE_TAG="$$TAG" \
 	EDIKT_INSTALL_INSECURE=1 \
-	bash install.sh --global --ref "$$TAG"
+	bash install.sh --global --ref "$$TAG"; \
+	rm -f /tmp/edikt-install-local
 
 ## dev-global: link your real ~/.edikt/ to this repo's working tree
 dev-global:
 	@echo "⚠️  This will make your live Claude Code sessions use this working tree."
 	@read -p "Press Enter to continue..." _confirm
-	bin/edikt dev link $(REPO_ROOT)
+	~/.edikt/bin/edikt dev link $(REPO_ROOT)
 
 ## dev-global-off: deactivate global dev link
 dev-global-off:
