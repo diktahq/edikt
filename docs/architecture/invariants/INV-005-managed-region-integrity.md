@@ -62,6 +62,10 @@ for r in regions:
             emit_block(f"edit overlaps managed region {r.name}")
 ```
 
+## Known limitations
+
+`O_NOFOLLOW` on macOS only refuses when the final path component is itself a symlink — not when any ancestor directory in the path is. For the current threat model (attacker swaps the file for a symlink during the read-write window), O_NOFOLLOW on open() is sufficient and the post-read re-check before os.replace closes the race on the destination. A fully ancestor-safe path would require opening each directory with `O_DIRECTORY | O_NOFOLLOW` and using `openat`-style navigation, which is out of scope for the bash + python3 hook runtime. Tracked as a v0.6.x hardening item.
+
 ## Enforcement
 
 - Pre-tool-use hook executes the byte-range guard on every Edit/Write under governance-watched paths.

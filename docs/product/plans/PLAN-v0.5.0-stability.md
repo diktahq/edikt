@@ -35,6 +35,8 @@
 | 17    | done | 1/5 | 2026-04-16 |
 | 18    | done | 1/5 | 2026-04-16 |
 | 19    | done | 1/5 | 2026-04-16 |
+| 20    | -    | 0/3 | -          |
+| 21    | -    | 0/3 | -          |
 
 **ADR-014 (2026-04-16) supersedes ADR-011** — hook JSON protocol migration is now v0.5.0 scope (Phases 15-17). Previous "Deferred to v0.6.0" note for Phase 2b.ii is retracted — hook semantic rewrites (subagent-stop structured evaluator input, session-start/user-prompt wording alignment, stop-hook command renames) land in Phase 15. See `docs/internal/claude-code-parity.md` for full parity matrix.
 
@@ -756,7 +758,7 @@ When complete, output: INSTALL REWRITE DONE
 - [ ] `edikt upgrade-pin`: updates `.edikt/config.yaml:edikt_version:` to the global active version. Only valid inside a project dir with `.edikt/config.yaml`. Exits 1 elsewhere.
 - [ ] `edikt dev link <path>`: creates `$EDIKT_ROOT/versions/dev/` with symlinks into `<path>`, invokes `use dev`.
 - [ ] `edikt dev unlink`: removes `$EDIKT_ROOT/versions/dev/`, reverts to the most-recent tagged version via `use`.
-- [ ] `/edikt:upgrade` slash command (`commands/upgrade.md`) now detects: if `$EDIKT_ROOT/bin/edikt version` is absent OR `$LAUNCHER_MAJOR > $INSTALLED_MAJOR`, it prints: *"This is a major upgrade. Run `curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash` to complete the upgrade."* and exits without mutating disk.
+- [ ] `/edikt:upgrade` slash command (`commands/upgrade.md`) now detects: if `$EDIKT_ROOT/bin/edikt version` is absent OR `$LAUNCHER_MAJOR > $INSTALLED_MAJOR`, it prints: *"This is a major upgrade. Run `curl -fsSL https://github.com/diktahq/edikt/releases/download/v<tag>/install.sh | bash` to complete the upgrade."* and exits without mutating disk.
 - [ ] `/edikt:upgrade` for minor jumps: delegates to `edikt upgrade --yes`.
 - [ ] Project-pin warn (per SPEC-004 FR-019): every launcher invocation except `version`, `list`, `doctor` walks ancestor dirs for `.edikt/config.yaml`; if found with `edikt_version:` different from `lock.yaml:active`, prints warning to stderr. Does not block.
 - [ ] Tests in `test/unit/launcher/`: test_prune_keeps_active_previous.sh, test_upgrade_minor.sh, test_upgrade_major_redirects.sh, test_upgrade_pin_inside_project.sh, test_upgrade_pin_outside_project.sh, test_dev_link.sh, test_dev_unlink.sh, test_pin_warn.sh.
@@ -2396,4 +2398,173 @@ When complete, output: INTERVIEW BATCHING DONE
 ```
 
 ---
+
+## Phase 20 — Fix dev-link layout mismatch for flattened commands/
+
+**Status:** TODO
+**Discovered:** 2026-04-17 (during dogfood `make dev-global` against 0.5.0-dev)
+**Severity:** High — every developer running `make dev-global` against the v0.5.0-dev tree gets a broken `~/.claude/commands/edikt` symlink and zero `/edikt:*` slash commands until they manually repoint it.
+
+### Symptom
+
+After `bin/edikt dev link <repo>`:
+- `~/.edikt/current/commands` resolves to `<repo>/commands` ✅
+- `~/.claude/commands/edikt` resolves to `~/.edikt/current/commands/edikt` ❌ (no `edikt/` subdir in the v0.5.0-dev source tree)
+- All `/edikt:*` slash commands disappear from the user's Claude Code session.
+
+### Root cause
+
+`bin/edikt` line 411 (`ensure_external_symlinks`) hardcodes the v0.4.x payload layout:
+
+```sh
+atomic_symlink "$EDIKT_ROOT/current/commands/edikt" "$CLAUDE_ROOT/commands/edikt"
+```
+
+The 0.5.0-dev source tree has commands at `commands/*` directly (no `edikt/` subdirectory). The hardcoded path produces a dangling symlink whenever `current/` resolves to a flattened layout — `dev link <repo>` today, and any future released payload built from a flat tree.
+
+### Fix (proposed)
+
+Detect layout dynamically in `ensure_external_symlinks`:
+
+```sh
+if [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
+    # v0.4.x payload (commands/edikt/*.md)
+    atomic_symlink "$EDIKT_ROOT/current/commands/edikt" "$CLAUDE_ROOT/commands/edikt"
+else
+    # v0.5.x flat payload (commands/*.md)
+    atomic_symlink "$EDIKT_ROOT/current/commands" "$CLAUDE_ROOT/commands/edikt"
+fi
+```
+
+Touch points:
+- `bin/edikt` line 411 (`ensure_external_symlinks`)
+- Same condition needed at `bin/edikt:954-956` (`cmd_doctor` validation message)
+- Same condition at `bin/edikt:2208-2214`, `:2305`, `:3096` and any other location where the symlink path is asserted
+
+### Sub-decision required
+
+Either (a) accept this dynamic detection as the long-term answer (both layouts coexist forever), or (b) treat 0.4.x as deprecated after the v0.5.0 release and remove the legacy branch in v0.6.0. ADR or short note in the launcher should record which.
+
+### Test coverage
+
+- Add `test/integration/test_dev_link_flat_layout.py` — runs `bin/edikt dev link <fixture-flat-tree>` in a sandbox `EDIKT_ROOT` and asserts:
+  - `<sandbox>/current/commands` exists
+  - `<sandbox-claude>/commands/edikt` resolves to a directory containing `*.md` (proves the symlink isn't dangling)
+- Update `test/integration/test_install*.py` if it asserts the legacy path shape.
+
+### Verification
+
+1. Fresh `bin/edikt dev unlink && bin/edikt dev link <repo>`
+2. `ls -L ~/.claude/commands/edikt/*.md | head` returns command files
+3. `claude` shows `/edikt:adr:new`, `/edikt:status`, etc. in the skill list
+4. Doctor warning at line 954-956 no longer fires for the flat layout
+
+When complete, output: DEV-LINK LAYOUT FIX DONE
+
+---
+
+## Phase 21 — Restore exec bit on 11 committed hooks + CI gate
+
+**Status:** TODO
+**Discovered:** 2026-04-17 (surfaced as "Stop hook error: /bin/sh: stop-hook.sh: Permission denied" during dogfood)
+**Severity:** Ship-blocker for v0.5.0 — affects every install path (dev-link AND production tarball release).
+
+### Symptom
+
+User saw:
+```
+Stop hook error: Failed with non-blocking status code:
+/bin/sh: /Users/danielgomes/.edikt/hooks/stop-hook.sh: Permission denied
+```
+
+11 of 22 hooks in `templates/hooks/` are committed with mode `100644` (no exec bit). `settings.json.tmpl` invokes them as `"command": "${EDIKT_HOOK_DIR}/<hook>.sh"`, which Claude Code execs directly. Without the exec bit, every fire returns Permission Denied. Most failures are silent (PostToolUse, PostCompact, etc. don't surface user-visible errors); Stop hook is one of the few that does.
+
+### Affected files (11 hooks + 1 git hook)
+
+```
+100644 templates/hooks/cwd-changed.sh
+100644 templates/hooks/event-log.sh
+100644 templates/hooks/file-changed.sh
+100644 templates/hooks/headless-ask.sh
+100644 templates/hooks/instructions-loaded.sh
+100644 templates/hooks/post-compact.sh
+100644 templates/hooks/post-tool-use.sh
+100644 templates/hooks/pre-push           # not a Claude hook, separate concern
+100644 templates/hooks/stop-failure.sh
+100644 templates/hooks/stop-hook.sh
+100644 templates/hooks/subagent-stop.sh
+100644 templates/hooks/user-prompt-submit.sh
+```
+
+The other 9 hooks (`pre-tool-use.sh`, `session-start.sh`, etc.) are correctly `100755`.
+
+### Root cause
+
+No install-time or release-time `chmod +x` exists in `install.sh`, `bin/edikt`, or `.github/workflows/`. Hooks ship with whatever mode they were committed with. The 11 broken hooks were either added/recreated in commits that didn't preserve exec bits (likely from `Write`-tool authorship or rewrites that re-created the file from scratch), or never had the bit set in the first place.
+
+### Fix
+
+**One-shot repair (single commit):**
+
+```bash
+git update-index --chmod=+x \
+  templates/hooks/cwd-changed.sh \
+  templates/hooks/event-log.sh \
+  templates/hooks/file-changed.sh \
+  templates/hooks/headless-ask.sh \
+  templates/hooks/instructions-loaded.sh \
+  templates/hooks/post-compact.sh \
+  templates/hooks/post-tool-use.sh \
+  templates/hooks/pre-push \
+  templates/hooks/stop-failure.sh \
+  templates/hooks/stop-hook.sh \
+  templates/hooks/subagent-stop.sh \
+  templates/hooks/user-prompt-submit.sh
+chmod +x templates/hooks/*.sh templates/hooks/pre-push
+```
+
+### CI gate (regression prevention)
+
+Add a hook-mode check to `test/test-quality.sh` (or create `test/test-hook-modes.sh` and wire into the default test target):
+
+```bash
+#!/usr/bin/env bash
+# Ensure every templates/hooks/*.sh and pre-push is committed as 100755.
+set -e
+fail=0
+while IFS= read -r mode_path; do
+  mode="${mode_path%% *}"
+  path="${mode_path##* }"
+  if [ "$mode" != "100755" ]; then
+    echo "FAIL: $path is committed as $mode (expected 100755)"
+    fail=1
+  fi
+done < <(git ls-files -s templates/hooks/ | awk '{print $1, $4}')
+exit $fail
+```
+
+Wire into:
+- `test/run.sh` (default test entry — fails the run if any hook is non-exec)
+- `.github/workflows/*.yml` test job (mirrors `test/run.sh`, no separate step needed)
+
+### Belt-and-braces (defensive install-time chmod)
+
+Even with the CI gate, add a defensive `chmod +x` in two places so any future regression doesn't break user installs:
+
+1. **`install.sh`** — after extracting the payload tarball:
+   ```sh
+   find "$EDIKT_ROOT/current/templates/hooks" -name '*.sh' -exec chmod +x {} +
+   ```
+2. **`bin/edikt install`** (where it stages the payload) — same find pattern after extraction.
+
+Defensive only; the CI gate is the primary control.
+
+### Verification
+
+1. `git ls-files -s templates/hooks/ | awk '$1 != "100755"' | grep -v '^$'` returns empty
+2. `bash test/test-quality.sh` (or `test/test-hook-modes.sh`) exits 0
+3. CI gate fails when a hook is forcibly chmoded back to 644 in a test commit
+4. After running install.sh with `EDIKT_LAUNCHER_SOURCE=` (test override) against a tarball with the bug present, all hooks at `~/.edikt/current/hooks/` are 0755
+
+When complete, output: HOOK EXEC-BIT FIX DONE
 

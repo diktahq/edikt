@@ -161,7 +161,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
                 _credential_check(serialized, f"case {cr.case_id} run {run.run_index}")
                 fh.write(serialized + "\n")
 
-    # 2. Aggregate summary JSON.
+    # 2. Aggregate summary JSON + integrity sidecar (LOW-11 / INV-007).
     summary_path = model_dir / f"{ts}-summary.json"
     dimensions: dict[str, dict[str, int]] = {}
     severities: dict[str, dict[str, int]] = {}
@@ -201,7 +201,13 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
         "cases": [cr.to_summary() for cr in _results],
         "raw_jsonl": str(jsonl_path.relative_to(_HERE.parent)),
     }
-    summary_path.write_text(json.dumps(summary, indent=2))
+    summary_json = json.dumps(summary, indent=2)
+    summary_path.write_text(summary_json)
+    # LOW-11: integrity sidecar. Release decisions depend on this file; a
+    # mismatched hash downstream must be loud-failable.
+    import hashlib as _hashlib
+    sidecar = summary_path.with_suffix(summary_path.suffix + ".sha256")
+    sidecar.write_text(_hashlib.sha256(summary_json.encode("utf-8")).hexdigest() + "  " + summary_path.name + "\n")
 
     # Print summary.
     print("\n")

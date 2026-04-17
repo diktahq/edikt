@@ -53,7 +53,7 @@ fi
 #     forbidden, spec prose describing prior design state. INV-008 protects
 #     what users COPY, not what we document about the past.
 #   - docs/internal/ — gitignored.
-_scope_dirs="README.md .github/workflows website docs/guides"
+_scope_dirs="README.md .github/workflows website docs/guides bin/edikt install.sh"
 hits=""
 for d in $_scope_dirs; do
     [ -e "$d" ] || continue

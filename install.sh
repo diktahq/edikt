@@ -22,8 +22,8 @@ set -euo pipefail
 #   2 permission error ($EDIKT_ROOT not writable, rc append refused)
 #   3 version mismatch (requested tag older than currently installed)
 #
-# Usage:
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+# Usage (INV-008 — install URLs MUST be tag-pinned, never branch-tracking):
+#   curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 #   curl -fsSL ...install.sh | bash -s -- --project
 #   curl -fsSL ...install.sh | bash -s -- --dry-run
 #   curl -fsSL ...install.sh | bash -s -- --ref v0.5.1
@@ -32,8 +32,8 @@ set -euo pipefail
 #   EDIKT_LAUNCHER_SOURCE=<path>  — local launcher file; skip curl
 #   EDIKT_RELEASE_TAG=<tag>       — skip GitHub API, use this tag
 #   EDIKT_INSTALL_SOURCE=<path>   — forwarded to `edikt install`
-#   EDIKT_LAUNCHER_SHA256=<hex>   — pin launcher checksum (takes precedence over sidecar fetch)
-#   EDIKT_INSTALL_INSECURE=1      — skip sidecar .sha256 fetch (not recommended)
+#   EDIKT_LAUNCHER_SHA256=<hex>   — pin launcher checksum (takes precedence over SHA256SUMS lookup)
+#   EDIKT_INSTALL_INSECURE=1      — skip cosign verification (not recommended; loud banner on exit)
 
 umask 0022
 
@@ -301,14 +301,25 @@ if ! $DRY_RUN; then
 fi
 
 # ─── Launcher fetch / placement ─────────────────────────────────────────────
-# Source: EDIKT_LAUNCHER_SOURCE env (test override) or raw GitHub for TAG.
+# Source: EDIKT_LAUNCHER_SOURCE env (test override) or release tarball for TAG.
+#
+# ADR-016 signing chain: the release workflow publishes edikt-v${TAG}.tar.gz
+# (launcher tarball containing bin/edikt + LICENSE + README) as a Release asset
+# and includes its SHA-256 in the Sigstore-signed SHA256SUMS. To keep the
+# verification end-to-end, install.sh downloads that tarball (NOT the raw
+# bin/edikt file at raw.githubusercontent.com, which is NOT covered by
+# SHA256SUMS and therefore cannot be cosign-verified).
 LAUNCHER_URL=""
 LAUNCHER_SRC_LOCAL=""
+LAUNCHER_IS_TARBALL=0
 if [ -n "${EDIKT_LAUNCHER_SOURCE:-}" ]; then
   warn "EDIKT_LAUNCHER_SOURCE override active: $EDIKT_LAUNCHER_SOURCE"
   LAUNCHER_SRC_LOCAL="$EDIKT_LAUNCHER_SOURCE"
 else
-  LAUNCHER_URL="$RAW_BASE/$TAG/bin/edikt"
+  # Strip leading "v" if present; release assets are named edikt-v<ver>.tar.gz.
+  _ver_only="${TAG#v}"
+  LAUNCHER_URL="https://github.com/${REPO}/releases/download/${TAG}/edikt-v${_ver_only}.tar.gz"
+  LAUNCHER_IS_TARBALL=1
 fi
 
 # sha256 of a file — portable across macOS (shasum) and Linux (sha256sum).
@@ -414,66 +425,95 @@ stage_launcher() {
       fi
     fi
   else
-    if ! curl -fsSL --retry 2 --max-time 30 "$LAUNCHER_URL" -o "$stage"; then
+    # Download the tarball (or raw launcher if LAUNCHER_IS_TARBALL=0 via override).
+    _download="$stage"
+    if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
+      _download="${stage}.tar.gz"
+    fi
+    if ! curl -fsSL --retry 2 --max-time 30 "$LAUNCHER_URL" -o "$_download"; then
       error "failed to download launcher from $LAUNCHER_URL"
       error "retry: re-run install.sh; or pass --ref <different-tag>"
       return $EX_NETWORK
     fi
-    # ── Integrity verification for remote source ──────────────────────────
-    # Precedence: EDIKT_LAUNCHER_SHA256 env > sidecar fetch.
-    _observed=$(_sha256_file "$stage") || return $EX_NETWORK
+    _observed=$(_sha256_file "$_download") || return $EX_NETWORK
+
+    # ── Integrity verification (ADR-016) ───────────────────────────────────
+    # Precedence: EDIKT_LAUNCHER_SHA256 env > cosign-verified SHA256SUMS.
+    # When the download is the signed tarball (LAUNCHER_IS_TARBALL=1), the
+    # SHA256SUMS lookup uses the tarball filename — which IS in SHA256SUMS,
+    # closing the chain end-to-end. When the download is the raw launcher
+    # (EDIKT_LAUNCHER_SOURCE override), the env-supplied hash path applies.
     if [ -n "${EDIKT_LAUNCHER_SHA256:-}" ]; then
       _ref_tmp=$(mktemp)
       printf '%s\n' "$EDIKT_LAUNCHER_SHA256" > "$_ref_tmp"
       if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
-        rm -f "$_ref_tmp"
+        rm -f "$_ref_tmp" "$_download"
         return $EX_NETWORK
       fi
       rm -f "$_ref_tmp"
     else
-      # ADR-016 path: fetch signed SHA256SUMS from the release, verify via
-      # cosign, grep the expected hash for the launcher filename.
       _sums_tmp=$(mktemp)
       _cosign_verify_release_checksums "$TAG" "$_sums_tmp"
       _cosign_rc=$?
       if [ "$_cosign_rc" -eq 0 ]; then
-        # Verified bundle. Grep for the launcher filename and compare.
+        # Pick the filename to look up based on what was downloaded.
+        _ver_only="${TAG#v}"
+        if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
+          _expected_name="edikt-v${_ver_only}.tar.gz"
+        else
+          _expected_name="bin/edikt"
+        fi
         _ref_tmp=$(mktemp)
-        if ! awk -v name="bin/edikt" '$2 == name || $2 ~ ("^\\*?" name "$") {print; exit}' "$_sums_tmp" > "$_ref_tmp" \
-             || [ ! -s "$_ref_tmp" ]; then
-          # No bin/edikt entry in SHA256SUMS for this release. The launcher
-          # may be published under a different name (edikt-v*.tar.gz). We
-          # can't verify the raw launcher URL against this SHA256SUMS;
-          # emit a clear message and fall back to legacy sidecar path.
-          rm -f "$_ref_tmp" "$_sums_tmp"
+        awk -v name="$_expected_name" '$2 == name || $2 == ("*" name) {print; exit}' "$_sums_tmp" > "$_ref_tmp"
+        if [ ! -s "$_ref_tmp" ]; then
+          rm -f "$_ref_tmp" "$_sums_tmp" "$_download"
           if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
-            warn "SHA256SUMS did not contain bin/edikt entry — proceeding without per-launcher verification (EDIKT_INSTALL_INSECURE=1)"
+            warn "SHA256SUMS did not contain $_expected_name — proceeding without per-launcher verification (EDIKT_INSTALL_INSECURE=1)"
+            EDIKT_INSECURE_BANNER=1
           else
-            error "SHA256SUMS for release $TAG does not list bin/edikt — cannot verify launcher."
+            error "SHA256SUMS for release $TAG does not list $_expected_name — cannot verify launcher."
             error "set EDIKT_INSTALL_INSECURE=1 to bypass (NOT recommended), or use a release >= v0.5.0."
             return $EX_NETWORK
           fi
         else
           if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
-            rm -f "$_ref_tmp" "$_sums_tmp"
+            rm -f "$_ref_tmp" "$_sums_tmp" "$_download"
             return $EX_NETWORK
           fi
           rm -f "$_ref_tmp" "$_sums_tmp"
         fi
       elif [ "$_cosign_rc" -eq 1 ]; then
-        # Cosign itself rejected the signature — hard abort (do NOT fall back).
+        rm -f "$_sums_tmp" "$_download"
         return $EX_NETWORK
       else
-        # Cosign unavailable or SHA256SUMS bundle not published for this tag.
+        rm -f "$_sums_tmp"
         if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
           warn "cosign unavailable or SHA256SUMS.sig.bundle missing for $TAG — proceeding without signature verification (EDIKT_INSTALL_INSECURE=1)"
           EDIKT_INSECURE_BANNER=1
         else
+          rm -f "$_download"
           error "cosign not available or SHA256SUMS.sig.bundle missing for $TAG."
           error "install cosign (https://docs.sigstore.dev/cosign/installation) or set EDIKT_INSTALL_INSECURE=1 to bypass (NOT recommended)."
           return $EX_NETWORK
         fi
       fi
+    fi
+
+    # Extract bin/edikt from the tarball if that's what we downloaded.
+    if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
+      _extract_dir=$(mktemp -d)
+      if ! tar -xzf "$_download" -C "$_extract_dir" bin/edikt 2>/dev/null; then
+        rm -rf "$_extract_dir" "$_download"
+        error "launcher tarball does not contain bin/edikt"
+        return $EX_NETWORK
+      fi
+      if [ ! -f "$_extract_dir/bin/edikt" ]; then
+        rm -rf "$_extract_dir" "$_download"
+        error "bin/edikt missing from extracted launcher tarball"
+        return $EX_NETWORK
+      fi
+      mv "$_extract_dir/bin/edikt" "$stage"
+      rm -rf "$_extract_dir" "$_download"
     fi
   fi
   if [ ! -s "$stage" ]; then
@@ -490,8 +530,9 @@ stage_launcher() {
     error "downloaded file does not look like an edikt launcher"
     return $EX_NETWORK
   fi
-  if ! sh -n "$stage" 2>/dev/null; then
-    error "downloaded launcher failed syntax check (sh -n)"
+  # bin/edikt is bash, not POSIX sh. Use the actual interpreter for syntax check.
+  if ! bash -n "$stage" 2>/dev/null; then
+    error "downloaded launcher failed syntax check (bash -n)"
     return $EX_NETWORK
   fi
   chmod +x "$stage"
@@ -579,6 +620,24 @@ write_settings_json() {
   if [ ! -f "$tmpl" ]; then
     warn "settings.json.tmpl not found at $tmpl — skipping settings.json write"
     return 0
+  fi
+
+  # Phase 13 / ADR-017: back up the existing settings.json before the ADR-017
+  # permissions block overwrites it. This enables `edikt rollback v0.5.0` to
+  # restore the user's prior settings if the new posture breaks something.
+  # Backup is one-shot — only the FIRST v0.5.0 install creates it.
+  _backup_root="$HOME/.edikt/backup"
+  _backup_dir_marker="$_backup_root/pre-v0.5.0-marker"
+  if [ -f "$dest" ] && [ ! -f "$_backup_dir_marker" ]; then
+    _backup_ts=$(date -u +"%Y%m%dT%H%M%SZ" 2>/dev/null || date +%s)
+    _backup_dir="$_backup_root/pre-v0.5.0-${_backup_ts}"
+    mkdir -p "$_backup_dir" 2>/dev/null || true
+    if cp -p "$dest" "$_backup_dir/settings.json" 2>/dev/null; then
+      # Record the backup dir path in the marker file so rollback can find it.
+      printf '%s\n' "$_backup_dir" > "$_backup_dir_marker"
+      chmod 0600 "$_backup_dir_marker" "$_backup_dir/settings.json" 2>/dev/null || true
+      dim "backed up $dest → $_backup_dir/settings.json (for 'edikt rollback v0.5.0')"
+    fi
   fi
 
   # Validate EDIKT_HOOK_DIR before substitution (INV-006). Characters that

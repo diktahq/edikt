@@ -218,9 +218,23 @@ The \`verikt.rb\` formula is unchanged." \
           GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
 
   # ─── Auto-merge on tap CI success ────────────────────────────────────────────
+  # HI-8 mitigation: this job is gated behind the `production` environment.
+  # A GitHub environment with required reviewers blocks the merge step until
+  # an authorized maintainer explicitly approves it in the Actions UI. The
+  # auto-merge that runs on approval is scoped to the narrowly-permissioned
+  # TAP_GITHUB_TOKEN (contents:write on diktahq/homebrew-tap only).
+  #
+  # To configure the environment the first time:
+  #   1. In the edikt repo Settings → Environments → New environment "production".
+  #   2. Under "Deployment protection rules" → Required reviewers → add at least
+  #      one maintainer. Save.
+  #   3. (Optional) restrict to the main branch only.
+  # Without this environment configured, this job will fail with
+  # "Environment not found" — which is safer than auto-merging.
   merge-tap-pr:
     needs: [build, bump-tap, wait-tap-ci]
     runs-on: ubuntu-latest
+    environment: production
     if: ${{ success() && github.event.inputs.dry_run != 'true' }}
 
     steps:
