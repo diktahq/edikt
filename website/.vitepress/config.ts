@@ -116,6 +116,7 @@ export default withMermaid(defineConfig({
           { text: 'Security', link: '/guides/security' },
           { text: 'CI/CD Governance', link: '/guides/ci' },
           { text: 'Keeping Up to Date', link: '/guides/upgrading' },
+          { text: 'Upgrading to v0.5.0', link: '/guides/v0.5.0-upgrade' },
         ],
       },
       {

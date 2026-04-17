@@ -1,0 +1,113 @@
+# Upgrading to edikt v0.5.0
+
+v0.5.0 is a security-hardening release. Every audit finding from `docs/reports/security-audit-v0.5.0-2026-04-17.md` is closed in code and pinned by the regression suite at `test/security/`. Upgrade is safe and reversible.
+
+## Before you upgrade — pre-flight checklist
+
+1. **Install cosign** (for full install integrity verification — strongly recommended):
+   ```bash
+   brew install cosign              # macOS
+   # Linux: https://docs.sigstore.dev/cosign/installation
+   ```
+   Without cosign, the installer aborts unless you set `EDIKT_INSTALL_INSECURE=1`. That path bypasses Sigstore signature verification and prints a loud banner on success.
+
+2. **Commit or stash in-flight work** in any project using edikt. The upgrade rewrites `~/.claude/settings.json` (replacing the edikt-managed `permissions` block) and writes a managed-region sidecar at `~/.edikt/state/settings-managed.json`.
+
+3. **Review your current settings.json customizations**. If you've added entries to the `permissions` block directly (rather than in a separate `userPermissions` top-level key), back them up. The upgrade prompts before overwriting a drifted managed region, but reviewing in advance is safer.
+
+## Upgrade command
+
+```bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+```
+
+After the install completes:
+```bash
+edikt upgrade --yes
+```
+
+Or use `edikt upgrade` interactively for the activation prompt.
+
+## What changes
+
+### Visible on your first Claude Code session after upgrade
+
+- A one-time permission prompt may appear when Claude tries a newly-denied tool (e.g. `curl http://example.com` — TLS-only is now the default). Allow once if the request is legitimate. See `docs/guides/permissions.md` for the full deny/allow list.
+- In-flight plan phases that were marked `done` pre-upgrade now have grandfather verdict stubs at `docs/product/plans/verdicts/<plan-slug>/<phase-id>.json` with `meta.grandfathered: true`. These bypass the new ADR-018 evidence gate on a one-time basis; their PASS status is preserved.
+- New evaluations (future `/edikt:sdlc:plan` phase-ends) use the structured JSON verdict schema from ADR-018. The evaluator emits a machine-readable object; the plan harness enforces `evidence_type: "test_run"` for criteria that name a shell command.
+
+### Invisible but real
+
+- Every hook now emits protocol JSON via `python3 json.dumps` (no shell concatenation). Attacker-controlled file paths and error messages can no longer corrupt the hook protocol.
+- Sentinel regions (CLAUDE.md, ADRs, INVs, plans) are byte-range-guarded. An Edit whose `old_string` is a non-sentinel line inside a managed region is blocked.
+- Benchmark runner no longer copies your local `~/.claude/settings.json` into adversarial sandboxes.
+- Release integrity: install verifies `SHA256SUMS` via cosign against the release workflow's GitHub OIDC identity.
+
+## Rolling back
+
+edikt v0.5.0 adds a dedicated rollback subcommand for the host-level changes:
+
+```bash
+edikt rollback v0.5.0
+```
+
+This:
+- Restores `~/.claude/settings.json` from the pre-upgrade backup at `~/.edikt/backup/pre-v0.5.0-<timestamp>/`.
+- Removes the managed-region sidecar at `~/.edikt/state/settings-managed.json` so the next install prompts fresh.
+- Removes any grandfather verdict stubs created by the upgrade's migration routine.
+
+The backup is preserved after rollback so you can audit what was restored. Remove it manually if desired:
+
+```bash
+rm -rf ~/.edikt/backup/pre-v0.5.0-*
+rm -f ~/.edikt/backup/pre-v0.5.0-marker
+```
+
+For payload-only rollback (revert the `bin/edikt` launcher and `~/.edikt/versions/<tag>/` contents without touching host files), use `edikt rollback` (no argument) or `edikt use <prior-tag>`.
+
+## Verifying the upgrade
+
+### Full security regression suite (runs in <5s)
+
+```bash
+cd <a-project-using-edikt>
+./test/security/run.sh
+```
+
+All 8 tests should report `PASS`.
+
+### Install integrity verification (manual)
+
+```bash
+TAG=v0.5.0
+curl -fsSL -o /tmp/SHA256SUMS            https://github.com/diktahq/edikt/releases/download/${TAG}/SHA256SUMS
+curl -fsSL -o /tmp/SHA256SUMS.sig.bundle https://github.com/diktahq/edikt/releases/download/${TAG}/SHA256SUMS.sig.bundle
+cosign verify-blob \
+  --bundle /tmp/SHA256SUMS.sig.bundle \
+  --certificate-identity-regexp '^https://github\.com/diktahq/edikt/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  /tmp/SHA256SUMS
+```
+
+Expected: `Verified OK` on stderr.
+
+## Known issues and v0.5.x follow-ups
+
+- **If you rely on specific Bash patterns denied by default** (e.g. `rm -rf ~/specific-test-dir`): add an allow entry in a `userPermissions` top-level key of your `settings.json` (outside the managed block).
+- **Homebrew tap updates** now require maintainer approval in the `production` GitHub environment. First upgrade after this lands may see a delay.
+- **Hash anchors inside sentinel blocks** (LOW-3) are not yet seeded — the next `/edikt:gov:compile` pass lands them.
+- **`test/integration/` Python test helpers** currently extract Python bodies from `.md` command files (MED-4). Extraction is safe today (internal-only); a follow-up moves them to `test/_lib/`.
+
+## Need help
+
+- Full CHANGELOG: `CHANGELOG.md`, section "v0.5.0 (2026-04-17)" → "Security hardening".
+- Security sign-off: `docs/reports/v0.5.0-security-signoff-2026-04-17.md`.
+- Source audit: `docs/reports/security-audit-v0.5.0-2026-04-17.md`.
+- Plan: `docs/product/plans/PLAN-v0.5.0-security-hardening.md`.
+
+If `edikt rollback v0.5.0` doesn't work, manually restore from the backup:
+```bash
+ls ~/.edikt/backup/pre-v0.5.0-*
+cp ~/.edikt/backup/pre-v0.5.0-<ts>/settings.json ~/.claude/settings.json
+rm ~/.edikt/state/settings-managed.json
+```

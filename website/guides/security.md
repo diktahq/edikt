@@ -12,6 +12,23 @@ On demand → /edikt:sdlc:audit for deliberate security passes
 
 These layers are complementary — lightweight and continuous early, thorough and deliberate before shipping.
 
+## v0.5.0 security hardening — edikt's own posture
+
+Before diving into the workflow layers: v0.5.0 shipped a full security audit of edikt itself (48 findings across Critical / High / Medium / Low severities). Every Critical and every release-blocking High is closed in code and pinned by the regression suite at `test/security/`. If you run edikt v0.5.0+, you get:
+
+- **Deny-by-default permissions.** `~/.claude/settings.json` ships with an explicit `permissions` block denying destructive Bash (`rm -rf /`, `chmod -R 777`, `sudo`), plaintext HTTP fetches (`http://`), and sensitive file reads (SSH keys, AWS credentials, `/etc/shadow`). Full list in the [permissions guide](/guides/permissions).
+- **Byte-range sentinel guard.** Every edikt-managed region in your files (CLAUDE.md, ADRs, invariants, plans) is protected by a byte-range overlap check on the resolved file — not a regex over the patch. An Edit whose `old_string` is a non-sentinel line *inside* a managed region is now blocked. (INV-005.)
+- **Hook JSON hardening.** Every hook emits protocol JSON via `python3 json.dumps` with untrusted values passed as argv. Shell string concatenation to build JSON is forbidden (INV-003). Attacker-controlled file paths, error messages, and agent findings cannot corrupt the hook protocol.
+- **Sigstore keyless signing.** The release workflow signs `SHA256SUMS` with Sigstore keyless via GitHub OIDC. `install.sh` verifies with `cosign verify-blob` against a regex identity matching the release workflow at any tag. Tampering with the release asset fails `cosign` and aborts the install.
+- **Hermetic test sandboxes.** The governance benchmark no longer copies your `~/.claude/settings.json` or hooks into adversarial sandboxes (INV-007).
+- **Structured evaluator verdicts with evidence gate.** The evaluator now emits machine-readable JSON verdicts conforming to `evaluator-verdict.schema.json`. The plan harness rejects `PASS` unless every criterion that names a shell command has `evidence_type: "test_run"` (ADR-018). A coerced PASS ("just trust me, I ran the tests") is forced to `BLOCKED`.
+
+Upgrading from v0.4.x? Read the [v0.5.0 upgrade guide](/guides/v0.5.0-upgrade) for the pre-flight checklist, expected behavior changes, and rollback walkthrough.
+
+Full audit: `docs/reports/security-audit-v0.5.0-2026-04-17.md` in the repo. Sign-off: `docs/reports/v0.5.0-security-signoff-2026-04-17.md`.
+
+---
+
 ---
 
 ## Layer 1 — Stop hook signals (while building)
