@@ -2,7 +2,14 @@
 # edikt: SubagentStop hook — log specialist agent activity + quality gates
 # Fires after any subagent completes. Logs agent name and outcome to
 # session-signals.log. If the agent is configured as a gate and returns
-# a critical finding, blocks progression with an acknowledged override flow.
+# a critical finding, the hook records the block in ~/.edikt/events.jsonl
+# and emits a static systemMessage directing the user to the log.
+#
+# SECURITY (ADR-019 carve-out, INV-003, INV-004): the agent's finding text
+# is attacker-influenceable (a file Claude reads can seed it). It MUST NOT
+# be embedded in shell commands Claude is asked to execute, and it MUST NOT
+# be concatenated into any JSON payload. The hook writes the full event
+# itself using json.dumps; Claude receives only a static systemMessage.
 
 # Only run in edikt projects
 if [ ! -f ".edikt/config.yaml" ]; then exit 0; fi
@@ -15,12 +22,14 @@ fi
 # Read last assistant message from stdin
 INPUT=$(cat)
 
-# Extract agent name from the response
-# Agents declare themselves by domain (e.g., "architecture specialist", "database specialist")
+# Extract agent name from the response.
+# NOTE (MED-11): this detection is content-based and therefore spoofable.
+# Phase 9 replaces it with structured SubagentStop payload fields. For now
+# we constrain the result to a known slug and never embed it in any shell
+# command — the AGENT_NAME value flows only into json.dumps-constructed JSON.
 AGENT_NAME=""
 INPUT_LOWER=$(echo "$INPUT" | tr '[:upper:]' '[:lower:]')
 
-# Check domain keywords (how agents declare themselves in v0.1.0+)
 if echo "$INPUT_LOWER" | grep -qE "architect|architecture specialist"; then AGENT_NAME="architect"
 elif echo "$INPUT_LOWER" | grep -qE "database|dba|schema|migration specialist"; then AGENT_NAME="dba"
 elif echo "$INPUT_LOWER" | grep -qE "security specialist|security engineer|appsec"; then AGENT_NAME="security"
@@ -98,59 +107,84 @@ if [ "$GATE_CHECK" = "yes" ]; then
   IS_GATE=true
 fi
 
-# Check for existing override in this session
+# Check for existing override in this session (finding prefix used as a
+# coarse key; safe because override records go through json.dumps below)
 if [ "$IS_GATE" = true ] && [ "$SEVERITY" = "critical" ]; then
   FINDING_PREFIX=$(echo "$FINDING" | cut -c1-80)
   if [ -f "$HOME/.edikt/gate-overrides.jsonl" ]; then
-    if grep -F "\"agent\":\"${AGENT_NAME}\"" "$HOME/.edikt/gate-overrides.jsonl" 2>/dev/null | grep -qF "\"finding_prefix\":\"${FINDING_PREFIX}\""; then
-      # Already overridden this session — skip silently
+    # Match on JSON structure via python3 to avoid grep-escaping surprises.
+    MATCHED=$(python3 - <<'PY' "$AGENT_NAME" "$FINDING_PREFIX" "$HOME/.edikt/gate-overrides.jsonl"
+import json, sys
+agent, prefix, path = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get('agent') == agent and rec.get('finding_prefix') == prefix:
+                print('yes')
+                sys.exit(0)
+except FileNotFoundError:
+    pass
+print('no')
+PY
+)
+    if [ "$MATCHED" = "yes" ]; then
+      # Already overridden this session — skip silently.
       printf '{"continue": true}'
       exit 0
     fi
   fi
 fi
 
-# If agent is a gate AND severity is critical, block progression
+# If agent is a gate AND severity is critical, block progression.
+# The hook writes the block event to events.jsonl itself (INV-004). The
+# systemMessage is STATIC — no agent-derived text is ever placed into a
+# shell command Claude could be coerced into running.
 if [ "$IS_GATE" = true ] && [ "$SEVERITY" = "critical" ]; then
-  ESCAPED_FINDING=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1])[1:-1])" "$FINDING")
-
-  # Log gate event
-  if type edikt_log_event >/dev/null 2>&1; then
-    edikt_log_event "gate_fired" "{\"agent\":\"${AGENT_NAME}\",\"severity\":\"critical\",\"finding\":\"${ESCAPED_FINDING}\"}"
-  fi
-
-  # Write to events.jsonl (structured audit log)
   GATE_TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-  mkdir -p "$HOME/.edikt" 2>/dev/null || true
-  echo "{\"ts\":\"${GATE_TIMESTAMP}\",\"event\":\"gate_fired\",\"agent\":\"${AGENT_NAME}\",\"severity\":\"critical\",\"finding\":\"${ESCAPED_FINDING}\"}" >> "$HOME/.edikt/events.jsonl"
-
   GIT_USER=$(git config user.name 2>/dev/null || echo "unknown")
   GIT_EMAIL=$(git config user.email 2>/dev/null || echo "unknown")
 
-  GATE_MSG="GATE BLOCKED: ${AGENT_NAME} found a critical issue: ${FINDING}.
+  mkdir -p "$HOME/.edikt" 2>/dev/null || true
+  # Write the full gate_fired event via json.dumps. All untrusted fields
+  # (finding, git identity) ride as argv; never concatenated into a string.
+  python3 - "$GATE_TIMESTAMP" "$AGENT_NAME" "$SEVERITY" "$FINDING" "$FINDING_PREFIX" "$GIT_USER" "$GIT_EMAIL" "$HOME/.edikt/events.jsonl" <<'PY'
+import json, sys
+ts, agent, sev, finding, prefix, user, email, out = sys.argv[1:9]
+rec = {
+    "ts": ts,
+    "event": "gate_fired",
+    "agent": agent,
+    "severity": sev,
+    "finding": finding,
+    "finding_prefix": prefix,
+    "user": user,
+    "email": email,
+}
+with open(out, 'a', encoding='utf-8') as f:
+    f.write(json.dumps(rec) + "\n")
+PY
 
-Present this to the user:
+  # Optional telemetry (edikt_log_event is itself json.dumps-safe now).
+  if type edikt_log_event >/dev/null 2>&1; then
+    GATE_TELEMETRY=$(python3 -c 'import json,sys; print(json.dumps({"agent": sys.argv[1], "severity": "critical", "finding_prefix": sys.argv[2]}))' "$AGENT_NAME" "$FINDING_PREFIX")
+    edikt_log_event "gate_fired" "$GATE_TELEMETRY"
+  fi
 
-⛔ GATE: ${AGENT_NAME} — critical finding
-   ${FINDING}
-
-   This gate must be resolved before proceeding.
-   Override this gate? (y/n)
-   Note: override will be logged with your git identity.
-
-If the user says YES:
-1. Run this command to log the override:
-   echo '{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"event\":\"gate_override\",\"agent\":\"${AGENT_NAME}\",\"finding\":\"${ESCAPED_FINDING}\",\"user\":\"${GIT_USER}\",\"email\":\"${GIT_EMAIL}\"}' >> ~/.edikt/events.jsonl
-2. Run this command to prevent re-firing:
-   echo '{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"agent\":\"${AGENT_NAME}\",\"finding_prefix\":\"${FINDING_PREFIX}\"}' >> ~/.edikt/gate-overrides.jsonl
-3. Confirm: Gate overridden. Logged to events.jsonl. Proceeding.
-
-If the user says NO:
-1. Run this command to log the block:
-   echo '{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"event\":\"gate_blocked\",\"agent\":\"${AGENT_NAME}\",\"finding\":\"${ESCAPED_FINDING}\",\"user\":\"${GIT_USER}\",\"email\":\"${GIT_EMAIL}\"}' >> ~/.edikt/events.jsonl
-2. Stop and let the user fix the issue."
-  JSON=$(python3 -c "import json,sys; print(json.dumps({'decision':'block','systemMessage':sys.argv[1]}))" "$GATE_MSG")
-  echo "$JSON"
+  # Static systemMessage: agent slug only (constrained to the known-slug
+  # allowlist above); no finding text embedded. Users are directed to the
+  # events.jsonl file for the full finding, and to a dedicated override
+  # command for the override flow (Phase 2 leaves the command as a future
+  # item; for now users can manually address the finding or set the
+  # EDIKT_GATE_OVERRIDE env var and retry).
+  SYS_MSG="⛔ GATE FIRED — ${AGENT_NAME} reported a critical finding. Full details in ~/.edikt/events.jsonl. To override this gate, address the finding or set EDIKT_GATE_OVERRIDE=1 and retry. Logging uses your git identity."
+  python3 -c 'import json,sys; print(json.dumps({"decision": "block", "systemMessage": sys.argv[1]}))' "$SYS_MSG"
   exit 0
 fi
 

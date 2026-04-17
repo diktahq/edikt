@@ -490,15 +490,70 @@ write_settings_json() {
     warn "settings.json.tmpl not found at $tmpl — skipping settings.json write"
     return 0
   fi
+
+  # Validate EDIKT_HOOK_DIR before substitution (INV-006). Characters that
+  # can corrupt JSON or shell expansion are rejected — the previous sed-based
+  # implementation silently produced invalid JSON when the path contained
+  # any of these (audit HI-3).
+  case "$EDIKT_HOOK_DIR" in
+    *'"'*|*'\'*|*'|'*|*$'\n'*|*$'\r'*|*$'\t'*)
+      error "EDIKT_HOOK_DIR contains a forbidden character (\", \\, |, tab, or newline): $EDIKT_HOOK_DIR"
+      return $EX_GENERAL
+      ;;
+  esac
+
   mkdir -p "$CLAUDE_HOME_DIR" || return $EX_PERMISSION
-  tmp="${dest}.tmp.$$"
-  # Use | as sed delimiter to avoid conflicts with path separators.
-  sed "s|\${EDIKT_HOOK_DIR}|${EDIKT_HOOK_DIR}|g" "$tmpl" >"$tmp" || {
-    rm -f "$tmp" 2>/dev/null || true
+
+  # Python substitution: json.loads the template, walk the tree substituting
+  # the ${EDIKT_HOOK_DIR} placeholder in string values, json.dumps the result,
+  # and atomically rename. This eliminates the sed-based text substitution
+  # (which was neither JSON-aware nor JSON-escape-safe) and guarantees the
+  # written file is structurally valid JSON (INV-003; closes audit HI-2).
+  python3 - "$tmpl" "$dest" "$EDIKT_HOOK_DIR" <<'PY'
+import json
+import os
+import sys
+
+tmpl_path, dest_path, hook_dir = sys.argv[1], sys.argv[2], sys.argv[3]
+
+with open(tmpl_path, 'r', encoding='utf-8') as f:
+    raw = f.read()
+
+# Template uses the literal token ${EDIKT_HOOK_DIR} as a placeholder. It
+# appears inside string values in the JSON template. We replace via string
+# operation on the raw text FIRST (so the JSON parser sees valid paths),
+# then json.loads / json.dumps to round-trip and guarantee validity.
+substituted = raw.replace('${EDIKT_HOOK_DIR}', hook_dir)
+
+try:
+    parsed = json.loads(substituted)
+except json.JSONDecodeError as exc:
+    sys.stderr.write(f"template produced invalid JSON after substitution: {exc}\n")
+    sys.stderr.write(f"check that EDIKT_HOOK_DIR = {hook_dir!r} is a safe path\n")
+    sys.exit(1)
+
+# Write atomically: tmp in the same directory, fsync, rename.
+tmp_path = f"{dest_path}.tmp.{os.getpid()}"
+try:
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(parsed, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, dest_path)
+except OSError as exc:
+    sys.stderr.write(f"atomic write failed: {exc}\n")
+    try:
+        os.remove(tmp_path)
+    except OSError:
+        pass
+    sys.exit(1)
+PY
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
     error "settings.json substitution failed — hook paths not written"
     return $EX_GENERAL
-  }
-  mv -f "$tmp" "$dest"
+  fi
   dim "wrote $dest (hook dir: $EDIKT_HOOK_DIR)"
   return 0
 }
