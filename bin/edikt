@@ -1,5 +1,13 @@
 #!/bin/sh
-# edikt launcher — POSIX shell. INV-001: no compiled code, no build step.
+# edikt-shell — POSIX shell launcher (ADR-022 strangler-fig).
+#
+# In v0.5.0+ this file is renamed to edikt-shell and placed alongside the Go
+# binary (bin/edikt). The Go binary is the user-facing entry point; it execs
+# this script for all subcommands not yet implemented in Go.
+#
+# When called by the Go binary, EDIKT_SHELL_CALLER=1 is set. In that case we
+# skip resolve_edikt_root (root was already resolved by the Go layer) to avoid
+# double-launch loops. EDIKT_ROOT must be set by the caller in that case.
 #
 # Implements SPEC-004 v0.5.0: versioned on-disk layout, generation symlink
 # chain, lock.yaml + manifest.yaml, atomic flips, flock serialization.
@@ -67,7 +75,11 @@ resolve_claude_root() {
     fi
 }
 
-EDIKT_ROOT=$(resolve_edikt_root)
+# ADR-022: when called by the Go edikt binary, EDIKT_ROOT is already set and
+# re-resolution is skipped to prevent double-launch loops.
+if [ -z "${EDIKT_ROOT:-}" ]; then
+    EDIKT_ROOT=$(resolve_edikt_root)
+fi
 CLAUDE_ROOT=$(resolve_claude_root)
 
 # ─── SHA256 dispatch (per config-spec §7) ───────────────────────────────────

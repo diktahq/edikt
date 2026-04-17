@@ -499,9 +499,11 @@ stage_launcher() {
       fi
     fi
 
-    # Extract bin/edikt from the tarball if that's what we downloaded.
+    # Extract bin/edikt (Go binary, ADR-022) from the tarball.
     if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
       _extract_dir=$(mktemp -d)
+      # Cache the tarball path for install_launcher to also extract edikt-shell.
+      _LAUNCHER_TARBALL_CACHED="$_download"
       if ! tar -xzf "$_download" -C "$_extract_dir" bin/edikt 2>/dev/null; then
         rm -rf "$_extract_dir" "$_download"
         error "launcher tarball does not contain bin/edikt"
@@ -513,7 +515,9 @@ stage_launcher() {
         return $EX_NETWORK
       fi
       mv "$_extract_dir/bin/edikt" "$stage"
-      rm -rf "$_extract_dir" "$_download"
+      rm -rf "$_extract_dir"
+      # Note: $_download is NOT removed here — install_launcher may need it to
+      # extract bin/edikt-shell. It is removed in install_launcher after use.
     fi
   fi
   if [ ! -s "$stage" ]; then
@@ -521,37 +525,90 @@ stage_launcher() {
     return $EX_NETWORK
   fi
   # ── Content sanity checks (guard against HTML error pages) ───────────────
-  _first_line=$(head -n1 "$stage")
-  case "$_first_line" in
-    '#!'*) ;;
-    *) error "downloaded launcher missing shebang"; return $EX_NETWORK ;;
-  esac
-  if ! grep -qF 'MIN_PAYLOAD_VERSION=' "$stage"; then
-    error "downloaded file does not look like an edikt launcher"
-    return $EX_NETWORK
-  fi
-  # bin/edikt is bash, not POSIX sh. Use the actual interpreter for syntax check.
-  if ! bash -n "$stage" 2>/dev/null; then
-    error "downloaded launcher failed syntax check (bash -n)"
-    return $EX_NETWORK
+  # ADR-022: bin/edikt is now the Go binary (ELF/Mach-O). The shell-script
+  # sanity checks (shebang, MIN_PAYLOAD_VERSION, bash -n) do not apply to it.
+  # For bare-file installs the staged file is the shell script (edikt-shell);
+  # for tarball installs it is the Go binary — skip shell checks in that case.
+  if [ "$LAUNCHER_IS_TARBALL" != "1" ]; then
+    _first_line=$(head -n1 "$stage")
+    case "$_first_line" in
+      '#!'*) ;;
+      *) error "downloaded launcher missing shebang"; return $EX_NETWORK ;;
+    esac
+    if ! grep -qF 'MIN_PAYLOAD_VERSION=' "$stage"; then
+      error "downloaded file does not look like an edikt shell launcher"
+      return $EX_NETWORK
+    fi
+    # edikt-shell is POSIX sh. Use bash -n for syntax check.
+    if ! bash -n "$stage" 2>/dev/null; then
+      error "downloaded shell launcher failed syntax check (bash -n)"
+      return $EX_NETWORK
+    fi
   fi
   chmod +x "$stage"
   return 0
 }
 
-# Atomically put the verified launcher at $EDIKT_ROOT/bin/edikt.
-# One-deep backup: previous launcher → bin/edikt.prev before overwrite.
+# Atomically place the launcher artifacts at $EDIKT_ROOT/bin/.
+#
+# ADR-022 (single-binary, v0.5.0+): the release tarball contains two files:
+#   bin/edikt       — Go binary (user-facing entry point)
+#   bin/edikt-shell — POSIX shell script (handles all non-Go subcommands)
+#
+# When installing from a tarball we extract both. When installing from a bare
+# file (LAUNCHER_SRC_LOCAL or raw download) we assume it is the shell script
+# and place it as edikt-shell; the Go binary must be placed separately via
+# `edikt install gov-compile` or bundled in the tarball.
+#
+# One-deep backup: previous edikt → bin/edikt.prev before overwrite.
 install_launcher() {
   mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
-  tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
-  if ! stage_launcher "$tmp"; then
-    rm -f "$tmp" 2>/dev/null || true
-    return $?
+
+  if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
+    # Tarball path: stage_launcher already extracted bin/edikt into $tmp.
+    # Now also extract bin/edikt-shell from the same tarball if present.
+    tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
+    if ! stage_launcher "$tmp"; then
+      rm -f "$tmp" 2>/dev/null || true
+      return $?
+    fi
+    if [ -f "$EDIKT_ROOT/bin/edikt" ]; then
+      cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
+    fi
+    mv "$tmp" "$EDIKT_ROOT/bin/edikt"
+    # Extract edikt-shell from the tarball if present (ADR-022).
+    # Non-fatal if missing — older tarballs pre-ADR-022 only contain bin/edikt.
+    _tarball_src="${LAUNCHER_SRC_LOCAL:-}"
+    if [ -z "$_tarball_src" ] && [ -n "${_LAUNCHER_TARBALL_CACHED:-}" ]; then
+      _tarball_src="$_LAUNCHER_TARBALL_CACHED"
+    fi
+    if [ -n "$_tarball_src" ] && tar -tzf "$_tarball_src" 2>/dev/null | grep -q "^bin/edikt-shell$"; then
+      _sh_tmp=$(mktemp)
+      if tar -xzf "$_tarball_src" -O bin/edikt-shell 2>/dev/null > "$_sh_tmp" && [ -s "$_sh_tmp" ]; then
+        chmod +x "$_sh_tmp"
+        mv "$_sh_tmp" "$EDIKT_ROOT/bin/edikt-shell"
+      else
+        rm -f "$_sh_tmp"
+      fi
+    fi
+  else
+    # Bare-file path: stage and place as edikt-shell (the shell launcher).
+    tmp="$EDIKT_ROOT/bin/edikt-shell.tmp.$$"
+    if ! stage_launcher "$tmp"; then
+      rm -f "$tmp" 2>/dev/null || true
+      return $?
+    fi
+    if [ -f "$EDIKT_ROOT/bin/edikt-shell" ]; then
+      cp "$EDIKT_ROOT/bin/edikt-shell" "$EDIKT_ROOT/bin/edikt-shell.prev" 2>/dev/null || true
+    fi
+    mv "$tmp" "$EDIKT_ROOT/bin/edikt-shell"
+    # For backwards compatibility: also place edikt-shell as edikt when no Go
+    # binary is present yet (pre-ADR-022 layout or dev installs).
+    if [ ! -x "$EDIKT_ROOT/bin/edikt" ]; then
+      cp "$EDIKT_ROOT/bin/edikt-shell" "$EDIKT_ROOT/bin/edikt"
+      chmod +x "$EDIKT_ROOT/bin/edikt"
+    fi
   fi
-  if [ -f "$EDIKT_ROOT/bin/edikt" ]; then
-    cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
-  fi
-  mv "$tmp" "$EDIKT_ROOT/bin/edikt"
   return 0
 }
 
