@@ -52,6 +52,8 @@ install_teardown() {
 }
 
 # Build a minimal payload directory suitable for `edikt install`.
+# Default shape: v0.4.x nested layout (commands/edikt/*.md). Several existing
+# tests assume this shape; preserved for back-compat.
 make_payload() {
   p="$1"
   v="$2"
@@ -62,6 +64,45 @@ make_payload() {
   printf '# context\n' > "$p/commands/edikt/context.md"
   printf '#!/bin/sh\necho hi\n' > "$p/hooks/session-start.sh"
   chmod +x "$p/hooks/session-start.sh"
+}
+
+# Build a minimal v0.5.x FLAT-layout payload (commands/*.md, no
+# commands/edikt/ subdirectory). Mirrors the v0.5.x source-tree shape so
+# tests that exercise resolve_commands_target's flat branch use the same
+# payload contract instead of inlining their own.
+#
+# settings.json points hooks at templates/hooks/, so this helper places
+# the placeholder hook there (not at $p/hooks/) to mirror the real release
+# tarball shape — make_payload's $p/hooks/ placement is a v0.4.x quirk.
+make_payload_flat() {
+  p="$1"
+  v="$2"
+  rm -rf "$p"
+  mkdir -p "$p/templates/hooks" "$p/commands"
+  printf '%s\n' "$v" > "$p/VERSION"
+  printf '# changelog %s\n' "$v" > "$p/CHANGELOG.md"
+  # Flat layout: commands/*.md directly, no commands/edikt/ subdir.
+  printf '# context\n' > "$p/commands/context.md"
+  printf '# adr/new\n' > "$p/commands/adr-new.md"
+  printf '#!/bin/sh\necho hi\n' > "$p/templates/hooks/session-start.sh"
+  chmod 0755 "$p/templates/hooks/session-start.sh"
+}
+
+# Build a minimal v0.4.x NESTED-layout payload (commands/edikt/*.md). Same
+# contract as make_payload but with templates/hooks/ instead of $p/hooks/
+# so resolve_commands_target's nested-branch test exercises a payload that
+# mirrors a real v0.4.x release.
+make_payload_nested() {
+  p="$1"
+  v="$2"
+  rm -rf "$p"
+  mkdir -p "$p/templates/hooks" "$p/commands/edikt"
+  printf '%s\n' "$v" > "$p/VERSION"
+  printf '# changelog %s\n' "$v" > "$p/CHANGELOG.md"
+  printf '# context\n' > "$p/commands/edikt/context.md"
+  printf '# adr/new\n' > "$p/commands/edikt/adr-new.md"
+  printf '#!/bin/sh\necho hi\n' > "$p/templates/hooks/session-start.sh"
+  chmod 0755 "$p/templates/hooks/session-start.sh"
 }
 
 # Compute sha256 of a tree (sorted path + file hash). Used by the dry-run

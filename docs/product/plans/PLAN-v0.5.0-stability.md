@@ -2441,9 +2441,13 @@ Touch points:
 - Same condition needed at `bin/edikt:954-956` (`cmd_doctor` validation message)
 - Same condition at `bin/edikt:2208-2214`, `:2305`, `:3096` and any other location where the symlink path is asserted
 
-### Sub-decision required
+### Sub-decision (resolved 2026-04-17)
 
-Either (a) accept this dynamic detection as the long-term answer (both layouts coexist forever), or (b) treat 0.4.x as deprecated after the v0.5.0 release and remove the legacy branch in v0.6.0. ADR or short note in the launcher should record which.
+**Chosen: hybrid path.** Keep dynamic layout detection as the v0.5.x long-term answer (both layouts work, both are first-class and tested in parity via `test_flat_layout_symlink.sh` + `test_nested_layout_symlink.sh`). Schedule the v0.4.x branch deprecation in the v0.6.0 plan once outstanding v0.4.x installs have migrated — by then the legacy branch can be removed with confidence that no users still rely on it.
+
+Recorded inline in `bin/edikt:resolve_commands_target` (function header comment) so a future reader sees the decision next to the code that implements it.
+
+No ADR — the decision is local to the launcher and documented at the call site; it doesn't establish a project-wide invariant.
 
 ### Test coverage
 
