@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/evaluator-verdict/v1.json",
+  "title": "edikt evaluator verdict",
+  "description": "Structured output of the evaluator agent. Per ADR-018, the plan harness rejects PASS unless every criterion that names a shell command has evidence_type='test_run'.",
+  "type": "object",
+  "required": ["verdict", "criteria", "meta"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "description": "Overall verdict for the phase.",
+      "enum": ["PASS", "BLOCKED", "FAIL"]
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "evidence_type", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Criterion identifier from the plan sidecar (e.g. 'C1-tests')."
+          },
+          "status": {
+            "enum": ["met", "unmet", "blocked"],
+            "description": "Per-criterion status. `met` with evidence_type=test_run is required for a PASS verdict to hold when the criterion names a shell command."
+          },
+          "evidence_type": {
+            "enum": ["test_run", "grep", "file_read", "manual"],
+            "description": "Classification of the evidence the evaluator based its decision on. `test_run` means a shell command was executed in this session and its output observed."
+          },
+          "evidence": {
+            "type": "string",
+            "description": "One-line human-readable evidence string. For test_run, include the command and a snippet of its output. For grep, the pattern matched. For file_read, the file and line range. For manual, a short rationale."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional longer note expanding on edge cases, blocker reasons, or context."
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["evaluator_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "evaluator_mode": {
+          "enum": ["headless", "interactive"]
+        },
+        "grandfathered": {
+          "type": "boolean",
+          "description": "True if this verdict was synthesized by upgrade migration for a phase that predated the schema. Grandfathered verdicts bypass the evidence gate on a one-time basis."
+        },
+        "migrated_from": {
+          "type": ["string", "null"],
+          "description": "edikt version this verdict was grandfathered from (e.g. '0.4.3'). Null for native v0.5.0+ verdicts."
+        }
+      }
+    }
+  }
+}

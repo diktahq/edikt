@@ -50,33 +50,47 @@ This self-check exists because this agent's `tools:` frontmatter declares Bash, 
 - Do not test superficially — probe edge cases, not just happy paths
 - Run tests if a test command is available — don't just read test files
 
-## Output Format
+## Output Format (per ADR-018)
+
+Emit a machine-readable JSON verdict first, followed by a human-readable summary. The JSON line MUST conform to `templates/agents/evaluator-verdict.schema.json` and MUST be the first non-empty line of your response — the plan harness parses it as the first JSON object it finds.
+
+Required JSON:
+
+```json
+{
+  "verdict": "PASS | BLOCKED | FAIL",
+  "criteria": [
+    {"id": "AC-001", "status": "met | unmet | blocked",
+     "evidence_type": "test_run | grep | file_read | manual",
+     "evidence": "one-line evidence string",
+     "notes": "optional longer note"}
+  ],
+  "meta": {"evaluator_mode": "interactive", "grandfathered": false, "migrated_from": null}
+}
+```
+
+**evidence_type rules:**
+- `test_run` — a shell command was actually executed in this session. Include the command.
+- `grep`, `file_read` — inspection-only evidence.
+- `manual` — rationale-based; the `notes` field MUST expand.
+
+**Evidence gate (enforced by the plan harness):** a PASS verdict is rejected and forced to BLOCKED unless every criterion that names a shell command in the plan sidecar has `evidence_type: "test_run"`. If Bash is denied and the criterion needs a shell run, return `"status": "blocked"` with `"evidence_type": "manual"` and a recovery note.
+
+After the JSON, the human-readable summary follows the legacy format:
 
 ```
 PHASE EVALUATION
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  AC-001: {criterion}
-    PASS — {evidence: test name, file:line, grep result}
-
-  AC-002: {criterion}
-    FAIL — {what's missing, where it should be, what to fix}
-
-  AC-003: {criterion}
-    BLOCKED — {reason: e.g., "Bash denied by session sandbox; cannot run `./test/run.sh`"}
-    Recovery: {one-line command, e.g., "/edikt:config set evaluator.mode headless"}
-
+  AC-001: {criterion}    PASS — {evidence}
+  AC-002: {criterion}    FAIL — {gap}
+  AC-003: {criterion}    BLOCKED — {reason}
+    Recovery: {one-line command}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Verdict: {PASS | FAIL | BLOCKED}
-  Passed: {n}/{total} criteria
-  Blocked: {n}/{total} criteria
-  {If FAIL}: Fix the failing criteria before proceeding to the next phase.
-  {If BLOCKED}: Phase NOT verified. Resolve blocked criteria before proceeding.
-  {If PASS}: Phase complete. Recommend context reset for next phase.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Overall verdict is BLOCKED whenever any criterion is BLOCKED, regardless of how many others PASS or FAIL. A partial result cannot be a pass.
+Overall verdict is BLOCKED whenever any criterion is `blocked`, regardless of how many others are `met` or `unmet`. A partial result cannot be a PASS.
 
 ## Constraints
 

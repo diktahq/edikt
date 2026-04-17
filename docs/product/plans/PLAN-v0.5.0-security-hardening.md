@@ -23,7 +23,7 @@
 | 3     | done   | 1/3     | 2026-04-17 |
 | 4     | done (HI-4 closed via byte-range guard; LOW-3 hash anchor seeding deferred to compile) | 1/5 | 2026-04-17 |
 | 5     | -      | 0/5     | -       |
-| 6     | -      | 0/5     | -       |
+| 6     | done (schema + agent prompts + evidence gate; grandfather routine in Phase 13) | 1/5 | 2026-04-17 |
 | 7     | done   | 1/3     | 2026-04-17 |
 | 8     | done   | 1/3     | 2026-04-17 |
 | 9     | done   | 1/3     | 2026-04-17 |
