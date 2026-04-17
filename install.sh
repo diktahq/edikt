@@ -575,6 +575,52 @@ PY
     error "settings.json substitution failed — hook paths not written"
     return $EX_GENERAL
   fi
+
+  # Write managed-region integrity sidecar (INV-005, ADR-017). The sidecar
+  # records the canonical hash of the managed keys in settings.json so that
+  # future upgrades can detect drift (user edited the managed region directly)
+  # and prompt before overwriting. Phase 13 migration reads this sidecar to
+  # decide whether to prompt or silently replace.
+  _state_dir="$HOME/.edikt/state"
+  _sidecar="$_state_dir/settings-managed.json"
+  python3 - "$dest" "$_sidecar" <<'PY' || true
+import hashlib
+import json
+import os
+import sys
+from datetime import datetime, timezone
+
+dest_path, sidecar_path = sys.argv[1], sys.argv[2]
+try:
+    with open(dest_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+except (OSError, json.JSONDecodeError):
+    sys.exit(0)
+
+managed_keys = ["permissions"]
+managed = {k: data[k] for k in managed_keys if k in data}
+canonical = json.dumps(managed, sort_keys=True, ensure_ascii=False).encode('utf-8')
+managed_hash = hashlib.sha256(canonical).hexdigest()
+
+sidecar = {
+    "settings_path": dest_path,
+    "managed_keys": managed_keys,
+    "managed_hash": managed_hash,
+    "sentinel_version": 1,
+    "installed_at": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
+}
+os.makedirs(os.path.dirname(sidecar_path), exist_ok=True)
+tmp = sidecar_path + '.tmp'
+with open(tmp, 'w', encoding='utf-8') as f:
+    json.dump(sidecar, f, indent=2)
+    f.write('\n')
+os.replace(tmp, sidecar_path)
+try:
+    os.chmod(sidecar_path, 0o600)
+except OSError:
+    pass
+PY
+
   dim "wrote $dest (hook dir: $EDIKT_HOOK_DIR)"
   return 0
 }

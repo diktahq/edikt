@@ -1,4 +1,51 @@
 {
+  "permissions": {
+    "defaultMode": "askBeforeAllow",
+    "deny": [
+      "WebFetch(http://**)",
+      "Bash(curl http://**)",
+      "Bash(wget http://**)",
+      "Bash(rm -rf /**)",
+      "Bash(rm -rf ~/**)",
+      "Bash(rm -rf $HOME/**)",
+      "Bash(chmod -R 777 **)",
+      "Bash(sudo **)",
+      "Bash(sudo:*)",
+      "Bash(:(){ :|:& };:)",
+      "Bash(* > /dev/tcp/**)",
+      "Bash(* > /dev/udp/**)",
+      "Bash(git push --force main)",
+      "Bash(git push --force master)",
+      "Bash(git push --force origin main)",
+      "Bash(git reset --hard origin/**)",
+      "Bash(dd if=/dev/zero **)",
+      "Bash(mkfs.**)",
+      "Read(/etc/shadow)",
+      "Read(**/.ssh/id_*)",
+      "Read(**/.ssh/known_hosts)",
+      "Read(**/.aws/credentials)",
+      "Read(**/.docker/config.json)"
+    ],
+    "allow": [
+      "Read(**)",
+      "Glob",
+      "Grep",
+      "Edit(**)",
+      "Write(**)",
+      "Bash(git :*)",
+      "Bash(gh :*)",
+      "Bash(npm test)",
+      "Bash(npm run test:*)",
+      "Bash(pytest :*)",
+      "Bash(./test/run.sh)",
+      "Bash(./test/test-e2e.sh)",
+      "Bash(make test)",
+      "Bash(uv run :*)",
+      "Bash(ruff :*)",
+      "WebFetch(https://**)",
+      "WebSearch"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -34,7 +81,7 @@
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
-        "if": "Write(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs}) | Edit(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs})",
+        "if": "(Write(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs}) | Edit(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs})) & !Write(**/node_modules/**) & !Edit(**/node_modules/**) & !Write(**/.venv/**) & !Edit(**/.venv/**)",
         "hooks": [
           {
             "type": "command",
