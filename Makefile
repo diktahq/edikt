@@ -169,7 +169,7 @@ test-all:
 
 # ─── Global install (touches your real ~/.edikt/) ─────────────────────────────
 
-.PHONY: install-global dev-global dev-global-off
+.PHONY: install-global install-local dev-global dev-global-off
 
 ## install-global: install edikt globally from this repo (modifies ~/.edikt/)
 install-global:
@@ -177,6 +177,30 @@ install-global:
 	@echo "Press Ctrl-C to abort, Enter to continue..."
 	@read _confirm
 	bash install.sh --global --yes
+
+## install-local: install the CURRENT git tag from this working tree end-to-end
+##                — no network fetch. Exercises the full install.sh path: launcher
+##                staging, payload copy, write_settings_json (ADR-017 permissions
+##                block), managed-region sidecar, pre-v0.5.0 backup.
+##                Useful for testing a v0.5.0-rc* locally before pushing the tag.
+##                EDIKT_INSTALL_INSECURE=1 is set because SHA256SUMS doesn't exist
+##                for an unpushed tag — the post-install banner will reflect this.
+install-local:
+	@echo "⚠️  This will install your current working tree as a live version,"
+	@echo "   running write_settings_json and backing up ~/.claude/settings.json."
+	@echo "   Reversible via: edikt rollback v0.5.0"
+	@read -p "Press Enter to continue (Ctrl-C to abort)..." _confirm
+	@TAG="$$(git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD)"; \
+	if [ -z "$$TAG" ] || [ "$$TAG" = "HEAD" ]; then \
+	  echo "error: no current tag; checkout a tag or set EDIKT_LOCAL_TAG=v<x.y.z>"; \
+	  exit 1; \
+	fi; \
+	echo "Installing working tree as $$TAG"; \
+	EDIKT_LAUNCHER_SOURCE="$(REPO_ROOT)/bin/edikt" \
+	EDIKT_INSTALL_SOURCE="$(REPO_ROOT)" \
+	EDIKT_RELEASE_TAG="$$TAG" \
+	EDIKT_INSTALL_INSECURE=1 \
+	bash install.sh --global --ref "$$TAG"
 
 ## dev-global: link your real ~/.edikt/ to this repo's working tree
 dev-global:
