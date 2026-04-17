@@ -37,3 +37,4 @@ docs/STATUS.md
 # test run artifacts (not checked in)
 test/integration/benchmarks/results/
 test/integration/failures/
+docs/product/plans/verdicts/
