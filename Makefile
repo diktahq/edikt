@@ -190,11 +190,30 @@ install-local:
 	@echo "   running write_settings_json and backing up ~/.claude/settings.json."
 	@echo "   Reversible via: edikt rollback v0.5.0"
 	@read -p "Press Enter to continue (Ctrl-C to abort)..." _confirm
-	@TAG="$$(git describe --tags --exact-match 2>/dev/null || git rev-parse --abbrev-ref HEAD)"; \
-	if [ -z "$$TAG" ] || [ "$$TAG" = "HEAD" ]; then \
-	  echo "error: no current tag; checkout a tag or set EDIKT_LOCAL_TAG=v<x.y.z>"; \
-	  exit 1; \
+	@# Resolution order:
+	@#   1. EDIKT_LOCAL_TAG env var (explicit override)
+	@#   2. git describe --tags --exact-match (on a tagged commit)
+	@#   3. git describe --tags --abbrev=0 (nearest reachable tag — supports
+	@#      the detached-HEAD-past-tag case, e.g. testing rc1 with a cherry-pick
+	@#      on top for local experimentation)
+	@#   4. hard error with actionable message
+	@TAG="$${EDIKT_LOCAL_TAG:-}"; \
+	if [ -z "$$TAG" ]; then \
+	  TAG="$$(git describe --tags --exact-match 2>/dev/null || true)"; \
 	fi; \
+	if [ -z "$$TAG" ]; then \
+	  TAG="$$(git describe --tags --abbrev=0 2>/dev/null || true)"; \
+	fi; \
+	case "$$TAG" in \
+	  v[0-9]*.[0-9]*.[0-9]*) ;; \
+	  [0-9]*.[0-9]*.[0-9]*) ;; \
+	  *) \
+	    echo "error: cannot resolve a tag shape of v<major>.<minor>.<patch>[-pre]"; \
+	    echo "       resolved TAG=$$TAG (empty = no tags reachable)"; \
+	    echo "       fix: checkout a tag (git checkout v0.5.0-rc1)"; \
+	    echo "       or set EDIKT_LOCAL_TAG=v0.5.0-rc1 make install-local"; \
+	    exit 1 ;; \
+	esac; \
 	echo "Installing working tree as $$TAG"; \
 	EDIKT_LAUNCHER_SOURCE="$(REPO_ROOT)/bin/edikt" \
 	EDIKT_INSTALL_SOURCE="$(REPO_ROOT)" \
