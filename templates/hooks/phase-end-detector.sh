@@ -131,10 +131,21 @@ for dir in "$PLAN_DIR" "$BASE/product/plans" "docs/plans" "docs/product/plans"; 
   fi
 done
 
-# Log detection regardless of whether we can evaluate
+# Log detection regardless of whether we can evaluate. Build the event JSON via
+# json.dumps (INV-003) so a plan filename containing quotes or newlines cannot
+# corrupt events.jsonl.
 TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
 mkdir -p "$HOME/.edikt" 2>/dev/null || true
-echo "{\"ts\":\"${TIMESTAMP}\",\"event\":\"phase_completion_detected\",\"plan\":\"$(basename "$PLAN_FILE")\",\"phase\":${PHASE_NUM}}" >> "$HOME/.edikt/events.jsonl" 2>/dev/null || true
+python3 - "$TIMESTAMP" "$(basename "$PLAN_FILE")" "$PHASE_NUM" "$HOME/.edikt/events.jsonl" <<'PY' 2>/dev/null || true
+import json, sys
+ts, plan, phase_str, out = sys.argv[1:5]
+try:
+    phase = int(phase_str)
+except (TypeError, ValueError):
+    phase = phase_str
+with open(out, 'a', encoding='utf-8') as f:
+    f.write(json.dumps({"ts": ts, "event": "phase_completion_detected", "plan": plan, "phase": phase}) + "\n")
+PY
 
 # ─── Auto-generate criteria sidecar if missing ───────────────────────────────
 # The sidecar is where evaluation value lives: fail_count, verify commands,
@@ -280,8 +291,22 @@ EVAL_OUTPUT=$(claude -p "$PROMPT" \
 
 EVAL_EXIT=$?
 
-# Log the evaluation event
-echo "{\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)\",\"event\":\"phase_evaluation\",\"plan\":\"$(basename "$PLAN_FILE")\",\"phase\":${PHASE_NUM},\"exit\":${EVAL_EXIT}}" >> "$HOME/.edikt/events.jsonl" 2>/dev/null || true
+# Log the evaluation event via json.dumps (INV-003).
+EVAL_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
+python3 - "$EVAL_TS" "$(basename "$PLAN_FILE")" "$PHASE_NUM" "$EVAL_EXIT" "$HOME/.edikt/events.jsonl" <<'PY' 2>/dev/null || true
+import json, sys
+ts, plan, phase_str, exit_str, out = sys.argv[1:6]
+try:
+    phase = int(phase_str)
+except (TypeError, ValueError):
+    phase = phase_str
+try:
+    exit_code = int(exit_str)
+except (TypeError, ValueError):
+    exit_code = exit_str
+with open(out, 'a', encoding='utf-8') as f:
+    f.write(json.dumps({"ts": ts, "event": "phase_evaluation", "plan": plan, "phase": phase, "exit": exit_code}) + "\n")
+PY
 
 # Check verdict
 if echo "$EVAL_OUTPUT" | grep -qE 'VERDICT:\s*PASS|Result:\s*PASS|All criteria PASS'; then

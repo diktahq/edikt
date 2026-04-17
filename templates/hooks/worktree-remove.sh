@@ -22,7 +22,13 @@ except Exception:
 
 mkdir -p "$HOME/.edikt" 2>/dev/null || true
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
-printf '{"ts":"%s","event":"worktree_remove","worktree":"%s"}\n' "$TS" "${WORKTREE_PATH:-unknown}" \
-    >> "$HOME/.edikt/events.jsonl" 2>/dev/null || true
+# Build the event via json.dumps (INV-003) — `printf '%s'` is not JSON-escape-safe
+# and a worktree path with a quote or newline would corrupt the line.
+python3 - "$TS" "${WORKTREE_PATH:-unknown}" "$HOME/.edikt/events.jsonl" <<'PY' 2>/dev/null || true
+import json, sys
+ts, path, out = sys.argv[1:4]
+with open(out, 'a', encoding='utf-8') as f:
+    f.write(json.dumps({"ts": ts, "event": "worktree_remove", "worktree": path}) + "\n")
+PY
 
 printf '{"continue": true}\n'
