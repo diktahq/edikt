@@ -36,6 +36,25 @@ jobs:
           # Hook characterization tests run by default (Phase 11b).
           # No EDIKT_SKIP_HOOK_TESTS needed — they are opt-out, not opt-in.
 
+  # ─── Governance compile quality gate ─────────────────────────────────────────
+  governance-quality:
+    name: Go compile quality (golden-file test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/gov-compile/go.mod
+          cache-dependency-path: tools/gov-compile/go.sum
+
+      - name: gov compile golden-file test
+        run: |
+          cd tools/gov-compile
+          go test ./cmd/gov -run TestCompileGolden -timeout=60s -v
+
   # ─── Layer 2: Agent SDK integration tests (tag push only, needs API) ─────────
   integration:
     name: SDK integration (Layer 2)
