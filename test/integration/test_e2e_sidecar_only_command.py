@@ -141,7 +141,7 @@ async def test_sidecar_only_creates_file_when_missing(
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_sidecar_only),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -240,7 +240,7 @@ async def test_sidecar_only_preserves_existing_pass_results(
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_sidecar_only),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -328,7 +328,7 @@ async def test_sidecar_only_adds_new_phase_from_plan(
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_sidecar_only),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -398,7 +398,7 @@ async def test_sidecar_only_error_when_plan_not_found(
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_sidecar_only),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)

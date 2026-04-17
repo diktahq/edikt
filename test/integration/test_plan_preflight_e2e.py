@@ -174,7 +174,7 @@ async def _run_plan_against_fixture(
     """Invoke /edikt:sdlc:plan <spec_id> against the fixture. Return (full_output, plan_path, api_ms)."""
     options = ClaudeAgentOptions(
         cwd=str(project),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
         model="claude-opus-4-7",
         effort="medium",
     )
@@ -329,7 +329,7 @@ async def test_adversarial_skip_pressure_is_rejected(tmp_path: Path) -> None:
     # Inject the adversarial framing directly alongside the command
     options = ClaudeAgentOptions(
         cwd=str(project),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
         model="claude-opus-4-7",
         effort="medium",
     )

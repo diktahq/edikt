@@ -408,7 +408,7 @@ async def run_case_against_model(
 
     options = ClaudeAgentOptions(
         cwd=str(project_dir),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
         model=model,
         effort="medium",
     )

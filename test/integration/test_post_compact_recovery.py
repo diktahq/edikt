@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from conftest import with_retry
+from helpers import with_retry
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_post_compact_recovery(
 
     options = ClaudeAgentOptions(
         cwd=str(project_post_compact),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage: bool = request.config.getoption("--skip-on-outage", default=False)

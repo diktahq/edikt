@@ -195,7 +195,7 @@ async def test_adr_new_interview_all_fields_populated(
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
         cwd=str(fresh_project),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage: bool = request.config.getoption("--skip-on-outage", default=False)
@@ -333,7 +333,7 @@ async def test_adr_new_interview_skipped_prompts_produce_empty_fields(
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
         cwd=str(fresh_project),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage: bool = request.config.getoption("--skip-on-outage", default=False)
@@ -437,7 +437,7 @@ async def test_adr_new_interview_round_trips_through_compile(
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
         cwd=str(fresh_project),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage: bool = request.config.getoption("--skip-on-outage", default=False)

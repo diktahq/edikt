@@ -28,7 +28,7 @@ edikt install
 ### Any platform (via curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 ```
 
 Installs the launcher (`bin/edikt`) and fetches the payload (templates, commands, hooks) to `~/.edikt/`. No dependencies, no build step, no runtime — just files.

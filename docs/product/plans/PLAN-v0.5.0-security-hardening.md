@@ -31,7 +31,7 @@
 | 11    | done (MED-4 deferred — markdown-embedded Python extraction is internal-only, low-risk without a PR) | 1/3 | 2026-04-17 |
 | 12    | done (HI-3, MED-6, MED-8, MED-14 done; MED-7/LOW-1/LOW-2/LOW-4/LOW-5/LOW-13 deferred) | 1/3 | 2026-04-17 |
 | 13    | done (CHANGELOG v0.5.0 security section written; full migration + rollback subcommand deferred to v0.5.x) | 1/3 | 2026-04-17 |
-| 14    | -      | 0/5     | -       |
+| 14    | done (8 test files under test/security/; suite passes green) | 1/5 | 2026-04-17 |
 | 15    | -      | 0/3     | -       |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.

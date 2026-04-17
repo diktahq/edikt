@@ -90,7 +90,7 @@ async def test_artifacts_from_accepted_spec(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -172,7 +172,7 @@ async def test_artifacts_blocked_for_draft_spec(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -258,7 +258,7 @@ async def test_artifacts_api_contract_when_spec_has_endpoints(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -353,7 +353,7 @@ async def test_artifacts_references_database_type_from_spec(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)

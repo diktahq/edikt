@@ -26,7 +26,7 @@ Before upgrading the project, edikt checks if a newer version is available on Gi
 📦 edikt 0.2.0 is available (you have 0.1.3).
 
   Update now:
-    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+    curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 
   Then re-run /edikt:upgrade to apply changes to this project.
   To skip this check: /edikt:upgrade --offline

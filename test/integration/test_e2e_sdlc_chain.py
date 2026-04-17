@@ -62,7 +62,7 @@ async def test_sdlc_spec_from_accepted_prd(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -171,7 +171,7 @@ source_prd: PRD-001
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -260,7 +260,7 @@ This PRD is draft and must not be processed by /edikt:sdlc:spec.
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_accepted_prd),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)

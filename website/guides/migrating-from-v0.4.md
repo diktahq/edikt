@@ -22,7 +22,7 @@ Your existing config (`~/.edikt/config.yaml`), ADRs, specs, plans, and project f
 brew upgrade edikt
 
 # curl
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 ```
 
 ### 2. Preview the migration
