@@ -1,0 +1,15 @@
+language: go
+architecture: flat
+components: []
+rules:
+    structure:
+        forbidden_dirs:
+            - utils/
+            - helpers/
+    functions:
+        max_lines: 80
+        max_params: 4
+        max_return_values: 2
+templates:
+    source: verikt/cli
+guide: {}
