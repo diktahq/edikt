@@ -12,7 +12,8 @@ on:
         default: true
 
 permissions:
-  contents: write  # upload release assets
+  contents: write   # upload release assets
+  id-token: write   # Sigstore keyless signing via GitHub OIDC (ADR-016)
 
 jobs:
   # ─── Build tarballs and upload release assets ────────────────────────────────
@@ -36,8 +37,22 @@ jobs:
             # workflow_dispatch: derive from latest tag
             VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
           fi
+          # Strict tag-shape gate (HI-8, INV-006): block releases for any tag
+          # that doesn't match the v0.5.0+ format. A crafted tag would otherwise
+          # flow into sed/cat/PR-body interpolations in the bump-tap job.
+          case "v${VERSION}" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            v[0-9]*.[0-9]*.[0-9]*-*) ;;
+            *)
+              echo "::error::Invalid version shape: v${VERSION} — must match v<major>.<minor>.<patch>[-prerelease]"
+              exit 1
+              ;;
+          esac
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building release for v$VERSION"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Build launcher tarball
         run: |
@@ -69,6 +84,18 @@ jobs:
           LAUNCHER_SHA=$(awk '/edikt-v[^-]/ {print $1}' SHA256SUMS)
           echo "launcher_sha256=$LAUNCHER_SHA" >> "$GITHUB_OUTPUT"
 
+      - name: Sign SHA256SUMS with Sigstore keyless (ADR-016)
+        run: |
+          # Keyless signing via GitHub OIDC. The bundle carries the certificate
+          # and the signature — no separate .pem or .sig files (ADR-016 drops
+          # the redundant extras). Verification uses --certificate-identity-regexp
+          # to match the workflow identity at any release tag.
+          cosign sign-blob --yes \
+            --bundle SHA256SUMS.sig.bundle \
+            SHA256SUMS
+          echo "Signed SHA256SUMS. Bundle contents:"
+          ls -la SHA256SUMS.sig.bundle
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
@@ -76,6 +103,7 @@ jobs:
             edikt-v${{ steps.version.outputs.version }}.tar.gz
             edikt-payload-v${{ steps.version.outputs.version }}.tar.gz
             SHA256SUMS
+            SHA256SUMS.sig.bundle
           fail_on_unmatched_files: true
 
   # ─── Bump the Homebrew tap formula on a staging branch ───────────────────────

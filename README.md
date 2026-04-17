@@ -32,7 +32,31 @@ edikt install
 ### Any platform (via curl)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+```
+
+The install URL is pinned to a specific release tag (INV-008). Tracking `main` is forbidden — a push would otherwise ship to every new install immediately.
+
+The installer verifies the release artifacts against a Sigstore-signed `SHA256SUMS` (ADR-016). Install `cosign` first for full verification:
+
+```bash
+brew install cosign             # macOS
+# Linux: see https://docs.sigstore.dev/cosign/installation
+```
+
+Without cosign, the installer aborts unless you pass `EDIKT_INSTALL_INSECURE=1` (prints a loud banner; TLS-only trust, not recommended).
+
+To verify manually after install:
+
+```bash
+TAG=v0.5.0
+curl -fsSL -o /tmp/SHA256SUMS              https://github.com/diktahq/edikt/releases/download/${TAG}/SHA256SUMS
+curl -fsSL -o /tmp/SHA256SUMS.sig.bundle   https://github.com/diktahq/edikt/releases/download/${TAG}/SHA256SUMS.sig.bundle
+cosign verify-blob \
+  --bundle /tmp/SHA256SUMS.sig.bundle \
+  --certificate-identity-regexp '^https://github\.com/diktahq/edikt/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+  /tmp/SHA256SUMS
 ```
 
 Then open any project in Claude Code and say "initialize edikt" or run `/edikt:init`.

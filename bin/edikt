@@ -16,7 +16,7 @@ umask 022
 # ─── Constants ──────────────────────────────────────────────────────────────
 LAUNCHER_VERSION="0.5.0"
 MIN_PAYLOAD_VERSION="0.5.0"
-RELEASE_TARBALL_BASE="https://github.com/diktahq/edikt/archive/refs/tags"
+RELEASE_TARBALL_BASE="https://github.com/diktahq/edikt/releases/download"
 
 # Exit codes (per SPEC-004 §2)
 EX_OK=0
@@ -645,7 +645,9 @@ cmd_install() {
     tarball_sha=""
 
     if [ -z "$src" ]; then
-        url="$RELEASE_TARBALL_BASE/$tag.tar.gz"
+        # ADR-016: download the published release asset, not the auto-generated
+        # source archive. The release asset is what SHA256SUMS signs over.
+        url="$RELEASE_TARBALL_BASE/$tag/edikt-payload-$tag.tar.gz"
         if ! command -v curl >/dev/null 2>&1; then
             log_err "curl not found; cannot fetch $url"
             cleanup_staging
