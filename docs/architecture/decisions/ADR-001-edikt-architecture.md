@@ -165,6 +165,7 @@ Building for the lowest common denominator would mean losing everything that mak
 ## Directives
 
 [edikt:directives:start]: #
+topic: architecture
 paths:
   - "**/*"
 scope:

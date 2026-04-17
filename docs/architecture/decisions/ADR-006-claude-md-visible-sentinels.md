@@ -41,6 +41,7 @@ Markdown link reference definitions (`[label]: url`) are:
 ## Directives
 
 [edikt:directives:start]: #
+topic: hooks
 paths:
   - "templates/CLAUDE.md.tmpl"
   - "commands/init.md"

@@ -135,6 +135,7 @@ How to verify this decision is being followed:
 ## Directives
 
 [edikt:directives:start]: #
+topic: extensibility
 paths:
   - "commands/upgrade.md"
   - "commands/doctor.md"

@@ -87,6 +87,7 @@ The carve-out is justified only when the existing content violates INV-003 or IN
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: hooks
 paths:
   - "templates/hooks/subagent-stop.sh"
   - "templates/hooks/file-changed.sh"

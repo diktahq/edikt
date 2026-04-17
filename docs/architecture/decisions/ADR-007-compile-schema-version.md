@@ -87,6 +87,7 @@ These are for humans opening the file to answer "when was this last compiled and
 ## Directives
 
 [edikt:directives:start]: #
+topic: compile
 paths:
   - "commands/gov/compile.md"
   - "commands/doctor.md"

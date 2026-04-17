@@ -116,6 +116,7 @@ To verify this ADR is in effect, check that:
 source_hash: 6846bed4ed6ccdf818545a9c78ce5ab9f86c57c1d0bbebaa6968ff877f688bfd
 directives_hash: de2a16e7f0032d06217e3eb44b40f16daa55e8dfecb13264a71bda75ae124330
 compiler_version: "0.6.0"
+topic: architecture
 paths:
   - "install.sh"
   - "bin/edikt"

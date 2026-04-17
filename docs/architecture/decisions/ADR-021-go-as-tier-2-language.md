@@ -109,6 +109,7 @@ We will adopt **Go** as the language for tier-2 deterministic helpers.
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: tooling
 paths:
   - "tools/**"
   - ".github/workflows/release.yml"

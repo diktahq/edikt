@@ -117,6 +117,7 @@ mechanism — it is an escape hatch for environments where interactive login is 
 source_hash: ""
 directives_hash: ""
 compiler_version: "0.4.3"
+topic: agent-rules
 paths:
   - "test/integration/**/*.py"
   - "test/integration/conftest.py"

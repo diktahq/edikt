@@ -125,6 +125,7 @@ The `permissions` block is edikt-managed. Integrity is tracked via the sidecar m
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: hooks
 paths:
   - "templates/settings.json.tmpl"
   - "install.sh"

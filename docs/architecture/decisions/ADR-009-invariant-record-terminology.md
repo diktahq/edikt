@@ -127,6 +127,7 @@ Guidelines stay as guidelines. They can still use numeric IDs if desired (`GL-00
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.3.0"
+topic: compile
 paths:
   - "commands/invariant/new.md"
   - "commands/invariant/compile.md"

@@ -27,7 +27,10 @@ type Sentinel struct {
 	CompilerVersion string `yaml:"compiler_version,omitempty"`
 
 	// Group assignment (optional per ADR-020; required in v0.7.0).
-	Topic string `yaml:"topic,omitempty"`
+	// Topics holds all topic names (one or more). Topic is derived as the
+	// first element and kept for callers that only need a single value.
+	Topics []string `yaml:"topics,omitempty"`
+	Topic  string   `yaml:"topic,omitempty"` // derived: Topics[0] after parse
 
 	// Grouping metadata copied from the source sentinel into the compiled
 	// topic file.
@@ -58,22 +61,26 @@ const (
 	sentinelClose = "[edikt:directives:end]: #"
 )
 
-// ExtractSentinel finds the first edikt directive sentinel block and parses
-// its YAML body. If the block is absent, returns Sentinel{Present: false}
-// with no error — a missing block is a valid state and the caller decides
-// how to handle it (legacy one-shot LLM generation path).
+// ExtractSentinel finds the first edikt directive sentinel block that starts
+// at the beginning of a line and parses its YAML body. Inline occurrences
+// (e.g. in code fences or backtick spans) are skipped — only a sentinel
+// whose open marker begins at column 0 is treated as the live block.
+//
+// If the block is absent, returns Sentinel{Present: false} with no error —
+// a missing block is a valid state and the caller decides how to handle it
+// (legacy one-shot LLM generation path).
 func ExtractSentinel(body string) (Sentinel, error) {
 	var s Sentinel
 
-	openIdx := strings.Index(body, sentinelOpen)
+	openIdx := findLineStart(body, sentinelOpen)
 	if openIdx == -1 {
 		return s, nil
 	}
-	closeIdx := strings.Index(body[openIdx:], sentinelClose)
+	closeIdx := findLineStart(body[openIdx+len(sentinelOpen):], sentinelClose)
 	if closeIdx == -1 {
 		return s, fmt.Errorf("sentinel block opened but not closed")
 	}
-	closeIdx += openIdx // absolute position of the closing marker's first byte
+	closeIdx += openIdx + len(sentinelOpen) // absolute position of the closing marker's first byte
 	closeEnd := closeIdx + len(sentinelClose)
 
 	// Inner YAML is between the end of the open marker's line and the start
@@ -107,6 +114,61 @@ func (d *Document) BodyExcludingSentinel() string {
 		return d.Body
 	}
 	return d.Body[:d.Sentinel.StartByte] + d.Body[d.Sentinel.EndByte:]
+}
+
+// findLineStart searches for the first occurrence of needle that begins at
+// column 0 (i.e. is either at the start of body or immediately after a '\n')
+// AND is not inside a fenced code block (``` or ~~~).
+// Returns the byte offset of the match, or -1 if not found.
+func findLineStart(body, needle string) int {
+	// Build a set of code-fence regions so we can skip matches inside them.
+	// A code fence is a line that starts with ``` or ~~~.
+	type region struct{ start, end int }
+	var fenced []region
+	{
+		lines := strings.Split(body, "\n")
+		pos := 0
+		inFence := false
+		fenceStart := 0
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if !inFence && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
+				inFence = true
+				fenceStart = pos
+			} else if inFence && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
+				fenced = append(fenced, region{fenceStart, pos + len(line)})
+				inFence = false
+			}
+			pos += len(line) + 1 // +1 for the '\n' removed by Split
+		}
+	}
+
+	inFencedRegion := func(abs int) bool {
+		for _, r := range fenced {
+			if abs >= r.start && abs <= r.end {
+				return true
+			}
+		}
+		return false
+	}
+
+	offset := 0
+	for {
+		idx := strings.Index(body[offset:], needle)
+		if idx == -1 {
+			return -1
+		}
+		abs := offset + idx
+		// Must be at column 0 and not inside a code fence.
+		if (abs == 0 || body[abs-1] == '\n') && !inFencedRegion(abs) {
+			return abs
+		}
+		// Skip past this false-positive and continue searching.
+		offset = abs + 1
+		if offset >= len(body) {
+			return -1
+		}
+	}
 }
 
 // parseSentinelBlock parses the inner content of a sentinel block using a
@@ -205,7 +267,22 @@ func parseSentinelBlock(inner string) (Sentinel, error) {
 		case "compiler_version":
 			s.CompilerVersion = v
 		case "topic":
-			s.Topic = v
+			// Support both scalar ("topic: hooks") and inline YAML list
+			// ("topic: [hooks, agent-rules]").
+			if strings.HasPrefix(rest, "[") && strings.HasSuffix(rest, "]") {
+				inner := rest[1 : len(rest)-1]
+				for _, part := range strings.Split(inner, ",") {
+					t := strings.TrimSpace(strings.Trim(part, `"'`))
+					if t != "" {
+						s.Topics = append(s.Topics, t)
+					}
+				}
+			} else {
+				s.Topics = []string{v}
+			}
+			if len(s.Topics) > 0 {
+				s.Topic = s.Topics[0]
+			}
 		}
 	}
 
