@@ -202,12 +202,29 @@ def build_project(tmp_path: Path, setup: dict[str, Any] | None) -> Path:
     if repo_agents.is_dir():
         shutil.copytree(repo_agents, project / ".claude" / "agents")
 
-    # 3. Copy settings (permissions, hooks, etc.). The local overrides
-    #    settings.local.json stay out — those are per-machine.
-    repo_settings = repo_root / ".claude" / "settings.json"
-    if repo_settings.is_file():
-        (project / ".claude").mkdir(exist_ok=True)
-        shutil.copy2(repo_settings, project / ".claude" / "settings.json")
+    # 3. Write a curated minimal settings.json into the sandbox (INV-007;
+    #    closes audit HI-10). Previously the host's .claude/settings.json
+    #    was copied verbatim — any maintainer-local hooks would fire against
+    #    adversarial corpus prompts. The sandbox gets only the permissions
+    #    needed to run the benchmark; NO `hooks` key.
+    (project / ".claude").mkdir(exist_ok=True)
+    _hermetic_settings = {
+        "permissions": {
+            "defaultMode": "askBeforeAllow",
+            "allow": [
+                "Read(**)", "Glob", "Grep", "Edit(**)", "Write(**)",
+                "Bash(pytest :*)", "Bash(./test/run.sh)",
+            ],
+            "deny": [
+                "WebFetch(http://**)", "Bash(curl http://**)",
+                "Bash(rm -rf /**)", "Bash(rm -rf ~/**)", "Bash(sudo **)",
+            ],
+        },
+    }
+    import json as _json
+    (project / ".claude" / "settings.json").write_text(
+        _json.dumps(_hermetic_settings, indent=2) + "\n"
+    )
 
     # 4. Real .edikt/config.yaml (overrides the synthetic one written above
     #    unless the case provides a config override).
@@ -226,7 +243,11 @@ def build_project(tmp_path: Path, setup: dict[str, Any] | None) -> Path:
         if src.is_dir():
             dst = project / dst_rel
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(src, dst, dirs_exist_ok=True)
+            # symlinks=True: preserve symlinks as links, do NOT follow them.
+            # LOW-8: a symlink planted under docs/architecture/ would otherwise
+            # dereference to sensitive content (~/.ssh/, keychains) and be
+            # accessible to the model inside the sandbox.
+            shutil.copytree(src, dst, dirs_exist_ok=True, symlinks=True)
 
     # 6. CLAUDE.md with the real edikt sentinel block from the repo (intent
     #    table, "Before Writing Code", etc.) so the model gets the exact same
