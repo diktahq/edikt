@@ -32,25 +32,57 @@ make dev-global-off   # reverts to last real release
 
 ---
 
+## Tier-1 vs tier-2 tools
+
+edikt has two tiers of tooling. The distinction is formalized in [ADR-015](docs/architecture/decisions/ADR-015-tier-2-tooling-carve-out.md).
+
+**Tier-1 (core)**
+- Pure markdown. No compiled code, no build step, no runtime dependencies.
+- Installed by `install.sh`.
+- INV-001 applies verbatim: every command and template is a `.md` or `.yaml` file.
+- Lives under `commands/` and `templates/`.
+
+**Tier-2 (optional)**
+- May depend on packages (e.g., Python SDK).
+- Installed via `./bin/edikt install <tool>` — never bundled in `install.sh`.
+- Must live under `tools/<tool>/` with a `pyproject.toml` pinning exact package versions (`==` only — no floating ranges).
+- Must install into an isolated environment (`~/.edikt/venv/<tool>/`) — never into ambient system Python.
+- Must not modify any tier-1 command, config, or state at install or uninstall time.
+- After `edikt uninstall <tool>`, all tier-1 file checksums must be byte-equal to their pre-install state.
+
+**`/edikt:gov:benchmark`** (`tools/gov-benchmark/`) is the first tier-2 tool. Attack-prompt templates live under `templates/attacks/` and must pass the discriminative-power test (AC-020) — verified via `test/integration/benchmarks/`.
+
+**Adding a new tier-2 tool:**
+
+1. Create `tools/<tool>/` with `pyproject.toml` (exact version pins)
+2. Create `commands/gov/<tool>.md` or appropriate command file with `tier: 2` in frontmatter
+3. Add install/uninstall logic to `bin/edikt` under the `install` subcommand
+4. Add parity test between the markdown command and its Python helper
+5. Document in `CONTRIBUTING.md` and `website/commands/`
+
 ## Project structure
 
 ```
 edikt/
 ├── commands/           # Slash commands (.md files, no build step)
 │   ├── sdlc/           # PRD, spec, artifacts, plan, drift, review, audit
-│   ├── gov/            # compile, review, score, sync, rules-update
+│   ├── gov/            # compile, review, score, sync, rules-update, benchmark
 │   ├── adr/            # new, compile, review
 │   └── ...
 ├── templates/
-│   ├── agents/         # Specialist agent templates
-│   ├── hooks/          # Lifecycle hook scripts (.sh)
-│   └── rules/          # Rule pack templates
+│   ├── agents/         # Specialist agent templates (20 total)
+│   ├── hooks/          # Lifecycle hook scripts (.sh, 20 lifecycle hooks + 1 helper)
+│   ├── attacks/        # Attack-prompt templates for gov:benchmark (tier-2)
+│   └── rules/          # Rule pack templates (20 total)
+├── tools/
+│   └── gov-benchmark/  # Tier-2: Python helper for adversarial benchmark
 ├── bin/edikt           # POSIX sh launcher (versioning, migration, doctor)
 ├── install.sh          # Bootstrap: installs the launcher
 ├── test/
 │   ├── run.sh          # Main test runner (all layers)
 │   ├── unit/           # Layer 1: hook + launcher unit tests (bash)
 │   └── integration/    # Layer 2: SDK tests + offline Python tests
+│       └── benchmarks/ # Discriminative-power tests for attack templates
 └── docs/
     ├── architecture/decisions/     # ADRs
     └── architecture/invariants/    # Invariant Records

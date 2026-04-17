@@ -24,6 +24,8 @@ features:
     details: "Critical findings block progression automatically. A hardcoded JWT secret stops the build until resolved. Overrides are logged with git identity — you see who approved what, on which project. No silent failures."
   - title: Natural language, not commands
     details: "Say 'what's our status?' and Claude shows the governance dashboard. Say 'write a PRD for X' and Claude generates structured requirements. Say 'does the implementation match the spec?' and Claude runs drift detection. You talk. edikt handles the rest."
+  - title: Governance benchmark
+    details: "Test whether your directives hold under adversarial prompts. /edikt:gov:benchmark runs attack prompts against every directive with a behavioral_signal block and reports PASS/FAIL/SKIP. Measure your directives, not just write them."
   - title: Zero dependencies
     details: "Every file is .md or .yaml. No build step, no runtime, no daemon, no lock-in. curl | bash to install. If you stop using edikt, the files stay — plain markdown you own, read, edit, and version-control."
 ---

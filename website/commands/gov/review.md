@@ -80,6 +80,15 @@ docs/architecture/decisions/ADR-003.md (4 directives)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
+## Shared directive-quality sub-procedure (v0.5.0)
+
+`/edikt:gov:review` now invokes the same directive-quality sub-procedure as `/edikt:gov:compile` (`commands/gov/_shared-directive-checks.md`). This means running review is equivalent to running compile's quality checks — without writing any files.
+
+The sub-procedure covers:
+- **FR-003a** — warns on multi-sentence directives without `canonical_phrases`
+- **FR-003b** — warns when a `canonical_phrase` does not appear in the directive body
+- **`no-directives` reason validation** — if `no-directives:` is present, the reason must be ≥ 10 characters and not a placeholder (`tbd`, `todo`, `fix later`)
+
 ## Why this matters
 
 edikt's experiments ([EXP-001](/experiments/exp-001-rule-compliance) and [EXP-002](/experiments/exp-002-extended-compliance)) ran 123 eval scenarios and showed that well-written rules achieve 100% compliance on conventions Claude has never seen in training. The rule text is the mechanism — not the enforcement layer on top. This means governance quality is directly proportional to how well the documents are written.

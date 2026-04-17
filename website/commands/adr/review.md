@@ -17,6 +17,40 @@ This is a scoped shortcut for running `/edikt:gov:review` targeting ADRs only.
 |----------|-------------|
 | (none) | Review all ADRs in `docs/decisions/` |
 | `ADR-NNN` | Review a specific ADR |
+| `--backfill` | Interactive retrofit: populate `canonical_phrases` on existing multi-sentence ADRs |
+
+## Soft-language markers (v0.5.0)
+
+In addition to the four quality dimensions below, the review now flags six soft-language markers in directive bodies:
+
+| Marker | Why it's flagged | Suggested replacement |
+|---|---|---|
+| `should` | Implies optionality | `MUST` |
+| `ideally` | Suggests best effort | `MUST` |
+| `prefer` | Non-mandatory | `MUST` (positive) or `NEVER` (negative) |
+| `try to` | Effort without commitment | `MUST` |
+| `might` | Probabilistic framing | Rewrite as definitive |
+| `consider` | Advisory, not directive | `MUST evaluate X` or remove |
+
+For each flagged occurrence, the review shows the directive text, the marker, and a suggested replacement using `MUST` or `NEVER` with one-clause reasoning.
+
+## `--backfill` flag (v0.5.0)
+
+Retrofit `canonical_phrases` onto existing multi-sentence ADRs interactively:
+
+```bash
+/edikt:adr:review --backfill
+```
+
+For each ADR with a multi-sentence directive and no `canonical_phrases`:
+
+1. The command proposes 2–3 candidate phrases derived from a noun/verb heuristic applied to the directive body
+2. It shows the rationale for each candidate
+3. You approve (`y`), skip (`n`), or edit (`e`) before the field is written
+
+The `[e]dit` option opens an inline editor for the phrase list before confirming. One ADR at a time; `Ctrl+C` to stop without losing already-completed ADRs.
+
+After backfill, re-run `/edikt:gov:compile` to pick up the new phrases.
 
 ## What it checks
 

@@ -96,7 +96,7 @@ One screen. Say "looks good" when the selection is right. Toggle anything by nam
   ✓ Project context docs/project-context.md
   ✓ Rules           6 packs → .claude/rules/
   ✓ Agents          5 specialists → .claude/agents/
-  ✓ Hooks           .claude/settings.json (9 behaviors)
+  ✓ Hooks           .claude/settings.json (20 behaviors)
   ✓ CLAUDE.md       updated
   ✓ Directories     docs/architecture/, docs/plans/, docs/product/
 ```
@@ -108,7 +108,7 @@ One screen. Say "looks good" when the selection is right. Toggle anything by nam
 | `.edikt/config.yaml` | Governance configuration (includes detected database type and artifacts settings) |
 | `.claude/rules/*.md` | Rule packs (tagged `<!-- edikt:generated -->`) |
 | `.claude/agents/*.md` | Specialist agents matched to your stack |
-| `.claude/settings.json` | 9 automatic behaviors (see below) |
+| `.claude/settings.json` | 20 automatic behaviors (see below) |
 | `CLAUDE.md` | Project block (safe merge — never overwrites existing content) |
 | `docs/project-context.md` | Project identity |
 | `docs/architecture/` | Decisions + invariants directories with READMEs |
@@ -116,7 +116,7 @@ One screen. Say "looks good" when the selection is right. Toggle anything by nam
 
 ### Automatic behaviors
 
-9 lifecycle hooks, described by what they do:
+20 lifecycle hooks, described by what they do:
 
 | Behavior | What happens |
 |----------|-------------|

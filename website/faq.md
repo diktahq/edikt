@@ -21,7 +21,7 @@ You say "what's our status?" and Claude shows the governance dashboard. You say 
 
 Beyond the conversational experience, the structural difference:
 
-- **Lifecycle hooks** — 9 hooks that fire automatically. You don't remind Claude to follow standards; the hooks enforce them. (You stop re-explaining.)
+- **Lifecycle hooks** — 20 hooks that fire automatically. You don't remind Claude to follow standards; the hooks enforce them. (You stop re-explaining.)
 - **Governance chain** — PRD → spec → artifacts → plan → execute → drift detection. Every decision is traceable. (You verify instead of trust.)
 - **Compiled directives** — your ADRs and invariants become enforcement rules. Update the decision, recompile. (Decisions persist instead of drift.)
 - **Quality gates** — Critical findings block progression. Overrides are logged. (Standards are enforced, not suggested.)
