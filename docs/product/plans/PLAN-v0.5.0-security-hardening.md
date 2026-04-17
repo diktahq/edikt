@@ -29,7 +29,7 @@
 | 9     | done   | 1/3     | 2026-04-17 |
 | 10    | done   | 1/3     | 2026-04-17 |
 | 11    | done (MED-4 deferred — markdown-embedded Python extraction is internal-only, low-risk without a PR) | 1/3 | 2026-04-17 |
-| 12    | -      | 0/3     | -       |
+| 12    | done (HI-3, MED-6, MED-8, MED-14 done; MED-7/LOW-1/LOW-2/LOW-4/LOW-5/LOW-13 deferred) | 1/3 | 2026-04-17 |
 | 13    | -      | 0/3     | -       |
 | 14    | -      | 0/5     | -       |
 | 15    | -      | 0/3     | -       |
