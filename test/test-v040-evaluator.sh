@@ -34,8 +34,14 @@ fi
 assert_file_contains "$EVALUATOR_HEADLESS" "incomplete until proven" \
   "Headless has skeptical stance"
 
-assert_file_contains "$EVALUATOR_HEADLESS" "PHASE EVALUATION" \
+# ADR-018 replaced the v0.4.0 "PHASE EVALUATION" plaintext header with a
+# JSON-verdict contract defined by evaluator-verdict.schema.json. The output
+# format section is now the schema-pinned block — assert that plus the
+# verdict enum, not the old plaintext marker.
+assert_file_contains "$EVALUATOR_HEADLESS" "Output Format" \
   "Headless has output format"
+assert_file_contains "$EVALUATOR_HEADLESS" "evaluator-verdict.schema.json" \
+  "Headless output format references ADR-018 verdict schema"
 
 assert_file_contains "$EVALUATOR_HEADLESS" "NEVER modify code" \
   "Headless has read-only constraint"
