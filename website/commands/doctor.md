@@ -31,6 +31,17 @@ Validate governance setup and report what's healthy, what's missing, and how to 
 | Linter sync | ✅ | Config newer than rules → suggest `/edikt:gov:sync` |
 | edikt version | ✅ match | Project version differs from installed → suggest `/edikt:upgrade` |
 
+### Routing-table source-file check (v0.5.0)
+
+Doctor verifies that every ADR and invariant referenced in the routing table inside `.claude/rules/governance.md` exists on disk.
+
+```text
+[!!] Missing source file: docs/architecture/decisions/ADR-012.md
+     (referenced in governance.md routing table but not found on disk)
+```
+
+If a source file is absent, doctor exits non-zero and prints the exact missing path. This catches governance drift after a file rename, move, or accidental deletion.
+
 ### Decision graph validation
 
 Doctor also validates the consistency of the governance graph:

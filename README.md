@@ -4,6 +4,22 @@
 
 edikt compiles your engineering decisions into directives Claude follows automatically — every session, every engineer, every project.
 
+## What's new in v0.5.0
+
+**Stability (SPEC-004)**
+- Hook JSON protocol — all 20 lifecycle hooks now emit structured JSON output conforming to the Claude Code hook protocol
+- Homebrew tap (`brew install diktahq/tap/edikt`) with two-tier update model
+- Provenance frontmatter on generated files with upgrade-safe 3-way diff flow
+
+**Directive hardening + governance benchmark (SPEC-005)**
+- New optional sentinel fields `canonical_phrases` and `behavioral_signal` — backward-compatible, existing ADRs unchanged
+- `/edikt:gov:benchmark` — tier-2 adversarial benchmark; install separately with `./bin/edikt install benchmark`; 2/2 PASS on INV-001 + INV-002 in the dogfood baseline run
+- `/edikt:adr:review` now flags 6 soft-language markers (`should`, `ideally`, `prefer`, `try to`, `might`, `consider`) and adds `--backfill` to retrofit `canonical_phrases` onto existing ADRs
+- `/edikt:gov:compile` orphan ADR detection with warn-then-block semantics; state persisted in `.edikt/state/compile-history.json`
+- `/edikt:doctor` now verifies every ADR/INV cited in the routing table exists on disk
+
+See [CHANGELOG](CHANGELOG.md) for the full release notes.
+
 ## Install
 
 ### macOS / Linux (via Homebrew)
@@ -52,9 +68,9 @@ Without governance, every Claude Code session starts from scratch. Architecture 
 
 - Compiled governance directives Claude reads every session
 - 20 rule packs (Go, TypeScript, Python, Next.js, Django, and more)
-- 18 specialist agents (architect, dba, security, api, qa, sre, and others)
-- 15 lifecycle hooks (plan injection, compaction recovery, quality gates)
-- 34 commands from init through drift detection
+- 20 specialist agents (architect, dba, security, api, qa, sre, and others)
+- 20 lifecycle hooks (plan injection, compaction recovery, quality gates)
+- 35 commands from init through drift detection
 
 ## Documentation
 

@@ -142,7 +142,7 @@ edikt generates everything and shows progress:
   ✓ Project context docs/project-context.md
   ✓ Rules           6 packs → .claude/rules/
   ✓ Agents          5 specialists → .claude/agents/
-  ✓ Hooks           .claude/settings.json (9 behaviors)
+  ✓ Hooks           .claude/settings.json (20 behaviors)
   ✓ CLAUDE.md       updated
   ✓ Directories     docs/architecture/, docs/plans/, docs/product/
 ```
@@ -231,11 +231,11 @@ your-project/
 └── .claude/
     ├── rules/                   # guardrails Claude reads automatically
     ├── agents/                  # specialist agents (stack-matched)
-    ├── settings.json            # 9 automatic behaviors
+    ├── settings.json            # 20 automatic behaviors
     └── CLAUDE.md                # project block + natural language triggers
 ```
 
-**Automatic behaviors (9 lifecycle hooks):**
+**Automatic behaviors (20 lifecycle hooks):**
 
 | Behavior | What happens |
 |----------|-------------|

@@ -172,6 +172,46 @@ v0.3.0 introduces the three-list directive schema, Invariant Records, and compil
 
 ---
 
+## Upgrading to v0.5.0
+
+v0.5.0 ships two spec bundles. Here's what to expect.
+
+**Stability (SPEC-004) — hook JSON protocol**
+
+Hook output migrated from plaintext to JSON. The migration is transparent to most users — user-visible message content is preserved byte-for-byte inside `{"systemMessage": ...}` wrappers. If you consume raw hook stdout in custom tooling, you'll need to unwrap the JSON. See [ADR-014](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-014-hook-json-wrapping-in-stability-scope.md).
+
+**Stability (SPEC-004) — versioned layout migration**
+
+v0.5.0 changes `~/.edikt/` from a flat layout to a versioned one. This is a one-time migration. See [Migrating from v0.4](migrating-from-v0.4.md) for the step-by-step.
+
+**Directive hardening (SPEC-005) — backward-compatible sentinel fields**
+
+Existing ADRs parse without changes. Two new optional fields (`canonical_phrases`, `behavioral_signal`) default to `[]`/`{}` when absent. FR-003a (compile warns on multi-sentence directives without `canonical_phrases`) is warn-only in v0.5.0 — non-blocking. Run `/edikt:adr:review --backfill` to retrofit existing ADRs at your own pace.
+
+**Tier-2 benchmark — opt-in install**
+
+`/edikt:gov:benchmark` is not bundled in `install.sh`. To add it:
+
+```bash
+./bin/edikt install benchmark
+```
+
+This installs the Python helper into `~/.edikt/venv/gov-benchmark/`. No action required if you don't want the benchmark.
+
+**Recommended upgrade steps for v0.5.0:**
+
+```text
+1. Update launcher:  brew upgrade edikt  OR  curl -fsSL ... | bash
+2. Migrate layout:   edikt migrate --yes
+3. Upgrade project:  /edikt:upgrade  (in Claude Code)
+4. Recompile:        /edikt:gov:compile
+5. Optional:         ./bin/edikt install benchmark
+6. Optional:         /edikt:adr:review --backfill   # populate canonical_phrases
+7. Commit:           git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.5.0"
+```
+
+---
+
 ## Checking if a project needs upgrading
 
 > "What's our status?"

@@ -9,6 +9,16 @@ Capture an Architecture Decision Record — from scratch or extracted from the c
 /edikt:adr:new                                  ← extracts from current conversation
 ```
 
+## Interview prompts for new sentinel fields
+
+When capturing a new ADR, three additional prompts follow the core decision capture prompts. They populate the `canonical_phrases` and `behavioral_signal` sentinel fields:
+
+1. **Canonical phrases** — "What 2–3 words or short phrases should a compliant model refusal echo back? (e.g., 'never compiled', 'plain markdown', 'no build step'). Skip to leave empty."
+2. **Signal type** — "Does this directive have a machine-testable violation signal? Options: `refuse_tool`, `refuse_to_write`, `cite`, `refuse_edit_matching_frontmatter`, or skip."
+3. **Signal value** — (follows based on signal type selected) — e.g., tool names, path substrings, or frontmatter predicate fields.
+
+Skipping any prompt produces empty values — `canonical_phrases: []` or `behavioral_signal: {}`. No error, no prompt repeat. You can retrofit these fields later with `/edikt:adr:review --backfill`.
+
 ## What is an ADR?
 
 An Architecture Decision Record captures a significant technical choice with its context, reasoning, alternatives considered, and consequences. Unlike comments in code, ADRs survive refactoring and give future teammates (and Claude) the "why" behind decisions.

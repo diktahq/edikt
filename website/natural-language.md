@@ -97,6 +97,8 @@ Claude matches intent, not exact words. These are representative examples — an
 | Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
 | List or manage agents | "what agents do we have", "add the security agent" | `/edikt:agents` |
 | Set up integrations | "setup Linear", "connect Jira" | `/edikt:mcp` |
+| Run governance benchmark | "run the governance benchmark", "test our directives against the model", "adversarial directive test", "check if our directives hold under pressure" | `/edikt:gov:benchmark` |
+| Backfill canonical phrases | "backfill canonical phrases", "retrofit canonical_phrases to existing ADRs", "add canonical phrases to our ADRs" | `/edikt:adr:review --backfill` |
 | Team onboarding *(deprecated)* | — | `/edikt:team` *(redirects to init)* |
 
 These are defined in `CLAUDE.md` — you can add your own triggers by editing that file.

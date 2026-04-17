@@ -97,6 +97,44 @@ If `/edikt:doctor` reports "governance.md schema v1 detected", run:
 
 This regenerates `.claude/rules/governance.md` with schema v2 sentinel blocks.
 
+## v0.5.0 directive hardening notes (SPEC-005)
+
+These additions are backward-compatible. No action required to keep existing governance working.
+
+### Existing ADRs
+
+Existing ADRs continue to parse and compile. The two new sentinel fields (`canonical_phrases`, `behavioral_signal`) are optional. When absent, they default to `[]` and `{}`.
+
+FR-003a warns when a multi-sentence directive has no `canonical_phrases`. This is warn-only in v0.5.0 — not a blocking error. To resolve warnings, run:
+
+```bash
+/edikt:adr:review --backfill
+```
+
+This retrofits `canonical_phrases` onto existing ADRs interactively, one at a time, with per-ADR approval before writing.
+
+### Optional: tier-2 governance benchmark
+
+If you want adversarial directive testing:
+
+```bash
+./bin/edikt install benchmark
+```
+
+This is not required and is never run automatically. See [/edikt:gov:benchmark](/commands/gov/benchmark) for full docs.
+
+### v0.4.x users: migrate first
+
+If you're on v0.4.x with a flat `~/.edikt/` layout, run the layout migration before installing tier-2:
+
+```bash
+edikt migrate --yes
+```
+
+The versioned layout (M1 migration) is a prerequisite for tier-2 tool install.
+
+---
+
 ### What if I customized hooks or templates?
 
 The migration preserves everything in place. M1 moves files to the new versioned layout but does not overwrite them. Your customizations remain. On the next `edikt upgrade`, the upgrade command presents a 3-way diff for any file where the template changed and you have local edits.

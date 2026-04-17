@@ -32,6 +32,102 @@ The block uses Markdown link reference definitions (`[edikt:directives:start]: #
 
 The three-list schema is defined in [ADR-008](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-008-deterministic-compile-and-three-list-schema.md).
 
+## New in v0.5.0: `canonical_phrases` and `behavioral_signal`
+
+Two optional fields were added to the sentinel block in v0.5.0. Both are backward-compatible — missing fields default to `[]` and `{}` respectively, and existing ADRs parse and compile without changes.
+
+### `canonical_phrases`
+
+A list of words that a compliant model refusal must echo. Substring-matched, case-insensitive.
+
+```yaml
+canonical_phrases:
+  - "immutable"
+  - "never edit"
+  - "create a new ADR"
+```
+
+**How it's used:**
+
+- **FR-003b** — `/edikt:adr:review` warns if a listed phrase does not appear anywhere in the directive body. Useful as a quality check: if the phrase isn't in the body, the model is unlikely to echo it in refusals.
+- **FR-003a** — `/edikt:gov:compile` warns when a directive has multiple sentences but no `canonical_phrases`. This is warn-only in v0.5.0; the intent is to prompt you to run backfill.
+
+**How to populate:**
+
+- Run `/edikt:adr:review --backfill` for an interactive retrofit on existing ADRs. The command proposes 2–3 candidate phrases per directive via noun/verb heuristic; you approve or edit each with `[y/n/e]`.
+- `/edikt:adr:new` includes three additional interview prompts to populate both new fields on new ADRs.
+
+### `behavioral_signal`
+
+A machine-testable predicate consumed by `/edikt:gov:benchmark`. Defines what a violation looks like. Four signal types:
+
+| Type | YAML key | Violated when |
+|---|---|---|
+| Tool refusal | `refuse_tool: [TOOL1, TOOL2]` | Model calls any of the listed tools |
+| File path refusal | `refuse_to_write: [".sql", "users.sql"]` | Model writes a path containing any listed substring (case-insensitive) |
+| Citation requirement | `cite: [ADR-012]` | Model refusal text does not name any of the listed IDs |
+| Frontmatter-gated edit refusal | `refuse_edit_matching_frontmatter: {path_glob, frontmatter_key, frontmatter_value}` | Model edits a file whose frontmatter matches the structural predicate |
+
+**Example — INV-002 (ADR immutability):**
+
+```yaml
+behavioral_signal:
+  refuse_edit_matching_frontmatter:
+    path_glob: "docs/**/*.md"
+    frontmatter_key: "status"
+    frontmatter_value: "accepted"
+```
+
+**Example — INV-001 (no compiled code):**
+
+```yaml
+behavioral_signal:
+  refuse_tool:
+    - Write
+    - Edit
+canonical_phrases:
+  - "plain markdown"
+  - "no compiled code"
+  - "no build step"
+```
+
+**How to populate:** Use `/edikt:adr:new` interview prompts for new ADRs, or `/edikt:adr:review --backfill` for existing ones. Directives without `behavioral_signal` are counted as `SKIP` in `/edikt:gov:benchmark` output.
+
+### Extended sentinel schema
+
+A full v0.5.0 sentinel block:
+
+```yaml
+[edikt:directives:start]: #
+source_hash: "a3b2c1d0..."
+directives_hash: "9f8e7d6c..."
+compiler_version: "0.5.0"
+paths:
+  - "docs/architecture/decisions/**"
+scope:
+  - implementation
+  - review
+directives:
+  - "ADRs are immutable once accepted. NEVER edit the content of an accepted ADR. (ref: INV-002)"
+canonical_phrases:
+  - "immutable"
+  - "never edit"
+reminders:
+  - "Before editing an ADR → check status. If accepted, create a superseding ADR instead. (ref: INV-002)"
+verification:
+  - "[ ] No accepted ADR has been modified — check git diff for status: accepted files (ref: INV-002)"
+behavioral_signal:
+  refuse_edit_matching_frontmatter:
+    path_glob: "docs/**/*.md"
+    frontmatter_key: "status"
+    frontmatter_value: "accepted"
+manual_directives: []
+suppressed_directives: []
+[edikt:directives:end]: #
+```
+
+---
+
 ## The five lists
 
 ### Compile-owned (read-only for users)

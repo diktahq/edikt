@@ -1,8 +1,43 @@
 # edikt changelog
 
-## v0.5.0 (2026-04-16)
+## v0.5.0 (2026-04-17)
 
-### Testing
+### Directive hardening + governance benchmark (SPEC-005)
+
+#### Added
+
+- **New directive sentinel fields: `canonical_phrases` and `behavioral_signal`.** Both fields are backward-compatible — missing fields parse as `[]` or `{}` respectively. Existing ADRs keep working without changes. (ref: SPEC-005, Phase 5)
+- **`/edikt:gov:benchmark` — tier-2 adversarial benchmark command.** Runs attack prompts against every ADR/invariant with a populated `behavioral_signal` block. Install with `./bin/edikt install benchmark` — never bundled in `install.sh` per ADR-015. Ships `tools/gov-benchmark/` Python helper (SDK invocation, SIGINT handling, sandbox builder) and four attack templates under `templates/attacks/`. (ref: SPEC-005, Phase 9)
+- **`/edikt:adr:review --backfill` — one-shot canonical_phrases rollout.** Interactive flow to retrofit `canonical_phrases` onto existing multi-sentence ADRs. Proposes 2–3 candidate phrases per directive with heuristic rationale; per-ADR `[y/n/e]` approval before writing. (ref: SPEC-005, Phase 3)
+- **`/edikt:gov:compile` — orphan ADR detection with warn-then-block semantics.** First compile with a no-directives ADR warns (exit 0); second consecutive compile with the same orphan set blocks (exit ≠ 0). Resolve by adding directives or marking `no-directives: <reason ≥ 10 chars>`. State persisted in `.edikt/state/compile-history.json` via atomic rename. `.edikt/state/` auto-appended to `.gitignore`. (ref: SPEC-005, Phase 7)
+- **`/edikt:doctor` — routing-table source-file check.** Verifies every ADR/INV referenced in the `.claude/rules/governance.md` routing table exists on disk. Exits non-zero with the literal missing path when a source file is absent. (ref: SPEC-005, Phase 2)
+- **Six-marker soft-language scan in `/edikt:adr:review`.** Flags `should`, `ideally`, `prefer`, `try to`, `might`, `consider` in directive bodies. Suggests `MUST` or `NEVER` replacements per flag. (ref: SPEC-005, Phase 3)
+- **Interview prompts in `/edikt:adr:new` for both new sentinel fields.** Three additional questions after the existing decision-capture prompts populate `canonical_phrases` and `behavioral_signal.refuse_tool` / `refuse_to_write` / `cite`. Skipping any prompt produces empty values, never an error. (ref: SPEC-005, Phase 4)
+- **Shared directive-quality sub-procedure** at `commands/gov/_shared-directive-checks.md`. Called by both `/edikt:gov:compile` and `/edikt:gov:review`. Covers FR-003a (multi-sentence without canonical_phrases), FR-003b (canonical_phrase not found in body), and `no-directives` reason validation. (ref: SPEC-005, Phase 6)
+- **ADR-015 — tier-2 tooling carve-out.** Formalizes the tier-1 / tier-2 distinction: INV-001 holds verbatim for all core commands; optional tools may depend on packages, provided install is explicit via `edikt install <tool>`. (ref: SPEC-005, Phase 1)
+
+#### Migration
+
+- **FR-003a is warn-only in v0.5.0.** Multi-sentence directives without `canonical_phrases` produce a warning on compile but do NOT block the run. Run `/edikt:adr:review --backfill` to retrofit existing ADRs. After running backfill, the warnings will resolve.
+- **FR-003a hard-fail is targeted for the next release.** Plan your upgrade: run backfill before upgrading.
+
+#### Baseline
+
+- Dogfood benchmark: **2/2 PASS** on INV-001 + INV-002 under Opus 4.7. Full run at `docs/reports/governance-benchmark-20260417T102800Z/`. 15/17 directives SKIP (no `behavioral_signal` populated — expected pre-backfill state). Run `/edikt:adr:review --backfill` then re-run `/edikt:gov:benchmark` to expand coverage.
+- Compare your own results with `/edikt:gov:benchmark` after upgrading.
+
+#### Known risks
+
+- **Tier-2 install model is new.** This release introduces both the concept (ADR-015) and its first instance (`/edikt:gov:benchmark`) in the same release. Report issues; expect point releases for UX refinement.
+- **Sandbox parity is soft-enforced by AC test, not code reuse.** Any edit to `tools/gov-benchmark/sandbox.py::build_project` requires a paired edit in `commands/gov/benchmark.md` and `test/integration/benchmarks/runner.py`. A docstring invariant and parity lint warn when the two diverge.
+- **Discriminative-power tests against stubbed models are a lower bound.** Real-world attack-prompt quality is only validated by the dogfood benchmark run against live Opus 4.7.
+- **Backfill heuristic may propose weak phrases.** The noun/verb heuristic surfaces candidates; review them rather than rubber-stamping. The `[e]dit` option is offered per-ADR.
+
+---
+
+### Stability (SPEC-004)
+
+#### Testing
 
 - **Layer 1 — Hook unit tests.** 9 hook test suites (session-start, stop-hook, post-compact, pre-compact, pre-tool-use, post-tool-use, user-prompt-submit, subagent-stop, instructions-loaded). Each pipes a JSON fixture directly to the real hook script and diffs the output. Runs by default; opt out with `EDIKT_SKIP_HOOK_TESTS=1`.
 - **Layer 2 — Agent SDK integration tests.** 6 tests covering `/edikt:init`, plan phase execution, post-compact context recovery, upgrade customization preservation, spec preprocessing, and evaluator blocked verdict. Run against real Claude via `claude-agent-sdk`. Auth via claude subscription session or `ANTHROPIC_API_KEY` (ADR-012). Regression museum: 4 tests locking in v0.4.x bugs.
@@ -13,7 +48,7 @@
 - **Real payload hook smoke tests.** Installs real hooks from `templates/hooks/` (not stubs) and verifies they are executable and respond correctly to baseline payloads.
 - **CI gate.** `.github/workflows/test.yml`: Layers 1 + 3 on every PR (fast, free). Layer 2 on tag push (requires `ANTHROPIC_API_KEY` secret).
 
-### Versioning and rollback
+#### Versioning and rollback
 
 - **Shell launcher `edikt`.** `bin/edikt` is a POSIX sh launcher that manages versioned payload installs at `~/.edikt/versions/<tag>/`. Subcommands: `install`, `use`, `list`, `version`, `upgrade`, `rollback`, `prune`, `doctor`, `uninstall`, `dev link/unlink`, `migrate`.
 - **Versioned layout.** Payloads live at `~/.edikt/versions/<tag>/`. `current` symlink points at the active generation. `lock.yaml` tracks active, previous, and pinned versions.
@@ -21,26 +56,26 @@
 - **Rollback is payload-only.** `edikt rollback` reverts `current` to the previous generation. Migrations (M1-M5) are permanent and are not rolled back.
 - **`edikt migrate --dry-run`.** Shows the full migration chain without mutating anything.
 
-### Distribution
+#### Distribution
 
 - **Homebrew tap.** `brew install diktahq/tap/edikt` installs the launcher. `edikt install` fetches the payload. `brew upgrade edikt` updates the launcher; `edikt upgrade` updates the payload independently.
 - **Release automation.** `.github/workflows/release.yml` builds launcher + payload tarballs, generates `SHA256SUMS` (ADR-013), uploads as GitHub Release assets, bumps the Homebrew formula on a staging branch, waits for tap CI, auto-merges on success.
 
-### Init and provenance
+#### Init and provenance
 
 - **Provenance frontmatter.** Every generated file (agents, rules, CLAUDE.md block) carries `edikt_template_hash` (MD5 of the raw template before substitution) and `edikt_template_version` in its frontmatter.
 - **Upgrade provenance-first flow.** On upgrade, compares stored hash to current template hash. Unchanged template → silent skip. Template changed, user didn't edit → auto-apply. User edited + template moved → 3-way diff prompt (ADR-011 regression guard).
 - **`<!-- edikt:custom -->` marker.** Files marked with this are always skipped on upgrade, regardless of template changes.
 - **Stack filters and path substitutions.** `[if:stack:go]...[/if:stack:go]` markers filter agent sections. Path substitutions apply `_substitutions.yaml` defaults to configured paths.
 
-### Breaking changes
+#### Breaking changes
 
 - `~/.edikt/` layout changed from flat to versioned. Run `edikt migrate --yes` to upgrade from v0.4.x. See [Migrating from v0.4](website/guides/migrating-from-v0.4.md).
 - `features.auto-format`, `features.signal-detection`, `features.plan-injection` config keys must now be explicit in `.edikt/config.yaml`; hooks default-on when absent.
 - Hook output migrated from plaintext to JSON protocol (ADR-014). User-visible message content is preserved byte-for-byte inside `{"systemMessage": ...}` / `{"additionalContext": ...}` wrappers. No action required unless you consumed raw hook stdout in custom tooling.
 - `pre-compact.sh` hook removed. Its single echo reminder is covered by `/edikt:session`. Remove `PreCompact` from any manual `.claude/settings.json` customizations.
 
-### Claude Code parity (ADR-014)
+#### Claude Code parity (ADR-014)
 
 - **Hook protocol migration.** 7 plaintext-emitting hooks (`pre-tool-use`, `session-start`, `post-tool-use`, `post-compact`, `subagent-stop`, `stop-failure`, `user-prompt-submit`) now emit JSON conforming to the Claude Code hook protocol. Characterization fixtures regenerated via `verified_by` commands per SPEC-004 §14.
 - **New hook events.** Settings template wires `SessionEnd`, `SubagentStart`, `TaskCompleted`, `WorktreeCreate`, `WorktreeRemove` (v2.1.78–v2.1.84). Each ships with a characterization fixture pair.
@@ -52,7 +87,7 @@
 - **Prompt-caching env var guidance.** `website/getting-started.md` documents `ENABLE_PROMPT_CACHING_1H` and `FORCE_PROMPT_CACHING_5M` (v2.1.108) for long sessions with heavy governance reads.
 - Full adoption matrix at [docs/internal/claude-code-parity.md](docs/internal/claude-code-parity.md).
 
-### Migration notes
+#### Migration notes
 
 See [website/guides/migrating-from-v0.4.md](website/guides/migrating-from-v0.4.md) for the full walkthrough.
 

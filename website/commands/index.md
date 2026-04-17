@@ -13,6 +13,7 @@ Compile and maintain the rules Claude follows.
 | [`/edikt:gov:rules-update`](/commands/gov/rules-update) | Check for outdated rule packs and update them |
 | [`/edikt:gov:sync`](/commands/gov/sync) | Translate linter configs into Claude rule packs |
 | [`/edikt:gov:score`](/commands/gov/score) | Aggregate governance quality scoring |
+| [`/edikt:gov:benchmark`](/commands/gov/benchmark) | Adversarial directive testing — tier-2, run `./bin/edikt install benchmark` first |
 
 ## SDLC Chain
 
