@@ -9,8 +9,8 @@ set -euo pipefail
 # install.sh's job:
 #   1. Parse flags (--project | --global | --dry-run | --ref <tag>).
 #   2. Detect installed state: fresh | legacy_v04 | current_v05.
-#   3. Fetch the launcher for the requested release (curl).
-#   4. Install launcher atomically, add to $PATH idempotently.
+#   3. Fetch the Go edikt binary for the requested release (curl).
+#   4. Install binary atomically, add to $PATH idempotently.
 #   5. Delegate to `edikt migrate` (if legacy) and `edikt install/use`.
 #
 # Canonical v0.4.x → v0.5.0 cross-major upgrade path. /edikt:upgrade
@@ -154,7 +154,7 @@ if [ -z "$INSTALL_MODE" ]; then
 fi
 
 # ─── Root resolution ────────────────────────────────────────────────────────
-# Matches bin/edikt's EDIKT_ROOT resolution so both see the same layout.
+# Matches the Go edikt binary's EDIKT_ROOT resolution so both see the same layout.
 PROJECT_ROOT=""
 if [ "$INSTALL_MODE" = "project" ]; then
   PROJECT_ROOT="$(pwd)"
@@ -516,8 +516,7 @@ stage_launcher() {
       fi
       mv "$_extract_dir/bin/edikt" "$stage"
       rm -rf "$_extract_dir"
-      # Note: $_download is NOT removed here — install_launcher may need it to
-      # extract bin/edikt-shell. It is removed in install_launcher after use.
+      # Note: $_download is cleaned up by stage_launcher when LAUNCHER_IS_TARBALL=1.
     fi
   fi
   if [ ! -s "$stage" ]; then
@@ -525,21 +524,20 @@ stage_launcher() {
     return $EX_NETWORK
   fi
   # ── Content sanity checks (guard against HTML error pages) ───────────────
-  # ADR-022: bin/edikt is now the Go binary (ELF/Mach-O). The shell-script
-  # sanity checks (shebang, MIN_PAYLOAD_VERSION, bash -n) do not apply to it.
-  # For bare-file installs the staged file is the shell script (edikt-shell);
-  # for tarball installs it is the Go binary — skip shell checks in that case.
+  # ADR-022 Phase 3: bin/edikt is the Go binary (ELF/Mach-O). Shell-script
+  # sanity checks (shebang, MIN_PAYLOAD_VERSION, bash -n) only apply to the
+  # bare-file install path (used in development/test overrides only).
   if [ "$LAUNCHER_IS_TARBALL" != "1" ]; then
     _first_line=$(head -n1 "$stage")
     case "$_first_line" in
       '#!'*) ;;
       *) error "downloaded launcher missing shebang"; return $EX_NETWORK ;;
     esac
-    if ! grep -qF 'MIN_PAYLOAD_VERSION=' "$stage"; then
-      error "downloaded file does not look like an edikt shell launcher"
+    # Bare-file installs in dev/test mode: validate it looks like a shell script.
+    if ! grep -qE '^(#!/|set -)' "$stage" 2>/dev/null; then
+      error "downloaded bare-file launcher does not look like a shell script"
       return $EX_NETWORK
     fi
-    # edikt-shell is POSIX sh. Use bash -n for syntax check.
     if ! bash -n "$stage" 2>/dev/null; then
       error "downloaded shell launcher failed syntax check (bash -n)"
       return $EX_NETWORK
@@ -549,66 +547,24 @@ stage_launcher() {
   return 0
 }
 
-# Atomically place the launcher artifacts at $EDIKT_ROOT/bin/.
+# Atomically place the launcher at $EDIKT_ROOT/bin/.
 #
-# ADR-022 (single-binary, v0.5.0+): the release tarball contains two files:
-#   bin/edikt       — Go binary (user-facing entry point)
-#   bin/edikt-shell — POSIX shell script (handles all non-Go subcommands)
-#
-# When installing from a tarball we extract both. When installing from a bare
-# file (LAUNCHER_SRC_LOCAL or raw download) we assume it is the shell script
-# and place it as edikt-shell; the Go binary must be placed separately via
-# `edikt install gov-compile` or bundled in the tarball.
+# ADR-022 Phase 3 (v0.5.0+): edikt-shell has been deleted. The release tarball
+# contains only bin/edikt (the Go binary). One artifact, one install.
 #
 # One-deep backup: previous edikt → bin/edikt.prev before overwrite.
 install_launcher() {
   mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
 
-  if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
-    # Tarball path: stage_launcher already extracted bin/edikt into $tmp.
-    # Now also extract bin/edikt-shell from the same tarball if present.
-    tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
-    if ! stage_launcher "$tmp"; then
-      rm -f "$tmp" 2>/dev/null || true
-      return $?
-    fi
-    if [ -f "$EDIKT_ROOT/bin/edikt" ]; then
-      cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
-    fi
-    mv "$tmp" "$EDIKT_ROOT/bin/edikt"
-    # Extract edikt-shell from the tarball if present (ADR-022).
-    # Non-fatal if missing — older tarballs pre-ADR-022 only contain bin/edikt.
-    _tarball_src="${LAUNCHER_SRC_LOCAL:-}"
-    if [ -z "$_tarball_src" ] && [ -n "${_LAUNCHER_TARBALL_CACHED:-}" ]; then
-      _tarball_src="$_LAUNCHER_TARBALL_CACHED"
-    fi
-    if [ -n "$_tarball_src" ] && tar -tzf "$_tarball_src" 2>/dev/null | grep -q "^bin/edikt-shell$"; then
-      _sh_tmp=$(mktemp)
-      if tar -xzf "$_tarball_src" -O bin/edikt-shell 2>/dev/null > "$_sh_tmp" && [ -s "$_sh_tmp" ]; then
-        chmod +x "$_sh_tmp"
-        mv "$_sh_tmp" "$EDIKT_ROOT/bin/edikt-shell"
-      else
-        rm -f "$_sh_tmp"
-      fi
-    fi
-  else
-    # Bare-file path: stage and place as edikt-shell (the shell launcher).
-    tmp="$EDIKT_ROOT/bin/edikt-shell.tmp.$$"
-    if ! stage_launcher "$tmp"; then
-      rm -f "$tmp" 2>/dev/null || true
-      return $?
-    fi
-    if [ -f "$EDIKT_ROOT/bin/edikt-shell" ]; then
-      cp "$EDIKT_ROOT/bin/edikt-shell" "$EDIKT_ROOT/bin/edikt-shell.prev" 2>/dev/null || true
-    fi
-    mv "$tmp" "$EDIKT_ROOT/bin/edikt-shell"
-    # For backwards compatibility: also place edikt-shell as edikt when no Go
-    # binary is present yet (pre-ADR-022 layout or dev installs).
-    if [ ! -x "$EDIKT_ROOT/bin/edikt" ]; then
-      cp "$EDIKT_ROOT/bin/edikt-shell" "$EDIKT_ROOT/bin/edikt"
-      chmod +x "$EDIKT_ROOT/bin/edikt"
-    fi
+  tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
+  if ! stage_launcher "$tmp"; then
+    rm -f "$tmp" 2>/dev/null || true
+    return $?
   fi
+  if [ -f "$EDIKT_ROOT/bin/edikt" ]; then
+    cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
+  fi
+  mv "$tmp" "$EDIKT_ROOT/bin/edikt"
   return 0
 }
 
@@ -896,39 +852,38 @@ do_legacy_v04() {
   printf '%bMigration complete. Run %b\`edikt doctor\`%b to verify.%b\n' "$GREEN" "$BOLD" "$RESET$GREEN" "$RESET"
 }
 
-# Extract LAUNCHER_VERSION from a launcher script's constants.
-launcher_script_version() {
+# Get the version reported by the installed Go edikt binary.
+go_binary_version() {
   f="$1"
-  [ -f "$f" ] || { echo ""; return 0; }
-  awk -F'"' '/^LAUNCHER_VERSION=/ {print $2; exit}' "$f"
+  [ -x "$f" ] || { echo ""; return 0; }
+  "$f" version 2>/dev/null | head -1 | awk '{print $NF}' | tr -d 'v' || echo ""
 }
 
 do_current_v05() {
   info "v0.5.0 layout detected at $EDIKT_ROOT"
 
-  # Decide whether to replace launcher script. Fetch a tmp copy, compare
-  # embedded LAUNCHER_VERSION against currently installed.
+  # Decide whether to replace the Go binary. Compare the installed binary's
+  # version against the release tag being installed.
   if $DRY_RUN; then
-    dim "would check: embedded LAUNCHER_VERSION vs installed"
+    dim "would check: installed edikt version vs $TAG"
     dryrun_do "$EDIKT_ROOT/bin/edikt install $TAG"
     dryrun_do "$EDIKT_ROOT/bin/edikt use $TAG"
     return 0
   fi
 
-  tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
-  mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
-  if ! stage_launcher "$tmp"; then
-    rm -f "$tmp" 2>/dev/null || true
-    return $EX_NETWORK
-  fi
-  new_ver=$(launcher_script_version "$tmp")
-  cur_ver=$(launcher_script_version "$EDIKT_ROOT/bin/edikt")
+  cur_ver=$(go_binary_version "$EDIKT_ROOT/bin/edikt")
+  new_ver="${TAG#v}"
   if [ -n "$new_ver" ] && [ "$new_ver" != "$cur_ver" ]; then
+    tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
+    mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
+    if ! stage_launcher "$tmp"; then
+      rm -f "$tmp" 2>/dev/null || true
+      return $EX_NETWORK
+    fi
     cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
     mv "$tmp" "$EDIKT_ROOT/bin/edikt"
     info "launcher updated: $cur_ver -> $new_ver"
   else
-    rm -f "$tmp"
     dim "launcher is current ($cur_ver)"
   fi
 

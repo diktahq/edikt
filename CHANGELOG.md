@@ -2,6 +2,10 @@
 
 ## v0.5.0 (2026-04-17)
 
+### Pure Go binary — edikt-shell deleted (ADR-022 Phase 3)
+
+`bin/edikt` (edikt-shell, the POSIX shell helper) is deleted. `edikt migrate` is now implemented natively in Go (`tools/gov-compile/cmd/migrate.go`). The `edikt` binary is the single user-facing entry point with no shell shim. `install.sh` no longer places or references `edikt-shell`. This completes the strangler-fig migration described in ADR-022.
+
 ### Security hardening (PLAN-v0.5.0-security-hardening)
 
 Full security audit findings closed before release. Six new invariants (INV-003 through INV-008) and four new ADRs (ADR-016 through ADR-019) capture the failure classes so they can't recur. Source audit: `docs/reports/security-audit-v0.5.0-2026-04-17.md`.

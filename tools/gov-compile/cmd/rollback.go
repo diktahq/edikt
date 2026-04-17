@@ -18,10 +18,11 @@ Special form: edikt rollback v0.5.0 — delegates to edikt-shell to restore
 pre-v0.5.0 host files from the backup install.sh wrote during the 0.4.x migration.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Special v0.5.0 host-file rollback — delegate to edikt-shell.
-		if len(args) == 1 && (args[0] == "v0.5.0" || args[0] == "0.5.0") {
-			return delegateToShell([]string{"rollback", args[0]})
-		}
+		// Special v0.5.0 host-file rollback was previously handled by edikt-shell.
+		// edikt-shell has been removed (ADR-022 Phase 3). The versioned layout is
+		// the only supported layout from v0.5.0 onward; a host-file rollback to the
+		// flat pre-v0.5.0 layout is not supported via this command.
+		// Use 'edikt migrate --abort' instead if a migration is in progress.
 
 		ediktRoot, err := resolveEdiktRoot()
 		if err != nil {
