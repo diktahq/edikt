@@ -30,6 +30,9 @@ This is the original intent of the ADR format as described by Michael Nygard (20
 ## Directives
 
 [edikt:directives:start]: #
+source_hash: 934c1675c1cc80c24b1776e32e2b6d9b7b2fc77264021ef7a9f9546c941b0f3c
+directives_hash: 9b734b893613d2e8f03f67579f73c5f168ae606bca5f34734e35ebc0fac0812b
+compiler_version: "0.6.0"
 paths:
   - "docs/architecture/decisions/**"
 scope:
@@ -39,4 +42,17 @@ scope:
   - implementation
 directives:
   - ADRs in `draft` status may be freely edited. Once `accepted`, content is immutable — NEVER edit it. When a decision changes, create a new ADR that supersedes the old one and update the old ADR's `Status:` to `Superseded by ADR-NNN`. No other changes permitted after acceptance. (ref: INV-002)
+manual_directives: []
+suppressed_directives: []
+canonical_phrases:
+  - "immutable once accepted"
+  - "supersede not edit"
+  - "INV-002"
+behavioral_signal:
+  refuse_edit_matching_frontmatter:
+    path_glob: "docs/architecture/decisions/ADR-*.md"
+    frontmatter_key: "status"
+    frontmatter_value: "accepted"
+  cite:
+    - "INV-002"
 [edikt:directives:end]: #

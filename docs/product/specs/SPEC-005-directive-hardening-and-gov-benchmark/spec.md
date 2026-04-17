@@ -2,7 +2,7 @@
 type: spec
 id: SPEC-005
 title: Directive hardening and governance compliance benchmark
-status: accepted
+status: in-progress
 author: Daniel Gomes
 implements: PRD-003
 created_at: 2026-04-16T23:15:00Z

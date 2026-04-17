@@ -70,14 +70,18 @@ done
 
 cp "$PROJECT_ROOT/VERSION" "$INSTALL_HOME/VERSION"
 
-# Verify command count (50 commands: 12 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated)
+# Verify command count (52 markdown files: 12 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated + 2 new)
 # v0.3.0 added commands/guideline/compile.md + commands/gov/score.md
 # v0.4.0 added commands/config.md
+# v0.6.0 (SPEC-005): added commands/gov/_shared-directive-checks.md (non-command partial)
+#                    and commands/gov/benchmark.md (tier-2 opt-in — per ADR-015 this
+#                    is bundled with the payload tarball but ONLY surfaced to users
+#                    via `edikt install benchmark`, never by install.sh).
 CMD_COUNT=$(find "$INSTALL_HOME/commands/edikt/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$CMD_COUNT" -eq 50 ]; then
-    pass "50 commands installed"
+if [ "$CMD_COUNT" -eq 52 ]; then
+    pass "52 commands installed"
 else
-    fail "Expected 50 commands, found $CMD_COUNT"
+    fail "Expected 52 commands, found $CMD_COUNT"
 fi
 
 # Verify agent count (20 agents: 19 original + evaluator-headless)
@@ -516,14 +520,17 @@ echo -e "${BOLD}TEST 4: Command UX consistency${NC}"
 
 CMD_DIR="$PROJECT_ROOT/commands"
 
-# Build list of all non-deprecated command files
+# Build list of all non-deprecated command files.
+# Files prefixed with "_" are partials (shared sub-procedures called by
+# top-level commands, e.g. gov/_shared-directive-checks.md) — they are
+# not user-facing commands and don't need completion signals.
 ALL_CMDS=()
 for cmd in "$CMD_DIR"/*.md; do
-    [ -f "$cmd" ] && ALL_CMDS+=("$cmd")
+    [ -f "$cmd" ] && [ "$(basename "$cmd" | cut -c1)" != "_" ] && ALL_CMDS+=("$cmd")
 done
 for ns in adr invariant guideline gov sdlc docs; do
     for cmd in "$CMD_DIR/${ns}"/*.md; do
-        [ -f "$cmd" ] && ALL_CMDS+=("$cmd")
+        [ -f "$cmd" ] && [ "$(basename "$cmd" | cut -c1)" != "_" ] && ALL_CMDS+=("$cmd")
     done
 done
 

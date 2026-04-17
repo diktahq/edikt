@@ -25,3 +25,15 @@ __pycache__/
 # local secrets — never commit
 .env
 .env.local
+
+# Python build artifacts (tier-2 tools)
+tools/*/build/
+tools/*/*.egg-info/
+
+# edikt ephemeral state
+.claude/worktrees/
+docs/STATUS.md
+
+# test run artifacts (not checked in)
+test/integration/benchmarks/results/
+test/integration/failures/
