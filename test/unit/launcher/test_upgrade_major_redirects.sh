@@ -23,8 +23,9 @@ out=$(EDIKT_RELEASE_TAG="v1.0.0" run_launcher upgrade --yes 2>&1)
 rc=$?
 assert_rc "$rc" "1" "major upgrade exits 1"
 
-# Must print the install.sh redirect command verbatim.
-if echo "$out" | grep -q "curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash"; then
+# Must print the install.sh redirect command verbatim, pinned to the
+# target release tag per INV-008 (branch-tracking URLs are forbidden).
+if echo "$out" | grep -q "curl -fsSL https://github.com/diktahq/edikt/releases/download/v1.0.0/install.sh | bash"; then
     pass "error message contains install.sh command"
 else
     fail "error message contains install.sh command" "output: $out"
