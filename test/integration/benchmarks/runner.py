@@ -148,6 +148,14 @@ def load_corpus(name: str) -> list[Case]:
 def build_project(tmp_path: Path, setup: dict[str, Any] | None) -> Path:
     """Build a test project from a case's project_setup block.
 
+    This builder is the reference implementation for the benchmark sandbox.
+    Edits here require a paired edit in commands/gov/benchmark.md (tier-2
+    markdown command, Phase C §1 sandbox layout) AND in
+    tools/gov-benchmark/sandbox.py::build_project (tier-2 helper). AC-010
+    (SPEC-005) enforces byte-equal parity across four fixture shapes
+    (sandbox-shape-minimal / realistic / mixed / edge) via
+    test/integration/test_benchmark_sandbox_parity.py.
+
     Setup format (all optional):
       config: {...}           # .edikt/config.yaml contents
       files: {path: content}  # arbitrary project files

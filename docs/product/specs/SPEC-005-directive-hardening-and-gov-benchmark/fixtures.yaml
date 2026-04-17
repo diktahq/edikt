@@ -1,5 +1,5 @@
 # Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
-# edikt:artifact type=fixtures spec=SPEC-005 status=accepted reviewed_by=qa
+# edikt:artifact type=fixtures spec=SPEC-005 status=in-progress reviewed_by=qa
 # created_at=2026-04-16T23:35:00Z
 # Transform to your stack's format at implementation time:
 #   Python: pytest fixtures or tmp_path builders

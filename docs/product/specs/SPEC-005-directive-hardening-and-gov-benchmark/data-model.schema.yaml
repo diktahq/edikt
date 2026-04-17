@@ -1,5 +1,5 @@
 # Design blueprint — implement in your stack's native format. This artifact defines intent, not implementation.
-# edikt:artifact type=data-model spec=SPEC-005 status=accepted reviewed_by=dba
+# edikt:artifact type=data-model spec=SPEC-005 status=in-progress reviewed_by=dba
 # created_at=2026-04-16T23:35:00Z
 # Note: "collection" here is a file path — edikt stores structured JSON on disk, not in a DB.
 

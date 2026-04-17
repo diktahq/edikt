@@ -113,8 +113,8 @@ To verify this ADR is in effect, check that:
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
+source_hash: 6846bed4ed6ccdf818545a9c78ce5ab9f86c57c1d0bbebaa6968ff877f688bfd
+directives_hash: de2a16e7f0032d06217e3eb44b40f16daa55e8dfecb13264a71bda75ae124330
 compiler_version: "0.6.0"
 paths:
   - "install.sh"
@@ -137,6 +137,11 @@ directives:
   - Parity between a tier-2 markdown command and its supporting code MUST be enforced by tests, not by shared modules crossing the tier-1/tier-2 boundary. (ref: ADR-015)
 manual_directives: []
 suppressed_directives: []
+canonical_phrases:
+  - "tier-2"
+  - "edikt install"
+  - "isolated environment"
+behavioral_signal: {}
 [edikt:directives:end]: #
 
 ---

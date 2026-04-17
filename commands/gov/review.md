@@ -55,6 +55,27 @@ CRITICAL: Every finding must cite the specific text that fails the check and pro
 
 5. Score each directive against the Quality Criteria in the Reference section. A directive can have multiple findings.
 
+5b. **Directive-quality sub-procedure (shared with `/edikt:gov:compile`).** For each document in scope, run the inline Python script from `commands/gov/_shared-directive-checks.md §Inline Script` once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
+
+```json
+{
+  "adr_id": "<ADR-NNN or INV-NNN>",
+  "directive_body": "<directive line text>",
+  "canonical_phrases": ["<phrase1>", ...],
+  "no_directives_reason": "<value from frontmatter no-directives key, or null>"
+}
+```
+
+Collect all returned warning lines. Surface them inside the per-document review section under a **"Directive-quality checks"** sub-heading:
+
+```
+Directive-quality checks
+  [WARN] ADR-012: directive has 2 sentences but no canonical_phrases — run /edikt:adr:review --backfill
+  [WARN] ADR-014: canonical_phrase "atomic rename" not found in directive body
+```
+
+If no warnings for a document, omit the sub-heading for that document. These warnings use the exact warning text from `_shared-directive-checks.md` — do not reword them. This ensures byte-identical output with `/edikt:gov:compile` for the same input.
+
 6. Score the compiled output as a whole against the Document-Level Checks in the Reference section.
 
 7. Output the report using the Output Format in the Reference section.

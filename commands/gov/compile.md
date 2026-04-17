@@ -146,6 +146,264 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
 
 12b. For every extracted directive that references a specific invariant ID (INV-NNN), ADR ID (ADR-NNN), or other named artifact — verify the reference exists in the source document. Read the source file and confirm the referenced identifier appears in it. If it does not appear, strip the fabricated reference from the directive (keep the directive text if it's otherwise accurate). Never include a cross-reference that hasn't been confirmed in the actual source file.
 
+### Directive-Quality Pass
+
+12c. **After** the contradiction-detection pass (steps 5–8) and **before** grouping, run the shared directive-quality sub-procedure from `commands/gov/_shared-directive-checks.md` for every accepted ADR and active invariant.
+
+For each source document that has a parsed sentinel block, run the inline Python script from `_shared-directive-checks.md §Inline Script` once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
+
+```json
+{
+  "adr_id": "<ADR-NNN or INV-NNN>",
+  "directive_body": "<directive line text>",
+  "canonical_phrases": ["<phrase1>", ...],
+  "no_directives_reason": "<reason string or null>"
+}
+```
+
+Collect all returned warning lines across all documents. If any warnings were produced, output them under a `### Directive-quality warnings` header in the compile output:
+
+```
+### Directive-quality warnings
+
+[WARN] ADR-012: directive has 2 sentences but no canonical_phrases — run /edikt:adr:review --backfill
+[WARN] ADR-014: canonical_phrase "atomic rename" not found in directive body
+```
+
+**AC-021 grace period:** exit 0 even when warnings are present. Do NOT block compilation due to directive-quality warnings in v0.6.0. The header is surfaced so users are aware; it is not an error.
+
+If no warnings were produced, skip the header entirely (do not emit an empty section).
+
+### Orphan Detection Pass
+
+12d. **After** the directive-quality pass (step 12c), run the orphan-detection and history-comparison pass. This implements FR-004 / AC-003 / AC-003b / AC-017 / AC-018 / AC-019.
+
+**Two-layer atomicity model:**
+- **Outer layer:** the compile operation as a whole is serialized by the existing `lock.yaml + flock` pattern in `bin/edikt` (SPEC-004 §8). This prevents two concurrent compiles from racing on source files or the governance output. Phase 7 does not change this layer.
+- **Inner layer:** the state file `.edikt/state/compile-history.json` is protected specifically from torn writes by using write-to-tempfile + `os.rename()`. If the process crashes between the write and the rename, the previous state file remains intact — safe toward re-warning rather than a silent skip. The `.tmp` file may exist and is safe to remove manually.
+
+#### Pass 1: Orphan collection
+
+Walk all accepted ADRs and active invariants. For each one, check whether:
+- The parsed `directives` list AND `manual_directives` list are both empty (i.e., the effective rule set produces zero directives), AND
+- The source document's frontmatter does NOT contain a `no-directives:` key with a valid reason.
+
+A "valid reason" is defined by `_shared-directive-checks.md §Check C`: ≥ 10 characters, not in `{tbd, todo, fix later}` (case-insensitive), non-empty after strip.
+
+If both conditions are true, add the ADR/INV ID to the **current orphan set**.
+
+#### Pass 2: History comparison and write
+
+Run the following Python script. It implements the five orphan-set transition rules and atomically writes the state file:
+
+```bash
+python3 - <<'PY'
+import json
+import os
+import sys
+import re
+import pathlib
+from datetime import datetime, timezone
+
+# ── Inputs injected by the caller ──────────────────────────────────────────
+# current_orphan_ids: list[str]  — e.g. ["ADR-012", "INV-003"]
+# history_path: str              — abs path to .edikt/state/compile-history.json
+# edikt_version: str             — optional, for the edikt_version stamp
+
+current_orphan_ids_raw = os.environ.get("EDIKT_ORPHAN_IDS", "").strip()
+current_orphan_ids = sorted(x for x in current_orphan_ids_raw.split(",") if x.strip())
+history_path = os.environ.get("EDIKT_HISTORY_PATH", "")
+edikt_version = os.environ.get("EDIKT_VERSION", "")
+
+HISTORY_FILE = pathlib.Path(history_path) if history_path else None
+
+# ── Load prior history ──────────────────────────────────────────────────────
+prior_orphans = None          # None means: no usable history (absent or corrupt)
+history_loadable = True
+
+if HISTORY_FILE and HISTORY_FILE.exists():
+    try:
+        raw = HISTORY_FILE.read_text(encoding="utf-8")
+        data = json.loads(raw)
+        if isinstance(data, dict) and isinstance(data.get("orphan_adrs"), list):
+            prior_orphans = sorted(str(x) for x in data["orphan_adrs"])
+        else:
+            history_loadable = False
+    except (json.JSONDecodeError, OSError, ValueError):
+        history_loadable = False
+
+if not history_loadable:
+    print("[WARN] compile-history.json is unparseable — treating as absent (first detection)", flush=True)
+
+current_set = set(current_orphan_ids)
+prior_set   = set(prior_orphans) if prior_orphans is not None else None
+
+# ── Determine the transition scenario ──────────────────────────────────────
+#
+# Five scenarios (per SPEC-005 Phase 7):
+#
+#   1. First detection  — no prior history (prior_set is None)
+#      → warn, exit 0, write history
+#
+#   2. Consecutive same — prior_set exists AND current_set == prior_set
+#      → BLOCK, exit ≠ 0, do NOT overwrite history
+#
+#   3. Subset / different — prior_set exists AND current_set ⊂ prior_set
+#      AND current_set != prior_set  (some orphans resolved)
+#      → "changed, reset to first-detection", warn, write new set, exit 0
+#
+#   4. Superset — prior_set exists AND current_set ⊃ prior_set
+#      (new orphans added)
+#      → "changed → first-detection", warn, write new set, exit 0
+#
+#   5. Fallthrough (intersecting sets, neither sub/superset, changed)
+#      → treat same as scenario 1/3 — warn, write new set, exit 0
+
+should_block  = False
+should_write  = True
+scenario_note = ""
+
+if not current_set:
+    # No orphans this run — write a clean history and exit 0.
+    scenario_note = "no orphans"
+    should_write = True
+    should_block = False
+elif prior_set is None:
+    # Scenario 1: first detection (history absent or corrupt)
+    scenario_note = "first detection"
+    should_block = False
+    should_write = True
+elif current_set == prior_set:
+    # Scenario 2: consecutive — same orphan set → BLOCK
+    scenario_note = "consecutive"
+    should_block = True
+    should_write = False          # do NOT overwrite so next fix attempt is compared against this baseline
+elif current_set < prior_set:
+    # Scenario 3: subset — orphans resolved, reset to first-detection
+    scenario_note = "changed (subset) → reset to first-detection"
+    should_block = False
+    should_write = True
+elif current_set > prior_set:
+    # Scenario 4: superset — new orphans added → first-detection for new set
+    scenario_note = "changed (superset) → first-detection"
+    should_block = False
+    should_write = True
+else:
+    # Scenario 5: sets differ but neither is a sub/superset → first-detection
+    scenario_note = "changed (different set) → first-detection"
+    should_block = False
+    should_write = True
+
+# ── Emit warnings for current orphans ──────────────────────────────────────
+if current_set and not should_block:
+    print("\n### Orphan ADR warnings\n", flush=True)
+    for oid in sorted(current_set):
+        print(f"[WARN] {oid}: accepted ADR/INV has zero directives and no no-directives reason", flush=True)
+    print(
+        "\nFix options for each orphan ADR/INV:\n"
+        "  1. Add directives to the sentinel block and run /edikt:gov:compile\n"
+        "  2. Add `no-directives: \"<reason ≥ 10 chars>\"` to the frontmatter\n"
+        "  3. Revert the ADR to draft status if the decision is not yet ready\n"
+        f"\nScenario: {scenario_note}. "
+        "This compile exits 0 — the SAME orphan set on the next compile will block.",
+        flush=True,
+    )
+
+elif current_set and should_block:
+    print("\n### Orphan ADR BLOCK\n", flush=True)
+    for oid in sorted(current_set):
+        print(f"[BLOCK] {oid}: consecutive compile with same orphan set — compilation blocked", flush=True)
+    print(
+        "\nFix options for each blocked ADR/INV:\n"
+        "  1. Add directives to the sentinel block and run /edikt:gov:compile\n"
+        "  2. Add `no-directives: \"<reason ≥ 10 chars>\"` to the frontmatter\n"
+        "  3. Revert the ADR to draft status if the decision is not yet ready\n"
+        "\nThe orphan set has not changed since the last compile. Compilation is blocked.",
+        flush=True,
+    )
+
+# ── Write state file (atomic rename) ───────────────────────────────────────
+if should_write and HISTORY_FILE:
+    state_dir = HISTORY_FILE.parent
+    try:
+        state_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        print(f"[WARN] Could not create state directory {state_dir}: {exc}", flush=True)
+        sys.exit(1 if should_block else 0)
+
+    payload = {
+        "schema_version": 1,
+        "last_compile_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "orphan_adrs": sorted(current_set),
+    }
+    if edikt_version:
+        payload["edikt_version"] = edikt_version
+
+    tmp_path = pathlib.Path(str(HISTORY_FILE) + ".tmp")
+    try:
+        tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.rename(str(tmp_path), str(HISTORY_FILE))
+    except OSError as exc:
+        print(
+            f"[WARN] Could not atomically write compile-history.json: {exc}\n"
+            f"       Previous state file is unchanged. Remove {tmp_path} if it exists.",
+            flush=True,
+        )
+        # Exit normally — do not block on a write failure.
+        sys.exit(0)
+
+# ── Exit code ───────────────────────────────────────────────────────────────
+sys.exit(1 if should_block else 0)
+PY
+```
+
+**How to invoke this script from within the compile procedure:**
+
+Set environment variables before running:
+```
+EDIKT_ORPHAN_IDS=<comma-separated list of orphan IDs, or empty>
+EDIKT_HISTORY_PATH=<absolute path to .edikt/state/compile-history.json>
+EDIKT_VERSION=<version string from step 1b, optional>
+```
+
+If the script exits non-zero (scenario 2 — consecutive block), the overall compile command MUST exit non-zero and MUST NOT proceed to write governance output.
+
+If the script exits 0, continue to step 13 (group by topic).
+
+**AC-019 — `.gitignore` management:**
+
+After the orphan script completes (regardless of exit code), run:
+
+```bash
+python3 - <<'PY'
+import os, pathlib, sys
+
+project_root = os.environ.get("EDIKT_PROJECT_ROOT", os.getcwd())
+gitignore_path = pathlib.Path(project_root) / ".gitignore"
+entry = ".edikt/state/"
+
+if gitignore_path.exists():
+    content = gitignore_path.read_text(encoding="utf-8")
+    # Normalize: treat ".edikt/state" (no trailing slash) as already-present
+    for variant in [".edikt/state/", ".edikt/state"]:
+        if variant in content.splitlines() or entry.rstrip("/") in content.splitlines():
+            sys.exit(0)
+    # Not found — append
+    newline_prefix = "\n" if content and not content.endswith("\n") else ""
+    gitignore_path.write_text(content + newline_prefix + entry + "\n", encoding="utf-8")
+    print(f"[OK] Appended '{entry}' to .gitignore", flush=True)
+else:
+    gitignore_path.write_text(entry + "\n", encoding="utf-8")
+    print(f"[OK] Created .gitignore with '{entry}' entry", flush=True)
+
+sys.exit(0)
+PY
+```
+
+Set `EDIKT_PROJECT_ROOT` to the root of the project being compiled (the directory containing `.edikt/`).
+
+**AC-019 note:** The `.gitignore` handler checks for both `.edikt/state/` (with trailing slash) and `.edikt/state` (without) before appending, to avoid duplicates under trailing-slash normalization variants. If the file is absent, it is created. If the entry is already present in any recognized form, the file is left unchanged.
+
 ### Group by Topic
 
 13. Analyze all **effective_rules** across all source documents (computed in step 11 via the three-list merge formula) and group them by topic. A topic is a domain area — caching, database, multi-tenancy, authentication, file storage, architecture (cross-cutting), etc.

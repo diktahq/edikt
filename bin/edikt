@@ -1341,14 +1341,15 @@ migrate_m4_compile_schema_v1_to_v2() {
     fi
     if [ -n "$_claude_bin" ]; then
         log_info "M4 (compile schema): invoking 'claude -p /edikt:gov:compile' to upgrade governance.md to schema v2"
-        if "$_claude_bin" -p "/edikt:gov:compile" >/dev/null 2>&1; then
+        if "$_claude_bin" -p "/edikt:gov:compile" >/dev/null 2>&1 \
+            && grep -q 'compile_schema_version: 2' "$_gov" 2>/dev/null; then
             MIGRATE_RAN_M4=1
             emit_event migration_step_completed \
                 '"step":"M4","action":"compiled","result":"schema_v2"'
             log_ok "M4 (compile schema): governance.md upgraded to schema v2"
             return 0
         else
-            log_warn "M4: claude -p /edikt:gov:compile failed — falling back to .m4-pending marker"
+            log_warn "M4: claude -p /edikt:gov:compile failed or produced no v2 sentinel — falling back to .m4-pending marker"
         fi
     else
         log_warn "M4: claude CLI not found — falling back to .m4-pending marker"
@@ -2157,7 +2158,7 @@ EOF
         # M4 signal
         if [ "$_has_signal" -eq 0 ] \
            && [ -f "$CLAUDE_ROOT/rules/governance.md" ] \
-           && ! grep -q '<!-- compile-schema: v2 -->' "$CLAUDE_ROOT/rules/governance.md" 2>/dev/null \
+           && ! grep -q 'compile_schema_version: 2' "$CLAUDE_ROOT/rules/governance.md" 2>/dev/null \
            && [ ! -f "$EDIKT_ROOT/.m4-pending" ]; then
             _has_signal=1
         fi
@@ -3014,6 +3015,354 @@ cmd_dev_unlink() {
     return 0
 }
 
+# ─── Tier-2 install: benchmark (SPEC-005, ADR-015) ──────────────────────────
+# `edikt install benchmark` is the tier-2 install verb. It is distinct from
+# `edikt install <tag>` (which installs a core payload). Dispatch routes
+# based on whether the first argument is the literal tool name "benchmark".
+#
+# Contract (ADR-015):
+#   - Copies commands/gov/benchmark.md + templates/attacks/ into
+#     $CLAUDE_ROOT/commands/edikt/.
+#   - Creates isolated venv at $EDIKT_ROOT/venv/gov-benchmark (or falls
+#     back to pipx). Never pollutes ambient system Python.
+#   - Verifies Python 3.10+ before any filesystem mutation (AC-023c).
+#   - Rolls back copied markdown if pip install fails (AC-023b).
+#   - Verifies vendored wheel SHA-256 against manifest if present (AC-023f).
+#
+# Test overrides:
+#   EDIKT_TIER2_SOURCE  — local source dir (tools/gov-benchmark/). Default
+#                          is $EDIKT_ROOT/versions/current/tools/gov-benchmark/
+#                          or the repo root (dev mode).
+#   EDIKT_TIER2_WHEEL   — path to a pre-built wheel; skips venv install of
+#                          the source tree, `pip install`s the wheel instead.
+#   EDIKT_TIER2_WHEEL_SHA256
+#                        — expected SHA-256 of the wheel (AC-023f).
+#   EDIKT_TIER2_SKIP_PIP — "1" to skip `pip install` (tests that only want
+#                          to verify markdown/template copying + rollback).
+
+# Resolve the Python interpreter and assert version ≥ 3.10 (AC-023c).
+# Writes actionable message to stderr and returns non-zero on failure.
+# Uses the literal message required by AC-023c for missing/old Python.
+tier2_resolve_python() {
+    _py=""
+    # Test override — allows tests to point at a stubbed Python without
+    # mutating PATH (which would also break POSIX utilities in the launcher).
+    if [ -n "${EDIKT_TIER2_PYTHON:-}" ]; then
+        _py="$EDIKT_TIER2_PYTHON"
+        if [ ! -x "$_py" ]; then
+            log_err "edikt benchmark requires Python 3.10+, found (none) at $_py"
+            return 1
+        fi
+    else
+        for cand in python3 python; do
+            if command -v "$cand" >/dev/null 2>&1; then
+                _py=$(command -v "$cand")
+                break
+            fi
+        done
+    fi
+    if [ -z "$_py" ]; then
+        log_err "edikt benchmark requires Python 3.10+, found (none) at (no python on PATH)"
+        return 1
+    fi
+    # Extract major.minor — robust against 3.10+ where sys.version_info
+    # prints a named tuple.
+    _ver=$("$_py" -c 'import sys; print("%d.%d"%sys.version_info[:2])' 2>/dev/null)
+    _maj=$(echo "$_ver" | awk -F. '{print $1}')
+    _min=$(echo "$_ver" | awk -F. '{print $2}')
+    if [ -z "$_maj" ] || [ -z "$_min" ]; then
+        log_err "edikt benchmark requires Python 3.10+, found $_ver at $_py"
+        return 1
+    fi
+    if [ "$_maj" -lt 3 ] || { [ "$_maj" -eq 3 ] && [ "$_min" -lt 10 ]; }; then
+        log_err "edikt benchmark requires Python 3.10+, found $_ver at $_py"
+        return 1
+    fi
+    echo "$_py"
+    return 0
+}
+
+# Resolve the source directory for tools/gov-benchmark/.
+tier2_resolve_source() {
+    if [ -n "${EDIKT_TIER2_SOURCE:-}" ]; then
+        echo "$EDIKT_TIER2_SOURCE"
+        return 0
+    fi
+    # Prefer the active version payload.
+    if [ -d "$EDIKT_ROOT/current/tools/gov-benchmark" ]; then
+        echo "$EDIKT_ROOT/current/tools/gov-benchmark"
+        return 0
+    fi
+    # Dev-linked / in-tree execution: walk up from the launcher path looking
+    # for a tools/gov-benchmark directory sibling.
+    _self=$(dirname "$0")
+    _root=$(cd "$_self/.." 2>/dev/null && pwd)
+    if [ -n "$_root" ] && [ -d "$_root/tools/gov-benchmark" ]; then
+        echo "$_root/tools/gov-benchmark"
+        return 0
+    fi
+    return 1
+}
+
+# Copy tier-2 markdown files. Records each destination path to the
+# receipt file so rollback can reverse the copy on pip-install failure.
+tier2_copy_markdown() {
+    _src="$1"
+    _receipt="$2"
+    _cmd_src="$_src/../../commands/gov/benchmark.md"
+    if [ ! -f "$_cmd_src" ]; then
+        # Try relative to current payload.
+        _cmd_src="$EDIKT_ROOT/current/commands/gov/benchmark.md"
+    fi
+    if [ ! -f "$_cmd_src" ]; then
+        log_err "cannot find commands/gov/benchmark.md — install source incomplete"
+        return 1
+    fi
+
+    # v0.4.x migration may create $CLAUDE_ROOT/commands/edikt as a symlink to
+    # $EDIKT_ROOT/current/commands/edikt without creating the target. mkdir -p
+    # through a dangling symlink fails ENOENT, so resolve and create the
+    # target dir explicitly first.
+    _edikt_link="$CLAUDE_ROOT/commands/edikt"
+    if [ -L "$_edikt_link" ] && [ ! -d "$_edikt_link" ]; then
+        _link_target=$(readlink "$_edikt_link")
+        case "$_link_target" in
+            /*) _abs_target="$_link_target" ;;
+            *)  _abs_target="$(dirname "$_edikt_link")/$_link_target" ;;
+        esac
+        mkdir -p "$_abs_target" || {
+            log_err "failed to create symlink target: $_abs_target"
+            return 1
+        }
+    fi
+
+    _dest_cmd="$CLAUDE_ROOT/commands/edikt/gov/benchmark.md"
+    mkdir -p "$(dirname "$_dest_cmd")" || return 1
+    cp "$_cmd_src" "$_dest_cmd" || return 1
+    printf '%s\n' "$_dest_cmd" >> "$_receipt"
+
+    # Templates/attacks/
+    _atk_src="$_src/../../templates/attacks"
+    if [ ! -d "$_atk_src" ]; then
+        _atk_src="$EDIKT_ROOT/current/templates/attacks"
+    fi
+    if [ -d "$_atk_src" ]; then
+        _dest_atk="$CLAUDE_ROOT/commands/edikt/templates/attacks"
+        mkdir -p "$_dest_atk" || return 1
+        for f in "$_atk_src"/*.md; do
+            [ -f "$f" ] || continue
+            _dst="$_dest_atk/$(basename "$f")"
+            cp "$f" "$_dst" || return 1
+            printf '%s\n' "$_dst" >> "$_receipt"
+        done
+    fi
+    return 0
+}
+
+tier2_rollback_markdown() {
+    _receipt="$1"
+    [ -f "$_receipt" ] || return 0
+    while IFS= read -r _line; do
+        [ -z "$_line" ] && continue
+        # #14 (security): only remove files that are under $CLAUDE_ROOT.
+        # A corrupted or maliciously-modified receipt could otherwise contain
+        # arbitrary paths, causing rm -f to touch files outside our control.
+        case "$_line" in
+            "$CLAUDE_ROOT"/*)
+                rm -f "$_line" 2>/dev/null || true
+                ;;
+        esac
+    done < "$_receipt"
+    # Best-effort: remove empty parent dirs we created.
+    rmdir "$CLAUDE_ROOT/commands/edikt/templates/attacks" 2>/dev/null || true
+    rmdir "$CLAUDE_ROOT/commands/edikt/templates" 2>/dev/null || true
+    rmdir "$CLAUDE_ROOT/commands/edikt/gov" 2>/dev/null || true
+    return 0
+}
+
+# Verify an optional vendored wheel against its expected SHA-256.
+# Returns 0 on match or when no wheel is configured. Aborts on mismatch
+# (AC-023f) with a clear message.
+#
+# #13 (security): when the wheel path looks like a release install path
+# (contains /current/ as a path component), EDIKT_TIER2_WHEEL_SHA256 is
+# REQUIRED. Allowing a SHA256-free install from a release path means
+# production installs can silently skip integrity verification. The test/dev
+# escape hatch (no SHA256 required) remains available for non-release paths
+# (e.g. /tmp/..., relative dev paths) and when EDIKT_TIER2_SKIP_PIP=1.
+_tier2_wheel_is_release_path() {
+    # Heuristic: path contains /current/ (canonical release layout symlink)
+    # or is under $EDIKT_ROOT/current/
+    case "$1" in
+        */current/*) return 0 ;;
+        "$EDIKT_ROOT"/current/*) return 0 ;;
+    esac
+    return 1
+}
+
+tier2_verify_wheel() {
+    [ -n "${EDIKT_TIER2_WHEEL:-}" ] || return 0
+    [ -f "$EDIKT_TIER2_WHEEL" ] || {
+        log_err "EDIKT_TIER2_WHEEL not found: $EDIKT_TIER2_WHEEL"
+        return 1
+    }
+    if [ -z "${EDIKT_TIER2_WHEEL_SHA256:-}" ]; then
+        # #13: release-path installs MUST provide a checksum.
+        if _tier2_wheel_is_release_path "$EDIKT_TIER2_WHEEL"; then
+            log_err "Release install requires EDIKT_TIER2_WHEEL_SHA256 (refusing to install unverified wheel)"
+            return 1
+        fi
+        # Non-release path (test/dev mode) — skip verification.
+        return 0
+    fi
+    _actual=$(sha256_file "$EDIKT_TIER2_WHEEL") || return 1
+    if [ "$_actual" != "$EDIKT_TIER2_WHEEL_SHA256" ]; then
+        log_err "Wheel checksum mismatch — expected $EDIKT_TIER2_WHEEL_SHA256, got $_actual"
+        return 1
+    fi
+    return 0
+}
+
+cmd_install_benchmark() {
+    # Already installed? Warn and exit 3 (matches EX_ALREADY).
+    if [ -d "$EDIKT_ROOT/venv/gov-benchmark" ] \
+        || [ -f "$CLAUDE_ROOT/commands/edikt/gov/benchmark.md" ]; then
+        # Only warn if BOTH exist — partial state is handled by uninstall.
+        if [ -d "$EDIKT_ROOT/venv/gov-benchmark" ] \
+            && [ -f "$CLAUDE_ROOT/commands/edikt/gov/benchmark.md" ]; then
+            log_err "edikt benchmark already installed. Run: edikt uninstall benchmark"
+            return $EX_ALREADY
+        fi
+    fi
+
+    # AC-023c: fail fast on Python before touching the filesystem.
+    _py=$(tier2_resolve_python) || return 1
+
+    _src=$(tier2_resolve_source) || {
+        log_err "tier-2 source dir not found (tools/gov-benchmark/)"
+        log_err "Set EDIKT_TIER2_SOURCE or install a payload with: edikt install <tag>"
+        return 1
+    }
+
+    # AC-023f: verify vendored wheel checksum before pip install.
+    tier2_verify_wheel || return 2
+
+    acquire_lock || return $?
+
+    _receipt="$EDIKT_ROOT/.tier2-benchmark-receipt"
+    : > "$_receipt"
+
+    # Copy markdown first so rollback is cheap.
+    if ! tier2_copy_markdown "$_src" "$_receipt"; then
+        tier2_rollback_markdown "$_receipt"
+        rm -f "$_receipt"
+        log_err "failed to copy tier-2 markdown files"
+        return 1
+    fi
+
+    # AC-023d: isolated venv (fallback to pipx on venv failure).
+    if [ "${EDIKT_TIER2_SKIP_PIP:-0}" = "1" ]; then
+        log_info "EDIKT_TIER2_SKIP_PIP=1 — skipping pip install (tier-2 markdown only)"
+        log_info "edikt benchmark installed (markdown only)"
+        return 0
+    fi
+
+    _venv="$EDIKT_ROOT/venv/gov-benchmark"
+    mkdir -p "$(dirname "$_venv")" || {
+        tier2_rollback_markdown "$_receipt"
+        rm -f "$_receipt"
+        log_err "cannot create $EDIKT_ROOT/venv (permission denied?)"
+        return 1
+    }
+
+    if "$_py" -m venv "$_venv" 2>/dev/null; then
+        _pip="$_venv/bin/pip"
+        if [ ! -x "$_pip" ]; then
+            _pip="$_venv/Scripts/pip"  # Windows-style
+        fi
+    else
+        # Fallback: pipx.
+        if command -v pipx >/dev/null 2>&1; then
+            log_warn "venv creation failed — falling back to pipx"
+            _target="${EDIKT_TIER2_WHEEL:-$_src}"
+            if pipx install "$_target" >/dev/null 2>&1; then
+                log_info "installed via pipx"
+                return 0
+            fi
+            tier2_rollback_markdown "$_receipt"
+            rm -f "$_receipt"
+            log_err "pipx install failed for $_target"
+            return 1
+        fi
+        tier2_rollback_markdown "$_receipt"
+        rm -f "$_receipt"
+        log_err "venv creation failed and pipx not available."
+        log_err "Install pipx (https://pypa.github.io/pipx/) or fix Python venv support."
+        return 1
+    fi
+
+    _target="${EDIKT_TIER2_WHEEL:-$_src}"
+    if ! "$_pip" install --quiet --disable-pip-version-check "$_target" 2>/dev/null; then
+        # AC-023b: rollback copied markdown on pip failure.
+        tier2_rollback_markdown "$_receipt"
+        rm -f "$_receipt"
+        rm -rf "$_venv" 2>/dev/null || true
+        log_err "pip install failed for $_target"
+        log_err "tier-2 markdown files rolled back; tier-1 command surface unchanged"
+        return 1
+    fi
+
+    log_info "edikt benchmark installed"
+    log_info "  venv:  $_venv"
+    log_info "  command: $CLAUDE_ROOT/commands/edikt/gov/benchmark.md"
+    return 0
+}
+
+cmd_uninstall_benchmark() {
+    # AC-023e: idempotent — tolerate missing state, exit 0 always.
+    _did_any=0
+    _receipt="$EDIKT_ROOT/.tier2-benchmark-receipt"
+
+    if [ -f "$_receipt" ]; then
+        tier2_rollback_markdown "$_receipt"
+        rm -f "$_receipt"
+        _did_any=1
+    else
+        # No receipt — best-effort removal from known paths.
+        for p in \
+            "$CLAUDE_ROOT/commands/edikt/gov/benchmark.md" \
+            "$CLAUDE_ROOT/commands/edikt/templates/attacks/refuse_tool_use.md" \
+            "$CLAUDE_ROOT/commands/edikt/templates/attacks/refuse_file_pattern.md" \
+            "$CLAUDE_ROOT/commands/edikt/templates/attacks/must_cite.md" \
+            "$CLAUDE_ROOT/commands/edikt/templates/attacks/refuse_edit_matching_frontmatter.md" \
+            "$CLAUDE_ROOT/commands/edikt/templates/attacks/README.md"; do
+            if [ -f "$p" ]; then
+                rm -f "$p" 2>/dev/null || true
+                _did_any=1
+            fi
+        done
+        rmdir "$CLAUDE_ROOT/commands/edikt/templates/attacks" 2>/dev/null || true
+        rmdir "$CLAUDE_ROOT/commands/edikt/templates" 2>/dev/null || true
+    fi
+
+    if [ -d "$EDIKT_ROOT/venv/gov-benchmark" ]; then
+        rm -rf "$EDIKT_ROOT/venv/gov-benchmark" 2>/dev/null || true
+        _did_any=1
+    fi
+
+    # Attempt pipx uninstall quietly (no-op if pipx didn't install it).
+    if command -v pipx >/dev/null 2>&1; then
+        pipx uninstall edikt-gov-benchmark >/dev/null 2>&1 || true
+    fi
+
+    if [ "$_did_any" -eq 0 ]; then
+        log_info "edikt benchmark already uninstalled"
+    else
+        log_info "edikt benchmark uninstalled"
+    fi
+    return 0
+}
+
 # ─── Help ───────────────────────────────────────────────────────────────────
 cmd_help() {
     cat <<EOF
@@ -3026,6 +3375,8 @@ Subcommands:
   list [--verbose] [--global]  List installed versions
                        (--global forces listing from global ~/.edikt/versions/)
   install <tag>        Fetch + extract release; does not activate
+  install benchmark    Tier-2 install: /edikt:gov:benchmark + Python helper
+                       (opt-in; never bundled with install.sh — ref: ADR-015)
   use <tag>            Activate an installed version (atomic symlink flip)
   rollback             Re-activate the previous version
   prune [--keep N]     Remove old versions (keeps N most recent; default 3)
@@ -3049,6 +3400,7 @@ Subcommands:
                        --dry-run (with --backfill-provenance): list candidates
                          without writing any files.
   uninstall [--yes]    Remove EDIKT_ROOT + commands symlink
+  uninstall benchmark  Remove tier-2 benchmark files + helper venv (idempotent)
 
 Environment:
   EDIKT_ROOT           Root of edikt state. Defaults: project mode (walks
@@ -3127,7 +3479,14 @@ esac
 case "$sub" in
     version|--version|-v) cmd_version "$@" ;;
     list|ls)              cmd_list "$@" ;;
-    install)              cmd_install "$@" ;;
+    install)
+        # Tier-2 fork (SPEC-005, ADR-015): `edikt install benchmark` routes
+        # to the tier-2 install verb; everything else is core payload install.
+        case "${1:-}" in
+            benchmark) shift; cmd_install_benchmark "$@" ;;
+            *)         cmd_install "$@" ;;
+        esac
+        ;;
     use)                  cmd_use "$@" ;;
     rollback)             cmd_rollback "$@" ;;
     prune)                cmd_prune "$@" ;;
@@ -3136,7 +3495,12 @@ case "$sub" in
     dev)                  cmd_dev "$@" ;;
     migrate)              cmd_migrate "$@" ;;
     doctor)               cmd_doctor "$@" ;;
-    uninstall)            cmd_uninstall "$@" ;;
+    uninstall)
+        case "${1:-}" in
+            benchmark) shift; cmd_uninstall_benchmark "$@" ;;
+            *)         cmd_uninstall "$@" ;;
+        esac
+        ;;
     help|--help|-h|"")    cmd_help ;;
     *)
         log_err "unknown subcommand: $sub"

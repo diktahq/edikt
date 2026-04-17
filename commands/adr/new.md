@@ -224,6 +224,66 @@ I need a few answers before writing ADR-NNN. Answer any subset — defaults appl
 
 Before writing the ADR file (in Section 5), draft the Decision section and validate it against the quality criteria in Section 4 below. If the draft fails the quality criteria, iterate with the user before persisting.
 
+### 3f. Sentinel field interview (SPEC-005 Phase 4 — new fields)
+
+After the Decision section passes quality review and before writing the ADR file, present three additional optional questions to populate the new sentinel fields (`canonical_phrases` and `behavioral_signal`). Present all three in a single batched message, each labeled `[optional]`:
+
+```
+Before I write the ADR, three quick questions to populate the governance sentinel fields.
+All are optional — press Enter to skip any.
+
+1. [optional] What tool calls or file writes should this directive forbid?
+   (Comma-separated tool names — Write, Edit, Bash, Task, WebFetch, WebSearch — and/or
+   path substrings like "package.json", ".sql", "migrations/". Press Enter to skip.)
+
+2. [optional] What 2–3 canonical phrases will a compliant refusal echo?
+   (One per line; empty line to finish. These are short substrings the model should use
+   when it refuses a request that violates this directive. Press Enter to skip.)
+
+3. [optional] Should the model cite this ADR's ID ({ADR-NNN}) in any refusal? [y/n]
+   (Press Enter or 'n' to skip.)
+```
+
+Accept a single user reply covering any subset. Apply these defaults for skipped items:
+- Q1 skipped → `refuse_tool: []`, `refuse_to_write: []`
+- Q2 skipped → `canonical_phrases: []`
+- Q3 skipped or 'n' → `cite: []`
+
+**Parsing Q1 — tools vs paths:**
+Split the comma-separated input and classify each token:
+- Token matches a known tool name (case-insensitive: `write`, `edit`, `bash`, `task`, `webfetch`, `websearch`) → append to `refuse_tool` (normalized to title-case: `Write`, `Edit`, `Bash`, `Task`, `WebFetch`, `WebSearch`)
+- Token contains `.`, `/`, or matches a `*.ext` pattern → append to `refuse_to_write`
+- Ambiguous tokens that match neither → place in `refuse_to_write` (safer default)
+
+**Path-traversal guard:** Reject any `refuse_to_write` entry containing `..`, starting with `/`, or matching `~/`. If the user supplies such an entry, output:
+```
+[WARN] Path "{entry}" rejected — refuse_to_write uses relative substrings only.
+       Entries starting with /, containing .., or ~/  are not accepted.
+```
+And omit the offending entry from the sentinel block (do not write it).
+
+**Parsing Q2 — canonical_phrases:**
+Collect non-empty lines (trim whitespace). Treat an empty line as the end of input. Maximum 10 phrases; if the user provides more, take the first 10 and note the truncation.
+
+**Parsing Q3 — cite:**
+If 'y': `cite: ["{ADR-NNN}"]` using the new ADR's own ID.
+If 'n' or empty: `cite: []`.
+
+**Empty inputs always produce empty fields, never omit the field.** The fields MUST appear in the sentinel block even when empty (`canonical_phrases: []`, `behavioral_signal: {}`). This preserves schema consistency for downstream parsers (SPEC-005 Phase 5).
+
+**behavioral_signal structure.** Only write the sub-keys that are non-empty. If all three sub-keys (`refuse_tool`, `refuse_to_write`, `cite`) are empty, write `behavioral_signal: {}`. Otherwise write the populated sub-keys under `behavioral_signal:` as a nested block:
+
+```yaml
+behavioral_signal:
+  refuse_tool:
+    - Write
+    - Edit
+  refuse_to_write:
+    - ".sql"
+  cite:
+    - ADR-042
+```
+
 ### 4. Draft and Validate the Decision Section
 
 Before writing the file, draft the Decision section and validate each directive against these quality criteria. Every statement in the Decision section becomes a compiled governance directive — weak language here means weak enforcement later.
@@ -241,7 +301,35 @@ Do NOT write soft language ("should", "try to", "consider", "prefer") for decisi
 
 ### 5. Write the ADR
 
-Create `{BASE}/decisions/{NNN}-{slug}.md`:
+Create `{BASE}/decisions/{NNN}-{slug}.md`.
+
+**Sentinel field substitution.** Before writing, resolve the two template placeholders from Step 3f interview results:
+
+- `{canonical_phrases_block}` — if `canonical_phrases` is empty: `[]`; otherwise a YAML list with one `- "phrase"` item per line (indented 2 spaces under the key).
+- `{behavioral_signal_block}` — if all of `refuse_tool`, `refuse_to_write`, and `cite` are empty: `{}`; otherwise a YAML nested block with only the non-empty sub-keys written (indent 2 spaces for sub-key, 4 spaces for list items).
+
+Examples:
+
+```yaml
+# empty canonical_phrases:
+canonical_phrases: []
+
+# populated canonical_phrases:
+canonical_phrases:
+  - "repository layer"
+  - "NEVER bypass"
+
+# empty behavioral_signal:
+behavioral_signal: {}
+
+# populated behavioral_signal (only non-empty sub-keys):
+behavioral_signal:
+  refuse_tool:
+    - Write
+    - Edit
+  cite:
+    - ADR-042
+```
 
 ```markdown
 ---
@@ -326,6 +414,10 @@ directives:
   - {Each decision statement rewritten as an enforceable directive}
   - {Use MUST/NEVER for hard constraints, specific names for patterns}
   - {One directive per line, include (ref: ADR-{NNN}) suffix}
+manual_directives: []
+suppressed_directives: []
+canonical_phrases: {canonical_phrases_block}
+behavioral_signal: {behavioral_signal_block}
 [edikt:directives:end]: #
 
 ---

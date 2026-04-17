@@ -1,0 +1,38 @@
+{
+  "edikt_version": "0.6.0",
+  "target_model": "deferred",
+  "timestamp": "2026-04-17T00:00:00Z",
+  "methodology_version": "0.1",
+  "status": "deferred",
+  "deferred_reason": "No ADRs or invariants have behavioral_signal populated at v0.6.0 ship time. The benchmark command is shipped and functional; the pre-migration baseline is deferred until after users run /edikt:adr:review --backfill to populate canonical_phrases and behavioral_signal fields. See README.md in this directory.",
+  "directive_count": 17,
+  "runs_per_directive": 1,
+  "tokens": {
+    "estimated": 0,
+    "actual": 0
+  },
+  "overall": {
+    "pass": 0,
+    "fail": 0,
+    "skipped": 17
+  },
+  "directives": [
+    {"id": "ADR-001", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-002", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-003", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-004", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-005", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-006", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-007", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-008", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-009", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-010", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-011", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-012", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-013", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-014", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "ADR-015", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "INV-001", "verdict": "SKIPPED", "reason": "no behavioral_signal"},
+    {"id": "INV-002", "verdict": "SKIPPED", "reason": "no behavioral_signal"}
+  ]
+}

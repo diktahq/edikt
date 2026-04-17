@@ -1,0 +1,26 @@
+[project]
+name = "edikt-gov-benchmark"
+version = "0.6.0"
+description = "Tier-2 Python helper for /edikt:gov:benchmark. Installs via `edikt install benchmark`, never install.sh."
+requires-python = ">=3.10"
+
+# SPEC-005 AC-023f + ADR-015: tier-2 manifests MUST pin exact versions.
+# Floating ranges (>=, ~=, *) are forbidden. claude-agent-sdk is the sole
+# runtime dependency — the Claude Agent SDK provides `query()`, the
+# cancel token, and the subprocess lifecycle the helper needs for
+# SIGINT-mid-call cancellation (AC-006c).
+dependencies = [
+  "claude-agent-sdk==0.1.59",
+  "pyyaml==6.0.2",
+]
+
+[project.scripts]
+edikt-gov-benchmark = "gov_benchmark.run:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gov_benchmark*"]
