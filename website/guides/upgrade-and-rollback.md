@@ -22,6 +22,29 @@ edikt rollback
 
 **Rollback is payload-only.** `edikt rollback` flips `~/.edikt/current` back to the previous generation. It does not undo migrations (M1-M5). Migrations are permanent structural changes to your `~/.edikt/` layout and `~/.claude/` command files. If a migration caused a problem, contact support — don't expect rollback to fix it.
 
+### v0.5.0 host-file rollback
+
+v0.5.0 added a dedicated rollback for host-level changes (the new `settings.json` permissions block, the managed-region sidecar, and grandfather verdict stubs):
+
+```bash
+edikt rollback v0.5.0
+```
+
+This:
+
+- Restores `~/.claude/settings.json` from the pre-upgrade backup at `~/.edikt/backup/pre-v0.5.0-<timestamp>/`.
+- Removes the managed-region sidecar at `~/.edikt/state/settings-managed.json` so the next install prompts fresh.
+- Removes any grandfather verdict stubs created by the upgrade migration (JSON files under `docs/product/plans/verdicts/` with `meta.grandfathered: true`).
+
+It's idempotent — re-running is safe. The backup is preserved after rollback; delete it manually when you're satisfied:
+
+```bash
+rm -rf ~/.edikt/backup/pre-v0.5.0-*
+rm -f ~/.edikt/backup/pre-v0.5.0-marker
+```
+
+Unlike payload rollback, this form takes a version argument so future major releases can add similar host-level rollback paths (`edikt rollback v0.6.0`, etc.).
+
 ## Pinning a version
 
 Stay on a specific version:

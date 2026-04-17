@@ -55,12 +55,26 @@ Full security audit findings closed before release. Six new invariants (INV-003 
 - **Install URL changed.** Update bookmarks and CI scripts from `raw.githubusercontent.com/.../main/install.sh` to `releases/download/v0.5.0/install.sh`.
 - **Install now requires cosign for full verification.** Users without cosign can set `EDIKT_INSTALL_INSECURE=1` to bypass (prints a loud banner). Recommended: install cosign first.
 
+#### Post-audit fixup (commit `e912ef0`)
+
+A `/edikt:sdlc:review` and `/edikt:sdlc:drift` pass against the hardened branch caught residual gaps that were closed in a single fixup commit:
+
+- **Signing chain end-to-end.** `install.sh` now downloads the signed `edikt-v<tag>.tar.gz` release asset (which IS in `SHA256SUMS`), cosign-verifies, and extracts `bin/edikt` from the verified tarball. The prior raw-launcher URL was not covered by `SHA256SUMS`, so every install funneled through `EDIKT_INSTALL_INSECURE=1`. Closed.
+- **Homebrew tap auto-merge replaced with `environment: production` gate.** `merge-tap-pr` now requires a named reviewer in the GitHub Actions UI before merging the tap formula PR. First-time setup: Settings → Environments → new `production` environment with required reviewers. (HI-8 fully closed.)
+- **Grandfather runtime** for ADR-018 evidence gate. `edikt upgrade` across the v0.5.0 boundary seeds `docs/product/plans/verdicts/<plan>/<phase>.json` stubs for every existing `done` phase so in-flight PASS verdicts don't regress to BLOCKED.
+- **`edikt rollback v0.5.0` subcommand.** Restores `~/.claude/settings.json` from the pre-upgrade backup, removes the managed-region sidecar, removes grandfather stubs. Idempotent. Backup preserved at `~/.edikt/backup/pre-v0.5.0-<ts>/` for audit.
+- **`edikt doctor`** now probes `python3` (ERROR if absent — hooks require it since v0.5.0 per INV-003) and `cosign` (WARN if absent — installs require `EDIKT_INSTALL_INSECURE=1` without it).
+- **MED-11 structured agent identity.** `subagent-stop.sh` prefers the SubagentStop payload's structured `agent_name`/`subagent_type`/`tool_name` over content grep. When grep is used as fallback, the `gate_fired` event carries `identity_source: "grep-fallback"` so post-hoc analysis can separate authoritative from spoofable firings.
+- **`docs/guides/upgrade-v0.5.0.md`** — user-facing upgrade guide with pre-flight checklist, expected behavior changes, rollback walkthrough, and manual cosign verification snippet. Mirrored to `website/guides/v0.5.0-upgrade.md`.
+- **LOW-11 summary integrity sidecar.** Benchmark summary JSON files now ship with a sibling `.sha256` file; release decisions that depend on benchmark results can verify before trusting.
+- **Bash-vs-sh syntax check.** `install.sh` now uses `bash -n` (not `sh -n`) for the downloaded launcher since `bin/edikt` is bash.
+
 #### Remaining follow-ups (not blocking v0.5.0)
 
-- **Homebrew tap auto-merge** still runs after CI pass; a future release adds a `production` environment gate with reviewer approval.
 - **Markdown-embedded Python extraction** (10+ sites in `test/integration/`) will move to `test/_lib/` in a follow-up.
 - **Hash anchor seeding** for managed markdown regions (LOW-3) lands with the next `/edikt:gov:compile` pass.
-- **Upgrade rollback subcommand** (`bin/edikt rollback v0.5.0` beyond payload-only) is tracked for v0.5.x.
+- **macOS ancestor-safe migration paths.** `O_NOFOLLOW` on macOS guards only the final path component. The v0.5.0 threat model is covered (swap-during-write window closed by pre-rename re-check) but fully ancestor-safe `openat`-style navigation is tracked for v0.6.x. See INV-005 "Known limitations".
+- **`SHA256SUMS` to include a standalone signed `bin/edikt`** as its own release asset (currently it's inside the signed tarball). Either path is end-to-end verified; the standalone asset would simplify power-user flows. Tracked for v0.5.x.
 
 ---
 
