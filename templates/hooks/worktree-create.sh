@@ -39,11 +39,15 @@ if [ -L "$WORKTREE_PATH" ]; then
     exit 0
 fi
 
-# Source repo's .edikt/config.yaml — walk up from $PWD to find it
+# Source repo's .edikt/config.yaml — walk up from $PWD to find it.
+# MED-6: bound the walk at $HOME so a stray /tmp/.edikt/config.yaml planted
+# by another local user on a shared system cannot be treated as the project
+# root. Also require the found file to be owned by the current user.
 SOURCE_CFG=""
 D="$PWD"
-while [ "$D" != "/" ]; do
-    if [ -f "$D/.edikt/config.yaml" ] && [ "$D" != "$WORKTREE_PATH" ]; then
+_home="${HOME:-/nonexistent}"
+while [ "$D" != "/" ] && [ "$D" != "$_home" ]; do
+    if [ -f "$D/.edikt/config.yaml" ] && [ "$D" != "$WORKTREE_PATH" ] && [ -O "$D/.edikt/config.yaml" ]; then
         SOURCE_CFG="$D/.edikt/config.yaml"
         break
     fi

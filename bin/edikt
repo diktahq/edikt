@@ -39,9 +39,13 @@ resolve_edikt_root() {
         return 0
     fi
     # Walk upward looking for .edikt/bin/edikt (project-mode marker).
+    # MED-6: bound the walk at $HOME and require the launcher to be owned
+    # by the current user. On shared systems, an attacker-planted
+    # /tmp/.edikt/bin/edikt would otherwise be honored as the project root.
     dir="$PWD"
-    while [ -n "$dir" ] && [ "$dir" != "/" ]; do
-        if [ -x "$dir/.edikt/bin/edikt" ]; then
+    _home="${HOME:-/nonexistent}"
+    while [ -n "$dir" ] && [ "$dir" != "/" ] && [ "$dir" != "$_home" ]; do
+        if [ -x "$dir/.edikt/bin/edikt" ] && [ -O "$dir/.edikt/bin/edikt" ]; then
             echo "$dir/.edikt"
             return 0
         fi
@@ -1076,22 +1080,14 @@ migrate_m2_claudemd_sentinels() {
     _dry="$1"
     _f="$EDIKT_ROOT/CLAUDE.md"
     [ -f "$_f" ] || return 0
-    # Safety: refuse to operate through a symlink. cp would dereference it
-    # and mv -f would clobber the symlink target, not the link itself.
-    # The user must resolve the symlink manually before re-running migrate.
-    if [ -L "$_f" ]; then
-        log_err "M2: CLAUDE.md is a symlink — migration refuses to follow it. Resolve manually, then re-run 'edikt migrate'."
-        return 1
-    fi
-    # Detection: must contain BOTH HTML markers; if neither is present we are
-    # already on the new format (or never had sentinels) — skip silently.
-    if ! grep -q '<!-- edikt:start -->' "$_f" 2>/dev/null; then
-        return 0
-    fi
-    if ! grep -q '<!-- edikt:end -->' "$_f" 2>/dev/null; then
-        return 0
-    fi
     if [ "$_dry" -eq 1 ]; then
+        # Dry-run detection still uses shell; symlink check is informational only.
+        if [ -L "$_f" ]; then
+            log_err "M2: CLAUDE.md is a symlink — migration refuses to follow it."
+            return 1
+        fi
+        if ! grep -q '<!-- edikt:start -->' "$_f" 2>/dev/null; then return 0; fi
+        if ! grep -q '<!-- edikt:end -->' "$_f" 2>/dev/null; then return 0; fi
         log_info "M2 (CLAUDE.md sentinels): would rewrite HTML sentinels in $_f to markdown link-ref form"
         return 0
     fi
@@ -1099,26 +1095,99 @@ migrate_m2_claudemd_sentinels() {
         log_err "M2: could not create backup dir"
         return 1
     }
-    cp "$_f" "$MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2" || {
-        log_err "M2: failed to back up $_f"
+    # Audit HI-3: the prior implementation had a TOCTOU window between the
+    # symlink check and the cp+mv sequence. Replace with a single atomic
+    # Python operation using O_NOFOLLOW — if the file becomes a symlink at
+    # any point, open() itself raises ELOOP and the migration aborts without
+    # ever reading or writing through the link.
+    python3 - "$_f" "$MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2" <<'PY'
+import os
+import sys
+
+src, backup = sys.argv[1], sys.argv[2]
+
+# Open with O_NOFOLLOW (blocks symlink traversal) and O_RDONLY.
+try:
+    fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+except FileNotFoundError:
+    # File went away between [ -f ] and here — safe to skip.
+    sys.exit(0)
+except OSError as exc:
+    # ELOOP (40 on macOS/Linux) fires when the target is a symlink.
+    if getattr(exc, 'errno', None) in (40,):  # ELOOP
+        sys.stderr.write(f"M2: {src} is a symlink — refusing to follow\n")
+        sys.exit(2)
+    sys.stderr.write(f"M2: open failed: {exc}\n")
+    sys.exit(1)
+
+try:
+    with os.fdopen(fd, 'rb') as f:
+        content = f.read()
+except OSError as exc:
+    sys.stderr.write(f"M2: read failed: {exc}\n")
+    sys.exit(1)
+
+# Detection — skip if no HTML markers.
+if b'<!-- edikt:start -->' not in content or b'<!-- edikt:end -->' not in content:
+    sys.exit(0)
+
+# Transform.
+new_content = content.replace(
+    b'<!-- edikt:start -->', b'[edikt:start]: #'
+).replace(
+    b'<!-- edikt:end -->', b'[edikt:end]: #'
+)
+
+# Backup original bytes.
+try:
+    with open(backup, 'wb') as f:
+        f.write(content)
+except OSError as exc:
+    sys.stderr.write(f"M2: backup write failed: {exc}\n")
+    sys.exit(1)
+
+# Write transformed content atomically via tmp + rename. O_NOFOLLOW on
+# the write side blocks the race where an attacker swaps the file for a
+# symlink between the read and write.
+dst_dir = os.path.dirname(src) or '.'
+tmp_path = os.path.join(dst_dir, f".{os.path.basename(src)}.tmp.{os.getpid()}")
+try:
+    tfd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+    with os.fdopen(tfd, 'wb') as f:
+        f.write(new_content)
+        f.flush()
+        os.fsync(f.fileno())
+    # Re-assert O_NOFOLLOW on the destination before replace — prevents
+    # attacker from turning the destination into a symlink during our write.
+    try:
+        check_fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+        os.close(check_fd)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        if getattr(exc, 'errno', None) in (40,):
+            os.remove(tmp_path)
+            sys.stderr.write(f"M2: {src} became a symlink during migration — aborting\n")
+            sys.exit(2)
+        raise
+    os.replace(tmp_path, src)
+except OSError as exc:
+    try:
+        os.remove(tmp_path)
+    except OSError:
+        pass
+    sys.stderr.write(f"M2: atomic write failed: {exc}\n")
+    sys.exit(1)
+PY
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        if [ "$rc" -eq 2 ]; then
+            log_err "M2: CLAUDE.md symlink detected during migration — aborting safely"
+        else
+            log_err "M2: migration failed — see error above"
+        fi
         return 1
-    }
-    _tmp="$_f.tmp.$$"
-    # POSIX sed; preserve content between markers verbatim — only the marker
-    # lines themselves are rewritten.
-    sed \
-        -e 's|<!-- edikt:start -->|[edikt:start]: #|g' \
-        -e 's|<!-- edikt:end -->|[edikt:end]: #|g' \
-        "$_f" >"$_tmp" || {
-        rm -f "$_tmp"
-        log_err "M2: sed rewrite failed"
-        return 1
-    }
-    mv -f "$_tmp" "$_f" || {
-        rm -f "$_tmp"
-        log_err "M2: atomic mv failed"
-        return 1
-    }
+    fi
     MIGRATE_RAN_M2=1
     log_info "M2: rewrote sentinels in $_f (backup at $MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2)"
     emit_event migration_step_completed \

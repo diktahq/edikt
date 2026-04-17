@@ -15,6 +15,15 @@ edikt_log_event() {
   local timestamp user event
 
   mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+  # MED-8: tighten permissions on the log. events.jsonl can carry git email,
+  # gate findings, and session metadata; on multi-user systems the default
+  # umask (0022) leaves it world-readable.
+  if [ ! -e "$log_file" ]; then
+    touch "$log_file" 2>/dev/null && chmod 0600 "$log_file" 2>/dev/null || true
+  else
+    # Ensure existing logs have the right perms (idempotent).
+    chmod 0600 "$log_file" 2>/dev/null || true
+  fi
   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   user=$(git config user.email 2>/dev/null || echo "unknown")
 

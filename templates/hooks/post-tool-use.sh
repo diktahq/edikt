@@ -16,6 +16,16 @@ if grep -q "auto-format: false" .edikt/config.yaml 2>/dev/null; then exit 0; fi
 FILE="${CLAUDE_TOOL_INPUT_FILE_PATH:-${CLAUDE_TOOL_INPUT_PATH:-}}"
 if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then exit 0; fi
 
+# INV-006 / audit MED-14: reject filenames containing newlines, null bytes,
+# or other metacharacters before passing them to a formatter. A crafted file
+# path with embedded `;` or newline could otherwise split case statements or
+# smuggle arguments into the formatter invocation.
+case "$FILE" in
+  *[!A-Za-z0-9_./-]*)
+    exit 0
+    ;;
+esac
+
 EXT="${FILE##*.}"
 
 case "$EXT" in
