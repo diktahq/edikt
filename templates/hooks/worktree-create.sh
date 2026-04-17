@@ -27,9 +27,15 @@ except Exception:
     pass
 ' 2>/dev/null)
 
-# Validate path before any shell operations. Quote throughout.
+# Validate path before any shell operations. Quote throughout. Reject symlinks
+# at the worktree root — a git-managed worktree is always a real directory, so
+# a symlink here indicates filesystem-level attack (INV-006, audit MED-12).
 if [ -z "$WORKTREE_PATH" ] || [ ! -d "$WORKTREE_PATH" ]; then
     printf '{"continue": true}\n'
+    exit 0
+fi
+if [ -L "$WORKTREE_PATH" ]; then
+    python3 -c 'import json,sys; print(json.dumps({"systemMessage": f"edikt: worktree path {sys.argv[1]!r} is a symlink; refusing to copy governance (symlinked worktrees are not supported)."}))' "$WORKTREE_PATH"
     exit 0
 fi
 
