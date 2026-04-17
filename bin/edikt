@@ -376,7 +376,9 @@ lock_write() {
 #   $EDIKT_ROOT/current        -> versions/<tag>
 #   $EDIKT_ROOT/hooks          -> current/hooks
 #   $EDIKT_ROOT/templates      -> current/templates
-#   $CLAUDE_ROOT/commands/edikt -> $EDIKT_ROOT/current/commands/edikt
+#   $CLAUDE_ROOT/commands/edikt -> $EDIKT_ROOT/current/commands/edikt   (v0.4.x nested layout)
+#                              OR $EDIKT_ROOT/current/commands           (v0.5.x flat layout)
+# Layout is detected at install/use/dev-link time — see resolve_commands_target.
 # Atomic symlink install: create a sibling `.new` symlink then rename(2)
 # it over the target. rename(2) on a symlink is atomic on every POSIX
 # filesystem, closing the ln -sfn unlink-then-create window where a
@@ -402,13 +404,29 @@ atomic_symlink() {
     ln -sfn "$target" "$link"
 }
 
+# Resolve the path that $CLAUDE_ROOT/commands/edikt should point at,
+# adapting to the active payload layout (PLAN-v0.5.0-stability Phase 20):
+#   - v0.4.x payload: commands/edikt/*.md  → point at current/commands/edikt
+#   - v0.5.x payload: commands/*.md         → point at current/commands
+# Defaults to the flat (v0.5.x) target when neither shape exists yet, since
+# new installs are always v0.5.x and the legacy nested layout is being phased
+# out. Kept as a function so callers (ensure_external_symlinks, doctor,
+# migration UI) all derive the same answer.
+resolve_commands_target() {
+    if [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
+        printf '%s' "$EDIKT_ROOT/current/commands/edikt"
+    else
+        printf '%s' "$EDIKT_ROOT/current/commands"
+    fi
+}
+
 ensure_external_symlinks() {
     # hooks and templates are stable external paths embedded in
     # settings.json. Repair on every install/use.
     atomic_symlink current/hooks "$EDIKT_ROOT/hooks"
     atomic_symlink current/templates "$EDIKT_ROOT/templates"
     mkdir -p "$CLAUDE_ROOT/commands"
-    atomic_symlink "$EDIKT_ROOT/current/commands/edikt" "$CLAUDE_ROOT/commands/edikt"
+    atomic_symlink "$(resolve_commands_target)" "$CLAUDE_ROOT/commands/edikt"
 }
 
 # Atomic symlink flip: ln -sfn replaces an existing symlink in one
@@ -783,6 +801,16 @@ cmd_install() {
         ( cd "$payload_src" && tar -cf - . ) | ( cd "$final_stage" && tar -xf - )
     else
         mv "$payload_src" "$final_stage"
+    fi
+
+    # Defensive: ensure every hook script is executable post-extract
+    # (PLAN-v0.5.0-stability Phase 21). Belt-and-braces against a packaging
+    # step that drops exec bits (umask drift, archive tool quirks). The
+    # primary control is the CI mode-gate at test/test-hook-modes.sh; this
+    # is a runtime safety net so a corrupted tarball doesn't break installs.
+    if [ -d "$final_stage/templates/hooks" ]; then
+        find "$final_stage/templates/hooks" -type f \( -name '*.sh' -o -name 'pre-push' \) \
+            -exec chmod 0755 {} + 2>/dev/null || true
     fi
 
     # Validate VERSION exists and meets MIN_PAYLOAD_VERSION.
@@ -2393,7 +2421,11 @@ EOF
     echo "  $EDIKT_ROOT/current      → versions/$MIGRATE_VERSION"
     echo "  $EDIKT_ROOT/hooks        → current/hooks"
     echo "  $EDIKT_ROOT/templates    → current/templates"
-    echo "  $CLAUDE_ROOT/commands/edikt → $EDIKT_ROOT/current/commands/edikt"
+    # Migration plans always run against the new (v0.5.x flat) payload, so
+    # show the flat target. resolve_commands_target may not be invokable yet
+    # because $EDIKT_ROOT/current isn't pointing at the new payload at
+    # planning time — describe the post-flip target literally.
+    echo "  $CLAUDE_ROOT/commands/edikt → $EDIKT_ROOT/current/commands"
     echo ""
     echo "Will preserve:"
     for entry in config.yaml custom backups events.jsonl lock.yaml; do
