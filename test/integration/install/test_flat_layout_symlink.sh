@@ -1,36 +1,32 @@
 #!/bin/bash
-# After installing a v0.5.x flat-layout payload (commands/*.md, no
-# commands/edikt/ subdirectory), CLAUDE_ROOT/commands/edikt MUST resolve to
-# a directory containing *.md files — i.e. resolve_commands_target picked the
-# flat target path, not the legacy nested one.
+# Regression test: under v0.5.x flat-layout payload (commands/*.md, no
+# commands/edikt/ subdirectory), CLAUDE_ROOT/commands/edikt MUST resolve
+# to the FLAT shape — i.e. resolve_commands_target picked
+# current/commands, NOT current/commands/edikt.
 #
-# Regression test for the bug where ensure_external_symlinks hardcoded
-# `current/commands/edikt`, producing a dangling symlink under the v0.5.x
-# flat layout that hid every /edikt:* slash command from Claude Code.
+# Strict assertion: the symlink must expose the payload's flat *.md files
+# directly under CLAUDE_ROOT/commands/edikt/, AND the legacy nested shape
+# (CLAUDE_ROOT/commands/edikt/edikt/*.md) MUST NOT exist. If only the
+# nested shape resolved, the layout-detection helper picked the wrong
+# branch and the bug is back.
+#
+# Pair test: test_nested_layout_symlink.sh covers the v0.4.x branch.
 #
 # (ref: PLAN-v0.5.0-stability Phase 20)
+#
+# Entry point: invoke via test/run.sh — install_setup refuses to run
+# outside the test/run.sh sandbox.
 
 set -uo pipefail
 . "$(dirname "$0")/_lib.sh"
 
-install_setup flat-layout
+install_setup flat_layout
 trap install_teardown EXIT
 
-# Build a flat-layout payload ourselves (make_payload from _lib.sh creates
-# the nested layout). Mirrors the v0.5.x source-tree shape.
 PAYLOAD="$TEST_HOME/_payload-flat"
-rm -rf "$PAYLOAD"
-mkdir -p "$PAYLOAD/templates/hooks" "$PAYLOAD/commands"
-printf '0.5.0\n' > "$PAYLOAD/VERSION"
-printf '# changelog 0.5.0\n' > "$PAYLOAD/CHANGELOG.md"
-# Flat layout: commands/*.md directly, no commands/edikt/ subdir.
-printf '# context\n' > "$PAYLOAD/commands/context.md"
-printf '# adr/new\n' > "$PAYLOAD/commands/adr-new.md"
-# Required hook scaffolding for install to validate.
-printf '#!/bin/sh\necho hi\n' > "$PAYLOAD/templates/hooks/session-start.sh"
-chmod +x "$PAYLOAD/templates/hooks/session-start.sh"
+make_payload_flat "$PAYLOAD" "0.5.0"
 
-test_start "flat-layout payload → claude commands symlink resolves"
+test_start "flat-layout payload → claude commands symlink resolves to FLAT shape"
 
 EDIKT_RELEASE_TAG="v0.5.0" \
 EDIKT_INSTALL_SOURCE="$PAYLOAD" \
@@ -55,35 +51,42 @@ if [ ! -L "$CMDS_LINK" ]; then
 fi
 pass "claude commands symlink exists"
 
-# Resolve and verify it points at a directory that actually exists. This is
-# the exact thing the bug broke: the symlink existed but pointed at a
-# nested path that didn't exist under v0.5.x.
+# Diagnostics for any failure below — show the symlink itself (no slash,
+# so we don't follow it) and its fully-resolved target.
+LINK_RAW=$(ls -la "$CMDS_LINK" 2>&1)
 LINK_TARGET=$(readlink "$CMDS_LINK")
-echo "  symlink target: $LINK_TARGET"
+LINK_RESOLVED=$(readlink -f "$CMDS_LINK" 2>/dev/null || python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$CMDS_LINK" 2>/dev/null || echo "(could not resolve)")
+echo "  symlink (raw):       $LINK_RAW"
+echo "  symlink target:      $LINK_TARGET"
+echo "  symlink resolves to: $LINK_RESOLVED"
 
-if [ ! -d "$CMDS_LINK/" ]; then
-  fail "symlink resolves to a directory" "target $LINK_TARGET does not resolve"
-  test_summary
-  exit "$FAIL_COUNT"
-fi
-pass "symlink resolves to a directory"
-
-# Under flat layout, the symlink should point at current/commands (no
-# trailing /edikt). Permit either shape since resolve_commands_target
-# auto-selects, but the resolved path MUST contain the *.md files we put
-# in the payload.
-if [ ! -f "$CMDS_LINK/context.md" ] && [ ! -f "$CMDS_LINK/edikt/context.md" ]; then
-  echo "--- contents at $CMDS_LINK ---"
+# Strict regression assertion #1: flat shape MUST exist (context.md visible
+# directly under the symlink without an /edikt/ prefix).
+if [ ! -f "$CMDS_LINK/context.md" ]; then
+  echo "--- contents at $CMDS_LINK/ (follows symlink) ---"
   ls -la "$CMDS_LINK/" 2>&1 | head -20
-  echo "------------------------------"
-  fail "context.md visible through symlink" "neither flat nor nested layout shape found"
+  echo "------------------------------------------------"
+  fail "flat layout exposes commands/context.md" \
+       "context.md not visible at $CMDS_LINK/context.md — layout detection picked wrong target"
   test_summary
   exit "$FAIL_COUNT"
 fi
-pass "context.md visible through symlink"
+pass "flat layout exposes commands/context.md"
 
-# For a flat-layout payload the target path SHOULD be current/commands
-# (proves the layout detection picked the right branch).
+# Strict regression assertion #2: nested shape MUST NOT exist. If both
+# resolve, the symlink target ends in current/commands and the payload
+# happens to ship a stray edikt/ dir — that's the legacy branch fixture
+# leaking into a flat-layout test. The whole point of the bug fix is that
+# the symlink target itself is current/commands (NOT current/commands/edikt).
+if [ -f "$CMDS_LINK/edikt/context.md" ]; then
+  fail "nested shape MUST NOT resolve under flat payload" \
+       "found $CMDS_LINK/edikt/context.md — payload polluted with edikt/ subdir, or symlink picked nested branch"
+fi
+
+# Strict regression assertion #3: the symlink TARGET STRING must end in
+# current/commands (no trailing /edikt). This proves resolve_commands_target
+# selected the flat branch — even if the file-content check above passed by
+# coincidence, the wrong target would fail this.
 case "$LINK_TARGET" in
   */current/commands)
     pass "symlink target uses flat layout (current/commands)"

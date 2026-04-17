@@ -408,16 +408,44 @@ atomic_symlink() {
 # adapting to the active payload layout (PLAN-v0.5.0-stability Phase 20):
 #   - v0.4.x payload: commands/edikt/*.md  → point at current/commands/edikt
 #   - v0.5.x payload: commands/*.md         → point at current/commands
-# Defaults to the flat (v0.5.x) target when neither shape exists yet, since
-# new installs are always v0.5.x and the legacy nested layout is being phased
-# out. Kept as a function so callers (ensure_external_symlinks, doctor,
+#
+# Returns the resolved path on stdout (no trailing newline). Returns 1 and
+# logs an error when the active payload is corrupted (current is missing,
+# is a broken symlink, or contains neither layout shape) — callers MUST
+# check the exit status before using the value, otherwise they'll write a
+# guaranteed-broken Claude commands symlink.
+#
+# Sub-decision (PLAN-v0.5.0-stability §Phase 20): keep dynamic detection
+# indefinitely. The legacy nested branch will be deprecated in the v0.6.0
+# plan once outstanding v0.4.x installs have migrated; until then both
+# shapes are first-class and tested in parity (test_flat_layout_symlink.sh
+# + test_nested_layout_symlink.sh).
+#
+# Kept as a function so callers (ensure_external_symlinks, doctor,
 # migration UI) all derive the same answer.
 resolve_commands_target() {
+    # Refuse to guess on a corrupted current/. A broken symlink would let
+    # the directory tests below silently pick the flat default and produce
+    # a dangling Claude link — exactly the failure mode this helper exists
+    # to eliminate (Launcher HIGH-1).
+    if [ ! -e "$EDIKT_ROOT/current" ]; then
+        log_err "resolve_commands_target: $EDIKT_ROOT/current does not exist (no payload activated; run 'edikt install <tag> && edikt use <tag>')"
+        return 1
+    fi
+    if [ -L "$EDIKT_ROOT/current" ] && [ ! -d "$EDIKT_ROOT/current/" ]; then
+        log_err "resolve_commands_target: $EDIKT_ROOT/current is a broken symlink (target $(readlink "$EDIKT_ROOT/current" 2>/dev/null) does not resolve)"
+        return 1
+    fi
     if [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
         printf '%s' "$EDIKT_ROOT/current/commands/edikt"
-    else
-        printf '%s' "$EDIKT_ROOT/current/commands"
+        return 0
     fi
+    if [ -d "$EDIKT_ROOT/current/commands" ]; then
+        printf '%s' "$EDIKT_ROOT/current/commands"
+        return 0
+    fi
+    log_err "resolve_commands_target: $EDIKT_ROOT/current has neither commands/ nor commands/edikt/ — payload is malformed"
+    return 1
 }
 
 ensure_external_symlinks() {
@@ -426,7 +454,13 @@ ensure_external_symlinks() {
     atomic_symlink current/hooks "$EDIKT_ROOT/hooks"
     atomic_symlink current/templates "$EDIKT_ROOT/templates"
     mkdir -p "$CLAUDE_ROOT/commands"
-    atomic_symlink "$(resolve_commands_target)" "$CLAUDE_ROOT/commands/edikt"
+    if _cmds_target=$(resolve_commands_target); then
+        atomic_symlink "$_cmds_target" "$CLAUDE_ROOT/commands/edikt"
+    else
+        # resolve_commands_target already logged the specific cause. Don't
+        # write a Claude link that would be guaranteed-broken.
+        return 1
+    fi
 }
 
 # Atomic symlink flip: ln -sfn replaces an existing symlink in one
@@ -803,14 +837,22 @@ cmd_install() {
         mv "$payload_src" "$final_stage"
     fi
 
-    # Defensive: ensure every hook script is executable post-extract
+    # Defensive: ensure every hook file is executable post-extract
     # (PLAN-v0.5.0-stability Phase 21). Belt-and-braces against a packaging
     # step that drops exec bits (umask drift, archive tool quirks). The
     # primary control is the CI mode-gate at test/test-hook-modes.sh; this
     # is a runtime safety net so a corrupted tarball doesn't break installs.
+    #
+    # Selection rule MUST match test/test-hook-modes.sh and
+    # test/integration/install/test_hook_modes_after_install.sh — every
+    # regular file under templates/hooks/. ! -type l rejects symlinks so
+    # chmod can't follow into a user's source tree on a corrupted dev-link
+    # payload (Launcher MED-4). Errors are surfaced (not swallowed) — a
+    # genuine permission failure here means the install is broken and the
+    # user needs to know (Launcher NIT-9).
     if [ -d "$final_stage/templates/hooks" ]; then
-        find "$final_stage/templates/hooks" -type f \( -name '*.sh' -o -name 'pre-push' \) \
-            -exec chmod 0755 {} + 2>/dev/null || true
+        find "$final_stage/templates/hooks" -type f ! -type l \
+            -exec chmod 0755 {} +
     fi
 
     # Validate VERSION exists and meets MIN_PAYLOAD_VERSION.
@@ -1074,6 +1116,27 @@ cmd_doctor() {
         if [ ! -e "$CLAUDE_ROOT/commands/edikt/" ]; then
             echo "  ERROR: $CLAUDE_ROOT/commands/edikt does not resolve"
             err_n=$((err_n + 1))
+        else
+            # Validate the symlink points at the target resolve_commands_target
+            # would pick. A drift here means the link was set under a previous
+            # layout (e.g., v0.4.x→v0.5.x cross-major upgrade where ensure_external_symlinks
+            # didn't re-run), and Claude Code is finding commands at the wrong
+            # path even though the link technically resolves. Auto-repair guidance
+            # below tells the user how to fix it without manual symlink surgery.
+            # (PLAN-v0.5.0-stability Phase 20 — Launcher MED-3)
+            if _expected_cmds_target=$(resolve_commands_target 2>/dev/null); then
+                _actual_cmds_target=$(readlink "$CLAUDE_ROOT/commands/edikt" 2>/dev/null)
+                if [ "$_actual_cmds_target" != "$_expected_cmds_target" ]; then
+                    echo "  WARN: $CLAUDE_ROOT/commands/edikt points at unexpected target"
+                    echo "        actual:   $_actual_cmds_target"
+                    echo "        expected: $_expected_cmds_target"
+                    echo "        fix: run 'edikt use \$(edikt version)' to re-establish symlinks"
+                    warn_n=$((warn_n + 1))
+                fi
+            fi
+            # If resolve_commands_target failed here, the upstream `current`
+            # check in the loop above already counted an error; don't
+            # double-count.
         fi
     else
         echo "  WARN: $CLAUDE_ROOT/commands/edikt is not a symlink"
@@ -1323,6 +1386,12 @@ PY
 # Action: if the top-level file's sha256 matches the namespaced
 # replacement's sha256, rm it (template unchanged — namespaced version is
 # canonical). Otherwise mv to $EDIKT_ROOT/custom/<name>.md and warn.
+#
+# NOTE (PLAN-v0.5.0-stability Phase 20): hardcoded `commands/edikt` paths
+# below are INTENTIONALLY legacy-only — M3 migrates v0.4.x layouts whose
+# canonical shape is `commands/edikt/*.md`. resolve_commands_target is
+# specifically for the post-migration runtime symlink and does NOT apply
+# here; using it would break the legacy detection.
 migrate_m3_flat_commands() {
     _dry="$1"
     _flat_dir="$CLAUDE_ROOT/commands/edikt"
@@ -2322,7 +2391,11 @@ EOF
            && grep -q '<!-- edikt:end -->' "$EDIKT_ROOT/CLAUDE.md" 2>/dev/null; then
             _has_signal=1
         fi
-        # M3 signal
+        # M3 signal — INTENTIONALLY checks the legacy nested path. M3 only
+        # fires for v0.4.x→v0.4.x-namespaced migrations, which by definition
+        # require the legacy commands/edikt/ shape. resolve_commands_target
+        # is for the post-migration runtime symlink, not for detecting
+        # whether M3 should run. (PLAN-v0.5.0-stability Phase 20 note.)
         if [ "$_has_signal" -eq 0 ] \
            && [ -d "$CLAUDE_ROOT/commands/edikt" ] \
            && [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
@@ -3422,10 +3495,12 @@ tier2_copy_markdown() {
         return 1
     fi
 
-    # v0.4.x migration may create $CLAUDE_ROOT/commands/edikt as a symlink to
-    # $EDIKT_ROOT/current/commands/edikt without creating the target. mkdir -p
-    # through a dangling symlink fails ENOENT, so resolve and create the
-    # target dir explicitly first.
+    # Dangling-symlink guard: $CLAUDE_ROOT/commands/edikt may exist as a
+    # symlink whose target hasn't been created yet. Both layouts can hit
+    # this — v0.4.x where M3 migration didn't complete, and v0.5.x where
+    # the target current/commands is itself a symlink chain that's been
+    # interrupted. mkdir -p through a dangling symlink fails ENOENT, so
+    # resolve and create the target dir explicitly before any write below.
     _edikt_link="$CLAUDE_ROOT/commands/edikt"
     if [ -L "$_edikt_link" ] && [ ! -d "$_edikt_link" ]; then
         _link_target=$(readlink "$_edikt_link")
@@ -3439,10 +3514,25 @@ tier2_copy_markdown() {
         }
     fi
 
+    # Skip-if-identical guard (PLAN-v0.5.0-stability Phase 20 — Launcher MED-5).
+    # Under v0.5.x flat layout, $CLAUDE_ROOT/commands/edikt resolves into
+    # $EDIKT_ROOT/current/commands. Writing benchmark.md through the symlink
+    # would land in the immutable versioned payload's commands/gov/benchmark.md
+    # — overwriting the payload's own copy with itself. Worse, uninstall
+    # would later rm -f that path, destroying the payload-shipped command.
+    #
+    # If the destination already exists with identical content, treat the
+    # install as already-satisfied (idempotent skip): don't cp, don't
+    # record in the receipt. Uninstall will then leave the payload-shipped
+    # copy intact.
     _dest_cmd="$CLAUDE_ROOT/commands/edikt/gov/benchmark.md"
-    mkdir -p "$(dirname "$_dest_cmd")" || return 1
-    cp "$_cmd_src" "$_dest_cmd" || return 1
-    printf '%s\n' "$_dest_cmd" >> "$_receipt"
+    if _tier2_dest_matches_source "$_cmd_src" "$_dest_cmd"; then
+        log_info "tier-2: $(basename "$_dest_cmd") already present in active payload (skipped copy)"
+    else
+        mkdir -p "$(dirname "$_dest_cmd")" || return 1
+        cp "$_cmd_src" "$_dest_cmd" || return 1
+        printf '%s\n' "$_dest_cmd" >> "$_receipt"
+    fi
 
     # Templates/attacks/
     _atk_src="$_src/../../templates/attacks"
@@ -3455,11 +3545,40 @@ tier2_copy_markdown() {
         for f in "$_atk_src"/*.md; do
             [ -f "$f" ] || continue
             _dst="$_dest_atk/$(basename "$f")"
+            # Same skip-if-identical guard for each attack file. Under flat
+            # layout the destination resolves into the versioned payload's
+            # commands/templates/attacks/ subtree (created by mkdir above).
+            # If a payload ever ships these files at the destination path,
+            # don't overwrite + record them.
+            if _tier2_dest_matches_source "$f" "$_dst"; then
+                continue
+            fi
             cp "$f" "$_dst" || return 1
             printf '%s\n' "$_dst" >> "$_receipt"
         done
     fi
     return 0
+}
+
+# Return 0 if dest exists and its content sha256 matches src.
+# Used to skip tier-2 copies that would overwrite a payload-shipped file.
+_tier2_dest_matches_source() {
+    _src="$1"
+    _dst="$2"
+    [ -f "$_dst" ] || return 1
+    [ -f "$_src" ] || return 1
+    _src_h=""
+    _dst_h=""
+    if command -v sha256sum >/dev/null 2>&1; then
+        _src_h=$(sha256sum "$_src" 2>/dev/null | awk '{print $1}')
+        _dst_h=$(sha256sum "$_dst" 2>/dev/null | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+        _src_h=$(shasum -a 256 "$_src" 2>/dev/null | awk '{print $1}')
+        _dst_h=$(shasum -a 256 "$_dst" 2>/dev/null | awk '{print $1}')
+    else
+        return 1
+    fi
+    [ -n "$_src_h" ] && [ "$_src_h" = "$_dst_h" ]
 }
 
 tier2_rollback_markdown() {
