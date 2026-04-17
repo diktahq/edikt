@@ -40,18 +40,19 @@ if echo "$LAST_MSG" | grep -qiE \
     SIGNALS+=("💡 ADR candidate — run /edikt:adr:new to capture this decision.")
 fi
 
-# DOC GAP: new HTTP routes or env vars added
-NEW_ROUTES=$(echo "$LAST_MSG" | grep -oiE '(POST|GET|PUT|DELETE|PATCH) /[a-zA-Z0-9/_:.-]+' | head -3)
-NEW_ENV=$(echo "$LAST_MSG" | grep -oE '(added|new|required|Added|New|Required).{0,30}[A-Z][A-Z0-9_]{3,}[A-Z0-9]' | grep -v 'ADR\|ARCH\|HTTP\|API\|JSON\|HTML\|CSS' | head -2)
+# DOC GAP: new HTTP routes or env vars added.
+# Per audit HI-5: we detect presence-of-signal only and emit a STATIC suggestion.
+# The matched substring is never embedded in the signal text — an attacker-controlled
+# file containing "POST /admin/delete-everything" cannot influence the suggestion's
+# wording, which would otherwise bias the user toward capturing attacker-framed
+# work via /edikt:docs:review.
+NEW_ROUTES=$(echo "$LAST_MSG" | grep -oiE '(POST|GET|PUT|DELETE|PATCH) /[a-zA-Z0-9/_:.-]+' | head -1)
+NEW_ENV=$(echo "$LAST_MSG" | grep -oE '(added|new|required|Added|New|Required).{0,30}[A-Z][A-Z0-9_]{3,}[A-Z0-9]' | grep -v 'ADR\|ARCH\|HTTP\|API\|JSON\|HTML\|CSS' | head -1)
 
 if [ -n "$NEW_ROUTES" ]; then
-    FIRST_ROUTE=$(echo "$NEW_ROUTES" | head -1)
-    SIGNALS+=("📄 Doc gap: new route $FIRST_ROUTE — run /edikt:docs:review to review.")
+    SIGNALS+=("📄 New HTTP route referenced — consider /edikt:docs:review to check documentation.")
 elif [ -n "$NEW_ENV" ]; then
-    ENV_VAR=$(echo "$NEW_ENV" | grep -oE '[A-Z][A-Z0-9_]{3,}[A-Z0-9]' | grep -v 'ADR\|ARCH\|HTTP\|API\|JSON\|HTML\|CSS' | head -1)
-    if [ -n "$ENV_VAR" ]; then
-        SIGNALS+=("📄 Doc gap: new env var $ENV_VAR — run /edikt:docs:review to review.")
-    fi
+    SIGNALS+=("📄 New environment variable referenced — consider /edikt:docs:review to check documentation.")
 fi
 
 # SECURITY: auth/payments/PII/crypto was the central focus
