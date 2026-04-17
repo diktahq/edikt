@@ -28,7 +28,10 @@ install_setup hookmodes
 trap install_teardown EXIT
 
 PAYLOAD="$TEST_HOME/_payload"
-make_payload "$PAYLOAD" "0.5.0"
+# Use flat (v0.5.x) payload — make_payload puts hooks at $p/hooks/ for
+# v0.4.x back-compat, but settings.json (and this test's runtime path
+# assertion) point at $EDIKT_ROOT/hooks → current/hooks → current/templates/hooks.
+make_payload_flat "$PAYLOAD" "0.5.0"
 
 test_start "templates/hooks/* are mode 0755 after install (runtime + payload paths)"
 
