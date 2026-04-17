@@ -93,6 +93,7 @@ How to verify this decision is being followed:
 ## Directives
 
 [edikt:directives:start]: #
+topic: agent-rules
 paths:
   - templates/agents/evaluator.md
   - templates/agents/evaluator-headless.md

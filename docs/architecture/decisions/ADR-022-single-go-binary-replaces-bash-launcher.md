@@ -152,6 +152,7 @@ Complex last: `install`, `migrate`, `dev`. Each migration shrinks `edikt-shell`.
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: tooling
 paths:
   - "tools/gov-compile/**"
   - "bin/edikt"

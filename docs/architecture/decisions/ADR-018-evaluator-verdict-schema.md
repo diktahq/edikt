@@ -134,6 +134,7 @@ On upgrade from edikt < 0.5.0 to 0.5.0:
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: agent-rules
 paths:
   - "templates/agents/evaluator.md"
   - "templates/agents/evaluator-headless.md"

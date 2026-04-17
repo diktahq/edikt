@@ -113,25 +113,32 @@ func Group(docs []*parse.Document) (map[string]*Topic, []string, error) {
 			// Caller should have filtered these; bail loudly.
 			return nil, nil, fmt.Errorf("document %s has no sentinel block", doc.Path)
 		}
-		topic := doc.Sentinel.Topic
-		if topic == "" {
+		docTopics := doc.Sentinel.Topics
+		if len(docTopics) == 0 && doc.Sentinel.Topic != "" {
+			// Fallback for sentinels parsed before Topics was populated.
+			docTopics = []string{doc.Sentinel.Topic}
+		}
+		if len(docTopics) == 0 {
 			// Fall through to LLM in the markdown command; record the unmet.
 			unassigned = append(unassigned, doc.Path)
 			continue
 		}
-		if _, ok := topics[topic]; !ok {
-			topics[topic] = &Topic{Name: topic}
-		}
-		t := topics[topic]
 		src := SourceID(doc.Path)
-		for _, rule := range EffectiveRules(doc.Sentinel) {
-			t.Rules = append(t.Rules, Rule{Text: rule, Source: src})
-		}
-		t.Paths = mergeSortedUnique(t.Paths, doc.Sentinel.Paths)
-		t.Scope = mergeSortedUnique(t.Scope, doc.Sentinel.Scope)
-		if !contains(t.Sources, src) {
-			t.Sources = append(t.Sources, src)
-			sort.Strings(t.Sources)
+		effectiveRules := EffectiveRules(doc.Sentinel)
+		for _, topicName := range docTopics {
+			if _, ok := topics[topicName]; !ok {
+				topics[topicName] = &Topic{Name: topicName}
+			}
+			t := topics[topicName]
+			for _, rule := range effectiveRules {
+				t.Rules = append(t.Rules, Rule{Text: rule, Source: src})
+			}
+			t.Paths = mergeSortedUnique(t.Paths, doc.Sentinel.Paths)
+			t.Scope = mergeSortedUnique(t.Scope, doc.Sentinel.Scope)
+			if !contains(t.Sources, src) {
+				t.Sources = append(t.Sources, src)
+				sort.Strings(t.Sources)
+			}
 		}
 	}
 

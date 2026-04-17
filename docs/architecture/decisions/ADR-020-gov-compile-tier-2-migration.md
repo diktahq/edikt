@@ -139,6 +139,7 @@ We will adopt **option 1** — a tier-2 helper that does 95% of the work determi
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: tooling
 paths:
   - "commands/gov/compile.md"
   - "tools/gov-compile/**"

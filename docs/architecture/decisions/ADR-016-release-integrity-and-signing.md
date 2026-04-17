@@ -107,6 +107,7 @@ We will adopt **Sigstore keyless signing** of an aggregated `SHA256SUMS` file. T
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.4.3"
+topic: release
 paths:
   - ".github/workflows/release.yml"
   - "install.sh"
