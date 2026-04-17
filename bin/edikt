@@ -1,55 +1,53 @@
 #!/bin/sh
-# edikt-shell — POSIX shell launcher (ADR-022 strangler-fig).
+# edikt-shell — migrate-only shell helper (ADR-022 strangler-fig, v0.5.0+).
 #
-# In v0.5.0+ this file is renamed to edikt-shell and placed alongside the Go
-# binary (bin/edikt). The Go binary is the user-facing entry point; it execs
-# this script for all subcommands not yet implemented in Go.
+# This file now handles ONLY the `migrate` subcommand.
+# All other subcommands have moved to the Go `edikt` binary.
 #
-# When called by the Go binary, EDIKT_SHELL_CALLER=1 is set. In that case we
-# skip resolve_edikt_root (root was already resolved by the Go layer) to avoid
-# double-launch loops. EDIKT_ROOT must be set by the caller in that case.
+# If called directly (not via EDIKT_SHELL_CALLER=1) with any subcommand
+# other than `migrate`, it prints an error and exits 1.
 #
-# Implements SPEC-004 v0.5.0: versioned on-disk layout, generation symlink
-# chain, lock.yaml + manifest.yaml, atomic flips, flock serialization.
+# When called by the Go binary, EDIKT_SHELL_CALLER=1 is set.
 #
-# Subcommands: version | list | install | use | rollback | doctor | uninstall
-#
-# Strict POSIX: no bashisms, no [[ ]], no arrays, no `source`. Verified via
-# `sh -n bin/edikt`. Tested under /bin/sh (dash on Linux, bash 3.2 on macOS).
+# Strict POSIX: no bashisms, no [[ ]], no arrays, no `source`.
 
 set -u
 
 umask 022
 
-# ─── Constants ──────────────────────────────────────────────────────────────
+# ─── Guard: redirect non-migrate callers ─────────────────────────────────────
+# If we were NOT invoked via the Go binary and the first arg is not `migrate`,
+# print an error directing users to the Go binary.
+if [ -z "${EDIKT_SHELL_CALLER:-}" ]; then
+    sub="${1:-help}"
+    case "$sub" in
+        migrate) ;;
+        *)
+            echo "error: this command has moved to the Go binary — run \`edikt $sub\`" >&2
+            exit 1
+            ;;
+    esac
+fi
+
+# ─── Constants ───────────────────────────────────────────────────────────────
 LAUNCHER_VERSION="0.5.0"
 MIN_PAYLOAD_VERSION="0.5.0"
-RELEASE_TARBALL_BASE="https://github.com/diktahq/edikt/releases/download"
 
 # Exit codes (per SPEC-004 §2)
 EX_OK=0
-EX_NETWORK=1
 EX_CHECKSUM=2
 EX_ALREADY=3
 EX_LOCKED=4
-EX_MALICIOUS=5
 
 # Event log rotation threshold (10 MiB per config-spec §4.4)
 EVENTS_MAX_BYTES=10485760
 
-# ─── EDIKT_ROOT resolution ──────────────────────────────────────────────────
-# Priority: explicit env > project mode (ancestor walk for .edikt/bin/edikt)
-# > global mode ($HOME/.edikt). Project mode is wired here so Phase 8 only
-# adds its surface, not a rewrite of every subcommand.
+# ─── EDIKT_ROOT resolution ────────────────────────────────────────────────────
 resolve_edikt_root() {
     if [ -n "${EDIKT_ROOT:-}" ]; then
         echo "$EDIKT_ROOT"
         return 0
     fi
-    # Walk upward looking for .edikt/bin/edikt (project-mode marker).
-    # MED-6: bound the walk at $HOME and require the launcher to be owned
-    # by the current user. On shared systems, an attacker-planted
-    # /tmp/.edikt/bin/edikt would otherwise be honored as the project root.
     dir="$PWD"
     _home="${HOME:-/nonexistent}"
     while [ -n "$dir" ] && [ "$dir" != "/" ] && [ "$dir" != "$_home" ]; do
@@ -59,7 +57,6 @@ resolve_edikt_root() {
         fi
         dir=$(dirname "$dir")
     done
-    # Global mode. EDIKT_HOME for Phase 1 sandbox compatibility.
     if [ -n "${EDIKT_HOME:-}" ]; then
         echo "$EDIKT_HOME"
     else
@@ -75,14 +72,12 @@ resolve_claude_root() {
     fi
 }
 
-# ADR-022: when called by the Go edikt binary, EDIKT_ROOT is already set and
-# re-resolution is skipped to prevent double-launch loops.
 if [ -z "${EDIKT_ROOT:-}" ]; then
     EDIKT_ROOT=$(resolve_edikt_root)
 fi
 CLAUDE_ROOT=$(resolve_claude_root)
 
-# ─── SHA256 dispatch (per config-spec §7) ───────────────────────────────────
+# ─── SHA256 dispatch ──────────────────────────────────────────────────────────
 sha256_file() {
     f="$1"
     if command -v sha256sum >/dev/null 2>&1; then
@@ -95,11 +90,7 @@ sha256_file() {
     fi
 }
 
-# ─── Sidecar checksum verification ──────────────────────────────────────────
-# Verifies an observed sha256 against a reference file. Reference may be a
-# bare hex hash or "<hash>  <filename>" (standard sha256sum/shasum output).
-# Arguments: observed_hash, reference_file_path, reference_label (for errors).
-# Returns 0 on match, non-zero on empty/mismatched reference. Logs to stderr.
+# ─── Sidecar checksum verification ───────────────────────────────────────────
 verify_against_sidecar() {
     _observed="$1"
     _ref_file="$2"
@@ -116,69 +107,34 @@ verify_against_sidecar() {
     return 0
 }
 
-# ─── Tarball entry safety (path-traversal guard) ────────────────────────────
-# Returns 0 if every entry in the tarball is a safe relative path, 1 if any
-# entry is absolute or contains a `..` path component. BSD tar on macOS does
-# NOT strip `../` entries during extraction, so the launcher must pre-scan.
-tarball_safe() {
-    tf="$1"
-    tar -tzf "$tf" 2>/dev/null | while IFS= read -r entry; do
-        # Strip trailing slash for directory entries.
-        case "$entry" in
-            "") continue ;;
-            /*)
-                printf 'unsafe-absolute: %s\n' "$entry" >&2
-                exit 1
-                ;;
-            ../*|*/../*|*/..)
-                printf 'unsafe-traversal: %s\n' "$entry" >&2
-                exit 1
-                ;;
-        esac
-    done
-    # `while` runs in a subshell under POSIX pipelines — its exit status
-    # propagates as the pipeline's final status. 0 means all entries safe.
-}
-
-# ─── ISO-8601 UTC timestamp (portable BSD + GNU date) ───────────────────────
+# ─── ISO-8601 UTC timestamp ───────────────────────────────────────────────────
 iso_now() {
     date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
-# Compact timestamp suitable for directory names.
 ts_now() {
     date -u +%Y%m%dT%H%M%SZ
 }
 
-# ─── Logging ────────────────────────────────────────────────────────────────
+# ─── Logging ──────────────────────────────────────────────────────────────────
 log_info() { echo "$@" >&2; }
 log_warn() { echo "warn: $*" >&2; }
 log_err()  { echo "error: $*" >&2; }
 
-# ─── flock serialization (per config-spec §8.1, §8.8 NFS fallback) ──────────
-# Acquires an exclusive lock under $EDIKT_ROOT/.lock for the lifetime of
-# the calling shell. Falls back to mkdir-based mutex when flock(1) absent
-# (e.g. macOS without util-linux). NFS ENOLCK → ln -s create-link mutex.
+# ─── flock serialization ──────────────────────────────────────────────────────
 LOCK_HELD=""
 LOCK_DIR=""
 LOCK_FD=""
 
 acquire_lock() {
-    # acquire_lock is NOT re-entrant. Any future composite that needs to call
-    # subcommand internals must inline the work (see cmd_dev_link/unlink for
-    # the pattern).
     mkdir -p "$EDIKT_ROOT" || return 1
     lockfile="$EDIKT_ROOT/.lock"
 
     if command -v flock >/dev/null 2>&1; then
-        # Use file descriptor 9 with flock -n (non-blocking).
-        # Errors during flock indicate ENOLCK on NFS; fall through.
         if (
             exec 9>"$lockfile" 2>/dev/null
             flock -n 9 2>/dev/null
         ); then
-            # We need the lock held for the lifetime of THIS shell, not a
-            # subshell. POSIX `exec N>` works here.
             exec 9>"$lockfile"
             if flock -n 9 2>/dev/null; then
                 LOCK_HELD="flock"
@@ -186,20 +142,13 @@ acquire_lock() {
                 printf '%s %s\n' "$$" "$(iso_now)" >&9
                 return 0
             fi
-            # flock failed after open: another process holds it.
             log_err "another edikt process is running (lock: $lockfile). Retry or remove stale lock."
             return 4
         fi
-        # flock unavailable on this fs (NFS ENOLCK) → fallback.
     fi
 
-    # mkdir mutex fallback (macOS without util-linux, NFS).
     LOCK_DIR="$EDIKT_ROOT/.lock.d"
     if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-        # Check if the existing lockdir is stale (owner pid is dead).
-        # If the owner file is missing, assume a live holder is mid-write
-        # and do NOT reclaim — avoids racing a peer between mkdir and the
-        # owner-file write below.
         stale=0
         if [ -f "$LOCK_DIR/owner" ]; then
             owner_pid=$(awk '{print $1; exit}' "$LOCK_DIR/owner" 2>/dev/null)
@@ -228,18 +177,12 @@ release_lock() {
     if [ "$LOCK_HELD" = "mkdir" ] && [ -n "$LOCK_DIR" ]; then
         rm -rf "$LOCK_DIR" 2>/dev/null || true
     elif [ "$LOCK_HELD" = "flock" ] && [ -n "$LOCK_FD" ]; then
-        # Closing FD 9 releases the flock automatically.
         exec 9>&- 2>/dev/null || true
     fi
     LOCK_HELD=""
 }
 
-# Single global exit dispatcher. When a migration is in flight
-# (MIGRATE_STATE ∈ {starting, swapping, aborting}), delegate to the
-# migrate trap handler FIRST — it restores on-disk state — then always
-# release the lock. Refactored from an in-cmd_migrate trap-swap
-# (review finding #17) so future global cleanup additions cannot be
-# silently swallowed by cmd_migrate's override.
+# ─── Global exit trap ─────────────────────────────────────────────────────────
 edikt_exit_trap() {
     _rc=$?
     _signum="${1:-}"
@@ -260,8 +203,7 @@ trap 'edikt_exit_trap' EXIT
 trap 'edikt_exit_trap INT'  INT
 trap 'edikt_exit_trap TERM' TERM
 
-# ─── Atomic write helper ────────────────────────────────────────────────────
-# usage: atomic_write <dest> <<EOF ... EOF
+# ─── Atomic write helper ──────────────────────────────────────────────────────
 atomic_write() {
     dest="$1"
     tmp="$dest.tmp.$$"
@@ -269,9 +211,7 @@ atomic_write() {
     mv -f "$tmp" "$dest"
 }
 
-# ─── Event emission to events.jsonl (per config-spec §4.4) ──────────────────
-# usage: emit_event <type> '<extra-json-fields>'
-# extra-fields is the JSON middle (no surrounding braces, no leading comma).
+# ─── Event emission ───────────────────────────────────────────────────────────
 emit_event() {
     typ="$1"
     extra="${2:-}"
@@ -281,7 +221,6 @@ emit_event() {
         line="$line,$extra"
     fi
     line="$line}"
-    # Rotate if the existing log would exceed the threshold after append.
     evlog="$EDIKT_ROOT/events.jsonl"
     if [ -f "$evlog" ]; then
         cur_sz=0
@@ -290,24 +229,20 @@ emit_event() {
         elif stat -c '%s' "$evlog" >/dev/null 2>&1; then
             cur_sz=$(stat -c '%s' "$evlog" 2>/dev/null || echo 0)
         fi
-        # Add line length + 1 (newline) for conservative threshold check.
         add_sz=$(( ${#line} + 1 ))
         if [ $(( cur_sz + add_sz )) -gt "$EVENTS_MAX_BYTES" ]; then
             mv -f "$evlog" "$evlog.1" 2>/dev/null || true
         fi
     fi
-    # Single printf, single line — atomic on POSIX up to PIPE_BUF.
     printf '%s\n' "$line" >>"$evlog"
 }
 
-# ─── Version comparison (semver, no leading v) ──────────────────────────────
-# Returns 0 if $1 >= $2, 1 otherwise. Plain dot-separated integers only.
+# ─── Version comparison ───────────────────────────────────────────────────────
 version_ge() {
     a="$1"
     b="$2"
     a_norm=$(echo "$a" | sed 's/^v//')
     b_norm=$(echo "$b" | sed 's/^v//')
-    # Awk-based comparison handles arbitrary segment counts.
     awk -v a="$a_norm" -v b="$b_norm" 'BEGIN {
         na = split(a, A, /\./)
         nb = split(b, B, /\./)
@@ -326,10 +261,7 @@ normalize_tag() {
     echo "$1" | sed 's/^v//'
 }
 
-# ─── lock.yaml read helpers ─────────────────────────────────────────────────
-# Plain-text YAML reader for the small subset we write. Only top-level
-# scalar keys are supported (active, previous, installed_at, installed_via).
-# History entries are treated opaquely — append-only.
+# ─── lock.yaml read helpers ───────────────────────────────────────────────────
 lock_get() {
     key="$1"
     f="$EDIKT_ROOT/lock.yaml"
@@ -344,9 +276,7 @@ lock_get() {
     ' "$f"
 }
 
-# ─── lock.yaml write (atomic) ───────────────────────────────────────────────
-# Writes/updates active+previous+installed_at+installed_via, appends a new
-# history entry. Existing history is preserved (capped at 50 per config-spec).
+# ─── lock.yaml write (atomic) ─────────────────────────────────────────────────
 lock_write() {
     new_active="$1"
     new_installed_via="$2"
@@ -354,7 +284,6 @@ lock_write() {
     f="$EDIKT_ROOT/lock.yaml"
 
     prev_active=$(lock_get active)
-    # Build the new file in a temp and move atomically.
     tmp="$f.tmp.$$"
     {
         printf 'active: "%s"\n' "$new_active"
@@ -366,8 +295,6 @@ lock_write() {
         printf 'installed_at: "%s"\n' "$now"
         printf 'installed_via: "%s"\n' "$new_installed_via"
         printf 'history:\n'
-        # Preserve existing history entries (best-effort), cap at 49 to make
-        # room for the new one.
         if [ -f "$f" ]; then
             awk '
                 /^history:/ { in_hist = 1; next }
@@ -383,29 +310,13 @@ lock_write() {
     mv -f "$tmp" "$f"
 }
 
-# ─── Symlink chain helpers ──────────────────────────────────────────────────
-# The chain (per SPEC §1):
-#   $EDIKT_ROOT/current        -> versions/<tag>
-#   $EDIKT_ROOT/hooks          -> current/hooks
-#   $EDIKT_ROOT/templates      -> current/templates
-#   $CLAUDE_ROOT/commands/edikt -> $EDIKT_ROOT/current/commands/edikt   (v0.4.x nested layout)
-#                              OR $EDIKT_ROOT/current/commands           (v0.5.x flat layout)
-# Layout is detected at install/use/dev-link time — see resolve_commands_target.
-# Atomic symlink install: create a sibling `.new` symlink then rename(2)
-# it over the target. rename(2) on a symlink is atomic on every POSIX
-# filesystem, closing the ln -sfn unlink-then-create window where a
-# concurrent hook could see ENOENT.
+# ─── Symlink chain helpers ────────────────────────────────────────────────────
 atomic_symlink() {
     target="$1"
     link="$2"
     new="$link.new.$$"
     rm -f "$new" 2>/dev/null || true
     ln -s "$target" "$new" || return 1
-    # mv -f on a symlink-to-directory target traverses into the directory
-    # on BSD and GNU alike. Use -h (BSD) or -T (GNU) to force treatment
-    # as a regular link rename. If neither flag is available, fall back
-    # to `ln -sfn` — not perfectly atomic, but the same behavior as the
-    # prior implementation.
     if mv -hf "$new" "$link" 2>/dev/null; then
         return 0
     fi
@@ -416,36 +327,13 @@ atomic_symlink() {
     ln -sfn "$target" "$link"
 }
 
-# Resolve the path that $CLAUDE_ROOT/commands/edikt should point at,
-# adapting to the active payload layout (PLAN-v0.5.0-stability Phase 20):
-#   - v0.4.x payload: commands/edikt/*.md  → point at current/commands/edikt
-#   - v0.5.x payload: commands/*.md         → point at current/commands
-#
-# Returns the resolved path on stdout (no trailing newline). Returns 1 and
-# logs an error when the active payload is corrupted (current is missing,
-# is a broken symlink, or contains neither layout shape) — callers MUST
-# check the exit status before using the value, otherwise they'll write a
-# guaranteed-broken Claude commands symlink.
-#
-# Sub-decision (PLAN-v0.5.0-stability §Phase 20): keep dynamic detection
-# indefinitely. The legacy nested branch will be deprecated in the v0.6.0
-# plan once outstanding v0.4.x installs have migrated; until then both
-# shapes are first-class and tested in parity (test_flat_layout_symlink.sh
-# + test_nested_layout_symlink.sh).
-#
-# Kept as a function so callers (ensure_external_symlinks, doctor,
-# migration UI) all derive the same answer.
 resolve_commands_target() {
-    # Refuse to guess on a corrupted current/. A broken symlink would let
-    # the directory tests below silently pick the flat default and produce
-    # a dangling Claude link — exactly the failure mode this helper exists
-    # to eliminate (Launcher HIGH-1).
     if [ ! -e "$EDIKT_ROOT/current" ]; then
-        log_err "resolve_commands_target: $EDIKT_ROOT/current does not exist (no payload activated; run 'edikt install <tag> && edikt use <tag>')"
+        log_err "resolve_commands_target: $EDIKT_ROOT/current does not exist"
         return 1
     fi
     if [ -L "$EDIKT_ROOT/current" ] && [ ! -d "$EDIKT_ROOT/current/" ]; then
-        log_err "resolve_commands_target: $EDIKT_ROOT/current is a broken symlink (target $(readlink "$EDIKT_ROOT/current" 2>/dev/null) does not resolve)"
+        log_err "resolve_commands_target: $EDIKT_ROOT/current is a broken symlink"
         return 1
     fi
     if [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
@@ -460,22 +348,6 @@ resolve_commands_target() {
     return 1
 }
 
-# Resolve the path that $EDIKT_ROOT/hooks should point at, adapting to the
-# active payload layout (PLAN-v0.5.0-stability Phase 20 — hooks sibling):
-#   - v0.4.x payload: ships a root `hooks/` directory → point at current/hooks
-#   - v0.5.x release tarball: ships only `templates/hooks/` (release.yml tars
-#     templates/ commands/ install.sh — no root hooks/) → point at
-#     current/templates/hooks
-#   - dev-linked payload: cmd_dev_link creates both current/hooks and
-#     current/templates/hooks symlinks into the source repo, so either shape
-#     resolves. Pick the root one for consistency with v0.4.x behaviour.
-#
-# settings.json embeds the resolved path at install time (EDIKT_HOOK_DIR
-# substitution), but the runtime $EDIKT_ROOT/hooks symlink is what survives
-# across use/rollback. Both must resolve to the same real hook files.
-#
-# Returns the resolved path on stdout; returns 1 on malformed payloads so
-# callers don't create dangling symlinks.
 resolve_hooks_target() {
     if [ ! -e "$EDIKT_ROOT/current" ]; then
         log_err "resolve_hooks_target: $EDIKT_ROOT/current does not exist"
@@ -485,9 +357,6 @@ resolve_hooks_target() {
         log_err "resolve_hooks_target: $EDIKT_ROOT/current is a broken symlink"
         return 1
     fi
-    # Prefer the v0.4.x root layout when the payload provides it (dev-link
-    # and v0.4.x releases). Fall back to templates/hooks for v0.5.x release
-    # tarballs which don't carry a root hooks/ directory.
     if [ -d "$EDIKT_ROOT/current/hooks" ]; then
         printf '%s' "current/hooks"
         return 0
@@ -501,8 +370,6 @@ resolve_hooks_target() {
 }
 
 ensure_external_symlinks() {
-    # hooks and templates are stable external paths embedded in
-    # settings.json. Repair on every install/use.
     if _hooks_target=$(resolve_hooks_target); then
         atomic_symlink "$_hooks_target" "$EDIKT_ROOT/hooks"
     else
@@ -513,16 +380,12 @@ ensure_external_symlinks() {
     if _cmds_target=$(resolve_commands_target); then
         atomic_symlink "$_cmds_target" "$CLAUDE_ROOT/commands/edikt"
     else
-        # resolve_commands_target already logged the specific cause. Don't
-        # write a Claude link that would be guaranteed-broken.
         return 1
     fi
 }
 
-# Atomic symlink flip: ln -sfn replaces an existing symlink in one
-# rename(2) on most filesystems. Snapshots prior target into backups/<ts>/.
 flip_current() {
-    target="$1"  # e.g. versions/0.5.0
+    target="$1"
     ts=$(ts_now)
     backup_dir="$EDIKT_ROOT/backups/$ts"
     mkdir -p "$backup_dir"
@@ -538,7 +401,7 @@ flip_current() {
     echo "$ts"
 }
 
-# ─── manifest.yaml writer (per config-spec §4.2) ────────────────────────────
+# ─── manifest.yaml writer ─────────────────────────────────────────────────────
 write_manifest() {
     version_dir="$1"
     version="$2"
@@ -560,8 +423,6 @@ write_manifest() {
             printf '  sha256: "%s"\n' "$tarball_sha"
         fi
         printf 'files:\n'
-        # Walk the version dir and hash every regular file (excluding
-        # manifest.yaml itself which we're writing now).
         ( cd "$version_dir" && find . -type f \
             ! -name 'manifest.yaml' \
             ! -name 'manifest.yaml.tmp.*' \
@@ -576,30 +437,22 @@ write_manifest() {
     mv -f "$tmp" "$manifest"
 }
 
-# Portable file mode (octal). BSD vs GNU stat differ.
 stat_mode() {
     f="$1"
     if stat -f '%Lp' "$f" >/dev/null 2>&1; then
-        # BSD (macOS)
         printf '0%s' "$(stat -f '%Lp' "$f")"
     elif stat -c '%a' "$f" >/dev/null 2>&1; then
-        # GNU
         printf '0%s' "$(stat -c '%a' "$f")"
     else
         printf '0644'
     fi
 }
 
-# ─── manifest verify ────────────────────────────────────────────────────────
-# Returns 0 if every file recorded in manifest.yaml matches its sha256,
-# 1 otherwise. Writes mismatches to stderr.
 manifest_verify() {
     version_dir="$1"
     manifest="$version_dir/manifest.yaml"
     [ -f "$manifest" ] || { log_err "no manifest at $manifest"; return 1; }
 
-    # Parse path/sha256 pairs into a temp file (pipeline subshell would
-    # lose our `bad` counter).
     pairs="$version_dir/.manifest-pairs.$$"
     awk '
         /^  - path:/    { if (match($0, /"[^"]*"/)) path = substr($0, RSTART+1, RLENGTH-2); next }
@@ -624,8 +477,6 @@ manifest_verify() {
     return $bad
 }
 
-# ─── MIN_PAYLOAD_VERSION enforcement ────────────────────────────────────────
-# Refuse to activate a payload older than MIN_PAYLOAD_VERSION.
 check_payload_min_version() {
     payload_dir="$1"
     vfile="$payload_dir/VERSION"
@@ -636,654 +487,16 @@ check_payload_min_version() {
     payload_v=$(head -1 "$vfile" | tr -d '[:space:]')
     if ! version_ge "$payload_v" "$MIN_PAYLOAD_VERSION"; then
         log_err "payload version $payload_v is older than launcher MIN_PAYLOAD_VERSION ($MIN_PAYLOAD_VERSION)."
-        log_err "Run \`edikt install <newer-tag>\` and \`edikt use <newer-tag>\`."
         return 1
     fi
     return 0
 }
 
-# ─── Subcommand: version ────────────────────────────────────────────────────
-cmd_version() {
-    if [ -f "$EDIKT_ROOT/current/VERSION" ]; then
-        head -1 "$EDIKT_ROOT/current/VERSION"
-    elif [ -n "$(lock_get active)" ]; then
-        lock_get active
-    else
-        echo "no version installed (launcher: $LAUNCHER_VERSION)"
-        return 0
-    fi
-}
-
-# ─── Subcommand: list ───────────────────────────────────────────────────────
-cmd_list() {
-    verbose=0
-    use_global=0
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --verbose) verbose=1 ;;
-            --global)  use_global=1 ;;
-            *) log_err "list: unknown flag: $1"; return 1 ;;
-        esac
-        shift
-    done
-
-    if [ "$use_global" -eq 1 ]; then
-        list_root="${HOME:-/}/.edikt"
-        if [ -n "${EDIKT_HOME:-}" ]; then
-            list_root="$EDIKT_HOME"
-        fi
-    else
-        list_root="$EDIKT_ROOT"
-    fi
-
-    versions_dir="$list_root/versions"
-    if [ ! -d "$versions_dir" ]; then
-        echo "(no versions installed)"
-        return 0
-    fi
-    active_target=""
-    if [ -L "$list_root/current" ]; then
-        active_target=$(readlink "$list_root/current")
-        active_target=$(basename "$active_target")
-    fi
-    # Iterate sorted entries.
-    found=0
-    for d in "$versions_dir"/*/; do
-        [ -d "$d" ] || continue
-        found=1
-        tag=$(basename "$d")
-        marker=" "
-        if [ "$tag" = "$active_target" ]; then marker="*"; fi
-        if [ "$verbose" -eq 1 ]; then
-            sz="?"
-            if command -v du >/dev/null 2>&1; then
-                sz=$(du -sh "$d" 2>/dev/null | awk '{print $1}')
-            fi
-            installed=""
-            if [ -f "$d/manifest.yaml" ]; then
-                installed=$(awk -F'"' '/^installed_at:/ {print $2; exit}' "$d/manifest.yaml")
-            fi
-            printf '%s %s\t%s\t%s\n' "$marker" "$tag" "${installed:--}" "$sz"
-        else
-            printf '%s %s\n' "$marker" "$tag"
-        fi
-    done
-    if [ "$found" -eq 0 ]; then
-        echo "(no versions installed)"
-    fi
-}
-
-# ─── Subcommand: install ────────────────────────────────────────────────────
-# Fetch tarball, extract to staging, atomic move into versions/<tag>/,
-# write manifest.yaml. Does NOT activate. Use `use` to flip.
-cmd_install() {
-    tag="${1:-}"
-    if [ -z "$tag" ]; then
-        log_err "usage: edikt install <tag>"
-        return 1
-    fi
-    norm=$(normalize_tag "$tag")
-    target="$EDIKT_ROOT/versions/$norm"
-    if [ -d "$target" ]; then
-        log_err "version $norm is already installed at $target"
-        return $EX_ALREADY
-    fi
-
-    acquire_lock || return $?
-
-    mkdir -p "$EDIKT_ROOT/versions"
-    # Predictable-named directory inside EDIKT_ROOT — use plain mkdir (not
-    # -p) and fail loudly if the path already exists (e.g. a pre-planted
-    # symlink at the predicted path). Collision is astronomically
-    # unlikely with ts+pid but defense-in-depth matters here.
-    staging="$EDIKT_ROOT/.staging-$(ts_now)-$$"
-    if ! mkdir "$staging" 2>/dev/null; then
-        log_err "staging dir already exists or cannot be created: $staging"
-        return 1
-    fi
-
-    cleanup_staging() { rm -rf "$staging" 2>/dev/null || true; }
-
-    # Allow tests / offline installs to point at a local tarball or dir.
-    src="${EDIKT_INSTALL_SOURCE:-}"
-    if [ -n "$src" ]; then
-        log_warn "EDIKT_INSTALL_SOURCE override active: $src"
-    fi
-    url=""
-    tarball_sha=""
-
-    if [ -z "$src" ]; then
-        # ADR-016: download the published release asset, not the auto-generated
-        # source archive. The release asset is what SHA256SUMS signs over.
-        url="$RELEASE_TARBALL_BASE/$tag/edikt-payload-$tag.tar.gz"
-        if ! command -v curl >/dev/null 2>&1; then
-            log_err "curl not found; cannot fetch $url"
-            cleanup_staging
-            return $EX_NETWORK
-        fi
-        tarball="$staging/payload.tar.gz"
-        if ! curl -fsSL --max-time 60 -o "$tarball" "$url" 2>/dev/null; then
-            log_err "failed to fetch $url"
-            cleanup_staging
-            return $EX_NETWORK
-        fi
-        observed=$(sha256_file "$tarball")
-
-        # Checksum policy (SPEC-004 §2 FR-015):
-        # 1. If EDIKT_INSTALL_SHA256 is set, verify against it.
-        # 2. Else fetch the sibling .sha256 reference from GitHub.
-        # 3. If the reference is missing, refuse — unless
-        #    EDIKT_INSTALL_INSECURE=1 is set explicitly.
-        if [ -n "${EDIKT_INSTALL_SHA256:-}" ]; then
-            if [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
-                log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
-                cleanup_staging
-                return $EX_CHECKSUM
-            fi
-        else
-            ref_url="$url.sha256"
-            ref_file="$staging/payload.tar.gz.sha256"
-            if curl -fsSL --max-time 30 -o "$ref_file" "$ref_url" 2>/dev/null; then
-                if ! verify_against_sidecar "$observed" "$ref_file" "$ref_url"; then
-                    cleanup_staging
-                    return $EX_CHECKSUM
-                fi
-            elif [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
-                log_warn "EDIKT_INSTALL_INSECURE=1 — skipping checksum verification (TLS-only trust)"
-                log_warn "  tarball sha256: $observed"
-            else
-                log_err "no checksum reference at $ref_url and EDIKT_INSTALL_SHA256 not set."
-                log_err "Either set EDIKT_INSTALL_SHA256=<hex> explicitly, or re-fetch when"
-                log_err "the release publishes a .sha256 sidecar. Set EDIKT_INSTALL_INSECURE=1"
-                log_err "to override (not recommended)."
-                cleanup_staging
-                return $EX_CHECKSUM
-            fi
-        fi
-        tarball_sha="$observed"
-
-        # Pre-scan tarball for path-traversal entries. BSD tar on macOS
-        # does not strip ../ components, so a malicious archive could
-        # write outside extract_dir.
-        if ! tarball_safe "$tarball"; then
-            log_err "tarball contains unsafe paths (absolute or traversal) — refusing"
-            cleanup_staging
-            return $EX_MALICIOUS
-        fi
-
-        extract_dir="$staging/extracted"
-        mkdir "$extract_dir" || { cleanup_staging; return 1; }
-        if ! tar -xzf "$tarball" -C "$extract_dir" 2>/dev/null; then
-            log_err "tar extraction failed"
-            cleanup_staging
-            return $EX_NETWORK
-        fi
-        # GitHub tarballs wrap content in a single top-level dir.
-        inner=$(find "$extract_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
-        if [ -z "$inner" ]; then
-            log_err "tarball appears empty"
-            cleanup_staging
-            return $EX_NETWORK
-        fi
-        payload_src="$inner"
-        source_type="tarball"
-    elif [ -d "$src" ]; then
-        # Test/offline path: copy the directory.
-        payload_src="$src"
-        source_type="dev"
-        url=""
-    elif [ -f "$src" ]; then
-        # Local tarball.
-        observed=$(sha256_file "$src")
-        if [ -n "${EDIKT_INSTALL_SHA256:-}" ]; then
-            if [ "$observed" != "$EDIKT_INSTALL_SHA256" ]; then
-                log_err "checksum mismatch: expected $EDIKT_INSTALL_SHA256, got $observed"
-                cleanup_staging
-                return $EX_CHECKSUM
-            fi
-        elif [ -f "$src.sha256" ]; then
-            # Opportunistic verification: if a sibling .sha256 exists, use it.
-            # Local tarballs without a sidecar are implicitly trusted (user
-            # chose the file); network tarballs require a sidecar — see the
-            # network branch above.
-            if ! verify_against_sidecar "$observed" "$src.sha256" "$src.sha256"; then
-                cleanup_staging
-                return $EX_CHECKSUM
-            fi
-        fi
-        tarball_sha="$observed"
-        if ! tarball_safe "$src"; then
-            log_err "tarball contains unsafe paths (absolute or traversal) — refusing"
-            cleanup_staging
-            return $EX_MALICIOUS
-        fi
-        extract_dir="$staging/extracted"
-        mkdir "$extract_dir" || { cleanup_staging; return 1; }
-        if ! tar -xzf "$src" -C "$extract_dir" 2>/dev/null; then
-            log_err "tar extraction failed"
-            cleanup_staging
-            return $EX_NETWORK
-        fi
-        # If extraction produced a top-level VERSION (archive rooted at
-        # payload), use extract_dir directly. Otherwise pick the single
-        # inner directory (GitHub-style wrapper).
-        if [ -f "$extract_dir/VERSION" ]; then
-            payload_src="$extract_dir"
-        else
-            inner=$(find "$extract_dir" -maxdepth 1 -mindepth 1 -type d | head -1)
-            payload_src="${inner:-$extract_dir}"
-        fi
-        source_type="tarball"
-        url="file://$src"
-    else
-        log_err "EDIKT_INSTALL_SOURCE='$src' is not a file or directory"
-        cleanup_staging
-        return $EX_NETWORK
-    fi
-
-    # Stage the payload at staging/<norm>, then atomic mv into versions/.
-    final_stage="$staging/$norm"
-    if [ "$source_type" = "dev" ]; then
-        # cp is unavoidable for a source dir; use a fresh staging dir so
-        # if interrupted we leave nothing behind in versions/.
-        mkdir -p "$final_stage"
-        # Copy contents of source dir.
-        ( cd "$payload_src" && tar -cf - . ) | ( cd "$final_stage" && tar -xf - )
-    else
-        mv "$payload_src" "$final_stage"
-    fi
-
-    # Defensive: ensure every hook file is executable post-extract
-    # (PLAN-v0.5.0-stability Phase 21). Belt-and-braces against a packaging
-    # step that drops exec bits (umask drift, archive tool quirks). The
-    # primary control is the CI mode-gate at test/test-hook-modes.sh; this
-    # is a runtime safety net so a corrupted tarball doesn't break installs.
-    #
-    # Selection rule MUST match test/test-hook-modes.sh and
-    # test/integration/install/test_hook_modes_after_install.sh — every
-    # regular file under templates/hooks/. ! -type l rejects symlinks so
-    # chmod can't follow into a user's source tree on a corrupted dev-link
-    # payload (Launcher MED-4). Errors are surfaced (not swallowed) — a
-    # genuine permission failure here means the install is broken and the
-    # user needs to know (Launcher NIT-9).
-    if [ -d "$final_stage/templates/hooks" ]; then
-        find "$final_stage/templates/hooks" -type f ! -type l \
-            -exec chmod 0755 {} +
-    fi
-
-    # Validate VERSION exists and meets MIN_PAYLOAD_VERSION.
-    if [ ! -f "$final_stage/VERSION" ]; then
-        log_err "payload missing VERSION file"
-        cleanup_staging
-        return $EX_NETWORK
-    fi
-    if ! check_payload_min_version "$final_stage"; then
-        cleanup_staging
-        return $EX_CHECKSUM
-    fi
-
-    # Write manifest into the staged tree.
-    write_manifest "$final_stage" "$norm" "$source_type" "$url" "$tarball_sha"
-
-    # Atomic move into place.
-    mv "$final_stage" "$target"
-
-    rm -rf "$staging" 2>/dev/null || true
-
-    release_lock
-
-    emit_event version_installed \
-        '"version":"'"$norm"'","source":"'"$source_type"'","sha256":"'"$tarball_sha"'","installed_via":"launcher"'
-
-    log_info "installed $norm at $target"
-    return 0
-}
-
-# ─── Subcommand: use ────────────────────────────────────────────────────────
-cmd_use() {
-    tag="${1:-}"
-    if [ -z "$tag" ]; then
-        log_err "usage: edikt use <tag>"
-        return 1
-    fi
-    norm=$(normalize_tag "$tag")
-    target_dir="$EDIKT_ROOT/versions/$norm"
-    if [ ! -d "$target_dir" ]; then
-        log_err "version $norm is not installed. Run \`edikt install $tag\` first."
-        return 1
-    fi
-
-    acquire_lock || return $?
-
-    if ! check_payload_min_version "$target_dir"; then
-        release_lock
-        return $EX_CHECKSUM
-    fi
-
-    prev=""
-    if [ -L "$EDIKT_ROOT/current" ]; then
-        prev=$(basename "$(readlink "$EDIKT_ROOT/current")")
-    fi
-
-    backup_ts=$(flip_current "versions/$norm")
-
-    lock_write "$norm" "launcher"
-
-    extra='"version":"'"$norm"'","symlink":"'"$EDIKT_ROOT"/current'"'
-    if [ -n "$prev" ]; then
-        extra="$extra"',"previous":"'"$prev"'"'
-    fi
-    extra="$extra"',"backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'"'
-
-    release_lock
-
-    emit_event version_activated "$extra"
-
-    log_info "activated $norm"
-    return 0
-}
-
-# ─── Subcommand: rollback ───────────────────────────────────────────────────
-cmd_rollback() {
-    # Special form: `edikt rollback v0.5.0` — restores host files from the
-    # pre-v0.5.0 backup written by install.sh during the 0.4.x → 0.5.0 migration.
-    # Payload-only rollback (the default form) is unchanged below.
-    if [ "${1:-}" = "v0.5.0" ] || [ "${1:-}" = "0.5.0" ]; then
-        _rollback_v050_host_files
-        return $?
-    fi
-
-    prev=$(lock_get previous)
-    if [ -z "$prev" ]; then
-        log_err "no previous version recorded in lock.yaml"
-        return 1
-    fi
-    if [ ! -d "$EDIKT_ROOT/versions/$prev" ]; then
-        log_err "previous version $prev is not installed"
-        return 1
-    fi
-    cur=$(lock_get active)
-
-    acquire_lock || return $?
-
-    backup_ts=$(flip_current "versions/$prev")
-    lock_write "$prev" "launcher"
-
-    release_lock
-
-    emit_event rollback_performed \
-        '"from":"'"$cur"'","to":"'"$prev"'","backup":"'"$EDIKT_ROOT"/backups/"$backup_ts"'","reason":"user"'
-
-    log_info "rolled back to $prev"
-    return 0
-}
-
-# ─── Rollback helper: v0.5.0 host-file restore ──────────────────────────────
-# Restores the user's pre-v0.5.0 ~/.claude/settings.json from the backup
-# install.sh wrote during the first 0.4.x → 0.5.0 install. Idempotent.
-# Removes grandfather verdict stubs created by the upgrade's grandfather
-# routine. Does NOT roll back payload versions — run `edikt use <tag>` for that.
-_rollback_v050_host_files() {
-    _marker="$HOME/.edikt/backup/pre-v0.5.0-marker"
-    if [ ! -f "$_marker" ]; then
-        log_err "rollback v0.5.0: no pre-v0.5.0 backup found at $_marker"
-        log_err "  this install has no prior-state backup to restore from."
-        return 1
-    fi
-    _backup_dir=$(head -1 "$_marker" 2>/dev/null | tr -d '[:space:]')
-    if [ -z "$_backup_dir" ] || [ ! -d "$_backup_dir" ]; then
-        log_err "rollback v0.5.0: backup directory $_backup_dir does not exist"
-        return 1
-    fi
-
-    # Restore ~/.claude/settings.json.
-    if [ -f "$_backup_dir/settings.json" ]; then
-        _claude_home="${CLAUDE_HOME:-$HOME/.claude}"
-        _target="$_claude_home/settings.json"
-        if [ -f "$_target" ]; then
-            cp -p "$_target" "$_backup_dir/settings.json.post-rollback" 2>/dev/null || true
-        fi
-        if cp -p "$_backup_dir/settings.json" "$_target"; then
-            log_info "  restored $_target from backup"
-        else
-            log_err "  failed to restore $_target"
-            return 1
-        fi
-    fi
-
-    # Drop the managed-region sidecar so the next install prompts fresh.
-    _sidecar="$HOME/.edikt/state/settings-managed.json"
-    if [ -f "$_sidecar" ]; then
-        rm -f "$_sidecar"
-        log_info "  removed $_sidecar (will be re-created on next install)"
-    fi
-
-    # Remove grandfather verdict stubs.
-    # POSIX-compatible: the obvious `find ... | while read` form runs the
-    # while in a subshell where `_removed_grand` updates would be lost.
-    # `done < <(...)` is bash process substitution and breaks `sh -n`
-    # parsing under /bin/sh (the script's required interpreter — see
-    # header). Use a tempfile redirect to preserve variable scope without
-    # bashisms.
-    _removed_grand=0
-    _gv_list=$(mktemp 2>/dev/null) || _gv_list="${TMPDIR:-/tmp}/edikt-gv-$$"
-    for _plans_root in "$PWD/docs/product/plans/verdicts" "$PWD/docs/plans/verdicts"; do
-        [ -d "$_plans_root" ] || continue
-        find "$_plans_root" -name '*.json' 2>/dev/null > "$_gv_list" || true
-        # Find JSON files with meta.grandfathered == true and delete them.
-        while IFS= read -r _vf; do
-            [ -n "$_vf" ] || continue
-            if python3 -c "import json,sys;d=json.loads(open(sys.argv[1]).read());sys.exit(0 if d.get('meta',{}).get('grandfathered') is True else 1)" "$_vf" 2>/dev/null; then
-                rm -f "$_vf"
-                _removed_grand=$((_removed_grand + 1))
-            fi
-        done < "$_gv_list"
-    done
-    rm -f "$_gv_list" 2>/dev/null || true
-    if [ "$_removed_grand" -gt 0 ]; then
-        log_info "  removed $_removed_grand grandfather verdict stub(s)"
-    fi
-
-    # Keep the marker + backup dir so re-running rollback is idempotent and
-    # the user can audit what was restored.
-    log_info "rollback v0.5.0: complete"
-    log_info "  backup preserved at $_backup_dir (remove manually if desired)"
-    emit_event rollback_v050_performed '"backup_dir":"'"$_backup_dir"'"' 2>/dev/null || true
-    return 0
-}
-
-# ─── Subcommand: doctor ─────────────────────────────────────────────────────
-# Exit 0 healthy, 1 warnings, 2 errors.
-cmd_doctor() {
-    quick=0
-    do_backfill=0
-    dry_run=0
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --quick)               quick=1 ;;
-            --backfill-provenance) do_backfill=1 ;;
-            --dry-run)             dry_run=1 ;;
-        esac
-        shift
-    done
-
-    # --backfill-provenance: opt-in M6 backfill path. Never automatic.
-    if [ "$do_backfill" -eq 1 ]; then
-        log_info "edikt doctor --backfill-provenance"
-        if [ "$dry_run" -eq 1 ]; then
-            log_info "  mode: dry-run (candidates listed, no files written)"
-        fi
-        _doctor_backfill_provenance "$dry_run"
-        return $?
-    fi
-
-    warn_n=0
-    err_n=0
-    echo "edikt doctor"
-    if [ "$quick" -eq 1 ]; then
-        echo "  mode:             --quick (skip per-file SHA256)"
-    fi
-    echo "  launcher version: $LAUNCHER_VERSION"
-    echo "  EDIKT_ROOT:       $EDIKT_ROOT"
-    echo "  CLAUDE_ROOT:      $CLAUDE_ROOT"
-
-    if [ ! -d "$EDIKT_ROOT" ]; then
-        echo "  ERROR: EDIKT_ROOT does not exist"
-        return 2
-    fi
-    if [ ! -w "$EDIKT_ROOT" ]; then
-        echo "  ERROR: EDIKT_ROOT is not writable"
-        err_n=$((err_n + 1))
-    fi
-
-    # python3 availability (required by hook scripts since v0.5.0 — INV-003).
-    # Every hook emits protocol JSON via python3 json.dumps. Without python3,
-    # hooks degrade silently instead of firing.
-    if command -v python3 >/dev/null 2>&1; then
-        _py_ver=$(python3 -c 'import sys; print(".".join(str(x) for x in sys.version_info[:2]))' 2>/dev/null)
-        echo "  python3:          $(command -v python3) (${_py_ver:-unknown})"
-    else
-        echo "  ERROR: python3 not on PATH — edikt hooks require python3 (INV-003 since v0.5.0)"
-        err_n=$((err_n + 1))
-    fi
-
-    # cosign availability. ADR-016 explicitly treats cosign as optional at
-    # the host level — it's only a hard prerequisite for install/upgrade
-    # flows, which abort with an actionable error when it's missing unless
-    # EDIKT_INSTALL_INSECURE=1 is set. An otherwise clean tree is still
-    # healthy, so emit this as an INFO line that does not count toward
-    # warn_n (which would flip the exit code to 1).
-    if command -v cosign >/dev/null 2>&1; then
-        echo "  cosign:           $(command -v cosign)"
-    else
-        echo "  INFO: cosign not on PATH — installs require EDIKT_INSTALL_INSECURE=1 without it (ADR-016)"
-    fi
-
-    # Active version
-    if [ -L "$EDIKT_ROOT/current" ]; then
-        active=$(basename "$(readlink "$EDIKT_ROOT/current")")
-        echo "  active version:   $active"
-        if [ ! -d "$EDIKT_ROOT/current/" ]; then
-            echo "  ERROR: current symlink does not resolve"
-            err_n=$((err_n + 1))
-        fi
-    else
-        echo "  WARN: no active version (current symlink missing)"
-        warn_n=$((warn_n + 1))
-    fi
-
-    # Required external symlinks
-    for link in hooks templates; do
-        if [ ! -L "$EDIKT_ROOT/$link" ]; then
-            echo "  WARN: $EDIKT_ROOT/$link is not a symlink"
-            warn_n=$((warn_n + 1))
-        elif [ ! -e "$EDIKT_ROOT/$link/" ]; then
-            echo "  ERROR: $EDIKT_ROOT/$link does not resolve"
-            err_n=$((err_n + 1))
-        fi
-    done
-    if [ -L "$CLAUDE_ROOT/commands/edikt" ]; then
-        if [ ! -e "$CLAUDE_ROOT/commands/edikt/" ]; then
-            echo "  ERROR: $CLAUDE_ROOT/commands/edikt does not resolve"
-            err_n=$((err_n + 1))
-        else
-            # Validate the symlink points at the target resolve_commands_target
-            # would pick. A drift here means the link was set under a previous
-            # layout (e.g., v0.4.x→v0.5.x cross-major upgrade where ensure_external_symlinks
-            # didn't re-run), and Claude Code is finding commands at the wrong
-            # path even though the link technically resolves. Auto-repair guidance
-            # below tells the user how to fix it without manual symlink surgery.
-            # (PLAN-v0.5.0-stability Phase 20 — Launcher MED-3)
-            if _expected_cmds_target=$(resolve_commands_target 2>/dev/null); then
-                _actual_cmds_target=$(readlink "$CLAUDE_ROOT/commands/edikt" 2>/dev/null)
-                if [ "$_actual_cmds_target" != "$_expected_cmds_target" ]; then
-                    echo "  WARN: $CLAUDE_ROOT/commands/edikt points at unexpected target"
-                    echo "        actual:   $_actual_cmds_target"
-                    echo "        expected: $_expected_cmds_target"
-                    echo "        fix: run 'edikt use \$(edikt version)' to re-establish symlinks"
-                    warn_n=$((warn_n + 1))
-                fi
-            fi
-            # If resolve_commands_target failed here, the upstream `current`
-            # check in the loop above already counted an error; don't
-            # double-count.
-        fi
-    else
-        echo "  WARN: $CLAUDE_ROOT/commands/edikt is not a symlink"
-        warn_n=$((warn_n + 1))
-    fi
-
-    # Manifest integrity for active version
-    if [ -L "$EDIKT_ROOT/current" ] && [ -d "$EDIKT_ROOT/current/" ]; then
-        if [ -f "$EDIKT_ROOT/current/manifest.yaml" ]; then
-            if [ "$quick" -eq 1 ]; then
-                echo "  manifest:         present (skipped hash verify)"
-            elif ! manifest_verify "$EDIKT_ROOT/current/" 2>/dev/null; then
-                echo "  ERROR: manifest integrity check failed"
-                err_n=$((err_n + 1))
-            else
-                echo "  manifest:         OK"
-            fi
-        else
-            echo "  WARN: no manifest.yaml in active version"
-            warn_n=$((warn_n + 1))
-        fi
-    fi
-
-    # MIN_PAYLOAD_VERSION
-    if [ -f "$EDIKT_ROOT/current/VERSION" ]; then
-        pv=$(head -1 "$EDIKT_ROOT/current/VERSION")
-        if version_ge "$pv" "$MIN_PAYLOAD_VERSION"; then
-            echo "  payload version:  $pv (>= MIN $MIN_PAYLOAD_VERSION)"
-        else
-            echo "  ERROR: payload $pv is older than MIN_PAYLOAD_VERSION ($MIN_PAYLOAD_VERSION)"
-            err_n=$((err_n + 1))
-        fi
-    fi
-
-    # Partial/interrupted migration detection (per config-spec §8.2).
-    if migration_in_progress; then
-        echo "  ERROR: interrupted migration detected — run: edikt migrate --abort"
-        err_n=$((err_n + 1))
-    fi
-
-    # Pre-v0.5.0 flat layout awaiting migration.
-    if needs_migration; then
-        echo "  ERROR: flat layout detected — run: edikt migrate [--dry-run]"
-        err_n=$((err_n + 1))
-    fi
-
-    # Stale .lock detection
-    if [ -f "$EDIKT_ROOT/.lock" ]; then
-        owner_pid=$(awk '{print $1; exit}' "$EDIKT_ROOT/.lock" 2>/dev/null)
-        if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
-            echo "  WARN: stale lock from pid $owner_pid (process gone)"
-            warn_n=$((warn_n + 1))
-        fi
-    fi
-
-    if [ "$err_n" -gt 0 ]; then
-        echo "result: $err_n errors, $warn_n warnings"
-        return 2
-    elif [ "$warn_n" -gt 0 ]; then
-        echo "result: $warn_n warnings"
-        return 1
-    else
-        echo "result: healthy"
-        return 0
-    fi
-}
-
-# ─── Legacy-layout detection (per SPEC-004 §2 FR-018) ──────────────────────
-# Returns 0 if the flat (pre-v0.5.0) layout is present: $EDIKT_ROOT/hooks/ is
-# a real directory (not a symlink) AND $EDIKT_ROOT/VERSION exists. Returns 1
-# otherwise. Used by the dispatch gate and by `migrate`.
+# ─── Legacy-layout detection ──────────────────────────────────────────────────
 needs_migration() {
     [ -d "$EDIKT_ROOT/hooks" ] && [ ! -L "$EDIKT_ROOT/hooks" ] && [ -f "$EDIKT_ROOT/VERSION" ]
 }
 
-# Detects a partial/interrupted migration: presence of any staging or
-# pre-migration sibling dir. Used by doctor.
 migration_in_progress() {
     for d in "$EDIKT_ROOT"/.migrate-staging-* "$EDIKT_ROOT"/.pre-migration-*; do
         [ -e "$d" ] && return 0
@@ -1291,28 +504,13 @@ migration_in_progress() {
     return 1
 }
 
-# ─── Multi-version migration helpers (Phase 7a — M2/M3/M4/M5/M6) ────────────
-# Each migrate_mN_* function is detection-gated: a no-op if the relevant
-# signal is absent. Functions consult the module-level $MIGRATE_BACKUP_DIR
-# (created by M1) for backup placement. If M1 didn't run (because the
-# legacy flat layout wasn't present), they create a backup dir on demand
-# via _ensure_secondary_backup_dir.
-#
-# Convention: each function takes "$1" = dry_run (0|1) and prints what it
-# would do via log_info; mutating ops are gated on dry_run==0. Returns 0
-# on success or no-op; non-zero only on hard failure (which aborts the
-# migration chain).
-
-# Tracks whether any of M2-M6 actually fired this run (for summary).
+# ─── M2: CLAUDE.md HTML sentinels → markdown link-ref form (ADR-006) ─────────
 MIGRATE_RAN_M2=0
 MIGRATE_RAN_M3=0
 MIGRATE_RAN_M4=0
 MIGRATE_RAN_M5=0
-# Preserved files reported in summary.
 MIGRATE_M3_PRESERVED=""
 
-# Lazily create a secondary backup dir for M2/M5 when M1 didn't run.
-# Sets $MIGRATE_BACKUP_DIR if it isn't already set.
 _ensure_secondary_backup_dir() {
     if [ -n "${MIGRATE_BACKUP_DIR:-}" ] && [ -d "$MIGRATE_BACKUP_DIR" ]; then
         return 0
@@ -1324,18 +522,11 @@ _ensure_secondary_backup_dir() {
     return 0
 }
 
-# ─── M2: CLAUDE.md HTML sentinels → markdown link-ref form (ADR-006) ────────
-# Detection: $EDIKT_ROOT/CLAUDE.md exists AND contains both HTML markers.
-# Action: rewrite "<!-- edikt:start -->" → "[edikt:start]: #" and
-#         "<!-- edikt:end -->" → "[edikt:end]: #". Content between markers
-# preserved byte-for-byte. Backup the original to
-# $MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2 first.
 migrate_m2_claudemd_sentinels() {
     _dry="$1"
     _f="$EDIKT_ROOT/CLAUDE.md"
     [ -f "$_f" ] || return 0
     if [ "$_dry" -eq 1 ]; then
-        # Dry-run detection still uses shell; symlink check is informational only.
         if [ -L "$_f" ]; then
             log_err "M2: CLAUDE.md is a symlink — migration refuses to follow it."
             return 1
@@ -1349,26 +540,18 @@ migrate_m2_claudemd_sentinels() {
         log_err "M2: could not create backup dir"
         return 1
     }
-    # Audit HI-3: the prior implementation had a TOCTOU window between the
-    # symlink check and the cp+mv sequence. Replace with a single atomic
-    # Python operation using O_NOFOLLOW — if the file becomes a symlink at
-    # any point, open() itself raises ELOOP and the migration aborts without
-    # ever reading or writing through the link.
     python3 - "$_f" "$MIGRATE_BACKUP_DIR/CLAUDE.md.pre-m2" <<'PY'
 import os
 import sys
 
 src, backup = sys.argv[1], sys.argv[2]
 
-# Open with O_NOFOLLOW (blocks symlink traversal) and O_RDONLY.
 try:
     fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
 except FileNotFoundError:
-    # File went away between [ -f ] and here — safe to skip.
     sys.exit(0)
 except OSError as exc:
-    # ELOOP (40 on macOS/Linux) fires when the target is a symlink.
-    if getattr(exc, 'errno', None) in (40,):  # ELOOP
+    if getattr(exc, 'errno', None) in (40,):
         sys.stderr.write(f"M2: {src} is a symlink — refusing to follow\n")
         sys.exit(2)
     sys.stderr.write(f"M2: open failed: {exc}\n")
@@ -1381,18 +564,15 @@ except OSError as exc:
     sys.stderr.write(f"M2: read failed: {exc}\n")
     sys.exit(1)
 
-# Detection — skip if no HTML markers.
 if b'<!-- edikt:start -->' not in content or b'<!-- edikt:end -->' not in content:
     sys.exit(0)
 
-# Transform.
 new_content = content.replace(
     b'<!-- edikt:start -->', b'[edikt:start]: #'
 ).replace(
     b'<!-- edikt:end -->', b'[edikt:end]: #'
 )
 
-# Backup original bytes.
 try:
     with open(backup, 'wb') as f:
         f.write(content)
@@ -1400,9 +580,6 @@ except OSError as exc:
     sys.stderr.write(f"M2: backup write failed: {exc}\n")
     sys.exit(1)
 
-# Write transformed content atomically via tmp + rename. O_NOFOLLOW on
-# the write side blocks the race where an attacker swaps the file for a
-# symlink between the read and write.
 dst_dir = os.path.dirname(src) or '.'
 tmp_path = os.path.join(dst_dir, f".{os.path.basename(src)}.tmp.{os.getpid()}")
 try:
@@ -1411,8 +588,6 @@ try:
         f.write(new_content)
         f.flush()
         os.fsync(f.fileno())
-    # Re-assert O_NOFOLLOW on the destination before replace — prevents
-    # attacker from turning the destination into a symlink during our write.
     try:
         check_fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
         os.close(check_fd)
@@ -1449,59 +624,32 @@ PY
     return 0
 }
 
-# ─── M3: flat command names → namespaced ────────────────────────────────────
-# Detection: top-level *.md files in $CLAUDE_ROOT/commands/edikt/ that have
-# a same-basename namespaced replacement somewhere deeper in
-# $EDIKT_ROOT/current/commands/edikt/.
-# Action: if the top-level file's sha256 matches the namespaced
-# replacement's sha256, rm it (template unchanged — namespaced version is
-# canonical). Otherwise mv to $EDIKT_ROOT/custom/<name>.md and warn.
-#
-# NOTE (PLAN-v0.5.0-stability Phase 20): hardcoded `commands/edikt` paths
-# below are INTENTIONALLY legacy-only — M3 migrates v0.4.x layouts whose
-# canonical shape is `commands/edikt/*.md`. resolve_commands_target is
-# specifically for the post-migration runtime symlink and does NOT apply
-# here; using it would break the legacy detection.
+# ─── M3: flat command names → namespaced ─────────────────────────────────────
 migrate_m3_flat_commands() {
     _dry="$1"
     _flat_dir="$CLAUDE_ROOT/commands/edikt"
     _payload_dir="$EDIKT_ROOT/current/commands/edikt"
     [ -d "$_flat_dir" ] || return 0
-    # #10: Guard against a broken symlink on $EDIKT_ROOT/current. A broken
-    # symlink means [ -d ] returns false even though the path exists as a
-    # link entry. Distinguish "payload dir not present — M3 is a no-op here"
-    # from "payload dir ought to exist but is a broken symlink". We detect
-    # the broken-symlink case by checking whether $EDIKT_ROOT/current is a
-    # symlink that doesn't resolve, which signals a corrupted install.
     if ! [ -d "$_payload_dir" ]; then
         if [ -L "$EDIKT_ROOT/current" ] && ! [ -e "$EDIKT_ROOT/current" ]; then
-            log_err "M3: \$EDIKT_ROOT/current is a broken symlink — cannot determine namespaced replacements. Run 'edikt doctor' to inspect."
+            log_err "M3: \$EDIKT_ROOT/current is a broken symlink — cannot determine namespaced replacements."
             return 1
         fi
-        # No payload dir but symlink is absent or resolves fine — M3 simply
-        # has no namespaced replacements to compare against; skip silently.
         return 0
     fi
     _custom_dir="$EDIKT_ROOT/custom"
 
-    # #1: Use a temp file (one flat<TAB>replacement per line) instead of a
-    # space-separated string accumulator so filenames containing whitespace
-    # (e.g. "my plan.md") are handled safely.
     _match_file=$(mktemp -t edikt-m3-matches-XXXXXX)
-    # Ensure the temp file is cleaned up even on early return.
     # shellcheck disable=SC2064
     trap "rm -f '$_match_file'" RETURN
     for _flat in "$_flat_dir"/*.md; do
         [ -f "$_flat" ] || continue
-        # Skip symlinks — those are the v0.5.0-namespaced layout's own.
         [ -L "$_flat" ] && continue
         _base=$(basename "$_flat")
-        # Find a same-basename file deeper in the payload tree.
         _replacement=$(find "$_payload_dir" -mindepth 2 -type f -name "$_base" 2>/dev/null | head -1)
         [ -n "$_replacement" ] || continue
         printf '%s\t%s\n' "$_flat" "$_replacement" >>"$_match_file"
     done
-    # If no matches found the temp file is empty.
     if ! [ -s "$_match_file" ]; then
         rm -f "$_match_file"
         return 0
@@ -1519,7 +667,6 @@ migrate_m3_flat_commands() {
         _flat_sha=$(sha256_file "$_flat" 2>/dev/null) || _flat_sha=""
         _repl_sha=$(sha256_file "$_repl" 2>/dev/null) || _repl_sha=""
         if [ -n "$_flat_sha" ] && [ "$_flat_sha" = "$_repl_sha" ]; then
-            # Unmodified template — safe to delete.
             _safe_remove_or_quarantine "$_flat" "M3" || {
                 log_err "M3: failed to remove $_flat"
                 return 1
@@ -1528,7 +675,6 @@ migrate_m3_flat_commands() {
             emit_event migration_step_completed \
                 '"step":"M3","action":"removed","file":"'"$_flat"'"'
         else
-            # User-modified — preserve in custom/.
             mkdir -p "$_custom_dir" || {
                 log_err "M3: failed to create $_custom_dir"
                 return 1
@@ -1549,12 +695,7 @@ migrate_m3_flat_commands() {
     return 0
 }
 
-# ─── M5: config.yaml schema additions ───────────────────────────────────────
-# Detection: $EDIKT_ROOT/config.yaml exists AND is missing one or more of
-# the v0.5.0 expected top-level keys: paths:, stack:, gates:.
-# Action: append missing keys with defaults. Never reorder existing keys,
-# never modify existing values. Atomic write via .tmp + mv. Backup to
-# $MIGRATE_BACKUP_DIR/config.yaml.pre-m5.
+# ─── M5: config.yaml schema additions ────────────────────────────────────────
 migrate_m5_config_additions() {
     _dry="$1"
     _f="$EDIKT_ROOT/config.yaml"
@@ -1585,10 +726,6 @@ migrate_m5_config_additions() {
         log_err "M5: failed to seed temp file"
         return 1
     }
-    # Ensure trailing newline before appending blocks. Unconditional append is
-    # safe for YAML — trailing newlines are semantically irrelevant — and avoids
-    # the subtle od -c / command-substitution pitfall where a file ending in the
-    # literal text "\n" (two bytes) would be incorrectly detected as newline-terminated.
     if [ -s "$_tmp" ]; then
         printf '\n' >>"$_tmp"
     fi
@@ -1640,21 +777,14 @@ EOF
     return 0
 }
 
-# ─── M4: compile schema v1 → v2 ─────────────────────────────────────────────
-# Detection: .claude/rules/governance.md exists AND lacks compile_schema_version: 2
-# in its YAML frontmatter. Invokes `claude -p /edikt:gov:compile` to regenerate
-# governance.md with v2 sentinel blocks. Falls back to a .m4-pending marker
-# when the claude CLI is unavailable so the user can complete it manually.
+# ─── M4: compile schema v1 → v2 ──────────────────────────────────────────────
 migrate_m4_compile_schema_v1_to_v2() {
     _dry="$1"
     _gov="$CLAUDE_ROOT/rules/governance.md"
-    # Detection is scoped to $CLAUDE_ROOT — project-mode invocations resolve
-    # CLAUDE_ROOT to the project's .claude/ via env.
     [ -f "$_gov" ] || return 0
     if grep -q 'compile_schema_version: 2' "$_gov" 2>/dev/null; then
         return 0
     fi
-    # Already-pending marker → skip (user will run compile manually).
     if [ -f "$EDIKT_ROOT/.m4-pending" ]; then
         return 0
     fi
@@ -1662,8 +792,6 @@ migrate_m4_compile_schema_v1_to_v2() {
         log_info "M4 (compile schema): would invoke 'claude -p /edikt:gov:compile' to migrate governance.md to schema v2"
         return 0
     fi
-    # Attempt live compile via claude CLI. Requires claude to be on PATH
-    # and authenticated. Non-fatal: falls back to .m4-pending marker.
     _claude_bin=""
     if command -v claude >/dev/null 2>&1; then
         _claude_bin="claude"
@@ -1675,7 +803,7 @@ migrate_m4_compile_schema_v1_to_v2() {
             MIGRATE_RAN_M4=1
             emit_event migration_step_completed \
                 '"step":"M4","action":"compiled","result":"schema_v2"'
-            log_ok "M4 (compile schema): governance.md upgraded to schema v2"
+            log_info "M4 (compile schema): governance.md upgraded to schema v2"
             return 0
         else
             log_warn "M4: claude -p /edikt:gov:compile failed or produced no v2 sentinel — falling back to .m4-pending marker"
@@ -1683,7 +811,6 @@ migrate_m4_compile_schema_v1_to_v2() {
     else
         log_warn "M4: claude CLI not found — falling back to .m4-pending marker"
     fi
-    # Fallback: mark pending so the user can run /edikt:gov:compile manually.
     : >"$EDIKT_ROOT/.m4-pending" || {
         log_warn "M4: could not write $EDIKT_ROOT/.m4-pending (non-fatal)"
         return 0
@@ -1695,396 +822,12 @@ migrate_m4_compile_schema_v1_to_v2() {
     return 0
 }
 
-# ─── M6: provenance backfill (SPEC-004 §10.M6) ──────────────────────────────
-# Opt-in only — invoked via `edikt doctor --backfill-provenance`.
-# NEVER runs automatically during migration. Agents without provenance fall
-# back to the v0.4.3 diff classifier per FR-029.
-#
-# Algorithm per candidate agent in .claude/agents/*.md:
-#   a. Parse frontmatter; if edikt_template_hash present → skip (already done)
-#   b. Detect install version from frontmatter edikt_version: or version: key;
-#      if absent, prompt user.
-#   c. Load source template from migration-fixtures/v<version>/templates/agents/
-#   d. If absent → skip (no captured template for that version)
-#   e. Compute md5 of raw template bytes (Phase 9 hash contract: before substitution)
-#   f. Re-synthesize (substitutions + stack filter) and compare via Levenshtein:
-#        ≤ 15% of installed size → near-match, stamp provenance frontmatter
-#        > 15% of installed size → diverged (user edits), skip
-#        (15% threshold documented here and in --help per Phase 11 AC #3)
-# Edge case: identical template bytes across two captured versions → prompt user
-#   which version to stamp; hash is the same, only edikt_template_version differs.
-
-# md5 of a file. Portable BSD (md5 -q) + GNU (md5sum) dispatch.
-_md5_file() {
-    _mf="$1"
-    if command -v md5sum >/dev/null 2>&1; then
-        md5sum "$_mf" | awk '{print $1}'
-    elif command -v md5 >/dev/null 2>&1; then
-        md5 -q "$_mf"
-    else
-        log_err "md5sum or md5 required for backfill"
-        return 1
-    fi
-}
-
-# Extract a scalar value from YAML frontmatter (between the first pair of ---).
-# Usage: _fm_get <file> <key>
-_fm_get() {
-    _fg_f="$1"
-    _fg_k="$2"
-    awk -v k="$_fg_k" '
-        /^---$/ { fm++; next }
-        fm == 1 {
-            if ($0 ~ ("^" k ":")) {
-                sub("^" k ":[ \t]*", "")
-                gsub(/^["'"'"']|["'"'"']$/, "")
-                print; exit
-            }
-        }
-        fm >= 2 { exit }
-    ' "$_fg_f"
-}
-
-# Re-synthesize a template: apply path substitutions + stack filter.
-# Reads: template_file, config_yaml, substitutions_yaml.
-# Writes synthesised content to stdout.
-# Falls back gracefully if _substitutions.yaml or config keys are absent.
-_backfill_resynth() {
-    _br_tmpl="$1"
-    _br_cfg="$2"
-    _br_subs="$3"
-    python3 - "$_br_tmpl" "$_br_cfg" "$_br_subs" <<'PYEOF'
-import sys, re
-
-tmpl_file = sys.argv[1]
-cfg_file  = sys.argv[2]
-subs_file = sys.argv[3]
-
-try:
-    content = open(tmpl_file).read()
-except Exception as e:
-    sys.exit("error: cannot read template: " + str(e))
-
-try:
-    import yaml
-    subs_table = (yaml.safe_load(open(subs_file).read()) or {}).get("substitutions", {})
-except Exception:
-    subs_table = {}
-
-try:
-    import yaml
-    cfg = yaml.safe_load(open(cfg_file).read()) or {}
-    config_paths = cfg.get("paths", {}) or {}
-    stack = cfg.get("stack", []) or []
-    if isinstance(stack, str):
-        stack = [stack]
-except Exception:
-    config_paths = {}
-    stack = []
-
-for _key, entry in subs_table.items():
-    default   = entry.get("default", "")
-    leaf      = (entry.get("config_key", "") or "").split(".")[-1]
-    configured = config_paths.get(leaf) if leaf else None
-    if configured and configured != default:
-        content = content.replace(default, configured)
-
-if stack:
-    opens  = len(re.findall(r"<!-- edikt:stack:[^>]+ -->", content))
-    closes = len(re.findall(r"<!-- /edikt:stack -->", content))
-    if opens == closes and opens > 0:
-        pat = re.compile(
-            r"<!-- edikt:stack:([^>]+) -->\n(.*?)<!-- /edikt:stack -->",
-            re.DOTALL,
-        )
-        def _repl(m):
-            langs = {l.strip() for l in m.group(1).strip().split(",")}
-            return m.group(2).rstrip("\n") if langs & set(stack) else ""
-        content = pat.sub(_repl, content)
-        content = re.sub(r"\n{3,}", "\n\n", content)
-
-sys.stdout.write(content)
-PYEOF
-}
-
-# Strip edikt_template_hash and edikt_template_version from frontmatter for
-# comparison. Writes cleaned content to stdout.
-_backfill_strip_prov_fm() {
-    _bsp_f="$1"
-    python3 - "$_bsp_f" <<'PYEOF'
-import sys
-content = open(sys.argv[1]).read()
-if not content.startswith("---\n"):
-    sys.stdout.write(content); sys.exit(0)
-try:
-    end = content.index("\n---\n", 4)
-except ValueError:
-    sys.stdout.write(content); sys.exit(0)
-fm_body  = content[4:end]
-after_fm = content[end + 1:]
-lines = [l for l in fm_body.splitlines()
-         if not l.startswith(("edikt_template_hash:", "edikt_template_version:"))]
-sys.stdout.write("---\n" + "\n".join(lines) + "\n" + after_fm)
-PYEOF
-}
-
-# Check Levenshtein(installed_stripped, resynth) ≤ 15% of installed size.
-# Returns 0 (near-match, safe to stamp) or 1 (diverged, skip).
-# Phase 11 AC #3: threshold = 15% of installed file character count.
-# This threshold is documented here and in `edikt doctor --help`.
-_backfill_lev_ok() {
-    _blo_inst="$1"
-    _blo_resynth="$2"
-    python3 - "$_blo_inst" "$_blo_resynth" <<'PYEOF'
-import sys
-
-a = open(sys.argv[1]).read()   # installed (stripped)
-b = open(sys.argv[2]).read()   # resynth
-
-# Threshold: 15% of installed file character count (SPEC-004 §10.M6 / Phase 11 AC #3).
-threshold = int(0.15 * len(a))
-
-if abs(len(a) - len(b)) > threshold:
-    sys.exit(1)   # size gap alone exceeds threshold — diverged
-
-m, n = len(a), len(b)
-prev = list(range(n + 1))
-for i in range(1, m + 1):
-    cur = [i]; row_min = i
-    for j in range(1, n + 1):
-        cost = 0 if a[i-1] == b[j-1] else 1
-        v = min(prev[j] + 1, cur[j-1] + 1, prev[j-1] + cost)
-        cur.append(v)
-        if v < row_min: row_min = v
-    if row_min > threshold:
-        sys.exit(1)   # early exit: already over threshold
-    prev = cur
-
-sys.exit(0 if prev[n] <= threshold else 1)
-PYEOF
-}
-
-# Write edikt_template_hash + edikt_template_version into frontmatter (atomic).
-_backfill_write_prov() {
-    _bwp_file="$1"
-    _bwp_hash="$2"
-    _bwp_ver="$3"
-    python3 - "$_bwp_file" "$_bwp_hash" "$_bwp_ver" <<'PYEOF'
-import sys, os
-path, hval, ver = sys.argv[1], sys.argv[2], sys.argv[3]
-content = open(path).read()
-if not content.startswith("---\n"):
-    sys.exit("error: " + path + " has no YAML frontmatter")
-try:
-    end = content.index("\n---\n", 4)
-except ValueError:
-    sys.exit("error: " + path + " missing closing ---")
-fm_body  = content[4:end]
-after_fm = content[end + 1:]
-lines = [l for l in fm_body.splitlines()
-         if not l.startswith(("edikt_template_hash:", "edikt_template_version:"))]
-lines.append('edikt_template_hash: "' + hval + '"')
-lines.append('edikt_template_version: "' + ver + '"')
-new_content = "---\n" + "\n".join(lines) + "\n" + after_fm
-tmp = path + ".prov.tmp"
-open(tmp, "w").write(new_content)
-os.replace(tmp, path)
-PYEOF
-}
-
-# Known captured versions for same-hash disambiguation check.
-_M6_KNOWN_VERSIONS="0.1.0 0.1.4 0.2.0 0.3.0 0.4.3"
-
-# Main backfill implementation. $1: dry_run (0|1).
-_doctor_backfill_provenance() {
-    _dbp_dry="$1"
-
-    agents_dir="$CLAUDE_ROOT/agents"
-    if [ ! -d "$agents_dir" ]; then
-        log_info "  backfill: no agents directory at $agents_dir — nothing to do"
-        return 0
-    fi
-
-    config_file="$EDIKT_ROOT/config.yaml"
-    subs_yaml="$EDIKT_ROOT/current/templates/agents/_substitutions.yaml"
-    # EDIKT_MIGRATION_FIXTURES_BASE can be overridden for tests.
-    fixtures_base="${EDIKT_MIGRATION_FIXTURES_BASE:-$EDIKT_ROOT/migration-fixtures}"
-
-    _dbp_stamped=0
-    _dbp_skipped=0
-    _dbp_already=0
-
-    log_info "  scanning $agents_dir ..."
-
-    for _agent_file in "$agents_dir"/*.md; do
-        [ -f "$_agent_file" ] || continue
-        _aname=$(basename "$_agent_file" .md)
-
-        # a. Skip if already provenanced.
-        _stored_hash=$(_fm_get "$_agent_file" "edikt_template_hash")
-        if [ -n "$_stored_hash" ]; then
-            log_info "  $_aname: already provenanced — skip"
-            _dbp_already=$((_dbp_already + 1))
-            continue
-        fi
-
-        # b. Detect install version hint from frontmatter.
-        _install_ver=$(_fm_get "$_agent_file" "edikt_version")
-        [ -z "$_install_ver" ] && _install_ver=$(_fm_get "$_agent_file" "version")
-
-        if [ -z "$_install_ver" ]; then
-            # No hint — prompt user.
-            printf "\n  %s: no version hint in frontmatter.\n" "$_aname"
-            printf "  Which edikt version installed '%s'?\n" "$_aname"
-            printf "  [0.1.0 / 0.1.4 / 0.2.0 / 0.3.0 / 0.4.x / skip]: "
-            if ! read -r _uver 2>/dev/null; then
-                log_info "  $_aname: non-interactive stdin — skip"
-                emit_event provenance_backfill_skipped \
-                    '"agent":"'"$_aname"'","reason":"no version hint and non-interactive"'
-                _dbp_skipped=$((_dbp_skipped + 1))
-                continue
-            fi
-            case "$_uver" in
-                0.1.0|0.1.4|0.2.0|0.3.0) _install_ver="$_uver" ;;
-                0.4.x|0.4.*)              _install_ver="0.4.3" ;;
-                skip|"")
-                    log_info "  $_aname: skipped by user"
-                    emit_event provenance_backfill_skipped \
-                        '"agent":"'"$_aname"'","reason":"skipped by user"'
-                    _dbp_skipped=$((_dbp_skipped + 1))
-                    continue
-                    ;;
-                *)
-                    log_info "  $_aname: unrecognised input '$_uver' — skip"
-                    emit_event provenance_backfill_skipped \
-                        '"agent":"'"$_aname"'","reason":"unrecognised version input"'
-                    _dbp_skipped=$((_dbp_skipped + 1))
-                    continue
-                    ;;
-            esac
-        fi
-
-        # Normalise 0.4.x variants.
-        case "$_install_ver" in 0.4.*) _install_ver="0.4.3" ;; esac
-
-        # c. Locate source template in fixtures.
-        _tmpl_path="$fixtures_base/v${_install_ver}/templates/agents/${_aname}.md"
-
-        # d. Skip if no captured template for this version.
-        if [ ! -f "$_tmpl_path" ]; then
-            log_info "  $_aname: no captured template for v${_install_ver} — skip"
-            emit_event provenance_backfill_skipped \
-                '"agent":"'"$_aname"'","reason":"no captured template for v'"$_install_ver"'"'
-            _dbp_skipped=$((_dbp_skipped + 1))
-            continue
-        fi
-
-        # e. Compute md5 of raw source template bytes (Phase 9 hash contract:
-        #    hash is taken before substitution and stack filtering).
-        _tmpl_hash=$(_md5_file "$_tmpl_path") || {
-            log_warn "  $_aname: md5 failed — skip"
-            _dbp_skipped=$((_dbp_skipped + 1))
-            continue
-        }
-
-        # Edge case: identical template bytes across two captured versions →
-        # prompt user which version to stamp. Hash is the same; only
-        # edikt_template_version differs.
-        _version_to_stamp="$_install_ver"
-        for _other_ver in $_M6_KNOWN_VERSIONS; do
-            [ "$_other_ver" = "$_install_ver" ] && continue
-            _other_tmpl="$fixtures_base/v${_other_ver}/templates/agents/${_aname}.md"
-            [ -f "$_other_tmpl" ] || continue
-            _other_hash=$(_md5_file "$_other_tmpl") || continue
-            if [ "$_other_hash" = "$_tmpl_hash" ]; then
-                printf "\n  %s: template bytes identical across v%s and v%s.\n" \
-                    "$_aname" "$_install_ver" "$_other_ver"
-                printf "  Which version should be stamped in edikt_template_version?\n"
-                printf "  [%s / %s]: " "$_install_ver" "$_other_ver"
-                if read -r _vpick 2>/dev/null; then
-                    case "$_vpick" in
-                        "$_install_ver") _version_to_stamp="$_install_ver" ;;
-                        "$_other_ver")   _version_to_stamp="$_other_ver" ;;
-                        *)
-                            log_info "  $_aname: unrecognised pick '$_vpick' — using $_install_ver"
-                            _version_to_stamp="$_install_ver"
-                            ;;
-                    esac
-                fi
-                break
-            fi
-        done
-
-        # f. Re-synthesize (substitutions + stack filter) and compare.
-        _tmp_resynth="${TMPDIR:-/tmp}/edikt-backfill-resynth.$$.tmp"
-        _tmp_inst="${TMPDIR:-/tmp}/edikt-backfill-inst.$$.tmp"
-        # Register both temps in the global EXIT trap so they are removed even
-        # if the process receives SIGINT/SIGTERM mid-loop (e.g. Ctrl-C during
-        # a long backfill run). The rm -f at end-of-loop handles the normal path.
-        trap 'rm -f "$_tmp_resynth" "$_tmp_inst"; edikt_exit_trap' EXIT
-        trap 'rm -f "$_tmp_resynth" "$_tmp_inst"; edikt_exit_trap INT' INT
-        trap 'rm -f "$_tmp_resynth" "$_tmp_inst"; edikt_exit_trap TERM' TERM
-
-        if ! _backfill_resynth "$_tmpl_path" "$config_file" "$subs_yaml" \
-                > "$_tmp_resynth" 2>/dev/null; then
-            # Re-synthesis failed (Python unavailable, etc.) — fall back to raw template.
-            cp "$_tmpl_path" "$_tmp_resynth"
-        fi
-
-        # Strip provenance frontmatter from installed file for comparison.
-        if ! _backfill_strip_prov_fm "$_agent_file" > "$_tmp_inst" 2>/dev/null; then
-            cp "$_agent_file" "$_tmp_inst"
-        fi
-
-        # Levenshtein check (threshold: 15% of installed file character count).
-        # Threshold cited here per Phase 11 AC #3; also in `edikt doctor --help`.
-        if _backfill_lev_ok "$_tmp_inst" "$_tmp_resynth"; then
-            if [ "$_dbp_dry" -eq 1 ]; then
-                log_info "  $_aname: [dry-run] would stamp hash=$_tmpl_hash version=$_version_to_stamp"
-            else
-                if _backfill_write_prov "$_agent_file" "$_tmpl_hash" "$_version_to_stamp"; then
-                    log_info "  $_aname: stamped (hash=$_tmpl_hash, version=$_version_to_stamp)"
-                    emit_event provenance_backfilled \
-                        '"agent":"'"$_aname"'","hash":"'"$_tmpl_hash"'","version":"'"$_version_to_stamp"'"'
-                    _dbp_stamped=$((_dbp_stamped + 1))
-                else
-                    log_warn "  $_aname: failed to write provenance — skip"
-                    _dbp_skipped=$((_dbp_skipped + 1))
-                fi
-            fi
-        else
-            # Levenshtein distance > 15% of installed size — user has customised
-            # this agent beyond the safe-backfill threshold.
-            log_info "  $_aname: user customizations exceed safe-backfill threshold (>15% Levenshtein) — skip"
-            emit_event provenance_backfill_skipped \
-                '"agent":"'"$_aname"'","reason":"user customizations exceed safe-backfill threshold"'
-            _dbp_skipped=$((_dbp_skipped + 1))
-        fi
-
-        rm -f "$_tmp_resynth" "$_tmp_inst"
-        # Restore normal exit traps now that temps are gone.
-        trap 'edikt_exit_trap' EXIT
-        trap 'edikt_exit_trap INT'  INT
-        trap 'edikt_exit_trap TERM' TERM
-    done
-
-    if [ "$_dbp_dry" -eq 1 ]; then
-        log_info "  [dry-run] candidates to stamp: $_dbp_stamped  to skip: $_dbp_skipped  already provenanced: $_dbp_already"
-    else
-        log_info "  stamped: $_dbp_stamped  skipped: $_dbp_skipped  already provenanced: $_dbp_already"
-    fi
-    return 0
-}
-
-# migrate_m6_provenance_backfill — no-op in the migration chain.
-# M6 backfill is NEVER automatic: it runs only via `edikt doctor --backfill-provenance`.
-# Agents without provenance fall back to the v0.4.3 diff classifier per FR-029.
+# ─── M6: provenance backfill — no-op in migration chain ──────────────────────
 migrate_m6_provenance_backfill() {
-    : "${1:-}"   # dry_run ignored — this is intentionally a no-op
+    : "${1:-}"
     return 0
 }
 
-# Run the full M2-M6 chain. Stops at the first hard failure.
 _run_secondary_migrations() {
     _dry="$1"
     migrate_m2_claudemd_sentinels "$_dry" || return $?
@@ -2108,8 +851,6 @@ _print_secondary_summary() {
     if [ "$MIGRATE_RAN_M5" -eq 1 ]; then echo "  M5: config.yaml keys added"; _ran_any=1; fi
     if [ "$MIGRATE_RAN_M4" -eq 1 ]; then echo "  M4: compile schema marked pending (deferred to Phase 7b)"; _ran_any=1; fi
     [ "$_ran_any" -eq 0 ] && echo "  (M2-M6: no signals detected)"
-    # Print restore instructions whenever backups were written (M2 or M5 ran),
-    # so users know how to undo without needing an --undo subcommand.
     if [ "$MIGRATE_RAN_M2" -eq 1 ] || [ "$MIGRATE_RAN_M5" -eq 1 ]; then
         echo ""
         echo "Migration backups retained at: $MIGRATE_BACKUP_DIR/"
@@ -2132,44 +873,10 @@ _print_secondary_summary() {
     return 0
 }
 
-# ─── Subcommand: migrate ────────────────────────────────────────────────────
-# Migrate a pre-v0.5.0 flat layout into the versioned layout.
-#   edikt migrate [--dry-run] [--yes] [--abort]
-# See SPEC-004 §2 FR-018, §10.M1, and config-spec §8.2.
-#
-# Atomicity approach:
-#   1. Stage the new layout at $EDIKT_ROOT/.migrate-staging-<ts>/<VERSION>/.
-#   2. Write pre-migration.tar.gz backup to backups/migration-<ts>/.
-#   3. Move flat dirs sideways into $EDIKT_ROOT/.pre-migration-<ts>/.
-#   4. Move staged version into versions/<VERSION>/.
-#   5. Wire symlink chain (atomic_symlink).
-#   6. Write lock.yaml, emit event, remove .pre-migration-<ts>/ last.
-# A trap on INT/TERM/EXIT invokes migrate_abort if MIGRATE_STATE != "done".
-
-# Per-migration state. Set in cmd_migrate / migrate_abort.
-# States: idle → starting → swapping → done (normal), or aborting (abort path).
-MIGRATE_STATE="idle"
-MIGRATE_TS=""
-MIGRATE_STAGING=""
-MIGRATE_PREDIR=""
-MIGRATE_BACKUP_DIR=""
-MIGRATE_VERSION=""
-
-# Find any existing (orphaned) staging/pre-migration dirs. Echoes one path
-# per line. Used by --abort to recover from a crashed prior run.
-find_migration_leftovers() {
-    for d in "$EDIKT_ROOT"/.migrate-staging-* "$EDIKT_ROOT"/.pre-migration-*; do
-        [ -e "$d" ] || continue
-        echo "$d"
-    done
-}
-
-# ─── Safe-removal helpers (review findings #2, #13) ─────────────────────────
-# Returns 0 if $1 is an empty directory, 1 otherwise.
+# ─── Safe-removal helpers ─────────────────────────────────────────────────────
 _dir_is_empty() {
     _d="$1"
     [ -d "$_d" ] || return 1
-    # `find ... -mindepth 1 -print -quit` is non-portable; use shell globbing.
     for _e in "$_d"/* "$_d"/.[!.]* "$_d"/..?*; do
         [ -e "$_e" ] || [ -L "$_e" ] || continue
         return 1
@@ -2177,12 +884,6 @@ _dir_is_empty() {
     return 0
 }
 
-# Defense-in-depth rm for paths that might contain user content during
-# migration recovery. If $1 is a symlink, unlink. If empty dir or regular
-# file, rm. If a non-empty directory, REFUSE to rm-rf and instead rename
-# to "$1.aborted-<ts>" for human review. Always logs loudly.
-# Returns 0 even on rename (caller can check the path is gone); 1 only if
-# we fail to move the content out of the way.
 _safe_remove_or_quarantine() {
     _tgt="$1"
     _reason="${2:-migrate-abort}"
@@ -2201,7 +902,6 @@ _safe_remove_or_quarantine() {
         rmdir "$_tgt" 2>/dev/null || rm -rf "$_tgt" 2>/dev/null || return 1
         return 0
     fi
-    # Non-empty directory: do NOT rm -rf. Quarantine.
     _quar="$_tgt.aborted-$(ts_now)-$$"
     if mv "$_tgt" "$_quar" 2>/dev/null; then
         log_warn "$_reason: refusing to rm-rf non-empty $_tgt — renamed to $_quar for human review"
@@ -2211,9 +911,6 @@ _safe_remove_or_quarantine() {
     return 1
 }
 
-# Verify a migration backup tarball is present and readable. Checks the
-# sha256 sidecar if present. Returns 0 on success, 1 otherwise.
-# Arguments: backup_dir
 _verify_backup_tarball() {
     _bk="$1"
     _tar="$_bk/pre-migration.tar.gz"
@@ -2227,23 +924,17 @@ _verify_backup_tarball() {
     return 0
 }
 
-# Echo the path of the most recent readable backup dir under
-# $EDIKT_ROOT/backups/migration-*, or nothing if none is usable.
 _find_latest_backup_dir() {
     _latest=""
     for _b in "$EDIKT_ROOT"/backups/migration-*; do
         [ -d "$_b" ] || continue
         if _verify_backup_tarball "$_b"; then
-            _latest="$_b"  # glob expands in sorted order → latest wins
+            _latest="$_b"
         fi
     done
     [ -n "$_latest" ] && printf '%s\n' "$_latest"
 }
 
-# Restore flat layout from $pre_dir (if present) — moves its children back
-# into $EDIKT_ROOT/. Safe to call even if individual children are absent.
-# Finding #13: if the destination exists and is a NON-EMPTY directory (not a
-# symlink), rename it to "$dst.conflict-<ts>" rather than rm-rf'ing it.
 migrate_restore_from_predir() {
     pre="$1"
     [ -d "$pre" ] || return 0
@@ -2251,9 +942,6 @@ migrate_restore_from_predir() {
         src="$pre/$entry"
         dst="$EDIKT_ROOT/$entry"
         if [ -e "$src" ] || [ -L "$src" ]; then
-            # Clear dst first. Symlinks/regular files: unlink freely — they
-            # are artifacts of the half-wired migration. Non-empty dirs:
-            # quarantine rather than destroy (defense in depth).
             if [ -L "$dst" ]; then
                 rm -f "$dst" 2>/dev/null || true
             elif [ -d "$dst" ]; then
@@ -2277,28 +965,16 @@ migrate_restore_from_predir() {
     rmdir "$pre" 2>/dev/null || true
 }
 
-# Abort an in-progress or crashed migration. Idempotent.
-# Arguments: none (consults MIGRATE_STATE vars and on-disk leftovers).
-# Returns 0 on success; non-zero if the backup tarball is missing/corrupt
-# AND user content has already been moved into versions/<v> (we refuse to
-# touch it in that case — the user needs to recover manually).
-#
-# Safety model (review finding #2):
-#   - BEFORE any destructive op, verify the most recent backup tarball is
-#     present and readable (and sha256-matches its sidecar if present).
-#   - NEVER rm-rf a non-empty directory that could contain user content:
-#     rename to <path>.aborted-<ts>-<pid> instead (quarantine). See
-#     _safe_remove_or_quarantine.
-#   - When MIGRATE_STATE=swapping and versions/<v> is populated AND the
-#     .pre-migration-<ts>/ predir is present, the canonical restore is
-#     (a) quarantine versions/<v>, then (b) move predir contents back.
-#     The backup is a belt-and-braces third line of defense — we only
-#     require its existence; we do NOT actually extract from it here
-#     because the predir already holds the originals by design.
+find_migration_leftovers() {
+    for d in "$EDIKT_ROOT"/.migrate-staging-* "$EDIKT_ROOT"/.pre-migration-*; do
+        [ -e "$d" ] || continue
+        echo "$d"
+    done
+}
+
 migrate_abort() {
     _any=0
 
-    # Inventory. Do we have a predir? A staging? A populated versions/<v>?
     _have_predir=0
     for pre in "$EDIKT_ROOT"/.pre-migration-*; do
         [ -d "$pre" ] && { _have_predir=1; break; }
@@ -2308,7 +984,6 @@ migrate_abort() {
         [ -d "$stg" ] && { _have_staging=1; break; }
     done
 
-    # Will we touch a (potentially populated) versions/<v>?
     _will_touch_versions=0
     if [ -n "${MIGRATE_VERSION:-}" ] \
         && [ -d "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ] \
@@ -2316,10 +991,6 @@ migrate_abort() {
         _will_touch_versions=1
     fi
 
-    # Verify backup BEFORE any destructive op (finding #2, final guard).
-    # We only require a readable backup when we're actually about to
-    # mutate state. A completely-clean abort (no staging, no predir) is
-    # a no-op and needs no backup.
     if [ "$_have_predir" -eq 1 ] || [ "$_will_touch_versions" -eq 1 ]; then
         _bk_dir=$(_find_latest_backup_dir)
         if [ -z "$_bk_dir" ]; then
@@ -2331,31 +1002,21 @@ migrate_abort() {
         log_info "migrate-abort: verified backup at $_bk_dir/pre-migration.tar.gz"
     fi
 
-    # 1. Restore any .pre-migration-<ts>/ dirs (crashed or in-progress).
     for pre in "$EDIKT_ROOT"/.pre-migration-*; do
         [ -d "$pre" ] || continue
         _any=1
         log_info "migrate-abort: restoring flat layout from $(basename "$pre")"
-        # Tear down partial symlink chain first. These are always symlinks
-        # in a half-wired migration; rm -f on a symlink is safe by design.
         for link in "$EDIKT_ROOT/current" "$EDIKT_ROOT/hooks" "$EDIKT_ROOT/templates"; do
             if [ -L "$link" ]; then
                 rm -f "$link" 2>/dev/null || true
             fi
         done
-        # Tear down the in-place versions/<v> tree only if it was the target
-        # of this migration. Finding #2: the tree may already contain the
-        # user's content (copied from staging during step e-ii). NEVER rm-rf
-        # blindly. Quarantine first if non-empty, THEN restore from predir.
         if [ -n "${MIGRATE_VERSION:-}" ] && [ -d "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ]; then
             _safe_remove_or_quarantine "$EDIKT_ROOT/versions/$MIGRATE_VERSION" "migrate-abort" \
                 || log_err "migrate-abort: versions/$MIGRATE_VERSION could not be moved aside; continuing"
-            # Only remove the versions/ dir itself if it is now empty.
             _dir_is_empty "$EDIKT_ROOT/versions" \
                 && rmdir "$EDIKT_ROOT/versions" 2>/dev/null || true
         fi
-        # Remove lock.yaml written by the aborted migration. Only remove if
-        # it names the aborted version — we wrote it fresh during migration.
         if [ -n "${MIGRATE_VERSION:-}" ] && [ -f "$EDIKT_ROOT/lock.yaml" ]; then
             _active=$(lock_get active)
             if [ "$_active" = "$MIGRATE_VERSION" ]; then
@@ -2365,9 +1026,6 @@ migrate_abort() {
         migrate_restore_from_predir "$pre"
     done
 
-    # 2. Remove any stale staging dirs. Staging is always our own tree
-    # (copied from flat, never the user's live content), so rm -rf is
-    # safe here — but only under .migrate-staging-* paths.
     for stg in "$EDIKT_ROOT"/.migrate-staging-*; do
         [ -d "$stg" ] || continue
         _any=1
@@ -2383,25 +1041,28 @@ migrate_abort() {
     return 0
 }
 
-# Trap handler used during migration. Called on EXIT/INT/TERM.
-# $1 is the exit status we received (from EXIT trap: use $?).
 migrate_trap_handler() {
     _rc="${1:-1}"
-    # If we already committed successfully, only release the lock.
     if [ "$MIGRATE_STATE" = "done" ]; then
         release_lock
         return 0
     fi
-    # Otherwise treat as interrupted — abort.
     MIGRATE_STATE="aborting"
     migrate_abort 2>/dev/null || true
     release_lock
-    # For INT (130) / TERM (143), re-signal ourselves so shell reports it.
     case "$_rc" in
         130|143) exit "$_rc" ;;
         *) ;;
     esac
 }
+
+# ─── Subcommand: migrate ──────────────────────────────────────────────────────
+MIGRATE_STATE="idle"
+MIGRATE_TS=""
+MIGRATE_STAGING=""
+MIGRATE_PREDIR=""
+MIGRATE_BACKUP_DIR=""
+MIGRATE_VERSION=""
 
 cmd_migrate() {
     dry_run=0
@@ -2428,7 +1089,6 @@ EOF
         shift
     done
 
-    # --abort bypasses detection; it's a pure recovery command.
     if [ "$abort_only" -eq 1 ]; then
         acquire_lock || return $?
         if ! migration_in_progress; then
@@ -2442,30 +1102,18 @@ EOF
         return "$_abort_rc"
     fi
 
-    # Detect partial/orphaned migration (always; independent of M1 detection).
     if ! needs_migration && migration_in_progress; then
         log_warn "partial migration detected. Run: edikt migrate --abort"
         return 1
     fi
 
-    # If no M1 signal, still run the M2-M6 chain — each is independently
-    # detection-gated. If nothing fires either, we report "No migration needed".
     if ! needs_migration; then
-        # Detect any secondary signal up front so dry-run output and the
-        # idempotent re-run path can both decide between "plan" vs
-        # "nothing to do" without mutating disk twice.
         _has_signal=0
-        # M2 signal
         if [ -f "$EDIKT_ROOT/CLAUDE.md" ] \
            && grep -q '<!-- edikt:start -->' "$EDIKT_ROOT/CLAUDE.md" 2>/dev/null \
            && grep -q '<!-- edikt:end -->' "$EDIKT_ROOT/CLAUDE.md" 2>/dev/null; then
             _has_signal=1
         fi
-        # M3 signal — INTENTIONALLY checks the legacy nested path. M3 only
-        # fires for v0.4.x→v0.4.x-namespaced migrations, which by definition
-        # require the legacy commands/edikt/ shape. resolve_commands_target
-        # is for the post-migration runtime symlink, not for detecting
-        # whether M3 should run. (PLAN-v0.5.0-stability Phase 20 note.)
         if [ "$_has_signal" -eq 0 ] \
            && [ -d "$CLAUDE_ROOT/commands/edikt" ] \
            && [ -d "$EDIKT_ROOT/current/commands/edikt" ]; then
@@ -2479,7 +1127,6 @@ EOF
                 fi
             done
         fi
-        # M5 signal
         if [ "$_has_signal" -eq 0 ] && [ -f "$EDIKT_ROOT/config.yaml" ]; then
             for _k in '^paths:' '^stack:' '^gates:'; do
                 if ! grep -q "$_k" "$EDIKT_ROOT/config.yaml" 2>/dev/null; then
@@ -2488,7 +1135,6 @@ EOF
                 fi
             done
         fi
-        # M4 signal
         if [ "$_has_signal" -eq 0 ] \
            && [ -f "$CLAUDE_ROOT/rules/governance.md" ] \
            && ! grep -q 'compile_schema_version: 2' "$CLAUDE_ROOT/rules/governance.md" 2>/dev/null \
@@ -2508,8 +1154,6 @@ EOF
             echo "(dry-run: no changes written)"
             return 0
         fi
-        # Real run. Need lock so M2/M5 atomic writes are serialized with
-        # any concurrent install/upgrade operating on the same EDIKT_ROOT.
         acquire_lock || return $?
         MIGRATE_TS=$(ts_now)
         _run_secondary_migrations 0
@@ -2534,10 +1178,6 @@ EOF
         log_err "cannot read version from $EDIKT_ROOT/VERSION"
         return 1
     fi
-    # Shape gate (review finding #5). VERSION is untrusted user-owned input;
-    # it later feeds directory paths ("$EDIKT_ROOT/versions/$MIGRATE_VERSION").
-    # Reject anything that isn't a semver-ish plain identifier before we
-    # create any directory or backup. No slashes, no `..`, no shell metacharacters.
     case "$MIGRATE_VERSION" in
         *[!0-9A-Za-z._-]* | *..* | /* | */* | .* | -*)
             log_err "refusing to migrate: VERSION ($MIGRATE_VERSION) is not a valid semver-ish identifier"
@@ -2546,11 +1186,10 @@ EOF
     esac
     if ! printf '%s' "$MIGRATE_VERSION" \
         | awk '/^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)*$/ {ok=1} END {exit !ok}'; then
-        log_err "refusing to migrate: VERSION ($MIGRATE_VERSION) does not match ^[0-9]+.[0-9]+.[0-9]+([.-][A-Za-z0-9]+)*$"
+        log_err "refusing to migrate: VERSION ($MIGRATE_VERSION) does not match semver pattern"
         return 1
     fi
 
-    # Print the plan. Always show, even in --yes mode.
     echo "Migration needed: flat layout → versioned layout (target: $MIGRATE_VERSION)"
     echo ""
     echo "Will move:"
@@ -2564,10 +1203,6 @@ EOF
     echo "  $EDIKT_ROOT/current      → versions/$MIGRATE_VERSION"
     echo "  $EDIKT_ROOT/hooks        → current/hooks"
     echo "  $EDIKT_ROOT/templates    → current/templates"
-    # Migration plans always run against the new (v0.5.x flat) payload, so
-    # show the flat target. resolve_commands_target may not be invokable yet
-    # because $EDIKT_ROOT/current isn't pointing at the new payload at
-    # planning time — describe the post-flip target literally.
     echo "  $CLAUDE_ROOT/commands/edikt → $EDIKT_ROOT/current/commands"
     echo ""
     echo "Will preserve:"
@@ -2577,7 +1212,6 @@ EOF
         fi
     done
     echo ""
-    # Review finding #4 — surface the single most important safety property.
     echo "Backup:"
     echo "  $EDIKT_ROOT/backups/migration-<ts>/pre-migration.tar.gz"
     echo "  $EDIKT_ROOT/backups/migration-<ts>/pre-migration.tar.gz.sha256"
@@ -2592,14 +1226,7 @@ EOF
         return 0
     fi
 
-    # Consent.
     if [ "$assume_yes" -ne 1 ]; then
-        # Refuse to prompt only when there is no viable channel at all:
-        # stdin is not a tty AND /dev/tty is neither readable nor a
-        # character device. Review finding #10: original expression
-        # parsed as `(A || B) && C` due to POSIX left-associativity of
-        # `||`/`&&`; rewritten with explicit grouping so a readable
-        # /dev/tty alone is enough to proceed.
         if { [ ! -r /dev/tty ] || [ ! -t 0 ]; } && [ ! -c /dev/tty ]; then
             log_err "non-interactive session detected. Re-run with --yes to confirm migration."
             return 1
@@ -2617,22 +1244,13 @@ EOF
 
     acquire_lock || return $?
 
-    # State transitions are observed by the global edikt_exit_trap
-    # dispatcher (see finding #17). Do NOT swap traps here.
     MIGRATE_STATE="starting"
     MIGRATE_TS=$(ts_now)
-    # Review finding #16 — align staging/predir naming with cmd_install's
-    # `<prefix>-<ts>-<pid>` pattern so leftovers from one run never collide
-    # with another and patterns used by tests/doctor remain stable.
     MIGRATE_STAGING="$EDIKT_ROOT/.migrate-staging-$MIGRATE_TS-$$"
     MIGRATE_PREDIR="$EDIKT_ROOT/.pre-migration-$MIGRATE_TS-$$"
     MIGRATE_BACKUP_DIR="$EDIKT_ROOT/backups/migration-$MIGRATE_TS-$$"
 
-    # Step a: create backup first (before any mutation).
     mkdir -p "$MIGRATE_BACKUP_DIR" || return 1
-    # Review finding #11: build the tar file list with positional parameters
-    # instead of relying on word-splitting of an unquoted variable. Only
-    # include entries that actually exist on disk.
     set --
     for entry in hooks templates commands VERSION CHANGELOG.md; do
         if [ -e "$EDIKT_ROOT/$entry" ] || [ -L "$EDIKT_ROOT/$entry" ]; then
@@ -2651,9 +1269,6 @@ EOF
         log_err "pre-migration backup tarball is not readable"
         return 1
     fi
-    # Review finding #12 — write a sha256 sidecar next to the tarball so
-    # migrate_abort (and humans) can confirm the backup is intact before any
-    # destructive operation. Mirrors manifest.yaml's sidecar pattern.
     _bk_hash=$(sha256_file "$MIGRATE_BACKUP_DIR/pre-migration.tar.gz") || {
         log_err "failed to compute backup sha256"
         return 1
@@ -2664,9 +1279,7 @@ EOF
         return 1
     }
     log_info "migrate: wrote pre-migration backup to $MIGRATE_BACKUP_DIR/pre-migration.tar.gz"
-    log_info "migrate: backup sha256 recorded in pre-migration.tar.gz.sha256"
 
-    # Step b+c: create staging dir and copy flat layout into it.
     if ! mkdir "$MIGRATE_STAGING" 2>/dev/null; then
         log_err "staging dir already exists: $MIGRATE_STAGING"
         return 1
@@ -2676,7 +1289,6 @@ EOF
     for entry in hooks templates commands VERSION CHANGELOG.md; do
         src="$EDIKT_ROOT/$entry"
         [ -e "$src" ] || [ -L "$src" ] || continue
-        # tar-pipe preserves modes, symlinks, and is portable.
         if [ -d "$src" ] && [ ! -L "$src" ]; then
             ( cd "$EDIKT_ROOT" && tar -cf - "$entry" ) | ( cd "$stage_version_dir" && tar -xf - ) \
                 || { log_err "failed to copy $entry into staging"; return 1; }
@@ -2685,10 +1297,8 @@ EOF
         fi
     done
 
-    # Step d: write manifest into the staged version dir.
     write_manifest "$stage_version_dir" "$MIGRATE_VERSION" "migration" "" ""
 
-    # Validate manifest is readable and self-consistent.
     if ! manifest_verify "$stage_version_dir" >/dev/null 2>&1; then
         log_err "staged manifest verification failed"
         return 1
@@ -2696,8 +1306,6 @@ EOF
 
     MIGRATE_STATE="swapping"
 
-    # Step e: atomic-ish swap.
-    # (i) move flat entries sideways into .pre-migration-<ts>/
     mkdir "$MIGRATE_PREDIR" || return 1
     for entry in hooks templates commands VERSION CHANGELOG.md; do
         src="$EDIKT_ROOT/$entry"
@@ -2709,7 +1317,6 @@ EOF
         fi
     done
 
-    # (ii) move staged version into versions/<VERSION>/
     mkdir -p "$EDIKT_ROOT/versions"
     if [ -e "$EDIKT_ROOT/versions/$MIGRATE_VERSION" ]; then
         log_err "versions/$MIGRATE_VERSION already exists — refusing to overwrite"
@@ -2718,39 +1325,27 @@ EOF
     mv "$stage_version_dir" "$EDIKT_ROOT/versions/$MIGRATE_VERSION" \
         || { log_err "failed to move staged version into place"; return 1; }
 
-    # (iii) wire the symlink chain atomically.
     atomic_symlink "versions/$MIGRATE_VERSION" "$EDIKT_ROOT/current" \
         || { log_err "failed to create current symlink"; return 1; }
     ensure_external_symlinks
 
-    # Step f: write lock.yaml (active=<VERSION>, previous=null implicit).
     lock_write "$MIGRATE_VERSION" "migration"
 
-    # Step g: emit success event.
     emit_event layout_migrated \
         '"from":"flat","to":"versioned","version":"'"$MIGRATE_VERSION"'","backup":"'"$MIGRATE_BACKUP_DIR"'"'
 
-    # Step h: commit — remove the .pre-migration-<ts>/ holding dir.
-    # Setting MIGRATE_STATE=done BEFORE any rm ensures the global exit
-    # trap (edikt_exit_trap) treats us as committed even if a signal
-    # lands between here and function return (see finding #17).
     MIGRATE_STATE="done"
     rm -rf "$MIGRATE_PREDIR" 2>/dev/null || true
     rm -rf "$MIGRATE_STAGING" 2>/dev/null || true
 
     log_info "migration complete: $MIGRATE_VERSION activated"
 
-    # Chain into M2-M6 now that the versioned layout is in place. These
-    # share the same lock and backup dir created above. M1 is load-bearing
-    # and already committed; M2-M6 are repeatable. A failure here does NOT
-    # roll back M1, but does propagate a non-zero exit so install.sh and the
-    # user are not misled into believing the full migration succeeded.
     _sec_rc=0
     _run_secondary_migrations 0 || _sec_rc=$?
     if [ "$_sec_rc" -ne 0 ]; then
         emit_event migration_partial_failure \
             '"step":"secondary","rc":'"$_sec_rc"',"backup":"'"$MIGRATE_BACKUP_DIR"'"'
-        log_err "secondary migration(s) failed (rc=$_sec_rc). Backups at $MIGRATE_BACKUP_DIR/. Re-run 'edikt migrate' to retry, or 'edikt doctor' to inspect."
+        log_err "secondary migration(s) failed (rc=$_sec_rc). Backups at $MIGRATE_BACKUP_DIR/. Re-run 'edikt migrate' to retry."
         echo ""
         echo "Migration summary (partial — M1 succeeded, secondary step(s) failed):"
         echo "  M1: flat → versioned (target $MIGRATE_VERSION)"
@@ -2766,1237 +1361,24 @@ EOF
     return 0
 }
 
-# ─── Subcommand: uninstall ──────────────────────────────────────────────────
-cmd_uninstall() {
-    yes=0
-    if [ "${1:-}" = "--yes" ] || [ "${1:-}" = "-y" ]; then yes=1; fi
-
-    if [ "$yes" -ne 1 ]; then
-        printf 'Remove %s and unlink %s/commands/edikt? [y/N]: ' "$EDIKT_ROOT" "$CLAUDE_ROOT" >&2
-        # /dev/tty fallback so non-interactive callers without --yes abort.
-        if [ -t 0 ]; then
-            read -r reply
-        else
-            reply=""
-        fi
-        case "$reply" in
-            y|Y|yes|YES) ;;
-            *) log_info "aborted"; return 0 ;;
-        esac
-    fi
-
-    # Safety guards before rm -rf:
-    # (a) refuse if $EDIKT_ROOT itself is a symlink — rm -rf would follow
-    #     the link and nuke the target directory's contents.
-    if [ -L "$EDIKT_ROOT" ]; then
-        log_err "refusing to uninstall: $EDIKT_ROOT is a symlink."
-        log_err "Remove it manually after verifying the target."
-        return $EX_ALREADY
-    fi
-    # (b) require identifying markers so we don't nuke an unrelated
-    #     directory pointed at via EDIKT_ROOT.
-    base=$(basename "$EDIKT_ROOT")
-    if [ "$base" != ".edikt" ] \
-        && [ ! -f "$EDIKT_ROOT/lock.yaml" ] \
-        && [ ! -f "$EDIKT_ROOT/VERSION" ] \
-        && [ ! -d "$EDIKT_ROOT/versions" ]; then
-        log_err "refusing to uninstall: $EDIKT_ROOT does not look like an edikt root"
-        log_err "(basename is not '.edikt' and no lock.yaml/VERSION/versions/ found)."
-        return $EX_ALREADY
-    fi
-
-    acquire_lock || return $?
-
-    # Unlink Claude command symlink.
-    if [ -L "$CLAUDE_ROOT/commands/edikt" ]; then
-        rm -f "$CLAUDE_ROOT/commands/edikt"
-    fi
-
-    # Release lock first since we're about to nuke the lock dir.
-    release_lock
-
-    rm -rf "$EDIKT_ROOT"
-    log_info "uninstalled"
-    return 0
-}
-
-# ─── Project-config ancestor walk ──────────────────────────────────────────
-# Walks from $PWD upward until it finds .edikt/config.yaml, or reaches $HOME
-# or the filesystem root. Stops at $HOME so we don't leak out of the user's
-# project tree and accidentally hit the project repo's own .edikt/ during tests.
-# Prints the path to the config file, or nothing if not found.
-find_project_config() {
-    _dir="$PWD"
-    _home="${HOME:-/}"
-    # Resolve the natural global edikt root (EDIKT_HOME or $HOME/.edikt).
-    # We compare found configs against this to skip the global config.
-    # $EDIKT_ROOT may be overridden (e.g. in tests) so we use EDIKT_HOME
-    # (the canonical home-level path) as the ground truth for "global".
-    _global_root="${EDIKT_HOME:-${_home}/.edikt}"
-    while true; do
-        if [ -f "$_dir/.edikt/config.yaml" ]; then
-            # Skip if this is the global edikt config (lives at $EDIKT_HOME/config.yaml,
-            # not a project pin). Project configs are by definition NOT $EDIKT_HOME.
-            if [ "$_dir/.edikt" != "$_global_root" ]; then
-                echo "$_dir/.edikt/config.yaml"
-                return 0
-            fi
-        fi
-        # Stop at $HOME — don't leak out of the user tree.
-        if [ "$_dir" = "$_home" ] || [ "$_dir" = "/" ]; then
-            return 1
-        fi
-        _dir=$(dirname "$_dir")
-    done
-}
-
-# ─── Version major extractor ────────────────────────────────────────────────
-# Parses the major component (X in vX.Y.Z or X.Y.Z). Strips leading 'v'.
-extract_major() {
-    echo "$1" | sed 's/^v//' | awk -F. '{print $1+0}'
-}
-
-# ─── GitHub latest-tag resolver ─────────────────────────────────────────────
-# Fetches the latest stable release tag from GitHub API.
-# Respects EDIKT_RELEASE_TAG env override for offline/test use.
-# Prints the tag (e.g. "v0.5.1") on success; returns 1 on network failure.
-resolve_latest_tag() {
-    if [ -n "${EDIKT_RELEASE_TAG:-}" ]; then
-        echo "$EDIKT_RELEASE_TAG"
-        return 0
-    fi
-    if ! command -v curl >/dev/null 2>&1; then
-        log_err "curl not found; cannot check latest version"
-        return 1
-    fi
-    _api_url="https://api.github.com/repos/diktahq/edikt/releases/latest"
-    _response=$(curl -fsSL --max-time 15 "$_api_url" 2>/dev/null) || {
-        log_err "failed to fetch latest release from GitHub API"
-        return 1
-    }
-    # Extract "tag_name" from the JSON response without requiring jq.
-    _tag=$(echo "$_response" | awk -F'"' '/"tag_name"/{for(i=1;i<=NF;i++){if($i=="tag_name"){print $(i+2);exit}}}')
-    if [ -z "$_tag" ]; then
-        log_err "could not parse tag_name from GitHub API response"
-        return 1
-    fi
-    # Sanity check: the extracted value must look like a semver tag.
-    # A malformed JSON response (or a future GitHub field reorder) could
-    # otherwise cause us to install garbage.
-    case "$_tag" in
-        v[0-9]*.[0-9]*.[0-9]*) ;;
-        [0-9]*.[0-9]*.[0-9]*) ;;
-        *)
-            log_err "extracted tag does not look like semver: $_tag"
-            return 1
-            ;;
-    esac
-    echo "$_tag"
-}
-
-# ─── Project-pin warn ────────────────────────────────────────────────────────
-# Prints a stderr warning if the ancestor project's .edikt/config.yaml pins a
-# version that differs from the current active version. Called in the dispatch
-# prologue for all subcommands except the exempt list.
-# POSIX: uses only shell builtins + awk + grep.
-check_pin_warn() {
-    _cfg=$(find_project_config 2>/dev/null) || return 0
-    [ -f "$_cfg" ] || return 0
-    _pinned=$(awk '/^edikt_version:/{gsub(/["\x27[:space:]]/,"",$2);print $2;exit}' "$_cfg")
-    [ -n "$_pinned" ] || return 0
-    _active=$(lock_get active 2>/dev/null)
-    [ -n "$_active" ] || return 0
-    # Strip leading v for comparison.
-    _pinned_n=$(echo "$_pinned" | sed 's/^v//')
-    _active_n=$(echo "$_active" | sed 's/^v//')
-    if [ "$_pinned_n" != "$_active_n" ]; then
-        printf '⚠ This project pins edikt v%s but the active version is v%s. Run '"'"'edikt upgrade-pin'"'"' to update the pin, or '"'"'edikt use %s'"'"' to match.\n' \
-            "$_pinned_n" "$_active_n" "$_pinned_n" >&2
-    fi
-}
-
-# ─── Subcommand: prune ──────────────────────────────────────────────────────
-# edikt prune [--keep N] [--dry-run]
-# Removes versions older than the Nth most recent. Never removes `active` or
-# `previous` from lock.yaml regardless of position in sort order.
-# NOTE: sort order is lexical (good enough for v0.5.x; semver sort is Phase 7).
-cmd_prune() {
-    keep=3
-    dry_run=0
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --keep)
-                shift
-                keep="${1:-3}"
-                case "$keep" in
-                    *[!0-9]*|"")
-                        log_err "--keep requires a positive integer, got: $keep"
-                        return 1
-                        ;;
-                esac
-                ;;
-            --dry-run) dry_run=1 ;;
-            -h|--help)
-                cat <<EOF
-Usage: edikt prune [--keep N] [--dry-run]
-
-Remove versions from \$EDIKT_ROOT/versions/ older than the Nth most recent.
-Default --keep is 3. Never removes the active or previous version recorded
-in lock.yaml regardless of age or position.
-
---dry-run  Print which versions would be pruned without removing anything.
---keep N   Keep the N most recent versions (default: 3).
-EOF
-                return 0
-                ;;
-            *) log_err "prune: unknown flag: $1"; return 1 ;;
-        esac
-        shift
-    done
-
-    versions_dir="$EDIKT_ROOT/versions"
-    if [ ! -d "$versions_dir" ]; then
-        log_info "prune: no versions directory — nothing to prune"
-        return 0
-    fi
-
-    # Read protected versions from lock.yaml.
-    protected_active=$(lock_get active 2>/dev/null || true)
-    protected_previous=$(lock_get previous 2>/dev/null || true)
-
-    # Build sorted list of version directories (lexical; Phase 7 adds semver).
-    # Only directories under versions/; skip dev and any non-dir.
-    all_versions=""
-    for d in "$versions_dir"/*/; do
-        [ -d "$d" ] || continue
-        tag=$(basename "$d")
-        all_versions="${all_versions}${tag}
-"
-    done
-
-    # Sort lexically descending (newest first by string sort).
-    sorted=$(printf '%s' "$all_versions" | sort -r | grep -v '^$' || true)
-    total=$(printf '%s\n' "$sorted" | grep -c . || echo 0)
-
-    if [ "$total" -eq 0 ]; then
-        log_info "prune: no versions found"
-        return 0
-    fi
-
-    # Identify versions to keep (first --keep entries) and to prune (rest).
-    keep_list=""
-    prune_list=""
-    idx=0
-    while IFS= read -r tag; do
-        [ -n "$tag" ] || continue
-        idx=$((idx + 1))
-        if [ "$idx" -le "$keep" ]; then
-            keep_list="${keep_list}${tag}
-"
-        else
-            prune_list="${prune_list}${tag}
-"
-        fi
-    done <<EOF
-$sorted
-EOF
-
-    if [ -z "$prune_list" ]; then
-        log_info "prune: nothing to prune (total=$total, keep=$keep)"
-        return 0
-    fi
-
-    any_failed=0
-    while IFS= read -r tag; do
-        [ -n "$tag" ] || continue
-        # Never prune active or previous — non-negotiable.
-        tag_n=$(echo "$tag" | sed 's/^v//')
-        active_n=$(echo "$protected_active" | sed 's/^v//')
-        previous_n=$(echo "$protected_previous" | sed 's/^v//')
-        if [ -n "$active_n" ] && [ "$tag_n" = "$active_n" ]; then
-            log_info "prune: skipping active version $tag"
-            continue
-        fi
-        if [ -n "$previous_n" ] && [ "$tag_n" = "$previous_n" ]; then
-            log_info "prune: skipping previous version $tag"
-            continue
-        fi
-        if [ "$dry_run" -eq 1 ]; then
-            echo "would prune: $tag"
-        else
-            log_info "prune: removing $tag"
-            if rm -rf "$versions_dir/$tag" 2>/dev/null; then
-                emit_event version_pruned \
-                    '"version":"'"$tag"'","keep":'"$keep"',"root":"'"$EDIKT_ROOT"'"'
-            else
-                log_err "prune: failed to remove $versions_dir/$tag"
-                any_failed=1
-            fi
-        fi
-    done <<EOF
-$prune_list
-EOF
-
-    if [ "$dry_run" -eq 1 ]; then
-        log_info "prune: dry-run complete (no changes)"
-        return 0
-    fi
-
-    if [ "$any_failed" -ne 0 ]; then
-        log_err "prune: one or more versions could not be removed"
-        return 1
-    fi
-    return 0
-}
-
-# ─── Subcommand: upgrade ────────────────────────────────────────────────────
-# edikt upgrade [--dry-run] [--yes]
-# Fetches the latest stable tag from GitHub, installs+activates if newer.
-# Refuses to auto-upgrade across major versions.
-cmd_upgrade() {
-    dry_run=0
-    assume_yes=0
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --dry-run) dry_run=1 ;;
-            --yes|-y)  assume_yes=1 ;;
-            -h|--help)
-                cat <<EOF
-Usage: edikt upgrade [--dry-run] [--yes]
-
-Fetch the latest stable release from GitHub and install it if newer.
-A major-version jump (e.g. v0.x → v1.x) is refused — re-run install.sh
-to upgrade across major versions.
-
---dry-run  Show what would be done without making changes.
---yes      Skip the confirmation prompt before activating.
-EOF
-                return 0
-                ;;
-            *) log_err "upgrade: unknown flag: $1"; return 1 ;;
-        esac
-        shift
-    done
-
-    # Resolve current active version.
-    current_v=$(lock_get active 2>/dev/null || true)
-    if [ -z "$current_v" ] && [ -f "$EDIKT_ROOT/current/VERSION" ]; then
-        current_v=$(head -1 "$EDIKT_ROOT/current/VERSION" | tr -d '[:space:]')
-    fi
-    if [ -z "$current_v" ]; then
-        log_err "upgrade: no active version found. Run 'edikt install <tag>' first."
-        return 1
-    fi
-    current_norm=$(normalize_tag "$current_v")
-
-    # Fetch the latest tag.
-    latest_tag=$(resolve_latest_tag) || return 1
-    latest_norm=$(normalize_tag "$latest_tag")
-
-    # Already up to date.
-    if version_ge "$current_norm" "$latest_norm"; then
-        log_info "upgrade: already up to date (v$current_norm)"
-        return 0
-    fi
-
-    # Major-version jump detection (strict numeric comparison of X in X.Y.Z).
-    current_major=$(extract_major "$current_norm")
-    latest_major=$(extract_major "$latest_norm")
-    if [ "$latest_major" -ne "$current_major" ]; then
-        log_err "major upgrade detected (current v$current_norm, latest v$latest_norm) — run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v$latest_norm/install.sh | bash"
-        return 1
-    fi
-
-    echo "upgrade: v$current_norm → v$latest_norm"
-
-    if [ "$dry_run" -eq 1 ]; then
-        echo "(dry-run: would install $latest_tag and activate it)"
-        return 0
-    fi
-
-    # Install if not already present.
-    target_dir="$EDIKT_ROOT/versions/$latest_norm"
-    if [ ! -d "$target_dir" ]; then
-        log_info "upgrade: installing $latest_tag ..."
-        cmd_install "$latest_tag" || return $?
-    else
-        log_info "upgrade: $latest_norm already installed, skipping fetch"
-    fi
-
-    # Prompt before activating unless --yes.
-    if [ "$assume_yes" -ne 1 ]; then
-        if { [ ! -r /dev/tty ] || [ ! -t 0 ]; } && [ ! -c /dev/tty ]; then
-            log_err "non-interactive session. Re-run with --yes to confirm activation."
-            return 1
-        fi
-        printf 'Activate v%s? [y/N]: ' "$latest_norm" >/dev/tty 2>/dev/null \
-            || printf 'Activate v%s? [y/N]: ' "$latest_norm" >&2
-        if ! read -r _reply </dev/tty 2>/dev/null; then
-            log_err "cannot read from /dev/tty. Re-run with --yes."
-            return 1
-        fi
-        case "$_reply" in
-            y|Y|yes|YES) ;;
-            *) log_info "aborted"; return 0 ;;
-        esac
-    fi
-
-    cmd_use "$latest_tag" || return $?
-
-    # ADR-018 grandfather routine: when upgrading ACROSS the v0.5.0 boundary,
-    # scan existing plans for "done" phases and seed structured verdict stubs
-    # so the new evidence gate doesn't regress them to BLOCKED on re-eval.
-    _current_major_minor=$(printf '%s' "$current_norm" | cut -d. -f1,2)
-    _latest_major_minor=$(printf '%s' "$latest_norm" | cut -d. -f1,2)
-    if [ "$_current_major_minor" = "0.4" ] && [ "$_latest_major_minor" = "0.5" ] || \
-       version_ge "0.5.0" "$current_norm" 2>/dev/null; then
-        _grandfather_phase_verdicts "$current_norm" || log_warn "grandfather: continued despite error"
-    fi
-
-    log_info "upgrade complete: v$current_norm → v$latest_norm"
-    return 0
-}
-
-# ADR-018 grandfather routine — called by cmd_upgrade when crossing the
-# v0.5.0 boundary. Walks plan files under the project's plans directory,
-# identifies "done" phases in their progress tables, and writes stub
-# verdict files at docs/product/plans/verdicts/<plan>/<phase>.json with
-# meta.grandfathered=true. Idempotent: skips phases that already have a
-# verdict file.
-_grandfather_phase_verdicts() {
-    _from_ver="$1"
-    # Walk ancestor dirs to find a project that has plans (dogfood or user project).
-    _plan_root=""
-    _pwd_dir="$PWD"
-    _home="${HOME:-/nonexistent}"
-    while [ "$_pwd_dir" != "/" ] && [ "$_pwd_dir" != "$_home" ]; do
-        if [ -d "$_pwd_dir/docs/product/plans" ] || [ -d "$_pwd_dir/docs/plans" ]; then
-            _plan_root="$_pwd_dir"
-            break
-        fi
-        _pwd_dir=$(dirname "$_pwd_dir")
-    done
-    if [ -z "$_plan_root" ]; then
-        return 0
-    fi
-    python3 - "$_plan_root" "$_from_ver" <<'PY' || return 1
-import json
-import os
-import re
-import sys
-from datetime import datetime, timezone
-from pathlib import Path
-
-plan_root = Path(sys.argv[1])
-from_ver = sys.argv[2]
-
-candidates = []
-for sub in ("docs/product/plans", "docs/plans"):
-    d = plan_root / sub
-    if d.is_dir():
-        candidates.extend(d.glob("PLAN-*.md"))
-
-if not candidates:
-    sys.exit(0)
-
-verdicts_root = plan_root / "docs" / "product" / "plans" / "verdicts"
-verdicts_root.mkdir(parents=True, exist_ok=True)
-
-count = 0
-for plan in candidates:
-    slug = plan.stem
-    text = plan.read_text(encoding="utf-8", errors="replace")
-    # Locate the progress table rows; match "| N | done | ..." or similar.
-    for m in re.finditer(r"^\|\s*([A-Za-z0-9_.-]+)\s*\|\s*done\b[^|]*\|", text, flags=re.MULTILINE):
-        phase_id = m.group(1)
-        verdict_dir = verdicts_root / slug
-        verdict_dir.mkdir(parents=True, exist_ok=True)
-        verdict_path = verdict_dir / f"{phase_id}.json"
-        if verdict_path.exists():
-            continue
-        stub = {
-            "verdict": "PASS",
-            "criteria": [
-                {
-                    "id": f"{phase_id}-grandfathered",
-                    "status": "met",
-                    "evidence_type": "manual",
-                    "evidence": f"grandfathered from edikt v{from_ver} — pre-ADR-018 verdict",
-                    "notes": "This phase's PASS predates the structured verdict schema. The evidence gate is bypassed on a one-time basis. Re-run the evaluator to replace this stub with a native verdict."
-                }
-            ],
-            "meta": {
-                "evaluator_mode": "headless",
-                "grandfathered": True,
-                "migrated_from": from_ver
-            }
-        }
-        with open(verdict_path, "w", encoding="utf-8") as f:
-            json.dump(stub, f, indent=2)
-            f.write("\n")
-        count += 1
-
-if count:
-    print(f"[edikt] grandfathered {count} plan phase verdict(s) for v0.5.0 compatibility. See {verdicts_root}")
-PY
-}
-
-# ─── Subcommand: upgrade-pin ────────────────────────────────────────────────
-# edikt upgrade-pin
-# Updates edikt_version: in the nearest ancestor .edikt/config.yaml to the
-# current global active version. Shell-only YAML line replacement — byte-for-byte
-# preserves all other lines. Atomic write via .tmp + mv.
-cmd_upgrade_pin() {
-    cfg=$(find_project_config 2>/dev/null) || {
-        log_err "not inside an edikt project directory — upgrade-pin requires .edikt/config.yaml"
-        return 1
-    }
-
-    active=$(lock_get active 2>/dev/null || true)
-    if [ -z "$active" ]; then
-        log_err "upgrade-pin: no active version in lock.yaml"
-        return 1
-    fi
-    active_norm=$(normalize_tag "$active")
-
-    acquire_lock || return $?
-
-    # Read current pin (if any) for informational output.
-    old_pin=$(awk '/^edikt_version:/{gsub(/["\x27[:space:]]/,"",$2);print $2;exit}' "$cfg" 2>/dev/null || true)
-
-    tmp="$cfg.tmp.$$"
-
-    if grep -q '^edikt_version:' "$cfg" 2>/dev/null; then
-        # Match only column-0 'edikt_version:' lines. Indented variants (e.g.
-        # nested under a YAML parent key) are not supported by this surgical
-        # update — use a yaml-aware editor for that case.
-        # Replace only the first occurrence of edikt_version: line.
-        # awk -v sets the variable before processing begins; the replaced flag
-        # guards against editing any subsequent edikt_version: lines.
-        awk -v ver="$active_norm" -v replaced=0 '
-            /^edikt_version:/ && replaced == 0 {
-                printf "edikt_version: \"%s\"\n", ver
-                replaced=1
-                next
-            }
-            { print }
-        ' "$cfg" >"$tmp" && mv -f "$tmp" "$cfg"
-    else
-        # Line not present — append with a leading blank line.
-        {
-            cat "$cfg"
-            printf '\nedikt_version: "%s"\n' "$active_norm"
-        } >"$tmp" && mv -f "$tmp" "$cfg"
-        log_info "upgrade-pin: appended edikt_version to $cfg"
-    fi
-
-    release_lock
-
-    emit_event version_pinned \
-        '"version":"'"$active_norm"'","config":"'"$cfg"'"'
-
-    log_info "upgrade-pin: updated $cfg (${old_pin:-unset} → $active_norm)"
-    return 0
-}
-
-# ─── Subcommand: dev ────────────────────────────────────────────────────────
-# edikt dev link <path>  — create versions/dev/ with symlinks into <path>
-# edikt dev unlink       — remove versions/dev/, revert to most-recent tagged ver
-cmd_dev() {
-    subcmd="${1:-}"
-    shift 2>/dev/null || true
-    case "$subcmd" in
-        link)   cmd_dev_link "$@" ;;
-        unlink) cmd_dev_unlink "$@" ;;
-        ""|--help|-h)
-            cat <<EOF
-Usage: edikt dev link <path>
-       edikt dev unlink
-
-link    Create \$EDIKT_ROOT/versions/dev/ with symlinks into <path> and activate it.
-        <path> must contain: VERSION, templates/, templates/hooks/, commands/
-unlink  Remove dev mode, revert to the most recent tagged version.
-EOF
-            ;;
-        *) log_err "dev: unknown subcommand: $subcmd"; return 1 ;;
-    esac
-}
-
-cmd_dev_link() {
-    src="${1:-}"
-    if [ -z "$src" ]; then
-        log_err "dev link: usage: edikt dev link <path>"
-        return 1
-    fi
-
-    # Resolve to absolute path.
-    case "$src" in
-        /*) ;;
-        *) src="$PWD/$src" ;;
-    esac
-
-    # Validate required entries exist in the source tree.
-    for req in VERSION templates templates/hooks commands; do
-        if [ ! -e "$src/$req" ]; then
-            log_err "dev link: <path>/$req not found in $src — cannot create dev link"
-            return 1
-        fi
-    done
-
-    acquire_lock || return $?
-
-    dev_dir="$EDIKT_ROOT/versions/dev"
-    # Tear down any existing dev link.
-    # Safety: if dev_dir contains regular files or populated subdirectories
-    # (i.e. user-created content, not just our own symlinks), quarantine it
-    # instead of nuking it. Consistent with Phase 4 _safe_remove_or_quarantine
-    # hardening — never rm -rf content that might belong to the user.
-    if [ -e "$dev_dir" ] || [ -L "$dev_dir" ]; then
-        if [ -L "$dev_dir" ]; then
-            # It's a plain symlink — safe to remove.
-            rm -f "$dev_dir" 2>/dev/null || true
-        elif [ -d "$dev_dir" ]; then
-            # Check for any regular files or non-empty subdirs (real content).
-            _has_real_content=0
-            for _e in "$dev_dir"/* "$dev_dir"/.[!.]* "$dev_dir"/..?*; do
-                [ -e "$_e" ] || [ -L "$_e" ] || continue
-                if [ -L "$_e" ]; then
-                    continue  # our own symlinks — safe to remove
-                fi
-                _has_real_content=1
-                break
-            done
-            if [ "$_has_real_content" -eq 1 ]; then
-                _safe_remove_or_quarantine "$dev_dir" "dev-link" || {
-                    release_lock
-                    return 1
-                }
-            else
-                rm -rf "$dev_dir" 2>/dev/null || true
-            fi
-        else
-            rm -f "$dev_dir" 2>/dev/null || true
-        fi
-    fi
-    mkdir -p "$dev_dir"
-
-    # Create symlinks.
-    ln -s "$src/VERSION"          "$dev_dir/VERSION"
-    ln -s "$src/templates/hooks"  "$dev_dir/hooks"
-    ln -s "$src/templates"        "$dev_dir/templates"
-    ln -s "$src/commands"         "$dev_dir/commands"
-    if [ -f "$src/CHANGELOG.md" ]; then
-        ln -s "$src/CHANGELOG.md" "$dev_dir/CHANGELOG.md"
-    fi
-
-    # Write DEV_SOURCE for unlink and doctor.
-    printf '%s\n' "$src" >"$dev_dir/DEV_SOURCE"
-
-    # Activate dev: flip current without manifest verification.
-    log_info "dev mode: manifest verification skipped"
-    backup_ts=$(flip_current "versions/dev")
-    lock_write "dev" "dev-link"
-
-    emit_event dev_linked \
-        '"source":"'"$src"'","symlink":"'"$EDIKT_ROOT"'/current","backup":"'"$EDIKT_ROOT/backups/$backup_ts"'"'
-
-    log_info "dev mode active: $src"
-    return 0
-}
-
-cmd_dev_unlink() {
-    dev_dir="$EDIKT_ROOT/versions/dev"
-    if [ ! -e "$dev_dir" ] && [ ! -L "$dev_dir" ]; then
-        log_info "no dev link active"
-        return 0
-    fi
-
-    # Find the most recent tagged (non-dev) version.
-    # Lexical sort: iterate all entries; last non-dev dir wins.
-    best_tag=""
-    if [ -d "$EDIKT_ROOT/versions" ]; then
-        for d in "$EDIKT_ROOT/versions"/*/; do
-            [ -d "$d" ] || continue
-            tag=$(basename "$d")
-            [ "$tag" = "dev" ] && continue
-            best_tag="$tag"
-        done
-    fi
-
-    if [ -z "$best_tag" ]; then
-        log_err "no tagged version to fall back to — run 'edikt install <tag>'"
-        return 1
-    fi
-
-    acquire_lock || return $?
-
-    rm -rf "$dev_dir" 2>/dev/null || true
-
-    # Revert: flip current + update lock.yaml directly (avoid double-lock from
-    # calling cmd_use, which also calls acquire_lock).
-    if ! check_payload_min_version "$EDIKT_ROOT/versions/$best_tag"; then
-        return $EX_CHECKSUM
-    fi
-    backup_ts=$(flip_current "versions/$best_tag")
-    lock_write "$best_tag" "launcher"
-
-    emit_event dev_unlinked \
-        '"fallback":"'"$best_tag"'","backup":"'"$EDIKT_ROOT/backups/$backup_ts"'","root":"'"$EDIKT_ROOT"'"'
-
-    log_info "dev mode removed; activated $best_tag"
-    return 0
-}
-
-# ─── Tier-2 install: benchmark (SPEC-005, ADR-015) ──────────────────────────
-# `edikt install benchmark` is the tier-2 install verb. It is distinct from
-# `edikt install <tag>` (which installs a core payload). Dispatch routes
-# based on whether the first argument is the literal tool name "benchmark".
-#
-# Contract (ADR-015):
-#   - Copies commands/gov/benchmark.md + templates/attacks/ into
-#     $CLAUDE_ROOT/commands/edikt/.
-#   - Creates isolated venv at $EDIKT_ROOT/venv/gov-benchmark (or falls
-#     back to pipx). Never pollutes ambient system Python.
-#   - Verifies Python 3.10+ before any filesystem mutation (AC-023c).
-#   - Rolls back copied markdown if pip install fails (AC-023b).
-#   - Verifies vendored wheel SHA-256 against manifest if present (AC-023f).
-#
-# Test overrides:
-#   EDIKT_TIER2_SOURCE  — local source dir (tools/gov-benchmark/). Default
-#                          is $EDIKT_ROOT/versions/current/tools/gov-benchmark/
-#                          or the repo root (dev mode).
-#   EDIKT_TIER2_WHEEL   — path to a pre-built wheel; skips venv install of
-#                          the source tree, `pip install`s the wheel instead.
-#   EDIKT_TIER2_WHEEL_SHA256
-#                        — expected SHA-256 of the wheel (AC-023f).
-#   EDIKT_TIER2_SKIP_PIP — "1" to skip `pip install` (tests that only want
-#                          to verify markdown/template copying + rollback).
-
-# Resolve the Python interpreter and assert version ≥ 3.10 (AC-023c).
-# Writes actionable message to stderr and returns non-zero on failure.
-# Uses the literal message required by AC-023c for missing/old Python.
-tier2_resolve_python() {
-    _py=""
-    # Test override — allows tests to point at a stubbed Python without
-    # mutating PATH (which would also break POSIX utilities in the launcher).
-    if [ -n "${EDIKT_TIER2_PYTHON:-}" ]; then
-        _py="$EDIKT_TIER2_PYTHON"
-        # Shape-validate before use (INV-006, audit MED-5).
-        # Must be an absolute path, not under a scratch dir, executable.
-        case "$_py" in
-            /*) ;;
-            *)  log_err "EDIKT_TIER2_PYTHON must be an absolute path (got: $_py)"; return 1 ;;
-        esac
-        # Reject obvious scratch-dir roots where a local attacker could plant
-        # a binary (best effort — covers the common cases).
-        case "$_py" in
-            /tmp/*|/var/tmp/*|/var/folders/*)
-                log_err "EDIKT_TIER2_PYTHON under $_py is rejected (scratch-dir paths are not trusted)"
-                return 1
-                ;;
-        esac
-        if [ ! -x "$_py" ]; then
-            log_err "edikt benchmark requires Python 3.10+, found (none) at $_py"
-            return 1
-        fi
-    else
-        for cand in python3 python; do
-            if command -v "$cand" >/dev/null 2>&1; then
-                _py=$(command -v "$cand")
-                break
-            fi
-        done
-    fi
-    if [ -z "$_py" ]; then
-        log_err "edikt benchmark requires Python 3.10+, found (none) at (no python on PATH)"
-        return 1
-    fi
-    # Extract major.minor — robust against 3.10+ where sys.version_info
-    # prints a named tuple.
-    _ver=$("$_py" -c 'import sys; print("%d.%d"%sys.version_info[:2])' 2>/dev/null)
-    _maj=$(echo "$_ver" | awk -F. '{print $1}')
-    _min=$(echo "$_ver" | awk -F. '{print $2}')
-    if [ -z "$_maj" ] || [ -z "$_min" ]; then
-        log_err "edikt benchmark requires Python 3.10+, found $_ver at $_py"
-        return 1
-    fi
-    if [ "$_maj" -lt 3 ] || { [ "$_maj" -eq 3 ] && [ "$_min" -lt 10 ]; }; then
-        log_err "edikt benchmark requires Python 3.10+, found $_ver at $_py"
-        return 1
-    fi
-    echo "$_py"
-    return 0
-}
-
-# Resolve the source directory for tools/gov-benchmark/.
-tier2_resolve_source() {
-    if [ -n "${EDIKT_TIER2_SOURCE:-}" ]; then
-        echo "$EDIKT_TIER2_SOURCE"
-        return 0
-    fi
-    # Prefer the active version payload.
-    if [ -d "$EDIKT_ROOT/current/tools/gov-benchmark" ]; then
-        echo "$EDIKT_ROOT/current/tools/gov-benchmark"
-        return 0
-    fi
-    # Dev-linked / in-tree execution: walk up from the launcher path looking
-    # for a tools/gov-benchmark directory sibling.
-    _self=$(dirname "$0")
-    _root=$(cd "$_self/.." 2>/dev/null && pwd)
-    if [ -n "$_root" ] && [ -d "$_root/tools/gov-benchmark" ]; then
-        echo "$_root/tools/gov-benchmark"
-        return 0
-    fi
-    return 1
-}
-
-# Copy tier-2 markdown files. Records each destination path to the
-# receipt file so rollback can reverse the copy on pip-install failure.
-tier2_copy_markdown() {
-    _src="$1"
-    _receipt="$2"
-    _cmd_src="$_src/../../commands/gov/benchmark.md"
-    if [ ! -f "$_cmd_src" ]; then
-        # Try relative to current payload.
-        _cmd_src="$EDIKT_ROOT/current/commands/gov/benchmark.md"
-    fi
-    if [ ! -f "$_cmd_src" ]; then
-        log_err "cannot find commands/gov/benchmark.md — install source incomplete"
-        return 1
-    fi
-
-    # Dangling-symlink guard: $CLAUDE_ROOT/commands/edikt may exist as a
-    # symlink whose target hasn't been created yet. Both layouts can hit
-    # this — v0.4.x where M3 migration didn't complete, and v0.5.x where
-    # the target current/commands is itself a symlink chain that's been
-    # interrupted. mkdir -p through a dangling symlink fails ENOENT, so
-    # resolve and create the target dir explicitly before any write below.
-    _edikt_link="$CLAUDE_ROOT/commands/edikt"
-    if [ -L "$_edikt_link" ] && [ ! -d "$_edikt_link" ]; then
-        _link_target=$(readlink "$_edikt_link")
-        case "$_link_target" in
-            /*) _abs_target="$_link_target" ;;
-            *)  _abs_target="$(dirname "$_edikt_link")/$_link_target" ;;
-        esac
-        mkdir -p "$_abs_target" || {
-            log_err "failed to create symlink target: $_abs_target"
-            return 1
-        }
-    fi
-
-    # Skip-if-identical guard (PLAN-v0.5.0-stability Phase 20 — Launcher MED-5).
-    # Under v0.5.x flat layout, $CLAUDE_ROOT/commands/edikt resolves into
-    # $EDIKT_ROOT/current/commands. Writing benchmark.md through the symlink
-    # would land in the immutable versioned payload's commands/gov/benchmark.md
-    # — overwriting the payload's own copy with itself. Worse, uninstall
-    # would later rm -f that path, destroying the payload-shipped command.
-    #
-    # If the destination already exists with identical content, treat the
-    # install as already-satisfied (idempotent skip): don't cp, don't
-    # record in the receipt. Uninstall will then leave the payload-shipped
-    # copy intact.
-    _dest_cmd="$CLAUDE_ROOT/commands/edikt/gov/benchmark.md"
-    if _tier2_dest_matches_source "$_cmd_src" "$_dest_cmd"; then
-        log_info "tier-2: $(basename "$_dest_cmd") already present in active payload (skipped copy)"
-    else
-        mkdir -p "$(dirname "$_dest_cmd")" || return 1
-        cp "$_cmd_src" "$_dest_cmd" || return 1
-        printf '%s\n' "$_dest_cmd" >> "$_receipt"
-    fi
-
-    # Templates/attacks/
-    _atk_src="$_src/../../templates/attacks"
-    if [ ! -d "$_atk_src" ]; then
-        _atk_src="$EDIKT_ROOT/current/templates/attacks"
-    fi
-    if [ -d "$_atk_src" ]; then
-        _dest_atk="$CLAUDE_ROOT/commands/edikt/templates/attacks"
-        mkdir -p "$_dest_atk" || return 1
-        for f in "$_atk_src"/*.md; do
-            [ -f "$f" ] || continue
-            _dst="$_dest_atk/$(basename "$f")"
-            # Same skip-if-identical guard for each attack file. Under flat
-            # layout the destination resolves into the versioned payload's
-            # commands/templates/attacks/ subtree (created by mkdir above).
-            # If a payload ever ships these files at the destination path,
-            # don't overwrite + record them.
-            if _tier2_dest_matches_source "$f" "$_dst"; then
-                continue
-            fi
-            cp "$f" "$_dst" || return 1
-            printf '%s\n' "$_dst" >> "$_receipt"
-        done
-    fi
-    return 0
-}
-
-# Return 0 if dest exists and its content sha256 matches src.
-# Used to skip tier-2 copies that would overwrite a payload-shipped file.
-_tier2_dest_matches_source() {
-    _src="$1"
-    _dst="$2"
-    [ -f "$_dst" ] || return 1
-    [ -f "$_src" ] || return 1
-    _src_h=""
-    _dst_h=""
-    if command -v sha256sum >/dev/null 2>&1; then
-        _src_h=$(sha256sum "$_src" 2>/dev/null | awk '{print $1}')
-        _dst_h=$(sha256sum "$_dst" 2>/dev/null | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-        _src_h=$(shasum -a 256 "$_src" 2>/dev/null | awk '{print $1}')
-        _dst_h=$(shasum -a 256 "$_dst" 2>/dev/null | awk '{print $1}')
-    else
-        return 1
-    fi
-    [ -n "$_src_h" ] && [ "$_src_h" = "$_dst_h" ]
-}
-
-tier2_rollback_markdown() {
-    _receipt="$1"
-    [ -f "$_receipt" ] || return 0
-    while IFS= read -r _line; do
-        [ -z "$_line" ] && continue
-        # #14 (security): only remove files that are under $CLAUDE_ROOT.
-        # A corrupted or maliciously-modified receipt could otherwise contain
-        # arbitrary paths, causing rm -f to touch files outside our control.
-        case "$_line" in
-            "$CLAUDE_ROOT"/*)
-                rm -f "$_line" 2>/dev/null || true
-                ;;
-        esac
-    done < "$_receipt"
-    # Best-effort: remove empty parent dirs we created.
-    rmdir "$CLAUDE_ROOT/commands/edikt/templates/attacks" 2>/dev/null || true
-    rmdir "$CLAUDE_ROOT/commands/edikt/templates" 2>/dev/null || true
-    rmdir "$CLAUDE_ROOT/commands/edikt/gov" 2>/dev/null || true
-    return 0
-}
-
-# Verify an optional vendored wheel against its expected SHA-256.
-# Returns 0 on match or when no wheel is configured. Aborts on mismatch
-# (AC-023f) with a clear message.
-#
-# #13 (security): when the wheel path looks like a release install path
-# (contains /current/ as a path component), EDIKT_TIER2_WHEEL_SHA256 is
-# REQUIRED. Allowing a SHA256-free install from a release path means
-# production installs can silently skip integrity verification. The test/dev
-# escape hatch (no SHA256 required) remains available for non-release paths
-# (e.g. /tmp/..., relative dev paths) and when EDIKT_TIER2_SKIP_PIP=1.
-_tier2_wheel_is_release_path() {
-    # Heuristic: path contains /current/ (canonical release layout symlink)
-    # or is under $EDIKT_ROOT/current/
-    case "$1" in
-        */current/*) return 0 ;;
-        "$EDIKT_ROOT"/current/*) return 0 ;;
-    esac
-    return 1
-}
-
-tier2_verify_wheel() {
-    [ -n "${EDIKT_TIER2_WHEEL:-}" ] || return 0
-    [ -f "$EDIKT_TIER2_WHEEL" ] || {
-        log_err "EDIKT_TIER2_WHEEL not found: $EDIKT_TIER2_WHEEL"
-        return 1
-    }
-    if [ -z "${EDIKT_TIER2_WHEEL_SHA256:-}" ]; then
-        # #13: release-path installs MUST provide a checksum.
-        if _tier2_wheel_is_release_path "$EDIKT_TIER2_WHEEL"; then
-            log_err "Release install requires EDIKT_TIER2_WHEEL_SHA256 (refusing to install unverified wheel)"
-            return 1
-        fi
-        # Non-release path (test/dev mode) — skip verification.
-        return 0
-    fi
-    _actual=$(sha256_file "$EDIKT_TIER2_WHEEL") || return 1
-    if [ "$_actual" != "$EDIKT_TIER2_WHEEL_SHA256" ]; then
-        log_err "Wheel checksum mismatch — expected $EDIKT_TIER2_WHEEL_SHA256, got $_actual"
-        return 1
-    fi
-    return 0
-}
-
-cmd_install_benchmark() {
-    # Already installed? Warn and exit 3 (matches EX_ALREADY).
-    if [ -d "$EDIKT_ROOT/venv/gov-benchmark" ] \
-        || [ -f "$CLAUDE_ROOT/commands/edikt/gov/benchmark.md" ]; then
-        # Only warn if BOTH exist — partial state is handled by uninstall.
-        if [ -d "$EDIKT_ROOT/venv/gov-benchmark" ] \
-            && [ -f "$CLAUDE_ROOT/commands/edikt/gov/benchmark.md" ]; then
-            log_err "edikt benchmark already installed. Run: edikt uninstall benchmark"
-            return $EX_ALREADY
-        fi
-    fi
-
-    # AC-023c: fail fast on Python before touching the filesystem.
-    _py=$(tier2_resolve_python) || return 1
-
-    _src=$(tier2_resolve_source) || {
-        log_err "tier-2 source dir not found (tools/gov-benchmark/)"
-        log_err "Set EDIKT_TIER2_SOURCE or install a payload with: edikt install <tag>"
-        return 1
-    }
-
-    # AC-023f: verify vendored wheel checksum before pip install.
-    tier2_verify_wheel || return 2
-
-    acquire_lock || return $?
-
-    _receipt="$EDIKT_ROOT/.tier2-benchmark-receipt"
-    : > "$_receipt"
-
-    # Copy markdown first so rollback is cheap.
-    if ! tier2_copy_markdown "$_src" "$_receipt"; then
-        tier2_rollback_markdown "$_receipt"
-        rm -f "$_receipt"
-        log_err "failed to copy tier-2 markdown files"
-        return 1
-    fi
-
-    # AC-023d: isolated venv (fallback to pipx on venv failure).
-    if [ "${EDIKT_TIER2_SKIP_PIP:-0}" = "1" ]; then
-        log_info "EDIKT_TIER2_SKIP_PIP=1 — skipping pip install (tier-2 markdown only)"
-        log_info "edikt benchmark installed (markdown only)"
-        return 0
-    fi
-
-    _venv="$EDIKT_ROOT/venv/gov-benchmark"
-    mkdir -p "$(dirname "$_venv")" || {
-        tier2_rollback_markdown "$_receipt"
-        rm -f "$_receipt"
-        log_err "cannot create $EDIKT_ROOT/venv (permission denied?)"
-        return 1
-    }
-
-    if "$_py" -m venv "$_venv" 2>/dev/null; then
-        _pip="$_venv/bin/pip"
-        if [ ! -x "$_pip" ]; then
-            _pip="$_venv/Scripts/pip"  # Windows-style
-        fi
-    else
-        # Fallback: pipx.
-        if command -v pipx >/dev/null 2>&1; then
-            log_warn "venv creation failed — falling back to pipx"
-            _target="${EDIKT_TIER2_WHEEL:-$_src}"
-            if pipx install "$_target" >/dev/null 2>&1; then
-                log_info "installed via pipx"
-                return 0
-            fi
-            tier2_rollback_markdown "$_receipt"
-            rm -f "$_receipt"
-            log_err "pipx install failed for $_target"
-            return 1
-        fi
-        tier2_rollback_markdown "$_receipt"
-        rm -f "$_receipt"
-        log_err "venv creation failed and pipx not available."
-        log_err "Install pipx (https://pypa.github.io/pipx/) or fix Python venv support."
-        return 1
-    fi
-
-    _target="${EDIKT_TIER2_WHEEL:-$_src}"
-    if ! "$_pip" install --quiet --disable-pip-version-check "$_target" 2>/dev/null; then
-        # AC-023b: rollback copied markdown on pip failure.
-        tier2_rollback_markdown "$_receipt"
-        rm -f "$_receipt"
-        rm -rf "$_venv" 2>/dev/null || true
-        log_err "pip install failed for $_target"
-        log_err "tier-2 markdown files rolled back; tier-1 command surface unchanged"
-        return 1
-    fi
-
-    log_info "edikt benchmark installed"
-    log_info "  venv:  $_venv"
-    log_info "  command: $CLAUDE_ROOT/commands/edikt/gov/benchmark.md"
-    return 0
-}
-
-cmd_uninstall_benchmark() {
-    # AC-023e: idempotent — tolerate missing state, exit 0 always.
-    _did_any=0
-    _receipt="$EDIKT_ROOT/.tier2-benchmark-receipt"
-
-    if [ -f "$_receipt" ]; then
-        tier2_rollback_markdown "$_receipt"
-        rm -f "$_receipt"
-        _did_any=1
-    else
-        # No receipt — best-effort removal from known paths.
-        for p in \
-            "$CLAUDE_ROOT/commands/edikt/gov/benchmark.md" \
-            "$CLAUDE_ROOT/commands/edikt/templates/attacks/refuse_tool_use.md" \
-            "$CLAUDE_ROOT/commands/edikt/templates/attacks/refuse_file_pattern.md" \
-            "$CLAUDE_ROOT/commands/edikt/templates/attacks/must_cite.md" \
-            "$CLAUDE_ROOT/commands/edikt/templates/attacks/refuse_edit_matching_frontmatter.md" \
-            "$CLAUDE_ROOT/commands/edikt/templates/attacks/README.md"; do
-            if [ -f "$p" ]; then
-                rm -f "$p" 2>/dev/null || true
-                _did_any=1
-            fi
-        done
-        rmdir "$CLAUDE_ROOT/commands/edikt/templates/attacks" 2>/dev/null || true
-        rmdir "$CLAUDE_ROOT/commands/edikt/templates" 2>/dev/null || true
-    fi
-
-    if [ -d "$EDIKT_ROOT/venv/gov-benchmark" ]; then
-        rm -rf "$EDIKT_ROOT/venv/gov-benchmark" 2>/dev/null || true
-        _did_any=1
-    fi
-
-    # Attempt pipx uninstall quietly (no-op if pipx didn't install it).
-    if command -v pipx >/dev/null 2>&1; then
-        pipx uninstall edikt-gov-benchmark >/dev/null 2>&1 || true
-    fi
-
-    if [ "$_did_any" -eq 0 ]; then
-        log_info "edikt benchmark already uninstalled"
-    else
-        log_info "edikt benchmark uninstalled"
-    fi
-    return 0
-}
-
-# ─── Help ───────────────────────────────────────────────────────────────────
-cmd_help() {
-    cat <<EOF
-edikt — governance for agentic engineering (launcher v$LAUNCHER_VERSION)
-
-Usage: edikt <subcommand> [args]
-
-Subcommands:
-  version              Print active payload version
-  list [--verbose] [--global]  List installed versions
-                       (--global forces listing from global ~/.edikt/versions/)
-  install <tag>        Fetch + extract release; does not activate
-  install benchmark    Tier-2 install: /edikt:gov:benchmark + Python helper
-                       (opt-in; never bundled with install.sh — ref: ADR-015)
-  use <tag>            Activate an installed version (atomic symlink flip)
-  rollback             Re-activate the previous version
-  prune [--keep N]     Remove old versions (keeps N most recent; default 3)
-                       Flags: --keep N, --dry-run
-  upgrade [flags]      Fetch + install latest stable release from GitHub
-                       Flags: --dry-run, --yes
-  upgrade-pin          Update .edikt/config.yaml edikt_version to active ver
-  dev link <path>      Create dev mode — symlinks from versions/dev/ → <path>
-  dev unlink           Remove dev mode, revert to most-recent tagged version
-  migrate [flags]      Migrate pre-v0.5.0 flat layout → versioned layout
-                       Flags: --dry-run, --yes, --abort
-  doctor [flags]       Verify symlink chain + manifest integrity
-                       --quick               skip per-file SHA256 verification
-                       --backfill-provenance opt-in M6 backfill: stamps
-                         edikt_template_hash on pre-v0.5.0 agents that lack it.
-                         NEVER runs automatically — must be passed explicitly.
-                         Uses Levenshtein distance to detect user edits:
-                         if distance > 15%% of installed file size the agent
-                         is skipped ("user customizations exceed safe-backfill
-                         threshold"). See docs/guides/migrating-from-v0.4.md.
-                       --dry-run (with --backfill-provenance): list candidates
-                         without writing any files.
-  uninstall [--yes]    Remove EDIKT_ROOT + commands symlink
-  uninstall benchmark  Remove tier-2 benchmark files + helper venv (idempotent)
-
-Environment:
-  EDIKT_ROOT           Root of edikt state. Defaults: project mode (walks
-                       up for .edikt/bin/edikt) → \$EDIKT_HOME → \$HOME/.edikt.
-  CLAUDE_HOME          Override \$HOME/.claude.
-  EDIKT_INSTALL_SOURCE Local tarball or directory used by \`install\` instead
-                       of GitHub (test + offline path).
-  EDIKT_INSTALL_SHA256 Expected sha256 of the tarball; mismatch exits 2.
-  EDIKT_INSTALL_INSECURE
-                       Set to 1 to skip checksum verification when neither
-                       EDIKT_INSTALL_SHA256 nor a fetched .sha256 sidecar
-                       is available. Not recommended.
-
-Layout (per SPEC-004 §1):
-  \$EDIKT_ROOT/
-    bin/edikt                    launcher (this script)
-    versions/<tag>/              immutable payloads
-    current -> versions/<tag>    generation symlink
-    hooks -> current/hooks       stable external path
-    templates -> current/templates
-    config.yaml, custom/         user data — never touched
-    backups/<ts>/                pre-flip snapshots
-    lock.yaml                    active + previous + history
-    events.jsonl                 install/activate/rollback events
-EOF
-}
-
-# ─── Dispatch ───────────────────────────────────────────────────────────────
+# ─── Dispatch ─────────────────────────────────────────────────────────────────
 sub="${1:-help}"
 shift 2>/dev/null || true
 
-# Interrupted-migration gate (review finding #1). On-disk markers
-# (.migrate-staging-*/, .pre-migration-*/) evidence an in-flight or
-# crashed migration from another process. Running ANY state-changing
-# subcommand now would race against recovery. Admit only migrate (which
-# holds the lock) and diagnostic/help commands. This check happens
-# BEFORE needs_migration so that a partial-crash state (flat layout
-# already torn down but predir still present) is still caught.
-# NB: we deliberately do NOT acquire the lock here — doctor must remain
-# reachable precisely when a stuck holder has the lock.
-if migration_in_progress; then
-    case "$sub" in
-        migrate|doctor|version|--version|-v|help|--help|-h|"") ;;
-        *)
-            log_err "Migration in progress — wait for it to complete or run: edikt migrate --abort"
-            exit 1
-            ;;
-    esac
-fi
-
-# Legacy-layout gate (per SPEC-004 §2 FR-018). If pre-v0.5.0 flat layout is
-# detected, only migrate/doctor/version/help are reachable. Every other
-# subcommand refuses with a migration-needed message and exit 1.
-if needs_migration; then
-    case "$sub" in
-        migrate|doctor|version|--version|-v|help|--help|-h|"") ;;
-        *)
-            log_err "Layout migration needed. Run: edikt migrate [--dry-run]"
-            exit 1
-            ;;
-    esac
-fi
-
-# Project-pin warn (SPEC-004 FR-019). Runs AFTER migration gates, BEFORE
-# acquire_lock. Exempt subcommands that produce machine-readable output or
-# that are diagnostic/informational: version, list, doctor, help, dev.
-# The ancestor walk is bounded by $HOME so sandbox tests that live under
-# a tmpdir never accidentally pick up the project repo's own .edikt/.
 case "$sub" in
-    version|--version|-v|list|ls|doctor|help|--help|-h|""|dev) ;;
-    *)
-        check_pin_warn
-        ;;
-esac
+    migrate) cmd_migrate "$@" ;;
+    help|--help|-h|"")
+        cat <<EOF
+edikt-shell — migrate-only helper (ADR-022)
 
-case "$sub" in
-    version|--version|-v) cmd_version "$@" ;;
-    list|ls)              cmd_list "$@" ;;
-    install)
-        # Tier-2 fork (SPEC-005, ADR-015): `edikt install benchmark` routes
-        # to the tier-2 install verb; everything else is core payload install.
-        case "${1:-}" in
-            benchmark) shift; cmd_install_benchmark "$@" ;;
-            *)         cmd_install "$@" ;;
-        esac
+Usage: edikt migrate [--dry-run] [--yes] [--abort]
+
+All other subcommands have moved to the Go edikt binary.
+Run \`edikt --help\` for the full command reference.
+EOF
         ;;
-    use)                  cmd_use "$@" ;;
-    rollback)             cmd_rollback "$@" ;;
-    prune)                cmd_prune "$@" ;;
-    upgrade)              cmd_upgrade "$@" ;;
-    upgrade-pin)          cmd_upgrade_pin "$@" ;;
-    dev)                  cmd_dev "$@" ;;
-    migrate)              cmd_migrate "$@" ;;
-    doctor)               cmd_doctor "$@" ;;
-    uninstall)
-        case "${1:-}" in
-            benchmark) shift; cmd_uninstall_benchmark "$@" ;;
-            *)         cmd_uninstall "$@" ;;
-        esac
-        ;;
-    help|--help|-h|"")    cmd_help ;;
     *)
-        log_err "unknown subcommand: $sub"
-        cmd_help >&2
+        echo "error: this command has moved to the Go binary — run \`edikt $sub\`" >&2
         exit 1
         ;;
 esac

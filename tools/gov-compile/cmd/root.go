@@ -47,11 +47,18 @@ func init() {
 	// output carries the correct version string.
 	govrun.CompilerVersion = Version
 
-	// Catch-all: any arg that doesn't match a registered subcommand is delegated
-	// to edikt-shell.  cobra calls this when no other command matches.
+	// Catch-all: only `migrate` (and unknown subcommands) are delegated to
+	// edikt-shell. All other subcommands are handled natively in Go.
+	// This RunE fires when cobra cannot match any registered subcommand.
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		// Re-assemble the full argv (subcommand + args).
-		return delegateToShell(os.Args[1:])
+		if len(os.Args) > 1 && os.Args[1] == "migrate" {
+			return delegateToShell(os.Args[1:])
+		}
+		// Unknown subcommand — print error and usage.
+		if len(os.Args) > 1 {
+			fmt.Fprintf(os.Stderr, "error: unknown subcommand: %s\n", os.Args[1])
+		}
+		return cmd.Help()
 	}
 
 	// Allow arbitrary trailing args so cobra doesn't reject them before we
