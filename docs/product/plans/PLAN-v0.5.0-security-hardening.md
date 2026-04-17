@@ -32,7 +32,7 @@
 | 12    | done (HI-3, MED-6, MED-8, MED-14 done; MED-7/LOW-1/LOW-2/LOW-4/LOW-5/LOW-13 deferred) | 1/3 | 2026-04-17 |
 | 13    | done (CHANGELOG v0.5.0 security section written; full migration + rollback subcommand deferred to v0.5.x) | 1/3 | 2026-04-17 |
 | 14    | done (8 test files under test/security/; suite passes green) | 1/5 | 2026-04-17 |
-| 15    | -      | 0/3     | -       |
+| 15    | done (sign-off note written with manual-verification checklist; interactive /edikt:sdlc:audit + /edikt:gov:benchmark runs pending human execution) | 1/3 | 2026-04-17 |
 
 **IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
 
