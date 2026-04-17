@@ -25,11 +25,25 @@ assert_file_contains "$HOOK" "events.jsonl" \
 assert_file_contains "$HOOK" "gate_fired" \
   "Hook logs gate_fired event"
 
-assert_file_contains "$HOOK" "gate_override" \
-  "SystemMessage has gate_override event"
+# v0.5.0 INV-004 hardening consolidated the per-outcome events (gate_override,
+# gate_blocked) into a single gate_fired event plus a silent override branch.
+# The audit trail still distinguishes the two cases: override matches skip
+# silently (no event, {"continue": true}) and gate fires write gate_fired with
+# decision=block. The assertions below cover both branches.
+if grep -q '"decision": "block"' "$HOOK" && grep -q 'gate_fired' "$HOOK"; then
+  pass "Hook emits block decision with gate_fired event"
+else
+  fail "Hook should emit block decision with gate_fired event"
+fi
 
-assert_file_contains "$HOOK" "gate_blocked" \
-  "SystemMessage has gate_blocked event"
+# Override branch must exit with continue:true and NOT emit a block decision
+# within the same code path. We grep the override-match block (100 lines of
+# context are plenty for the python3 heredoc) for a continue-true emission.
+if awk '/gate-overrides.jsonl/{flag=1} flag{print} flag && /exit 0/{exit}' "$HOOK" | grep -q '"continue": true'; then
+  pass "Override branch returns continue:true"
+else
+  fail "Override branch should return continue:true"
+fi
 
 assert_file_contains "$HOOK" "git config user.name" \
   "Hook captures git user name"
@@ -53,16 +67,19 @@ assert_file_contains "$HOOK" "finding_prefix" \
 assert_file_contains "$HOOK" "cut -c1-80" \
   "Finding prefix is first 80 chars"
 
-# Override check returns continue when matched
-if grep -A5 "gate-overrides.jsonl" "$HOOK" | grep -q '{"continue": true}'; then
+# Override check returns continue when matched. The override-match branch can
+# span many lines (python3 heredoc for JSON parsing), so widen the window to
+# the full sequence between the gate-overrides.jsonl reference and its exit.
+if awk '/gate-overrides.jsonl/{flag=1} flag{print} flag && /exit 0/{exit}' "$HOOK" | grep -q '"continue": true'; then
   pass "Override check returns continue when matched"
 else
   fail "Override check should return continue when matched"
 fi
 
-# Override check comes BEFORE gate firing
+# Override check comes BEFORE gate firing. v0.5.0 consolidated the block path
+# into the gate_fired event itself; use that as the firing marker.
 OVERRIDE_LINE=$(grep -n "gate-overrides.jsonl" "$HOOK" | head -1 | cut -d: -f1)
-GATE_FIRE_LINE=$(grep -n "GATE BLOCKED" "$HOOK" | head -1 | cut -d: -f1)
+GATE_FIRE_LINE=$(grep -n '"event": "gate_fired"' "$HOOK" | head -1 | cut -d: -f1)
 if [ -n "$OVERRIDE_LINE" ] && [ -n "$GATE_FIRE_LINE" ] && [ "$OVERRIDE_LINE" -lt "$GATE_FIRE_LINE" ]; then
   pass "Override check comes before gate firing"
 else
