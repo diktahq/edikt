@@ -1135,12 +1135,16 @@ cmd_doctor() {
         err_n=$((err_n + 1))
     fi
 
-    # cosign availability (required for full signed-install verification per ADR-016).
+    # cosign availability. ADR-016 explicitly treats cosign as optional at
+    # the host level — it's only a hard prerequisite for install/upgrade
+    # flows, which abort with an actionable error when it's missing unless
+    # EDIKT_INSTALL_INSECURE=1 is set. An otherwise clean tree is still
+    # healthy, so emit this as an INFO line that does not count toward
+    # warn_n (which would flip the exit code to 1).
     if command -v cosign >/dev/null 2>&1; then
         echo "  cosign:           $(command -v cosign)"
     else
-        echo "  WARN: cosign not on PATH — installs require EDIKT_INSTALL_INSECURE=1 without it (ADR-016)"
-        warn_n=$((warn_n + 1))
+        echo "  INFO: cosign not on PATH — installs require EDIKT_INSTALL_INSECURE=1 without it (ADR-016)"
     fi
 
     # Active version
