@@ -2525,18 +2525,20 @@ chmod +x templates/hooks/*.sh templates/hooks/pre-push
 
 ### CI gate (regression prevention)
 
-Add a hook-mode check to `test/test-quality.sh` (or create `test/test-hook-modes.sh` and wire into the default test target):
+Add a hook-mode check to `test/test-quality.sh` (or create `test/test-hook-modes.sh` and wire into the default test target). The gate MUST require **exactly `100755`** — not `>= 0755`, not "any executable bit set". This blocks both directions of regression: a file slipping back to `100644` (the current bug), AND a file accidentally over-permissioned to `100777` (world-writable, which would let any local user substitute malicious hook content).
 
 ```bash
 #!/usr/bin/env bash
-# Ensure every templates/hooks/*.sh and pre-push is committed as 100755.
+# Ensure every templates/hooks/*.sh and templates/hooks/pre-push is committed
+# as exactly mode 100755. Reject both 100644 (non-executable, the bug this gate
+# was added for) and 100777 (world-writable, would allow local hook hijack).
 set -e
 fail=0
 while IFS= read -r mode_path; do
   mode="${mode_path%% *}"
   path="${mode_path##* }"
   if [ "$mode" != "100755" ]; then
-    echo "FAIL: $path is committed as $mode (expected 100755)"
+    echo "FAIL: $path is committed as $mode (expected exactly 100755)"
     fail=1
   fi
 done < <(git ls-files -s templates/hooks/ | awk '{print $1, $4}')
@@ -2546,6 +2548,15 @@ exit $fail
 Wire into:
 - `test/run.sh` (default test entry — fails the run if any hook is non-exec)
 - `.github/workflows/*.yml` test job (mirrors `test/run.sh`, no separate step needed)
+
+**Filesystem-mode assertion (separate, for test sandboxes and post-install):** when the install path extracts a payload tarball into a sandbox, also assert that the resulting on-disk hook files are mode `0755` exactly. This catches a release tarball that was packed from a working tree where the modes were correct in git but corrupted by a packaging step (umask drift, archive tool quirks). Add to `test/integration/test_install_modes.py`:
+
+```python
+import os, stat, pathlib
+for hook in pathlib.Path(sandbox / "current/templates/hooks").glob("*.sh"):
+    mode = stat.S_IMODE(hook.stat().st_mode)
+    assert mode == 0o755, f"{hook} has mode {oct(mode)}, expected 0o755"
+```
 
 ### Belt-and-braces (defensive install-time chmod)
 
