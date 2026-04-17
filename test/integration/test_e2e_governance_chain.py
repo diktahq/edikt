@@ -47,7 +47,7 @@ async def test_adr_new_creates_file_with_sentinel(
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_governance_chain),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -180,7 +180,7 @@ suppressed_directives: []
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_governance_chain),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -281,7 +281,7 @@ suppressed_directives: []
 
     options = ClaudeAgentOptions(
         cwd=str(project_for_governance_chain),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)

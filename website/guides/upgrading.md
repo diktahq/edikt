@@ -22,7 +22,7 @@ edikt_version: "0.1.0"
 ### Step 1 — Update global templates
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 ```
 
 This takes ~10 seconds. Your commands, templates, and `~/.edikt/VERSION` are now current.
@@ -135,7 +135,7 @@ v0.2.0 changes how governance is compiled. The flat `governance.md` is replaced 
 **Recommended upgrade steps:**
 
 ```text
-1. Update global:    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+1. Update global:    curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 2. Upgrade project:  /edikt:upgrade
 3. Generate sentinels: /edikt:gov:review
 4. Recompile:        /edikt:gov:compile
@@ -161,7 +161,7 @@ v0.3.0 introduces the three-list directive schema, Invariant Records, and compil
 **Recommended upgrade steps:**
 
 ```text
-1. Update global:       curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+1. Update global:       curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
 2. Upgrade project:     /edikt:upgrade
 3. Compile invariants:  /edikt:invariant:compile
 4. Compile ADRs:        /edikt:adr:compile

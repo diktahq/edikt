@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from conftest import with_retry
+from helpers import with_retry
 
 
 @pytest.mark.asyncio
@@ -47,7 +47,7 @@ async def test_evaluator_returns_blocked_not_silent_pass(
     # It must detect this and say so, not silently pass.
     options = ClaudeAgentOptions(
         cwd=str(fresh_project),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
         disallowed_tools=["Write", "Edit", "Bash"],
     )
 

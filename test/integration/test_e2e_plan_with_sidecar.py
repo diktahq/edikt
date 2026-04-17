@@ -82,7 +82,7 @@ async def test_plan_writes_criteria_sidecar(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_spec_and_artifacts),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
@@ -158,7 +158,7 @@ async def test_plan_with_artifacts_covers_api_endpoints(
 
     options = ClaudeAgentOptions(
         cwd=str(project_with_spec_and_artifacts),
-        setting_sources=["user", "project"],
+        setting_sources=["project"],
     )
 
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
