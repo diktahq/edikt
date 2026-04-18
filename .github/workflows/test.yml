@@ -29,6 +29,31 @@ jobs:
           sudo apt-get install -y jq rsync
           python3 -m pip install --quiet pytest pytest-asyncio pyyaml
 
+      - name: INV-003 lint — hooks must not shell-interpolate JSON
+        run: |
+          # Catch double-quoted echo/printf that opens a JSON object — these can
+          # interpolate shell variables into JSON without quoting. Single-quoted
+          # static literals (echo '{"continue": true}') are safe and excluded.
+          # Safe JSON emission uses python3 json.dumps with argv (INV-003).
+          if grep -rE 'echo "\{|printf "\{' templates/hooks/*.sh install.sh 2>/dev/null; then
+            echo "FAIL: double-quoted shell-interpolated JSON found in hooks or install.sh (INV-003)"
+            exit 1
+          fi
+          echo "OK: no double-quoted shell-interpolated JSON in hooks or install.sh"
+
+      - name: INV-008 lint — no branch-tracking install URLs in user-facing docs
+        run: |
+          # Reject raw.githubusercontent.com/.*/main/ and releases/latest/download/
+          # in README and website/ (user-facing). node_modules excluded.
+          if grep -rE "raw\.githubusercontent\.com/[^/]+/[^/]+/main/|releases/latest/download/" \
+               README.md website/ \
+               --include="*.md" --include="*.yml" --include="*.yaml" \
+               --exclude-dir=".vitepress" --exclude-dir="node_modules" 2>/dev/null; then
+            echo "FAIL: branch-tracking install URL found in user-facing docs (INV-008)"
+            exit 1
+          fi
+          echo "OK: no branch-tracking URLs in user-facing docs"
+
       - name: Run test suite (SKIP_INTEGRATION=1)
         run: bash test/run.sh
         env:

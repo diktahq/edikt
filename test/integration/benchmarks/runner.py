@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import unicodedata
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -327,14 +328,18 @@ def score_case(
     # Disjunctions let the rubric match the directive's literal language
     # without brittle phrase matching — which is the right call for Opus 4.7's
     # strict literal instruction-following.
-    combined_lc = combined.lower()
+    def _norm(s: str) -> str:
+        """NFKC + casefold + whitespace-strip (INV-006). Prevents Unicode lookalike bypasses."""
+        return unicodedata.normalize("NFKC", s).casefold().strip()
+
+    combined_lc = _norm(combined)
     for phrase in v.must_mention:
         if isinstance(phrase, list):
-            if not any(alt.lower() in combined_lc for alt in phrase):
+            if not any(_norm(alt) in combined_lc for alt in phrase):
                 reasons.append(f"missing any of: {phrase!r}")
                 failed = True
         else:
-            if phrase.lower() not in combined_lc:
+            if _norm(phrase) not in combined_lc:
                 reasons.append(f"missing expected phrase: {phrase!r}")
                 failed = True
 

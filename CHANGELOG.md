@@ -1,5 +1,24 @@
 # edikt changelog
 
+## v0.5.0 (2026-04-18 — release candidate)
+
+### Evaluator verdict persistence + criteria sidecar update (ADR-018)
+
+The phase-end evaluator now **writes** after every evaluation, not just reads:
+
+- **Verdict JSON persisted** to `docs/product/plans/verdicts/<plan-slug>/phase-<N>.json` with `meta.evaluated_at` timestamp. ADR-018 mandated this file but the hook wasn't writing it. The verdict file is the audit trail for phase history and is read by `edikt rollback` to check grandfather status.
+- **Criteria sidecar updated in-place** after each evaluation. For each criterion in the evaluated phase: `status` (pass/fail/blocked), `last_evaluated` (ISO date), `fail_reason` (from evaluator evidence on fail, reset to null on pass), `fail_count` (incremented on fail, reset on pass, unchanged on blocked). Top-level `last_evaluated` is also updated. Only the evaluated phase is touched — other phases remain unchanged.
+- Sidecar and verdict writes are **best-effort** (non-fatal `OSError`) and always happen before the user-visible `systemMessage`, regardless of PASS/FAIL/BLOCKED verdict or evidence gate outcome.
+
+### Invariant compliance fixes (CI enforcement)
+
+Four INV gaps closed that were documented but not enforced:
+
+- **INV-003 CI lint.** CI now fails on any `echo '{'` or `printf '{'` in `templates/hooks/*.sh` or `install.sh`. Previously this lint was stated in INV-003 but no CI step enforced it.
+- **INV-006 NFKC normalization in benchmark scorer.** `score_case()` in `runner.py` now normalizes with `unicodedata.normalize('NFKC', ...).casefold().strip()` before substring matching. Previously `evil.tѕ` (Cyrillic `s`) and `evil.PY ` (trailing space) could produce false-PASS verdicts.
+- **INV-007 `symlinks=True` + realpath guard in test harness.** `conftest.py` fixture copies now use `_safe_copytree()`: `shutil.copytree(..., symlinks=True)` with a `realpath` check that raises if the source path escapes `REPO_ROOT`. Prevents a symlinked fixture entry from silently copying host secrets.
+- **INV-008 CI lint.** CI now fails on `raw.githubusercontent.com/.*/main/` or `releases/latest/download/` in `README.md`, `website/`, or `.github/workflows/`. Previously this lint was stated in INV-008 but no CI step enforced it.
+
 ## v0.5.0 (2026-04-17)
 
 ### Pure Go binary — edikt-shell deleted (ADR-022 Phase 3)
