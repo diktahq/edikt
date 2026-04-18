@@ -46,7 +46,7 @@ def _run_query(prompt: str, cwd: Path, sdk_stream: list[Any]) -> dict[str, Any]:
     assistant_text: list[str] = []
     result_msg: ResultMessage | None = None
 
-    options = ClaudeAgentOptions(cwd=str(cwd), setting_sources=["project"])
+    options = ClaudeAgentOptions(cwd=str(cwd), setting_sources=["project"], model="claude-sonnet-4-6")
 
     async def _run() -> None:
         nonlocal result_msg
@@ -121,7 +121,7 @@ async def test_prd_v2_creation_writes_split_artifact(
     assistant_text: list[str] = []
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
-        cwd=str(project_with_v2_prd), setting_sources=["project"]
+        cwd=str(project_with_v2_prd), setting_sources=["project"], model="claude-sonnet-4-6"
     )
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
 
@@ -250,7 +250,7 @@ async def test_prd_v2_protection_section_links_invariants(
     assistant_text: list[str] = []
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
-        cwd=str(project_with_v2_prd), setting_sources=["project"]
+        cwd=str(project_with_v2_prd), setting_sources=["project"], model="claude-sonnet-4-6"
     )
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
 
@@ -328,7 +328,7 @@ async def test_prd_ship_transition_mutates_sidecar(
     tool_calls: list[dict[str, Any]] = []
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
-        cwd=str(project_with_v2_prd), setting_sources=["project"]
+        cwd=str(project_with_v2_prd), setting_sources=["project"], model="claude-sonnet-4-6"
     )
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
 
@@ -416,7 +416,7 @@ async def test_spec_v2_writes_source_specs_back_to_prd(
     tool_calls: list[dict[str, Any]] = []
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
-        cwd=str(project_with_v2_prd), setting_sources=["project"]
+        cwd=str(project_with_v2_prd), setting_sources=["project"], model="claude-sonnet-4-6"
     )
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
 
@@ -502,7 +502,7 @@ async def test_prd_review_runs_on_v2_prd(
     assistant_text: list[str] = []
     result_msg: ResultMessage | None = None
     options = ClaudeAgentOptions(
-        cwd=str(project_with_v2_prd), setting_sources=["project"]
+        cwd=str(project_with_v2_prd), setting_sources=["project"], model="claude-sonnet-4-6"
     )
     skip_on_outage = request.config.getoption("--skip-on-outage", default=False)
 
