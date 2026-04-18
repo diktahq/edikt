@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -73,29 +72,8 @@ always protected regardless of sort position.`,
 			return nil
 		}
 
-		// If not --yes and not --dry-run, show plan and confirm.
-		if !pruneYes && !pruneDryRun {
-			fmt.Printf("Would remove %d version(s):\n", len(toPrune))
-			for _, t := range toPrune {
-				tn := normalizeTag(t)
-				if tn == activeTag || tn == previousTag {
-					fmt.Printf("  (skip protected) %s\n", t)
-				} else {
-					fmt.Printf("  %s\n", t)
-				}
-			}
-			fmt.Print("Proceed? [y/N]: ")
-			var reply string
-			fmt.Scanln(&reply)
-			switch strings.ToLower(strings.TrimSpace(reply)) {
-			case "y", "yes":
-			default:
-				fmt.Fprintln(os.Stderr, "aborted")
-				return nil
-			}
-		}
-
 		anyFailed := false
+		pruned := []string{}
 		for _, tag := range toPrune {
 			tn := normalizeTag(tag)
 			if activeTag != "" && (tn == activeTag || tag == activeTag) {
@@ -114,6 +92,8 @@ always protected regardless of sort position.`,
 				if err := os.RemoveAll(filepath.Join(versionsDir, tag)); err != nil {
 					fmt.Fprintf(os.Stderr, "error: prune: failed to remove %s: %v\n", tag, err)
 					anyFailed = true
+				} else {
+					pruned = append(pruned, tag)
 				}
 			}
 		}
@@ -121,6 +101,13 @@ always protected regardless of sort position.`,
 		if pruneDryRun {
 			fmt.Fprintf(os.Stderr, "prune: dry-run complete (no changes)\n")
 			return nil
+		}
+
+		if len(pruned) > 0 {
+			emitEvent(ediktRoot, "version_pruned", map[string]interface{}{
+				"pruned": pruned,
+				"kept":   pruneKeep,
+			})
 		}
 
 		if anyFailed {

@@ -26,6 +26,9 @@ __pycache__/
 .env
 .env.local
 
+# Compiled Go binary (ADR-022 — shipped via release assets, never committed)
+bin/edikt
+
 # Python build artifacts (tier-2 tools)
 tools/*/build/
 tools/*/*.egg-info/
@@ -34,7 +37,6 @@ tools/*/*.egg-info/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .edikt/state/
-tools/edikt/
 docs/STATUS.md
 
 # test run artifacts (not checked in)

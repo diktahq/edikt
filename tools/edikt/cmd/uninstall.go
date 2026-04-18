@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var uninstallYes bool
@@ -53,6 +54,12 @@ Guards:
 		}
 
 		if !uninstallYes {
+			// Safety: only prompt when stdin is an interactive terminal.
+			// Non-interactive stdin (CI, pipes) aborts without reading.
+			if !term.IsTerminal(int(os.Stdin.Fd())) {
+				fmt.Fprintln(os.Stderr, "aborted (not an interactive terminal — use --yes to confirm)")
+				return nil
+			}
 			fmt.Printf("Remove %s and unlink %s/commands/edikt? [y/N]: ", ediktRoot, claudeRoot)
 			var reply string
 			fmt.Scanln(&reply)

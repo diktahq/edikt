@@ -23,6 +23,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/gov-compile/go.mod
+          cache-dependency-path: tools/gov-compile/go.sum
+
       - name: Install test dependencies
         run: |
           sudo apt-get update -qq

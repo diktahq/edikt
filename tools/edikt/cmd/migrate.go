@@ -325,6 +325,9 @@ func runM1(ctx context.Context, ediktRoot, claudeRoot, version, ts, staging, pre
 		os.RemoveAll(stageVersionDir)
 	}
 
+	// Write manifest.yaml for the migrated version.
+	writeManifest(targetVersionDir, version, "")
+
 	// Create symlinks: current → versions/<version>, hooks → current/hooks,
 	// templates → current/templates, $CLAUDE_ROOT/commands/edikt → $EDIKT_ROOT/current/commands.
 	currentLink := filepath.Join(ediktRoot, "current")
@@ -989,6 +992,31 @@ func acquireLock(ediktRoot string) (*os.File, func(), error) {
 	if err := os.MkdirAll(ediktRoot, 0o755); err != nil {
 		return nil, func() {}, fmt.Errorf("cannot create EDIKT_ROOT: %w", err)
 	}
+
+	// Check mkdir-based lock first (used as fallback by bash tooling on systems
+	// without flock; the test harness also uses this path on macOS).
+	lockDir := filepath.Join(ediktRoot, ".lock.d")
+	if info, err := os.Stat(lockDir); err == nil && info.IsDir() {
+		// Directory exists — check if the owner pid is still alive.
+		ownerFile := filepath.Join(lockDir, "owner")
+		if data, err2 := os.ReadFile(ownerFile); err2 == nil {
+			var ownerPID int
+			fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &ownerPID)
+			if ownerPID > 0 && pidAlive(ownerPID) {
+				return nil, func() {}, &exitCodeError{code: 4,
+					msg: fmt.Sprintf("another edikt process is running (lock dir: %s) — try again shortly", lockDir)}
+			}
+			// Stale lock — reclaim.
+			fmt.Fprintf(os.Stderr, "warn: reclaiming stale lock dir %s\n", lockDir)
+			os.RemoveAll(lockDir)
+		} else {
+			// No owner file but dir exists — another process is holding the lock
+			// (they may not have written owner yet, or it's a test holding it externally).
+			return nil, func() {}, &exitCodeError{code: 4,
+				msg: fmt.Sprintf("another edikt process is running (lock dir: %s) — try again shortly", lockDir)}
+		}
+	}
+
 	lockFile := filepath.Join(ediktRoot, ".lock")
 
 	// Try flock via a lock file.
@@ -1000,10 +1028,10 @@ func acquireLock(ediktRoot string) (*os.File, func(), error) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, func() {}, fmt.Errorf("another edikt process is running (lock: %s). Retry or remove stale lock (exit code %d)", lockFile, 4)
+			return nil, func() {}, &exitCodeError{code: 4,
+				msg: fmt.Sprintf("another edikt process is running (lock: %s) — try again shortly", lockFile)}
 		}
 		// flock unavailable — fall back to mkdir lock.
-		f.Close()
 		return acquireMkdirLock(ediktRoot)
 	}
 
@@ -1030,10 +1058,12 @@ func acquireMkdirLock(ediktRoot string) (*os.File, func(), error) {
 					return nil, func() {}, fmt.Errorf("another edikt process is running (lock dir: %s). Retry or remove stale lock", lockDir)
 				}
 			} else {
-				return nil, func() {}, fmt.Errorf("another edikt process is running (lock dir: %s). Retry or remove stale lock", lockDir)
+				return nil, func() {}, &exitCodeError{code: 4,
+					msg: fmt.Sprintf("another edikt process is running (lock dir: %s) — try again shortly", lockDir)}
 			}
 		} else {
-			return nil, func() {}, fmt.Errorf("another edikt process is running (lock dir: %s). Retry or remove stale lock", lockDir)
+			return nil, func() {}, &exitCodeError{code: 4,
+				msg: fmt.Sprintf("another edikt process is running (lock dir: %s) — try again shortly", lockDir)}
 		}
 	}
 	ownerFile := filepath.Join(lockDir, "owner")

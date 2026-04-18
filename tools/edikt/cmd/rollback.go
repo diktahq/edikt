@@ -70,6 +70,12 @@ pre-v0.5.0 host files from the backup install.sh wrote during the 0.4.x migratio
 			fmt.Fprintf(os.Stderr, "warn: rolled back but lock.yaml update failed: %v\n", err)
 		}
 
+		repairExternalSymlinks(ediktRoot)
+		emitEvent(ediktRoot, "rollback_performed", map[string]interface{}{
+			"from": currentTag,
+			"to":   targetTag,
+		})
+
 		fmt.Fprintf(os.Stderr, "rolled back to %s (was %s)\n", targetTag, currentTag)
 		return nil
 	},

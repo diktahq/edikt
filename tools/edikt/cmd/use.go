@@ -28,6 +28,15 @@ Fails clearly if the version is not installed.`,
 			return fmt.Errorf("version %s is not installed. Run `edikt install %s` first.", tag, tag)
 		}
 
+		// Minimum payload version gate: payloads below 0.5.0 are not supported.
+		const minPayloadVersion = "0.5.0"
+		if isSemverTag(tag) && !semverGreater(tag, minPayloadVersion) && tag != minPayloadVersion {
+			return &exitCodeError{code: 2, msg: fmt.Sprintf(
+				"version %s is below the minimum supported payload version (%s)",
+				tag, minPayloadVersion,
+			)}
+		}
+
 		// Atomic symlink flip: create a sibling .new symlink then rename over target.
 		currentLink := filepath.Join(ediktRoot, "current")
 		newLink := currentLink + fmt.Sprintf(".new.%d", os.Getpid())
@@ -50,9 +59,51 @@ Fails clearly if the version is not installed.`,
 			fmt.Fprintf(os.Stderr, "warn: version activated but lock.yaml update failed: %v\n", err)
 		}
 
+		// Repair external symlinks: hooks/ and templates/ inside EDIKT_ROOT,
+		// and commands/edikt inside CLAUDE_ROOT.
+		repairExternalSymlinks(ediktRoot)
+
+		emitEvent(ediktRoot, "version_activated", map[string]interface{}{"version": tag})
+
 		fmt.Fprintf(os.Stderr, "activated %s\n", tag)
 		return nil
 	},
+}
+
+// repairExternalSymlinks ensures that convenience symlinks outside the versioned
+// directory resolve through the current/ symlink chain after a version switch.
+//
+// $EDIKT_ROOT/hooks      → current/hooks
+// $EDIKT_ROOT/templates  → current/templates
+// $CLAUDE_ROOT/commands/edikt → $EDIKT_ROOT/current/commands/edikt
+func repairExternalSymlinks(ediktRoot string) {
+	claudeRoot := resolveClaudeRoot()
+
+	// Local convenience symlinks (relative, so they work wherever EDIKT_ROOT is).
+	for _, name := range []string{"hooks", "templates"} {
+		link := filepath.Join(ediktRoot, name)
+		target := filepath.Join("current", name)
+		replaceSymlink(link, target)
+	}
+
+	// Claude commands symlink (absolute path required across directory boundaries).
+	ediktCmds := filepath.Join(claudeRoot, "commands", "edikt")
+	ediktCmdsTarget := filepath.Join(ediktRoot, "current", "commands", "edikt")
+	if err := os.MkdirAll(filepath.Join(claudeRoot, "commands"), 0o755); err == nil {
+		replaceSymlink(ediktCmds, ediktCmdsTarget)
+	}
+}
+
+// replaceSymlink atomically replaces (or creates) a symlink at dst pointing to target.
+func replaceSymlink(dst, target string) {
+	tmp := dst + fmt.Sprintf(".new.%d", os.Getpid())
+	os.Remove(tmp)
+	if err := os.Symlink(target, tmp); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		os.Remove(tmp)
+	}
 }
 
 func init() {

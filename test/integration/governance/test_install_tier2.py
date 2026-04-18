@@ -56,6 +56,7 @@ def _sandbox_env(tmp_path: Path) -> dict[str, str]:
         **os.environ,
         "HOME": str(home),
         "EDIKT_HOME": str(edikt),
+        "EDIKT_ROOT": str(edikt),
         "CLAUDE_HOME": str(claude),
     }
 

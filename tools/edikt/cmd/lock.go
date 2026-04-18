@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3" // used only by readLock (Unmarshal)
 )
 
 // LockFile represents the top-level fields of lock.yaml.
@@ -73,10 +73,7 @@ func writeLock(ediktRoot, newActive, installedVia string) error {
 	})
 	lf.History = hist
 
-	data, err := yaml.Marshal(lf)
-	if err != nil {
-		return fmt.Errorf("marshalling lock.yaml: %w", err)
-	}
+	data := []byte(marshalLock(lf))
 
 	p := filepath.Join(ediktRoot, "lock.yaml")
 	tmp := p + fmt.Sprintf(".tmp.%d", os.Getpid())
@@ -88,6 +85,38 @@ func writeLock(ediktRoot, newActive, installedVia string) error {
 		return fmt.Errorf("renaming lock.yaml: %w", err)
 	}
 	return nil
+}
+
+// marshalLock produces a YAML string for LockFile with all string scalars
+// double-quoted so tests and parsers get a consistent format.
+func marshalLock(lf LockFile) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("active: %q\n", lf.Active))
+	if lf.Previous != "" {
+		sb.WriteString(fmt.Sprintf("previous: %q\n", lf.Previous))
+	}
+	if lf.Pinned != "" {
+		sb.WriteString(fmt.Sprintf("pinned: %q\n", lf.Pinned))
+	}
+	if lf.InstalledVia != "" {
+		sb.WriteString(fmt.Sprintf("installed_via: %q\n", lf.InstalledVia))
+	}
+	if len(lf.History) > 0 {
+		sb.WriteString("history:\n")
+		for _, h := range lf.History {
+			sb.WriteString(fmt.Sprintf("    - version: %q\n", h.Version))
+			if h.InstalledAt != "" {
+				sb.WriteString(fmt.Sprintf("      installed_at: %q\n", h.InstalledAt))
+			}
+			if h.ActivatedAt != "" {
+				sb.WriteString(fmt.Sprintf("      activated_at: %q\n", h.ActivatedAt))
+			}
+			if h.InstalledVia != "" {
+				sb.WriteString(fmt.Sprintf("      installed_via: %q\n", h.InstalledVia))
+			}
+		}
+	}
+	return sb.String()
 }
 
 // normalizeTag strips a leading "v" from a version string.

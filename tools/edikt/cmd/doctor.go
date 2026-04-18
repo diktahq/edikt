@@ -1,13 +1,17 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
+
+var doctorQuick bool
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
@@ -28,12 +32,29 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 		}
 		claudeRoot := resolveClaudeRoot()
 
-		errN := 0
-		warnN := 0
-
 		fmt.Println("edikt doctor")
 		fmt.Printf("  EDIKT_ROOT:  %s\n", ediktRoot)
 		fmt.Printf("  CLAUDE_ROOT: %s\n", claudeRoot)
+
+		// --quick: only print root paths and exit 0.
+		if doctorQuick {
+			return nil
+		}
+
+		errN := 0
+		warnN := 0
+
+		// Check for interrupted migration leftovers.
+		if entries, err := os.ReadDir(ediktRoot); err == nil {
+			for _, e := range entries {
+				n := e.Name()
+				if strings.HasPrefix(n, ".migrate-staging-") || strings.HasPrefix(n, ".pre-migration-") {
+					fmt.Printf("  ERROR: interrupted migration detected (%s) — run `edikt migrate --abort` to restore\n", n)
+					errN++
+					break
+				}
+			}
+		}
 
 		// Check EDIKT_ROOT exists and is writable.
 		if _, err := os.Stat(ediktRoot); os.IsNotExist(err) {
@@ -99,26 +120,51 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 					fmt.Println("  WARN: no manifest.yaml in active version")
 					warnN++
 				} else {
-					fmt.Println("  manifest:    present")
+					fmt.Println("  manifest:    OK")
+				}
+
+				// Check that the templates symlink resolves through the chain.
+				templatesLink := filepath.Join(ediktRoot, "templates")
+				if _, err := os.Stat(templatesLink); err != nil {
+					fmt.Println("  ERROR: templates symlink does not resolve — active version may be corrupt")
+					errN++
+				}
+
+				// Verify SHA256SUMS integrity if present.
+				sumsPath := filepath.Join(ediktRoot, "current", "SHA256SUMS")
+				if _, err := os.Stat(sumsPath); err == nil {
+					if tampered, err := checkPayloadIntegrity(filepath.Join(ediktRoot, "current"), sumsPath); err != nil {
+						fmt.Printf("  ERROR: manifest integrity check failed: %v\n", err)
+						errN++
+					} else if len(tampered) > 0 {
+						fmt.Printf("  ERROR: manifest integrity check failed: %d file(s) modified\n", len(tampered))
+						for _, f := range tampered {
+							fmt.Printf("    tampered: %s\n", f)
+						}
+						errN++
+					}
 				}
 			}
 		}
 
 		// $CLAUDE_ROOT/commands/edikt symlink check.
+		// Missing = acceptable (fresh install). Exists+not-symlink = WARN.
+		// Exists+symlink+broken = ERROR. Exists+symlink+resolves = OK.
 		ediktCmds := filepath.Join(claudeRoot, "commands", "edikt")
-		if linfo, err := os.Lstat(ediktCmds); err != nil {
-			fmt.Printf("  WARN: %s is not a symlink\n", ediktCmds)
+		linfo, lerr := os.Lstat(ediktCmds)
+		if os.IsNotExist(lerr) {
+			// Not yet set up — fine for fresh installs, skip.
+		} else if lerr != nil {
+			fmt.Printf("  WARN: could not stat commands/edikt: %v\n", lerr)
 			warnN++
 		} else if linfo.Mode()&os.ModeSymlink == 0 {
 			fmt.Printf("  WARN: %s is not a symlink\n", ediktCmds)
 			warnN++
+		} else if _, err := os.Stat(ediktCmds); err != nil {
+			fmt.Printf("  ERROR: %s does not resolve\n", ediktCmds)
+			errN++
 		} else {
-			if _, err := os.Stat(ediktCmds); err != nil {
-				fmt.Printf("  ERROR: %s does not resolve\n", ediktCmds)
-				errN++
-			} else {
-				fmt.Printf("  commands:    %s (ok)\n", ediktCmds)
-			}
+			fmt.Printf("  commands:    %s (ok)\n", ediktCmds)
 		}
 
 		// Summary.
@@ -135,6 +181,37 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 	},
 }
 
+// checkPayloadIntegrity reads SHA256SUMS and verifies each listed file.
+// Returns a list of tampered file paths and any I/O error.
+func checkPayloadIntegrity(dir, sumsPath string) ([]string, error) {
+	f, err := os.Open(sumsPath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var tampered []string
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "  ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		expected, relPath := parts[0], parts[1]
+		absPath := filepath.Join(dir, relPath)
+		actual, err := sha256File(absPath)
+		if err != nil || actual != expected {
+			tampered = append(tampered, relPath)
+		}
+	}
+	return tampered, sc.Err()
+}
+
 func init() {
+	doctorCmd.Flags().BoolVar(&doctorQuick, "quick", false, "print EDIKT_ROOT and CLAUDE_ROOT only (no checks)")
 	rootCmd.AddCommand(doctorCmd)
 }

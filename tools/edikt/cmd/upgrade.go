@@ -89,9 +89,16 @@ If already up-to-date, reports so and exits 0.`,
 		targetDir := filepath.Join(ediktRoot, "versions", latestV)
 		if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "upgrade: installing %s ...\n", latestTag)
-			if err := downloadAndInstall(ediktRoot, latestTag, latestV); err != nil {
+			// EDIKT_INSTALL_SOURCE: bypass network fetch with local source.
+			if src := os.Getenv("EDIKT_INSTALL_SOURCE"); src != "" {
+				isTarball := strings.HasSuffix(src, ".tar.gz") || strings.HasSuffix(src, ".tgz")
+				if err := localInstallFromSource(ediktRoot, targetDir, src, isTarball); err != nil {
+					return fmt.Errorf("install failed: %w", err)
+				}
+			} else if err := downloadAndInstall(ediktRoot, latestTag, latestV); err != nil {
 				return fmt.Errorf("install failed: %w", err)
 			}
+			emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": latestV})
 		} else {
 			fmt.Fprintf(os.Stderr, "upgrade: %s already installed, skipping fetch\n", latestV)
 		}
@@ -126,6 +133,7 @@ If already up-to-date, reports so and exits 0.`,
 			fmt.Fprintf(os.Stderr, "warn: activated but lock.yaml update failed: %v\n", err)
 		}
 
+		emitEvent(ediktRoot, "version_activated", map[string]interface{}{"version": latestV})
 		fmt.Fprintf(os.Stderr, "upgrade complete: v%s → v%s\n", currentV, latestV)
 		return nil
 	},
@@ -254,6 +262,79 @@ func semverParts(v string) [3]int {
 	return result
 }
 
+// checkTarGzSafety scans all tar headers for path traversal without extracting.
+// Returns an error if any entry would escape the destination directory.
+func checkTarGzSafety(src string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	defer gr.Close()
+	tr := tar.NewReader(gr)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if filepath.IsAbs(hdr.Name) {
+			return fmt.Errorf("tarball contains absolute path: %s", hdr.Name)
+		}
+		if strings.HasPrefix(filepath.Clean(hdr.Name), "..") {
+			return fmt.Errorf("tarball contains path traversal: %s", hdr.Name)
+		}
+		if hdr.Typeflag == tar.TypeSymlink {
+			if filepath.IsAbs(hdr.Linkname) {
+				return fmt.Errorf("tarball contains absolute symlink target: %s -> %s", hdr.Name, hdr.Linkname)
+			}
+			if strings.HasPrefix(filepath.Clean(hdr.Linkname), "..") {
+				return fmt.Errorf("tarball contains symlink target traversal: %s -> %s", hdr.Name, hdr.Linkname)
+			}
+		}
+	}
+	return nil
+}
+
+// localInstallFromSource copies or extracts a local directory/tarball into
+// targetDir. Used by both install and upgrade commands when EDIKT_INSTALL_SOURCE
+// is set to bypass the network fetch.
+func localInstallFromSource(ediktRoot, targetDir, source string, isTarball bool) error {
+	if err := os.MkdirAll(filepath.Join(ediktRoot, "versions"), 0o755); err != nil {
+		return fmt.Errorf("creating versions dir: %w", err)
+	}
+	if isTarball {
+		stagingDir := filepath.Join(ediktRoot, fmt.Sprintf(".staging-%d", os.Getpid()))
+		if err := os.MkdirAll(stagingDir, 0o755); err != nil {
+			return fmt.Errorf("creating staging dir: %w", err)
+		}
+		defer os.RemoveAll(stagingDir)
+		if err := extractTarGz(source, stagingDir); err != nil {
+			return fmt.Errorf("extracting tarball: %w", err)
+		}
+		payloadSrc := stagingDir
+		if entries, err := os.ReadDir(stagingDir); err == nil && len(entries) == 1 && entries[0].IsDir() {
+			payloadSrc = filepath.Join(stagingDir, entries[0].Name())
+		}
+		if err := os.Rename(payloadSrc, targetDir); err != nil {
+			if err2 := copyDir(payloadSrc, targetDir); err2 != nil {
+				return fmt.Errorf("installing: %w", err2)
+			}
+		}
+	} else {
+		if err := copyDir(source, targetDir); err != nil {
+			return fmt.Errorf("copying source: %w", err)
+		}
+	}
+	return nil
+}
+
 // downloadAndInstall fetches the release tarball for tag, verifies its
 // checksum (and optionally cosign signature), extracts it into
 // $EDIKT_ROOT/versions/<norm>, and writes a minimal manifest.
@@ -308,7 +389,7 @@ func downloadAndInstall(ediktRoot, tag, norm string) error {
 			fmt.Fprintf(os.Stderr, "  tarball sha256: %s\n", observed)
 		} else {
 			cleanup()
-			return fmt.Errorf("no checksum reference available and EDIKT_INSTALL_SHA256 not set.\nSet EDIKT_INSTALL_INSECURE=1 to override (not recommended).")
+			return fmt.Errorf("no checksum reference at %s — set EDIKT_INSTALL_INSECURE=1 to skip (not recommended)", url)
 		}
 	}
 
@@ -477,6 +558,14 @@ func extractTarGz(src, destDir string) error {
 			}
 			out.Close()
 		case tar.TypeSymlink:
+			// Safety: reject absolute symlink targets and path traversal in link target.
+			if filepath.IsAbs(hdr.Linkname) {
+				return fmt.Errorf("tarball contains absolute symlink target: %s -> %s", hdr.Name, hdr.Linkname)
+			}
+			cleanedLink := filepath.Clean(hdr.Linkname)
+			if strings.HasPrefix(cleanedLink, "..") {
+				return fmt.Errorf("tarball contains symlink target traversal: %s -> %s", hdr.Name, hdr.Linkname)
+			}
 			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 				return err
 			}

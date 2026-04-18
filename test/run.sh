@@ -31,7 +31,11 @@ export EDIKT_HOME="$HOME/.edikt"
 export CLAUDE_HOME="$HOME/.claude"
 mkdir -p "$EDIKT_HOME" "$CLAUDE_HOME"
 
+# Track whether we built bin/edikt so cleanup knows to remove it.
+BUILT_EDIKT_BINARY=0
+
 cleanup() {
+    [ "$BUILT_EDIKT_BINARY" = "1" ] && rm -f "$PROJECT_ROOT/bin/edikt"
     rm -rf "$TEST_SANDBOX"
 }
 trap cleanup EXIT INT TERM
@@ -50,6 +54,30 @@ echo "Sandbox: $TEST_SANDBOX"
 
 SUITE_COUNT=0
 FAILED_SUITES=0
+
+# ─── Build Go binary for launcher tests ─────────────────────────────────────
+# Launcher unit tests (test/unit/launcher/) require bin/edikt (the compiled
+# Go binary, ADR-022 Phase 3). Build it now if Go is available and the binary
+# is absent, then remove it on EXIT so it never ends up committed.
+if [ ! -f "$PROJECT_ROOT/bin/edikt" ]; then
+    if command -v go >/dev/null 2>&1; then
+        echo ""
+        printf 'Building bin/edikt from tools/gov-compile... '
+        mkdir -p "$PROJECT_ROOT/bin"
+        if (cd "$PROJECT_ROOT/tools/gov-compile" && CGO_ENABLED=0 go build \
+               -trimpath -ldflags='-s -w' \
+               -o "$PROJECT_ROOT/bin/edikt" .) 2>/tmp/edikt-go-build-err; then
+            BUILT_EDIKT_BINARY=1
+            echo "ok"
+        else
+            echo -e "${YELLOW}FAILED (launcher tests will fail)${NC}"
+            cat /tmp/edikt-go-build-err >&2
+        fi
+        rm -f /tmp/edikt-go-build-err
+    else
+        echo -e "${YELLOW}Warning: go not found — launcher tests will fail${NC}"
+    fi
+fi
 
 # ─── Layer 1: unit tests (fixture-driven, no API) ───────────────────────────
 # Discovers test/unit/**/test_*.sh. Runs before the shell suites so fast

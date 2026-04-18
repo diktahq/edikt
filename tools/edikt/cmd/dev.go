@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -47,6 +48,12 @@ Validation:
 			return fmt.Errorf("dev link: path does not exist: %s", src)
 		}
 
+		// Require templates/ to exist in the source (guards against linking
+		// a directory that isn't an edikt payload).
+		if _, err := os.Stat(filepath.Join(src, "templates")); os.IsNotExist(err) {
+			return fmt.Errorf("dev link: %s/templates/ not found — is this an edikt repo?", src)
+		}
+
 		ediktRoot, err := resolveEdiktRoot()
 		if err != nil {
 			return err
@@ -54,10 +61,31 @@ Validation:
 
 		devDir := filepath.Join(ediktRoot, "versions", "dev")
 
-		// Warn if dev link already exists.
+		// If versions/dev/ exists and contains regular files, quarantine it
+		// rather than silently destroying user content.
 		if _, err := os.Lstat(devDir); err == nil {
-			fmt.Fprintf(os.Stderr, "warn: dev link already exists at %s — relinking\n", devDir)
-			os.RemoveAll(devDir)
+			hasRegular := false
+			if entries, err := os.ReadDir(devDir); err == nil {
+				for _, e := range entries {
+					if e.Type().IsRegular() {
+						hasRegular = true
+						break
+					}
+				}
+			}
+			if hasRegular {
+				quarantine := filepath.Join(
+					filepath.Dir(devDir),
+					fmt.Sprintf("dev.aborted-%d-%d", time.Now().UnixMilli(), os.Getpid()),
+				)
+				if err := os.Rename(devDir, quarantine); err != nil {
+					return fmt.Errorf("quarantining existing dev dir: %w", err)
+				}
+				fmt.Fprintf(os.Stderr, "warn: versions/dev/ had user content — quarantined to %s\n", filepath.Base(quarantine))
+			} else {
+				fmt.Fprintf(os.Stderr, "warn: dev link already exists at %s — relinking\n", devDir)
+				os.RemoveAll(devDir)
+			}
 		}
 
 		if err := os.MkdirAll(filepath.Join(ediktRoot, "versions"), 0o755); err != nil {
@@ -112,6 +140,7 @@ Validation:
 			fmt.Fprintf(os.Stderr, "warn: dev linked but lock.yaml update failed: %v\n", err)
 		}
 
+		emitEvent(ediktRoot, "dev_linked", map[string]interface{}{"source": src})
 		fmt.Fprintf(os.Stderr, "dev mode active: %s\n", src)
 		return nil
 	},
@@ -179,6 +208,7 @@ Idempotent — safe to call when dev mode is not active.`,
 			fmt.Fprintf(os.Stderr, "warn: dev unlinked but lock.yaml update failed: %v\n", err)
 		}
 
+		emitEvent(ediktRoot, "dev_unlinked", map[string]interface{}{"reverted_to": fallbackTag})
 		fmt.Fprintf(os.Stderr, "dev mode removed; activated %s\n", fallbackTag)
 		return nil
 	},
