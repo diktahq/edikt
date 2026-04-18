@@ -1,0 +1,272 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/prd-sidecar-1.0.json",
+  "title": "edikt PRD sidecar",
+  "description": "Structured sidecar (.yaml) that accompanies every v2 PRD narrative (.md). Source of truth for requirements, ACs, status, and cross-references. Governed by ADR-024 (edit-in-place lifecycle).",
+  "type": "object",
+  "required": ["schema_version", "type", "id", "title", "status", "rigor", "author", "created_at"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Sidecar schema version. Used by /edikt:doctor to flag stale sidecars."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["prd"]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^PRD-\\d{3,}$",
+      "description": "Stable PRD identifier, e.g. PRD-001."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Kebab-case slug used in filenames."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "accepted", "shipped", "evolving", "superseded", "deprecated", "cancelled"]
+    },
+    "rigor": {
+      "type": "string",
+      "enum": ["solo", "team", "platform"]
+    },
+    "author": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^FR-\\d{3,}$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "accepted", "shipped", "deprecated"]
+          },
+          "shipped_at": { "type": ["string", "null"] },
+          "deprecated_at": { "type": ["string", "null"] },
+          "user_fields": {
+            "type": "object",
+            "description": "User-owned per-entry extension zone. LLM never writes here."
+          }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "fr", "given", "when", "then", "status"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^AC-\\d{3,}-\\d+$",
+            "description": "e.g. AC-001-1 (FR-001, criterion 1)."
+          },
+          "fr": {
+            "type": "string",
+            "pattern": "^FR-\\d{3,}$"
+          },
+          "given": { "type": "string" },
+          "when": { "type": "string" },
+          "then": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["proposed", "accepted", "shipped", "deprecated"]
+          },
+          "user_fields": { "type": "object" }
+        }
+      }
+    },
+    "protections": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["ref"],
+            "properties": {
+              "ref": {
+                "type": "string",
+                "pattern": "^INV-\\d{3,}$"
+              },
+              "note": { "type": "string" }
+            }
+          },
+          {
+            "type": "object",
+            "required": ["id", "text"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^SP-\\d{3,}$",
+                "description": "Feature-scoped protection. Promote to an INV if durable."
+              },
+              "text": { "type": "string" }
+            }
+          }
+        ]
+      }
+    },
+    "solution_references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "path_or_url"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["figma", "screenshot", "url", "doc", "generated", "prototype"]
+          },
+          "path_or_url": { "type": "string" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "stakeholders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "role"],
+        "properties": {
+          "name": { "type": "string" },
+          "role": {
+            "type": "string",
+            "enum": ["owner", "stakeholder", "reviewer", "informed"]
+          },
+          "required": { "type": "boolean" },
+          "signed_off_at": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "nfrs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "requirement"],
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["performance", "availability", "security", "privacy", "accessibility", "observability", "other"]
+          },
+          "requirement": { "type": "string" },
+          "target": { "type": "string" }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["description"],
+        "properties": {
+          "description": { "type": "string" },
+          "likelihood": { "enum": ["low", "medium", "high"] },
+          "impact": { "enum": ["low", "medium", "high"] },
+          "mitigation": { "type": "string" }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "source_specs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^SPEC-\\d{3,}$"
+      },
+      "description": "SPECs written against this PRD. Maintained by /edikt:sdlc:spec (back-reference emission, SPEC-007 FR-007.4)."
+    },
+    "supersedes": {
+      "type": ["string", "null"],
+      "pattern": "^PRD-\\d{3,}$"
+    },
+    "superseded_by": {
+      "type": ["string", "null"],
+      "pattern": "^PRD-\\d{3,}$"
+    },
+    "deprecated_at": { "type": ["string", "null"] },
+    "deprecated_reason": { "type": ["string", "null"] },
+    "cancelled_at": { "type": ["string", "null"] },
+    "cancelled_reason": { "type": ["string", "null"] },
+    "forcing_questions": {
+      "type": "object",
+      "properties": {
+        "problem_behind_problem": { "type": "string" },
+        "evidence_or_hypothesis": { "type": "string" },
+        "north_metric_and_counter": { "type": "string" },
+        "must_not_change": { "type": "string" },
+        "riskiest_assumption": { "type": "string" }
+      }
+    },
+    "revision_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "author", "action"],
+        "properties": {
+          "at": { "type": "string" },
+          "author": { "type": "string" },
+          "action": {
+            "type": "string",
+            "enum": ["created", "edited", "ship", "deprecate", "cancel", "supersede", "resync", "review"]
+          },
+          "note": { "type": "string" },
+          "affected": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "e.g. ['FR-001', 'AC-001-2']"
+          }
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "User-managed extension zone. LLM NEVER writes here; commands NEVER mutate this key. Free-form structure.",
+      "additionalProperties": true
+    },
+    "_sync": {
+      "type": "object",
+      "required": ["md_hash", "yaml_hash", "synced_at"],
+      "properties": {
+        "md_hash": {
+          "type": "string",
+          "description": "SHA-256 of the .md file at last sync. Empty string if never synced."
+        },
+        "yaml_hash": {
+          "type": "string",
+          "description": "SHA-256 of the .yaml file at last sync (self-referential; recomputed post-write)."
+        },
+        "synced_at": {
+          "type": "string",
+          "description": "ISO8601 timestamp of last sync."
+        }
+      }
+    }
+  }
+}

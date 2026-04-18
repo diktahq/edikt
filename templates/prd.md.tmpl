@@ -1,47 +1,130 @@
-# PRD: {{feature_name}}
+# {{id}}: {{title}}
 
-## Overview
-
-**Status:** Draft
-**Priority:** {{priority}}
+**Status:** {{status}}
+**Rigor:** {{rigor}}
 **Author:** {{author}}
-**Date:** {{date}}
+**Created:** {{created_at}}
+**Sidecar:** [{{id}}-{{slug}}.yaml](./{{id}}-{{slug}}.yaml) — structured data, source of truth
+
+---
 
 ## Problem
 
 {{problem_statement}}
 
-## Solution
+<!-- What breaks without this? State the failure mode, not the feature. -->
 
-{{solution_summary}}
+## Users
 
-## User Stories
+{{user_archetypes}}
 
-1. As a {{user_type}}, I want to {{action}} so that {{benefit}}.
+<!-- Who has this problem? Be specific — roles, contexts, frequency. -->
+
+## Goals
+
+| Metric | Target | Counter-metric (must not move) |
+|--------|--------|--------------------------------|
+| {{north_metric}} | {{target}} | {{counter_metric}} |
+
+## Non-Goals
+
+{{non_goals}}
+
+<!-- What is explicitly out of scope. Prevents scope creep downstream. -->
 
 ## Requirements
 
-### Must Have
-- {{requirement}}
+<!--
+Requirements are source-of-truth in the .yaml sidecar.
+This section mirrors them for human readability.
+Edit via /edikt:sdlc:prd or /edikt:sdlc:prd:ship, not by hand.
+-->
 
-### Should Have
-- {{requirement}}
-
-### Won't Have (this version)
-- {{exclusion}}
-
-## Technical Approach
-
-{{technical_notes}}
+{{requirements_mirror}}
 
 ## Acceptance Criteria
 
-- [ ] {{criterion}}
+<!--
+ACs are source-of-truth in the .yaml sidecar.
+Given/When/Then format. Stable IDs flow through to SPEC.
+-->
+
+{{acceptance_criteria_mirror}}
+
+## Solution References
+
+{{solution_references}}
+
+<!--
+Mockups, wireframes, references. edikt does not generate these.
+Link to Figma, v0, bolt, screenshots, or paste generated artifacts from Claude.
+-->
+
+## Protections
+
+<!--
+What must NOT change when this ships.
+Links to existing invariants + feature-scoped protections.
+-->
+
+{{protections}}
+
+{{#if team_or_platform}}
+
+## Stakeholders
+
+{{stakeholders}}
+
+## Dependencies
+
+{{dependencies}}
+
+## Rollout Plan
+
+{{rollout_plan}}
+
+{{/if}}
+
+{{#if platform}}
+
+## Non-Functional Requirements
+
+{{nfrs}}
+
+## Risk Register
+
+{{risks}}
+
+## Compatibility Matrix
+
+{{compatibility}}
+
+## Compliance Hooks
+
+{{compliance}}
+
+{{/if}}
 
 ## Open Questions
 
-- {{question}}
+{{open_questions}}
+
+## Evidence & Discovery
+
+{{evidence}}
+
+<!--
+How do you know someone has this problem?
+Discovery work, user interviews, support tickets, hypothesis calls.
+-->
 
 ---
 
-*When ready to implement, create a plan: `/edikt:plan`*
+**Sidecar:** [{{id}}-{{slug}}.yaml](./{{id}}-{{slug}}.yaml) — structured data for FRs, ACs, status, and revision history.
+
+**Next steps:**
+- Write the technical spec: `/edikt:sdlc:spec {{id}}`
+- Ship requirements as they complete: `/edikt:sdlc:prd:ship FR-NNN`
+- Review PRD quality anytime: `/edikt:prd:review {{id}}`
+
+*This PRD follows the edit-in-place lifecycle model — see [ADR-024](../../architecture/decisions/ADR-024-prd-lifecycle-asymmetry-vs-inv-002.md).*

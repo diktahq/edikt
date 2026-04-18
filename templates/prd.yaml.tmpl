@@ -1,0 +1,86 @@
+# yaml-language-server: $schema=../../schemas/prd-sidecar.schema.json
+schema_version: "1.0"
+type: prd
+id: "{{id}}"
+title: "{{title}}"
+slug: "{{slug}}"
+status: draft
+rigor: "{{rigor}}"
+author: "{{author}}"
+created_at: "{{created_at}}"
+
+# Functional requirements — stable IDs flow through to SPEC
+requirements:
+  - id: FR-001
+    text: "{{fr_001_text}}"
+    status: proposed
+
+# Acceptance criteria — Given/When/Then, one or more per FR
+acceptance_criteria:
+  - id: AC-001-1
+    fr: FR-001
+    given: "{{given}}"
+    when: "{{when}}"
+    then: "{{then}}"
+    status: proposed
+
+# Protections — what must NOT change when this ships
+# Two shapes: {ref: INV-NNN} for linked invariants, {id: SP-NNN, text: "..."} for feature-scoped
+protections: []
+
+# Solution references — mockups, designs, screenshots, prior art
+# edikt does not generate these; link external or paste artifacts
+solution_references: []
+
+# Stakeholders (team/platform rigor only)
+stakeholders: []
+
+# Dependencies (team/platform rigor only)
+dependencies: []
+
+# Non-functional requirements (platform rigor only)
+nfrs: []
+
+# Risks (platform rigor only)
+risks: []
+
+# Open questions — unresolved items, must be closed before ship
+open_questions: []
+
+# SPECs written against this PRD — maintained by /edikt:sdlc:spec
+source_specs: []
+
+# Supersede chain (edit-in-place is default; supersede for ≥50% rewrites per ADR-024)
+supersedes: null
+superseded_by: null
+
+# Deprecation / cancellation fields
+deprecated_at: null
+deprecated_reason: null
+cancelled_at: null
+cancelled_reason: null
+
+# Forcing questions — answered once at authoring, scored by evaluator
+forcing_questions:
+  problem_behind_problem: "{{q1_answer}}"
+  evidence_or_hypothesis: "{{q2_answer}}"
+  north_metric_and_counter: "{{q3_answer}}"
+  must_not_change: "{{q4_answer}}"
+  riskiest_assumption: "{{q5_answer}}"
+
+# Revision history — appended by every command-driven mutation
+revision_history:
+  - at: "{{created_at}}"
+    author: "{{author}}"
+    action: "created"
+    note: "Initial draft"
+
+# User extensions — LLM never writes here; commands never touch
+extensions: {}
+
+# Sync block — SHA-256 of .md and .yaml at last sync
+# /edikt:sdlc:prd:resync recomputes after manual edits
+_sync:
+  md_hash: ""
+  yaml_hash: ""
+  synced_at: ""
