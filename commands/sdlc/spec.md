@@ -71,6 +71,28 @@ Read the PRD file. Check the frontmatter `status:` field:
   ```
 - If no frontmatter status → treat as accepted (backwards compatibility with pre-v4 PRDs)
 
+### 2b. Detect PRD Version (v1 vs v2)
+
+Check if a sidecar YAML exists next to the PRD `.md`:
+
+```bash
+PRD_MD="{path/to/PRD-NNN-slug.md}"
+PRD_YAML="${PRD_MD%.md}.yaml"
+[ -f "$PRD_YAML" ] && echo "v2" || echo "v1"
+```
+
+- **v2 PRD (sidecar exists):** The sidecar is source of truth for FRs, ACs, protections, and cross-references. Apply the SPEC-007 FR-007 flow described in Step 7b.
+- **v1 PRD (no sidecar):** Legacy shape. Warn once:
+  ```
+  ⚠ PRD-NNN has no .yaml sidecar (v1 shape).
+    Spec will be generated without FR coverage validation, stable ID
+    propagation, or bidirectional traceability. To upgrade, re-author
+    with /edikt:sdlc:prd PRD-NNN.
+  ```
+  Proceed with the legacy flow (skip Step 7b's FR coverage + back-reference steps).
+
+Record the detected version as `$PRD_VERSION` (v1 | v2) for downstream steps.
+
 ### 3. Scan Codebase
 
 Before asking questions, understand what exists. Run these in parallel:
@@ -259,6 +281,138 @@ Features deferred, approaches rejected, scope boundaries.}
 
 A spec should be 200-400 lines. If longer, the feature should be split. The spec is the engineering response to a PRD — it defines HOW, not WHAT.
 
+### 7b. v2 PRD flow — seven concrete changes (SPEC-007 FR-007)
+
+Apply these seven changes when `$PRD_VERSION == v2` (sidecar exists). Skip them for v1 PRDs — they require sidecar data that doesn't exist in the legacy shape.
+
+**Change 1: FR coverage check.**
+Read every `FR-NNN` from the PRD sidecar `requirements:`. For each FR, the spec must do one of:
+- Cover it with at least one `SR-NNN` that carries `implements: FR-NNN`
+- Explicitly defer it with rationale
+
+Compute and emit a sibling YAML file `{specs_dir}/SPEC-{NNN}-{slug}/spec.yaml` (or append to existing spec frontmatter) containing:
+
+```yaml
+source_prd_coverage:
+  prd: PRD-NNN
+  covered:
+    - fr: FR-001
+      by: [SR-001, SR-002]
+    - fr: FR-002
+      by: [SR-003]
+  deferred:
+    - fr: FR-004
+      rationale: "Out of scope for this spec; tracked in SPEC-MMM"
+  uncovered: []   # empty list required for PASS; non-empty blocks /edikt:sdlc:drift
+```
+
+Before writing the spec, display coverage to the user:
+
+```
+FR coverage:
+  FR-001 → SR-001, SR-002 ✓
+  FR-002 → SR-003 ✓
+  FR-003 → deferred (rationale: {text})
+  FR-004 → ❌ uncovered
+
+Continue with 1 uncovered FR? (y/n)
+```
+
+If the user proceeds with uncovered FRs, record them in `uncovered:` — `/edikt:sdlc:drift` will flag them.
+
+**Change 2: AC pass-through with stable IDs.**
+Every `AC-NNN-M` from the PRD sidecar `acceptance_criteria:` appears verbatim in the spec's YAML with unchanged IDs. The Given/When/Then text is copied exactly. SPEC may ADD new acceptance criteria using `SAC-NNN` (spec acceptance criteria) for architectural layer checks, but MUST NOT renumber, rewrite, or merge PRD ACs.
+
+```yaml
+# In SPEC yaml front-matter or companion sidecar:
+acceptance_criteria:
+  # From PRD (pass-through, unchanged):
+  - id: AC-001-1
+    fr: FR-001
+    given: "..."
+    when: "..."
+    then: "..."
+    source: prd
+  # Added by SPEC (architectural):
+  - id: SAC-001
+    source: spec
+    given: "a SQL migration is deployed"
+    when: "the migration is applied"
+    then: "the affected tables retain byte-equal row counts"
+```
+
+**Change 3: Stable ID propagation.**
+Every SPEC requirement gets `id: SR-NNN` (SPEC requirement) and, when derived from a PRD FR, `implements: FR-NNN`. Spec-only requirements (e.g., architectural constraints with no product equivalent) omit `implements:` or set `implements: null`.
+
+In the `.md` narrative, requirements render as:
+```
+### SR-001 — Implements FR-001
+
+{requirement text — MUST/MUST NOT language}
+```
+
+**Change 4: Back-reference emission.**
+After successfully writing the spec, update the PRD sidecar's `source_specs:` to include this SPEC identifier. Append, don't overwrite (a PRD may have multiple specs covering different FR subsets).
+
+Implementation:
+
+```bash
+PRD_YAML="{path}/PRD-NNN-slug.yaml"
+SPEC_ID="SPEC-NNN"
+# Use python3 for safe YAML mutation (INV-003 compliant — no shell interpolation)
+python3 <<'PYEOF' "$PRD_YAML" "$SPEC_ID"
+import sys, re
+path, spec_id = sys.argv[1], sys.argv[2]
+with open(path) as f:
+    content = f.read()
+# Append to source_specs list
+# (Use yaml library in production — pseudo-code here for clarity)
+PYEOF
+```
+
+After mutating, append to PRD sidecar `revision_history:`:
+```yaml
+- at: {ISO8601 now}
+  author: {git user}
+  action: edited
+  note: "Back-reference added: source_specs += SPEC-NNN"
+```
+
+Recompute `_sync` hashes (SHA-256 via `python3 -c 'import hashlib...'` with argv, per INV-003).
+
+Output confirmation:
+```
+✅ Updated PRD-NNN sidecar: source_specs += SPEC-NNN
+```
+
+**Change 5: Solution reference pass-through.**
+Read `solution_references:` from the PRD sidecar. Include each reference in the spec's "## Solution References" section. The spec may add architecture diagrams, sequence diagrams, or technical prototypes as additional references (annotate with `source: spec`).
+
+**Change 6: Protection propagation.**
+Read `protections:` from the PRD sidecar. Include every linked invariant and feature-scoped protection in the spec's "## Protections" section. The spec MAY add technical-layer protections (e.g., "MUST NOT hold a database transaction across an external API call") — annotate these with `source: spec` to distinguish from inherited PRD protections.
+
+In the spec sidecar:
+```yaml
+protections:
+  # Inherited from PRD:
+  - ref: INV-003
+    source: prd
+  - id: SP-001
+    text: "..."
+    source: prd
+  # Added by SPEC:
+  - id: SSP-001  # Spec-Scoped Protection
+    text: "..."
+    source: spec
+```
+
+**Change 7: Evaluator hook.**
+After the spec is generated, run the SPEC evaluator against `.edikt/rubrics/spec.md` (auto-create with sensible defaults if absent, per Step 7 of `/edikt:sdlc:prd` rubric bootstrap pattern).
+
+Rigor threshold inherits from the PRD's rigor: solo=70%, team=80%, platform=90%.
+
+If below threshold after 3 iterations, proceed but surface gaps in the final output.
+
 ---
 
 REMEMBER: The spec must include Non-Goals (explicit scope exclusions), Alternatives Considered (with rejection reasons), and Acceptance Criteria (AC-NNN with verification methods). If anything is unclear, mark it NEEDS CLARIFICATION — never invent architectural decisions.
@@ -270,9 +424,17 @@ REMEMBER: The spec must include Non-Goals (explicit scope exclusions), Alternati
 
   SPEC-{NNN}: {Title}
   Implements: {PRD identifier}
+  PRD version: {v1 | v2}
   Status: draft
   References: {count} ADRs, {count} invariants
 
+  {if v2}
+  FR coverage:  {covered}/{total} covered, {deferred} deferred, {uncovered} uncovered
+  ACs:          {n} from PRD (pass-through) + {m} spec-added (SAC-NNN)
+  Evaluator:    {score}/{total} ({PASS | below threshold})
+  Back-ref:     Updated PRD-NNN sidecar: source_specs += SPEC-NNN
+
   Review and change status to "accepted" when ready.
   Next: Run /edikt:sdlc:artifacts for SPEC-{NNN}
+  Re-score:     /edikt:spec:review SPEC-{NNN}
 ```
