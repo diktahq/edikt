@@ -25,6 +25,17 @@ import yaml
 
 from helpers import with_retry
 
+_HERE = Path(__file__).parent
+_REPO_ROOT = _HERE.parents[1]
+
+
+def _link_edikt_commands(project: Path) -> None:
+    commands_dir = project / ".claude" / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    edikt_link = commands_dir / "edikt"
+    if not edikt_link.exists():
+        edikt_link.symlink_to(_REPO_ROOT / "commands")
+
 _FM_RE = __import__("re").compile(r"^---\n(.*?)\n---", __import__("re").DOTALL)
 
 
@@ -115,6 +126,7 @@ def project_for_sidecar_only(tmp_path: Path) -> Path:
             },
         ],
     )
+    _link_edikt_commands(project)
     return project
 
 

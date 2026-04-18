@@ -48,7 +48,7 @@ https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
+source_hash: f51819761a78eafa24f1edca9c6d16f69ecf51c9aaaac0870d4ca091d6a5a711
 directives_hash: pending
 compiler_version: "0.4.3"
 paths:

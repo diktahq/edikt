@@ -45,6 +45,20 @@ FAILURES_DIR = _HERE / "failures"
 _FIXTURES_DIR = REPO_ROOT / "test" / "fixtures" / "projects"
 
 
+def _link_edikt_commands(project: Path) -> None:
+    """Wire .claude/commands/edikt → REPO_ROOT/commands so Claude finds skills.
+
+    Tests run with setting_sources=['project'] (INV-007), which means Claude
+    only scans the project's .claude/commands/ — not ~/.claude/commands/.
+    Without this symlink every command invocation fails with "Unknown skill".
+    """
+    commands_dir = project / ".claude" / "commands"
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    edikt_link = commands_dir / "edikt"
+    if not edikt_link.exists():
+        edikt_link.symlink_to(REPO_ROOT / "commands")
+
+
 def _safe_copytree(src: Path, dst: Path) -> None:
     """Copy a fixture directory into a sandbox, enforcing INV-007.
 
@@ -114,10 +128,12 @@ def _load_dotenv() -> None:
             # Unknown key shape — skip silently (forward-compat).
             continue
         if key not in os.environ:
+            # Never load ANTHROPIC_API_KEY from .env — subscription auth is primary
+            # (ADR-012). For CI/headless, export the key in the shell environment;
+            # .env is for local dev where subscription is always available.
+            if key == "ANTHROPIC_API_KEY":
+                continue
             os.environ[key] = value
-
-
-_load_dotenv()
 
 
 # ─── Pytest options ──────────────────────────────────────────────────────────
@@ -143,13 +159,30 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def _claude_session_exists() -> bool:
     """Return True if the claude CLI has a stored subscription session.
 
-    Claude Code stores sessions in ~/.claude/sessions/*.json (OAuth flow).
+    Checks multiple credential storage locations in priority order:
+    1. macOS Keychain "Claude Code-credentials" entry (primary since v0.5+)
+    2. ~/.claude/sessions/*.json files with OAuth credential fields (legacy)
+    3. Legacy flat credential files
+
     Security (INV-006, audit MED-3): session files must parse as JSON and
     contain at least one credential-carrying field — an empty file dropped
     by an attacker (who controls CLAUDE_HOME) would otherwise satisfy the
     gate and mask real auth failures as upstream outages under
     --skip-on-outage.
     """
+    import subprocess as _sp
+    # macOS Keychain check — Claude Code stores credentials as "Claude Code-credentials".
+    # Presence of the entry (exit 0) means subscription auth is configured.
+    try:
+        result = _sp.run(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials"],
+            capture_output=True, timeout=3,
+        )
+        if result.returncode == 0:
+            return True
+    except (OSError, _sp.TimeoutExpired):
+        pass
+
     claude_home = Path(os.environ.get("CLAUDE_HOME", str(Path.home() / ".claude")))
     required_fields = {"access_token", "refresh_token", "expiresAt", "token"}
     sessions_dir = claude_home / "sessions"
@@ -167,6 +200,9 @@ def _claude_session_exists() -> bool:
         if cand.exists() and cand.stat().st_size > 0:
             return True
     return False
+
+
+_load_dotenv()
 
 
 def _sdk_tests_collected(items: list[pytest.Item]) -> bool:
@@ -490,6 +526,7 @@ def fresh_project(sandbox_home: dict[str, Path], tmp_path: Path) -> Path:
             """
         )
     )
+    _link_edikt_commands(project)
     return project
 
 
@@ -702,6 +739,7 @@ def project_with_accepted_prd(tmp_path: Path) -> Path:
             """
         )
     )
+    _link_edikt_commands(project)
     return project
 
 
@@ -835,6 +873,7 @@ def project_with_spec_and_artifacts(tmp_path: Path) -> Path:
             """
         )
     )
+    _link_edikt_commands(project)
     return project
 
 
@@ -870,4 +909,5 @@ def project_for_governance_chain(tmp_path: Path) -> Path:
     (project / "docs" / "architecture" / "decisions").mkdir(parents=True)
     (project / "docs" / "architecture" / "invariants").mkdir(parents=True)
     (project / ".claude" / "rules").mkdir(parents=True)
+    _link_edikt_commands(project)
     return project

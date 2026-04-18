@@ -76,7 +76,7 @@ for r in regions:
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
+source_hash: 8c8148740609239cfb63802048453ffc4b60cf746894cc40194bef0a4729be06
 directives_hash: pending
 compiler_version: "0.4.3"
 paths:

@@ -66,7 +66,7 @@ if ext in FORBIDDEN_EXTS:
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
+source_hash: 94cfc4d3c4eb907f3d2d1108680034002753c0361800980789bc9107c7e424bf
 directives_hash: pending
 compiler_version: "0.4.3"
 paths:
