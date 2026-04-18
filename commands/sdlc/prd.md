@@ -324,6 +324,48 @@ Render `{prd_md}` from `templates/prd.md.tmpl` filling placeholders with:
 
 Render `{prd_yaml}` from `templates/prd.yaml.tmpl` with the full structured content.
 
+**MANDATORY — read the template first, render it whole.** Use the Read tool on `templates/prd.yaml.tmpl` (resolve via `$EDIKT_HOME/current/templates/prd.yaml.tmpl` or `$HOME/.edikt/current/templates/prd.yaml.tmpl`). Replace `{{placeholder}}` tokens with values; preserve every other key verbatim. Do NOT compose the sidecar from memory or pattern-match from an existing PRD — the template is the contract.
+
+**Required top-level fields that MUST appear in every sidecar (per `templates/schemas/prd-sidecar.schema.json`):**
+
+| Field | Source |
+|---|---|
+| `schema_version` | always `"1.0"` |
+| `type` | always `"prd"` |
+| `id` | `PRD-NNN` from the live-injected next number |
+| `title` | the user-confirmed title |
+| `slug` | kebab-case of the title |
+| `status` | always `"draft"` for a new PRD |
+| `rigor` | answer from Step 3 (solo/team/platform) |
+| `author` | output of `git config user.name` |
+| `created_at` | ISO8601 UTC timestamp computed at write time, e.g. `date -u +%Y-%m-%dT%H:%M:%SZ` |
+
+**Required collection fields (may start empty but the key MUST be present):** `requirements`, `acceptance_criteria`, `protections`, `solution_references`, `stakeholders`, `dependencies`, `nfrs`, `risks`, `open_questions`, `source_specs`, `revision_history`, `extensions`, `_sync`, `forcing_questions`.
+
+**Required nullable fields:** `supersedes`, `superseded_by`, `deprecated_at`, `deprecated_reason`, `cancelled_at`, `cancelled_reason` (set to `null` for a new PRD).
+
+**Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/prd-sidecar.schema.json`:
+
+```bash
+python3 <<'PYEOF' "$PRD_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
+import sys, yaml, json
+from jsonschema import Draft202012Validator
+sidecar = yaml.safe_load(open(sys.argv[1]))
+schema = json.load(open(sys.argv[2]))
+errors = sorted(Draft202012Validator(schema).iter_errors(sidecar), key=lambda e: str(e.path))
+if errors:
+    print("SIDECAR INVALID:", file=sys.stderr)
+    for e in errors:
+        print(f"  {list(e.path) or '<root>'}: {e.message}", file=sys.stderr)
+    sys.exit(1)
+print("OK")
+PYEOF
+```
+
+If validation fails: do NOT write the sidecar. Show the user which fields are missing/invalid, fix in-memory, re-validate, then write. The sidecar is a contract — never write a non-conforming one.
+
+If `jsonschema` is not installed (pip module missing), fall back to a structural check: assert all 9 required top-level fields are present in the rendered dict before writing.
+
 **Computing `{{schema_path}}`:** The template carries a `# yaml-language-server: $schema={{schema_path}}` header that enables IDE autocomplete. Compute the relative path from the PRD's parent directory to `.edikt/schemas/prd-sidecar.schema.json`:
 
 ```bash
