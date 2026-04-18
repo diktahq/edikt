@@ -310,6 +310,9 @@ scenarios:
 
           - path: session-start-no-edikt.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: >
               No .edikt/config.yaml in staged no-edikt dir → hook exits 0 silently.
@@ -317,6 +320,9 @@ scenarios:
 
           - path: user-prompt-submit-no-plan.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: >
               No plan files in staged dir → hook exits 0 silently → {}.
@@ -324,6 +330,9 @@ scenarios:
 
           - path: user-prompt-submit-with-plan.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "Active plan: PLAN-feature-x. Current phase: 2 — Implementation. Read docs/plans/PLAN-feature-x.md for full context if needed."
             _note: >
@@ -332,6 +341,9 @@ scenarios:
 
           - path: pre-tool-use-write.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: >
               FILE env var absent in harness AND docs/project-context.md present
@@ -340,6 +352,9 @@ scenarios:
 
           - path: post-tool-use-go.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: >
               CLAUDE_TOOL_INPUT_FILE_PATH env var absent in harness → hook exits 0
@@ -347,11 +362,17 @@ scenarios:
 
           - path: post-tool-use-ts.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: Same as post-tool-use-go — env var absent, silent exit.
 
           - path: post-tool-use-unknown-ext.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: >
               Env var absent → hook exits 0 silently. If env var were set,
@@ -359,6 +380,9 @@ scenarios:
 
           - path: stop-adr-candidate.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "💡 ADR candidate — run /edikt:adr:new to capture this decision."
             _note: >
@@ -368,12 +392,18 @@ scenarios:
 
           - path: stop-new-route.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "📄 Doc gap: new route POST /api/v1/invoices — run /edikt:docs:review to review."
             _note: First matching route wins (head -1). POST before GET in message.
 
           - path: stop-new-env-var.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "📄 Doc gap: new env var STRIPE_WEBHOOK_SECRET — run /edikt:docs:review to review."
             _note: >
@@ -382,6 +412,9 @@ scenarios:
 
           - path: stop-security-change.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "🔒 Security-sensitive change — run /edikt:audit before shipping."
             _note: >
@@ -391,11 +424,17 @@ scenarios:
 
           - path: stop-clean.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: { continue: true }
             _note: No signal keywords → {"continue": true}. Guards false-positive noise.
 
           - path: stop-loop-guard.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: stop_hook_active=true → hook exits 0 silently. Loop-prevention invariant.
 
@@ -407,6 +446,9 @@ scenarios:
 
           - path: subagent-stop-warning.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: { continue: true }
             _note: >
               Warning severity: gate-block logic does NOT fire (only critical does).
@@ -415,6 +457,9 @@ scenarios:
 
           - path: subagent-stop-ok.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: { continue: true }
             _note: OK verdict, no gate, no systemMessage → {"continue": true}.
 
@@ -427,6 +472,9 @@ scenarios:
 
           - path: post-compact-with-plan.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "Context recovered after compaction. Active plan: PLAN-feature-x. Phase 2 — Implementation. Re-read docs/plans/PLAN-feature-x.md for full phase details. Invariants (1): Test Invariant 1. These are hard constraints — never violate them."
             _note: >
@@ -435,6 +483,9 @@ scenarios:
 
           - path: post-compact-with-failing-criteria.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content:
               systemMessage: "Context recovered after compaction. Active plan: PLAN-feature-x. Phase 2 — Implementation. Last failing criteria: AC-1 (tests are failing). Re-read docs/plans/PLAN-feature-x.md for full phase details. Invariants (1): Test Invariant 1. These are hard constraints — never violate them."
             _note: >
@@ -443,6 +494,9 @@ scenarios:
 
           - path: instructions-loaded-governance.expected.json
             format: json
+            status: characterized
+            verified_by: "# see _note"
+            verified_at: "2026-04-18"
             content: {}
             _note: >
               CLAUDE_TOOL_INPUT_FILE_PATH env var absent in harness → hook exits 0

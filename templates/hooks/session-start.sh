@@ -91,3 +91,56 @@ if [ -n "$AGENTS" ]; then
 else
   emit "📋 edikt — ${AGE}d since last session. Run /edikt:context to load context."
 fi
+
+# Surface most recent unresolved gate finding (Phase 8 / FR-008).
+# Only the single most recent — do not list all. Only if events.jsonl exists and
+# contains an unresolved gate_fired. Exits 0 silently on any error (INV-003).
+EVENTS_FILE="$HOME/.edikt/events.jsonl"
+if [ -f "$EVENTS_FILE" ]; then
+  GATE_MSG=$(python3 - "$EVENTS_FILE" <<'PY'
+import json, sys, datetime, os
+path = sys.argv[1]
+try:
+    events = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    pass
+    resolved_keys = set()
+    for e in events:
+        if e.get("event") == "gate_resolved":
+            resolved_keys.add((e.get("agent"), e.get("finding_prefix")))
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+    unresolved = []
+    for e in events:
+        if e.get("event") != "gate_fired":
+            continue
+        try:
+            ts = datetime.datetime.strptime(e["ts"], "%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            continue
+        if ts < cutoff:
+            continue
+        key = (e.get("agent"), e.get("finding_prefix"))
+        if key not in resolved_keys:
+            unresolved.append((ts, e))
+    if not unresolved:
+        sys.exit(0)
+    unresolved.sort(key=lambda x: x[0], reverse=True)
+    _, latest = unresolved[0]
+    agent = latest.get("agent", "unknown")
+    finding = latest.get("finding_prefix", latest.get("finding", "no description"))
+    print(f"\u26a0 Last session: {agent} gate fired on {finding!r} — was it resolved?\n  To dismiss: run /edikt:session (end-of-session sweep)")
+except Exception:
+    pass
+PY
+  2>/dev/null)
+  if [ -n "$GATE_MSG" ]; then
+    python3 -c 'import json,sys; print(json.dumps({"additionalContext":sys.argv[1]}))' "$GATE_MSG"
+    exit 0
+  fi
+fi

@@ -87,6 +87,38 @@ CRITICAL: NEVER assign a severity level without reading the actual code — ever
 
 13. Save the FULL report to `{reports_path}/drift-{SPEC-NNN}-{YYYY-MM-DD}.md`. The saved file MUST contain: (1) the Report Frontmatter from the Reference section, THEN (2) the complete Terminal Output Format content — summary line, emoji summary, findings table, and footer. Do NOT save only the frontmatter — the full report body must be included.
 
+13b. **Fixture characterization status** — after the main drift table, add a §9 section:
+
+Read `{specs_dir}/SPEC-{id}/fixtures.yaml` if it exists. Scan for `hook-expected-outputs` entities (or any entity with `purpose: unit tests`). For each record in those entities, read the `status:` field.
+
+If `fixtures.yaml` §9.1 (expected-outputs section) does not exist: skip silently (no error, no section).
+
+If it exists, output:
+
+```
+§ Fixture characterization status
+
+  Characterized (N):
+    <filename>  ✓ verified <verified_at date>
+    ...
+
+  Aspirational (M):
+    <filename>
+      target: <target_phase>
+      contract: <target_contract>
+    ...
+
+  Aspirational debt: M/(N+M) (pct%) — <emoji + message>
+```
+
+Emoji + message rules:
+- 0% → "✅ All fixtures characterized"
+- 1–25% → "🟡 Low aspirational debt"
+- 26–50% → "🟠 Moderate aspirational debt — consider characterizing before next release"
+- >50% → "🔴 High aspirational debt — most fixtures are unverified"
+
+Aspirational entries are warnings, not errors.
+
 14. Log the drift event:
     ```bash
     source "$HOME/.edikt/hooks/event-log.sh" 2>/dev/null

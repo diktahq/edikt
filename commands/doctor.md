@@ -398,6 +398,61 @@ Probe the phase-end evaluator's runtime health. The evaluator defaults to headle
    - Else if subagent template present: `[!!] Evaluator: Degraded — subagent fallback available but cannot execute Bash in sandbox-denied sessions`
    - Else: `[FAIL] Evaluator: Blocked — evaluation will fail. Fix the errors above before running /edikt:sdlc:plan.`
 
+**Gate activity (last 7 days):**
+
+Read `~/.edikt/events.jsonl` if present. Parse as JSONL — one JSON object per line. Skip lines that do not parse.
+
+For each event with `"event": "gate_fired"`, check if a subsequent event with `"event": "gate_resolved"` exists with the same `agent` and `finding_prefix` within 7 days. If no matching resolution found: the finding is unresolved.
+
+```python
+import json, os, datetime
+events_path = os.path.expanduser("~/.edikt/events.jsonl")
+if not os.path.exists(events_path):
+    print("  No event log found.")
+else:
+    events = []
+    with open(events_path) as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    pass
+    now = datetime.datetime.utcnow()
+    cutoff_7d = now - datetime.timedelta(days=7)
+    cutoff_30d = now - datetime.timedelta(days=30)
+    # Build resolution set
+    resolved_keys = set()
+    for e in events:
+        if e.get("event") == "gate_resolved":
+            resolved_keys.add((e.get("agent"), e.get("finding_prefix")))
+    unresolved = []
+    overrides = []
+    for e in events:
+        try:
+            ts = datetime.datetime.strptime(e["ts"], "%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            continue
+        if e.get("event") == "gate_fired" and ts >= cutoff_7d:
+            key = (e.get("agent"), e.get("finding_prefix"))
+            if key not in resolved_keys:
+                unresolved.append(e)
+        if e.get("event") == "gate_override" and ts >= cutoff_30d:
+            overrides.append(e)
+    if unresolved:
+        print(f"  Unresolved: {len(unresolved)}")
+        for e in unresolved:
+            print(f"    {e.get('ts','')} : {e.get('agent','')} gate ({e.get('severity','')}) — no resolution recorded")
+    else:
+        print("  Unresolved: 0")
+    print(f"  Overrides (last 30 days): {len(overrides)}")
+```
+
+- If `~/.edikt/events.jsonl` is absent: `  No event log found.` (not an error — events.jsonl is created on first gate fire)
+- If unresolved gates found: `[!!] {n} unresolved gate finding(s) in last 7 days — run /edikt:session to sweep`
+- If all resolved: `[ok] Gate activity — no unresolved findings`
+
 **edikt version:**
 ```bash
 INSTALLED=$(cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]' || echo "unknown")
