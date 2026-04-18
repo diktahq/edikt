@@ -3,3 +3,13 @@
 # Do not use this as a real edikt project.
 base: docs
 edikt_version: "0.5.0"
+features:
+  quality-gates: true
+gates:
+  security: warning
+  dba: critical
+  sre: warning
+  architect: warning
+  performance: critical
+  api: warning
+  default: critical

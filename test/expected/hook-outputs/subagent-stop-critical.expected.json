@@ -1,0 +1,1 @@
+{"decision": "block", "systemMessage": "\ud83d\udd34 BLOCKED \u2014 security gate fired (severity: critical \u2265 threshold: warning)\n   To change threshold: .edikt/config.yaml  gates.security: warning"}

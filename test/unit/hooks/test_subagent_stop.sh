@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Phase 11b characterization: subagent-stop.sh
-# subagent-stop-critical removed: blocking message embeds git user info +
-# timestamps → nondeterministic, cannot be characterized (see fixtures.yaml).
-# warning + ok: no gate logic fires → {"continue": true} for both.
+# subagent-stop-critical re-added (SPEC-006): ADR-023 structured payload rewrite
+# eliminates git-identity nondeterminism — blocking message now derives from
+# structured payload + config only, not git env vars.
 # Opt-out: EDIKT_SKIP_HOOK_TESTS=1
 set -uo pipefail
 
@@ -13,7 +13,7 @@ export PROJECT_ROOT
 
 HOOK="subagent-stop.sh"
 STAGED="$STAGED_PROJECTS/edikt-project"
-FIXTURES=(subagent-stop-warning subagent-stop-ok)
+FIXTURES=(subagent-stop-critical subagent-stop-warning subagent-stop-ok)
 
 if [ "${EDIKT_SKIP_HOOK_TESTS:-0}" = "1" ]; then
     echo "  SKIP: $HOOK — EDIKT_SKIP_HOOK_TESTS=1"

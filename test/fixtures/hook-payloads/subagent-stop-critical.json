@@ -1,0 +1,17 @@
+{
+  "hook_event_name": "SubagentStop",
+  "subagent_type": "qa",
+  "verdict": "BLOCKED",
+  "evaluator_output": {
+    "agent": "security",
+    "severity": "critical",
+    "findings": [
+      {
+        "rule": "injection",
+        "severity": "critical",
+        "description": "SQL injection vulnerability in user input handling"
+      }
+    ]
+  },
+  "cwd": "/tmp/edikt-test-project"
+}

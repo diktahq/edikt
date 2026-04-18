@@ -8,8 +8,44 @@
 #   controlled, deterministic state rather than the developer's live repo.
 #
 # _runner.sh is NOT modified — this file is an extension layer only.
+#
+# Determinism helpers (Phase 4 / FR-004):
+#   stub_git_identity   — stable GIT_AUTHOR_NAME/EMAIL so events.jsonl writes don't vary
+#   provision_memory_fixture <dir> — write a minimal MEMORY.md to a test home dir
+#   stub_clock          — no-op or wraps with libfaketime at EDIKT_TEST_FIXED_TIMESTAMP
 
 STAGED_PROJECTS="$PROJECT_ROOT/test/fixtures/projects"
+
+# stub_git_identity — set stable git env vars for deterministic hook runs
+stub_git_identity() {
+    export GIT_AUTHOR_NAME="Edikt Test"
+    export GIT_AUTHOR_EMAIL="test@edikt.local"
+    export GIT_COMMITTER_NAME="Edikt Test"
+    export GIT_COMMITTER_EMAIL="test@edikt.local"
+}
+
+# provision_memory_fixture <home_dir> — create minimal MEMORY.md under a test home
+provision_memory_fixture() {
+    local home_dir="${1:?provision_memory_fixture requires a home dir}"
+    local encoded
+    # Mirror the session-start.sh encoding: replace / with -
+    # We can't know the staged CWD at provision time, so this creates the default path
+    encoded=$(echo "$home_dir" | sed 's|/|-|g')
+    local mem_dir="$home_dir/.claude/projects/${encoded}/memory"
+    mkdir -p "$mem_dir"
+    printf '# Memory\n- [Project](project.md) — test project\n' > "$mem_dir/MEMORY.md"
+}
+
+# stub_clock — wrap hook with libfaketime if available; otherwise no-op
+# Set EDIKT_TEST_FIXED_TIMESTAMP to override (default: "2026-01-01 12:00:00")
+stub_clock() {
+    EDIKT_TEST_FIXED_TIMESTAMP="${EDIKT_TEST_FIXED_TIMESTAMP:-2026-01-01 12:00:00}"
+    export EDIKT_TEST_FIXED_TIMESTAMP
+    if command -v faketime >/dev/null 2>&1; then
+        export EDIKT_USE_FAKETIME=1
+    fi
+    # If faketime unavailable: no-op (timestamps in events.jsonl vary, but stdout is deterministic)
+}
 
 run_staged_fixture() {
     local hook_script="$1"

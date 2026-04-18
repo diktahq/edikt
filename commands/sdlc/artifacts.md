@@ -622,6 +622,32 @@ relationships:
   - "Create order: {EntityA} before {EntityB}"
 ```
 
+If the spec includes **expected-output records** (records that assert what a behavior should produce — hook outputs, API responses, CLI output), use this template instead:
+
+```yaml
+# Hook/integration expected-output records — use status: aspirational until verified
+  - name: "{behavior}-expected-outputs"
+    purpose: unit tests
+    location: test/expected/{behavior}-outputs/
+    entities:
+      - entity: file
+        records:
+          - path: {scenario-name}.expected.json
+            format: json
+            status: aspirational
+            target_phase: "{phase that will implement this behavior}"
+            target_contract: "{one-line: what the hook/command emits when this fires}"
+            content: {}  # fill in after verifying against running code
+            _note: "{why this behavior matters}"
+```
+
+After generating fixture records, output:
+```
+⚠ New fixture records default to status: aspirational.
+  Run the verified_by command after the behavior ships and update
+  status to characterized + add verified_by + verified_at.
+```
+
 ---
 
 REMEMBER: Every artifact must be reviewed by the appropriate specialist agent. NEVER generate an artifact without routing it to the agent listed in the detection table. The spec must be accepted before artifacts are generated.

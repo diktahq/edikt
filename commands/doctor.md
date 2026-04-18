@@ -398,6 +398,16 @@ Probe the phase-end evaluator's runtime health. The evaluator defaults to headle
    - Else if subagent template present: `[!!] Evaluator: Degraded — subagent fallback available but cannot execute Bash in sandbox-denied sessions`
    - Else: `[FAIL] Evaluator: Blocked — evaluation will fail. Fix the errors above before running /edikt:sdlc:plan.`
 
+**Fixture characterization rate:**
+
+Read `{specs_dir}/SPEC-*/fixtures.yaml` for each active spec. For each spec that has a `fixtures.yaml` with a `hook-expected-outputs` or `purpose: unit tests` entity:
+1. Count records with `status: characterized` and `status: aspirational`.
+2. If no fixtures.yaml or no expected-output records found: skip (not an error).
+3. If aspirational > 50%: `[!!] Fixture characterization rate is low ({pct}%). Most test expectations are unverified against running code.`
+4. If 0% aspirational: `[ok] Fixtures fully characterized ({n} records)`
+5. If 1–50% aspirational: `[--] {n} aspirational fixture record(s) — run verified_by commands to characterize`
+6. If `EDIKT_DOCTOR_DEEP=1` (opt-in): for each characterized record with `verified_at` older than 90 days, attempt to run `verified_by` (if the command is safe — no rm, no curl, no write). Flag stale records.
+
 **Gate activity (last 7 days):**
 
 Read `~/.edikt/events.jsonl` if present. Parse as JSONL — one JSON object per line. Skip lines that do not parse.

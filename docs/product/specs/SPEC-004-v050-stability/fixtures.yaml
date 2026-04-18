@@ -299,14 +299,16 @@ scenarios:
       - entity: file
         records:
 
-          # session-start-with-edikt: PENDING RE-ADD (ADR-014 Phase 15).
-          # Hook now emits JSON additionalContext (ADR-014). Fixture blocked on
-          # expanding _staged_runner.sh to provision git history + a recent
-          # MEMORY.md file that reliably triggers the non-silent path across
-          # machines. Expected content shape (when re-added):
-          #   {"additionalContext":"📋 edikt project detected. Run /edikt:context to load project context before writing code."}
-          # verified_by: run `session-start.sh` in staged dir with edikt config
-          # present and no memory file (simplest deterministic path).
+          - path: session-start-with-edikt.expected.json
+            format: json
+            status: characterized
+            verified_by: "cd test/fixtures/projects/edikt-project && cat ../../hook-payloads/session-start-with-edikt.json | bash $HOOKS/session-start.sh"
+            verified_at: "2026-04-18"
+            content:
+              additionalContext: "📋 edikt project detected. Run /edikt:context to load project context before writing code."
+            _note: >
+              .edikt/config.yaml present, no MEMORY.md → hook emits JSON additionalContext (ADR-014 migration).
+              Re-added in SPEC-006 after _staged_runner.sh provisions stable test env (stub_git_identity, stub_clock).
 
           - path: session-start-no-edikt.expected.json
             format: json
@@ -438,11 +440,19 @@ scenarios:
             content: {}
             _note: stop_hook_active=true → hook exits 0 silently. Loop-prevention invariant.
 
-          # subagent-stop-critical: REMOVED (Phase 11b — still blocked).
-          # Blocking message embeds git user name/email and timestamps.
-          # ADR-014 Phase 15 migrated output to JSON but did NOT address the
-          # nondeterminism. Re-adding requires _staged_runner.sh to export
-          # stable test env vars for git identity + clock. Separate follow-up.
+          - path: subagent-stop-critical.expected.json
+            format: json
+            status: characterized
+            verified_by: "cd test/fixtures/projects/edikt-project && cat ../../hook-payloads/subagent-stop-critical.json | bash $HOOKS/subagent-stop.sh"
+            verified_at: "2026-04-18"
+            content:
+              decision: block
+              systemMessage: "🔴 BLOCKED — security gate fired (severity: critical ≥ threshold: warning)\n   To change threshold: .edikt/config.yaml  gates.security: warning"
+            _note: >
+              ADR-023 structured payload: evaluator_output.agent=security, severity=critical.
+              Gate threshold: config.gates.security=warning (level 2). critical(3) >= warning(2) → block.
+              Re-added in SPEC-006 after subagent-stop.sh rewrite eliminates git-identity nondeterminism
+              (blocking message is derived from structured payload + config, not git env vars).
 
           - path: subagent-stop-warning.expected.json
             format: json

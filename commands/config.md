@@ -86,7 +86,14 @@ edikt config — {project_name or repo directory name}
 
  GATES
  ─────
- {gate entries or "none configured"}
+ gates.security:     {value}   (default: critical)
+ gates.dba:          {value}   (default: critical)
+ gates.sre:          {value}   (default: critical)
+ gates.architect:    {value}   (default: critical)
+ gates.performance:  {value}   (default: critical)
+ gates.api:          {value}   (default: critical)
+ gates.default:      {value}   (default: critical)
+ (EDIKT_GATE_SEVERITY_THRESHOLD env var overrides all gates per-invocation)
 
  HOOKS
  ─────
@@ -198,6 +205,8 @@ Run /edikt:config to see all available keys.
 | `evaluator.max-attempts` | `5` | positive integer | plan | Max phase retries before marking phase as stuck |
 | `evaluator.model` | `sonnet` | `sonnet`, `opus`, `haiku` | plan (headless mode) | Model for headless evaluator invocation |
 | `agents.custom` | `[]` | list of agent slugs | upgrade | Agents to skip on upgrade |
+| `gates.<agent>` | `critical` | `critical`, `warning`, `info` | SubagentStop hook | Severity threshold for the named agent gate. `critical` = block on critical only; `warning` = block on warning and above; `info` = block on any finding |
+| `gates.default` | `critical` | `critical`, `warning`, `info` | SubagentStop hook | Fallback threshold for agents not individually configured |
 
 ---
 

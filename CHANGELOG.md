@@ -1,5 +1,85 @@
 # edikt changelog
 
+## v0.6.0 (2026-04-18 — development)
+
+### SDLC rework, tier-2 Go install, hook hardening (SPEC-006)
+
+#### ADR-023 — SubagentStop structured evaluator-input contract
+
+`subagent-stop.sh` now reads a structured `evaluator_output` envelope from the hook payload. Evaluator agents emit `{"verdict": "...", "evaluator_output": {"severity": "critical"|"warning"|"info", "findings": [...]}}`. The hook uses `evaluator_output.severity` directly instead of keyword-scanning the full payload text.
+
+- **Legacy payload fallback.** Unstructured payloads (pre-ADR-023 evaluators) trigger a warning to stderr and events.jsonl (`event: legacy_payload`) then fall through to keyword detection. They do not crash.
+- **Gate severity tiers.** Threshold resolution: `EDIKT_GATE_SEVERITY_THRESHOLD` env > `config.gates.<agent>` > `config.gates.default` > `"critical"`. Levels: critical(3) > warning(2) > info(1). Hook blocks when `severity_level >= threshold_level`.
+- **Per-agent configuration.** `.edikt/config.yaml` now ships with a `gates:` section with per-agent defaults (security: warning, dba: critical, sre: warning, architect: warning, performance: critical, api: warning, default: critical). `/edikt:config` documents all `gates.*` keys.
+- **Deterministic blocking message.** The `systemMessage` is derived from the structured payload and config only — no git identity, no timestamps. This unblocks the `subagent-stop-critical` characterization fixture, re-added in this release.
+
+#### Tier-2 Go install (ADR-015 first instance)
+
+`edikt install benchmark` and `edikt uninstall benchmark` are implemented in `bin/edikt` as shell, with an optional Go binary at `tools/gov-benchmark/cmd/install.go` that is used when present. The shell launcher delegates to the compiled binary if `$EDIKT_HOME/bin/gov-install` is executable; falls back to the shell implementation otherwise.
+
+- **Rollback on failure.** Any failure after file copies triggers rollback: removes all copied files and the venv directory before exiting non-zero.
+- **Wheel checksum verification.** When `EDIKT_TIER2_WHEEL` is set, SHA-256 is verified against `EDIKT_TIER2_WHEEL_SHA256` before pip install. Mismatch exits 2.
+- **Hermetic venv.** Installed into `~/.edikt/venv/gov-benchmark/`, never the system Python.
+- **Exact version pins.** `tools/gov-benchmark/pyproject.toml` uses `==` for all dependencies (ADR-015).
+- **`commands/gov/benchmark.md` carries `tier: 2`.** Not included in base install.
+
+#### Shared agent-routing extraction
+
+Domain signal detection was duplicated across `commands/sdlc/plan.md` and any future command that needs specialist routing. Extracted to `commands/_shared-agent-routing.md`:
+
+- Single `Domain Signal Table` with 6 domains (database, infrastructure, security, API, architecture, performance).
+- Three shared procedures: `detect_signals()`, `spawn_specialists()`, `consolidate_findings()`.
+- `commands/sdlc/plan.md` now references the shared file instead of embedding its own copy.
+
+#### Deprecated stubs removed
+
+`commands/deprecated/` directory removed. The 16 redirect-only stubs (adr, invariant, compile, review-governance, rules-update, sync, prd, spec, spec-artifacts, plan, review, drift, audit, docs, intake, team) are deleted. Intent-based routing is handled by the CLAUDE.md trigger table in every project.
+
+#### Pre-push invariant validation hook
+
+New `templates/hooks/pre-push.sh` enforces three invariant compliance checks before every push:
+
+- **INV-001** — no compiled code extensions (`.js`, `.ts`, `.wasm`, `.pyc`, `.class`, `.so`, `.dylib`) in `commands/` or `templates/`.
+- **INV-002** — accepted ADRs are immutable: detects `status: accepted` files with unstaged diffs and blocks with a path list.
+- **INV-003** — no shell JSON concatenation: greps for `echo '{'` and `printf '{'` patterns in `templates/hooks/*.sh`.
+- Bypass via `EDIKT_BYPASS_PREPUSH=1` (bypass is logged to `events.jsonl` with python3 argv — INV-003 compliant).
+
+#### Events.jsonl doctor check + session-start gate surfacing
+
+- **`/edikt:doctor`** — two new checks:
+  - *Fixture characterization rate*: warns if > 50% of fixture records in `fixtures.yaml` files have `status: aspirational`.
+  - *Gate activity (last 7 days)*: finds unresolved `gate_fired` events in `events.jsonl` and lists the most recent findings.
+- **`session-start.sh`** — surfaces the most recent unresolved gate finding from the previous session as `additionalContext`. Prompt: "⚠ Last session: \<agent> gate fired on \<finding> — was it resolved? To dismiss: run /edikt:session".
+
+#### Artifact aspirational defaults
+
+`/edikt:sdlc:artifacts` now generates expected-output fixture records with `status: aspirational` and `target_phase`/`target_contract` fields. A warning banner after generation: "These fixtures are aspirational — verify against running code and mark `status: characterized` after verification."
+
+#### Fixture characterization lifecycle (SPEC-006)
+
+`fixtures.yaml` status field now has documented semantics:
+- `characterized` — verified against running code; has `verified_by` command and `verified_at` date.
+- `aspirational` — expected behavior not yet verified against running code.
+
+`/edikt:sdlc:drift` adds a fixture characterization debt axis: shows the ratio of aspirational to characterized records with an emoji-coded severity (✅ 0%, 🟡 1-25%, 🟠 26-50%, 🔴 > 50%).
+
+#### Characterization fixture re-additions (ADR-014 follow-up)
+
+Two fixture pairs previously blocked on nondeterminism are re-added:
+
+- **`session-start-with-edikt`** — `session-start.sh` now emits `{"additionalContext": "📋 edikt project detected..."}` (JSON, ADR-014 migration). `_staged_runner.sh` provisions a stable test env via `stub_git_identity()` + `stub_clock()`, making the output deterministic.
+- **`subagent-stop-critical`** — blocking message now derives from structured payload + config only (ADR-023). No git identity or timestamps in the `systemMessage`. Re-adding closes the ADR-014 Verification Checklist item.
+
+`_staged_runner.sh` gains three determinism helpers: `stub_git_identity()`, `provision_memory_fixture()`, `stub_clock()`.
+
+#### Breaking changes
+
+- **`commands/deprecated/` removed.** Any external scripts that `cat` or `source` from `commands/deprecated/*.md` will fail. The redirect logic was unused — intent routing handles discovery.
+- **`gates:` section added to generated config.** `edikt init` now writes a `gates:` block with per-agent defaults. Existing projects are unaffected; `edikt upgrade` does not add the block automatically (opt-in via `/edikt:config set gates.security warning`).
+- **Pre-push hook enforces INV-003.** Projects that previously had `echo '{'` patterns in hook scripts will fail pre-push. Fix: replace with `python3 -c 'import json; print(json.dumps(...))'`.
+
+---
+
 ## v0.5.1 (2026-05-01)
 
 Patch release: multi-platform binaries (ADR-021).

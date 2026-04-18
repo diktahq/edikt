@@ -81,10 +81,9 @@ for cmd_path in adr/new invariant/new sdlc/prd sdlc/plan sdlc/spec sdlc/artifact
     assert_file_exists "$PROJECT_ROOT/commands/${cmd_path}.md" "commands/${cmd_path}.md exists"
 done
 
-# Deprecated stubs exist
-for cmd in adr invariant prd plan review drift audit docs intake rules-update sync compile review-governance spec spec-artifacts team; do
-    assert_file_exists "$PROJECT_ROOT/commands/deprecated/${cmd}.md" "commands/deprecated/${cmd}.md exists"
-done
+# Deprecated stubs removed in v0.6.0 — commands/deprecated/ directory deleted.
+# Natural-language routing now handled by _shared-agent-routing.md.
+assert_file_not_exists "$PROJECT_ROOT/commands/deprecated/team.md" "commands/deprecated/ removed in v0.6.0"
 
 # Shell preprocessing markers exist in artifact commands (namespaced paths)
 assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" '!`' "adr/new.md has shell preprocessing"

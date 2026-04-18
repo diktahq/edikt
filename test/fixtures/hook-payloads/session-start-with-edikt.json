@@ -1,0 +1,5 @@
+{
+  "hook_event_name": "SessionStart",
+  "cwd": "/tmp/edikt-test-project",
+  "session_id": "sess-with-edikt-001"
+}

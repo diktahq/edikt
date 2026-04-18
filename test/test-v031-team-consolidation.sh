@@ -20,11 +20,10 @@ echo ""
 
 echo -e "${BOLD}TEST 1: Team command deprecated${NC}"
 
+# v0.6.0: deprecated stub directory fully removed — stubs were redirect-only boilerplate.
+# Routing is handled by intent-matching in CLAUDE.md trigger table.
 assert_file_not_exists "$PROJECT_ROOT/commands/team.md" "Flat team.md removed"
-assert_file_exists "$DEPRECATED_TEAM" "Deprecated team stub exists"
-assert_file_contains "$DEPRECATED_TEAM" "Deprecated" "Deprecated stub says deprecated"
-assert_file_contains "$DEPRECATED_TEAM" "edikt:init" "Deprecated stub redirects to init"
-assert_file_contains "$DEPRECATED_TEAM" "edikt:config" "Deprecated stub mentions config"
+assert_file_not_exists "$DEPRECATED_TEAM" "Deprecated team stub removed in v0.6.0"
 
 # ============================================================
 # TEST 2: Config command exists and is well-formed

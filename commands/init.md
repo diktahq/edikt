@@ -912,6 +912,17 @@ artifacts:
 sdlc:
   commit-convention: {choice or "none"}
   pr-template: {true/false}
+
+# Gate severity thresholds per agent domain (ADR-023). Override via EDIKT_GATE_SEVERITY_THRESHOLD.
+# Values: critical (default) | warning | info
+gates:
+  security: warning
+  dba: critical
+  sre: warning
+  architect: warning
+  performance: critical
+  api: warning
+  default: critical
 ```
 
 **`docs/project-context.md`** — Seed from description or codebase analysis. Never overwrite if it already exists.

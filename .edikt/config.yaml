@@ -40,3 +40,18 @@ artifacts:
 sdlc:
   commit-convention: conventional
   pr-template: false
+
+# Gate severity thresholds per agent domain (ADR-023 §4).
+# Supported values: critical | warning | info
+#   critical (default) — block only on critical findings
+#   warning            — block on warning and above
+#   info               — block on any finding
+# Override globally via EDIKT_GATE_SEVERITY_THRESHOLD env var.
+gates:
+  security: warning    # security findings warrant early attention
+  dba: critical        # DB changes — block only on critical
+  sre: warning
+  architect: warning
+  performance: critical
+  api: warning
+  default: critical    # for any agent not listed above
