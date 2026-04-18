@@ -45,6 +45,27 @@ FAILURES_DIR = _HERE / "failures"
 _FIXTURES_DIR = REPO_ROOT / "test" / "fixtures" / "projects"
 
 
+def _safe_copytree(src: Path, dst: Path) -> None:
+    """Copy a fixture directory into a sandbox, enforcing INV-007.
+
+    Rules (INV-007):
+    - symlinks=True: preserve symlinks rather than following them, so a symlink
+      in the fixture doesn't escape the sandbox.
+    - realpath guard: refuse if src's resolved path escapes REPO_ROOT — prevents
+      a fixture entry like ``../../~/.claude/settings.json`` from silently
+      copying host secrets into the sandbox.
+    """
+    src_real = src.resolve()
+    repo_real = REPO_ROOT.resolve()
+    try:
+        src_real.relative_to(repo_real)
+    except ValueError:
+        raise RuntimeError(
+            f"[INV-007] copytree source {src_real} escapes repo root {repo_real}"
+        )
+    shutil.copytree(src, dst, symlinks=True)
+
+
 def _load_dotenv() -> None:
     """Load test/integration/.env into os.environ if the file exists.
 
@@ -482,7 +503,7 @@ def project_with_plan(tmp_path: Path) -> Path:
     """
     src = _FIXTURES_DIR / "mid-plan"
     project = tmp_path / "project-with-plan"
-    shutil.copytree(src, project)
+    _safe_copytree(src, project)
 
     # Add CLAUDE.md so edikt context is present in the project root.
     (project / "CLAUDE.md").write_text(
@@ -517,7 +538,7 @@ def project_post_compact(tmp_path: Path) -> Path:
     """
     src = _FIXTURES_DIR / "post-compact"
     project = tmp_path / "project-post-compact"
-    shutil.copytree(src, project)
+    _safe_copytree(src, project)
 
     (project / "CLAUDE.md").write_text(
         textwrap.dedent(
