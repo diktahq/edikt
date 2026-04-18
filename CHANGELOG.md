@@ -78,6 +78,107 @@ Two fixture pairs previously blocked on nondeterminism are re-added:
 - **`gates:` section added to generated config.** `edikt init` now writes a `gates:` block with per-agent defaults. Existing projects are unaffected; `edikt upgrade` does not add the block automatically (opt-in via `/edikt:config set gates.security warning`).
 - **Pre-push hook enforces INV-003.** Projects that previously had `echo '{'` patterns in hook scripts will fail pre-push. Fix: replace with `python3 -c 'import json; print(json.dumps(...))'`.
 
+### PRD redesign — split artifact, rigor calibration, SDLC chain traceability (SPEC-007)
+
+v0.6.0 adds the second leg of edikt's SDLC governance story. v0.5.0 established architectural governance (ADRs, invariants, compile → enforcement). SPEC-007 establishes **product artifact governance**: a redesigned PRD surface where requirements flow with stable IDs through the full chain — PRD → SPEC → artifacts → plan → implementation → verification.
+
+Source: `docs/brainstorms/BRAIN-001-prd-as-context-bundle/` (26 locked decisions) → `docs/product/specs/SPEC-007-prd-redesign/spec.md`.
+
+#### Split artifact model
+
+Every v2 PRD now ships as two files:
+
+- `PRD-NNN-<slug>.md` — human-readable narrative (Problem, Users, Goals, Non-Goals, Solution References, Protections, Open Questions, Evidence)
+- `PRD-NNN-<slug>.yaml` — structured sidecar: source of truth for requirements, acceptance criteria, status, protections, forcing-question answers, revision history, cross-references, and the `_sync` hash block
+
+LLMs corrupt markdown table and section structure at a measurable rate across multi-turn edits (Anthropic harness findings). YAML stays intact. Narrative in markdown where it reads well; structure in YAML where commands can mutate it safely.
+
+#### Rigor-calibrated authoring
+
+Single `build` mode with `rigor: solo | team | platform`:
+
+- **solo** — Problem, Users, Goals, Non-Goals, Requirements, ACs, Solution References, Protections, Open Questions (evaluator threshold: 70%)
+- **team** — adds Stakeholders, Dependencies, Rollout Plan (threshold: 80%)
+- **platform** — adds NFRs, Risk Register, Compatibility Matrix, Compliance Hooks (threshold: 90%)
+
+One triage question at authoring start. Default `solo`.
+
+#### Five forcing questions (not skippable)
+
+Every PRD session opens with five questions (Cutler, Torres, Amazon, Intercom synthesis):
+
+1. What's the problem *behind* this problem?
+2. How do you know someone has this problem? (evidence or "hypothesis only" counts)
+3. What single metric should move, and what must NOT move?
+4. What must NOT change when this ships? (seeds Protections)
+5. What's the riskiest assumption?
+
+Answered one at a time, recorded in the sidecar's `forcing_questions:` block, scored by the rubric.
+
+#### Protection section with invariant auto-link
+
+When authoring, the PRD command greps existing invariants for topic relevance, presents candidates for linking, and offers to promote durable protections stated in Q4 into new `/edikt:invariant:new` invocations. Two-way governance growth — PRDs both reference and generate invariants.
+
+#### Stable IDs through the full chain
+
+- `FR-NNN` — PRD functional requirements
+- `AC-NNN-M` — acceptance criteria (Given/When/Then, M scopes to FR)
+- `SR-NNN` — SPEC requirements (`implements: FR-NNN`)
+- `SAC-NNN` — SPEC-added architectural ACs
+
+IDs are grep-traceable from PRD through SPEC through plan phases. `/edikt:sdlc:drift` will surface an `FR-NNN` present in a PRD sidecar but uncovered by any SPEC.
+
+#### Seven concrete changes in `/edikt:sdlc:spec` when reading a v2 PRD
+
+1. **FR coverage check** — emits `source_prd_coverage:` covering/deferred/uncovered for every PRD FR. Non-empty `uncovered:` blocks `/edikt:sdlc:drift` PASS verdict.
+2. **AC pass-through** — every PRD `AC-NNN-M` copied byte-equal to the SPEC with unchanged ID. Modification is a violation, detected by `/edikt:spec:review`.
+3. **Stable ID propagation** — every `SR-NNN` carries `implements: FR-NNN` (or `null` for spec-only requirements).
+4. **Back-reference emission** — SPEC command appends `SPEC-NNN` to PRD sidecar `source_specs:`, closing the bidirectional trace loop.
+5. **Solution reference pass-through** — SPEC inherits PRD's mockups/designs; can add architecture/sequence diagrams.
+6. **Protection propagation** — SPEC inherits PRD's protections; can add technical-layer protections annotated with `source: spec`.
+7. **Evaluator hook** — SPEC evaluator runs in-flight against `.edikt/rubrics/spec.md` with rigor inherited from the linked PRD.
+
+v1 PRDs (no sidecar) continue to work — the spec command warns once and falls through to the legacy flow.
+
+#### New commands
+
+- **`/edikt:prd:review PRD-NNN`** — re-scores an existing PRD against the rubric; reports score, gaps, sidecar drift (`_sync.md_hash` mismatch), broken refs, unstarted FRs (proposed but never specced). Closes the audit gap where every other governance artifact type has a review command except PRD.
+- **`/edikt:spec:review SPEC-NNN`** — rubric score + FR coverage completeness + AC pass-through integrity + broken refs + drift.
+- **`/edikt:sdlc:discovery`** — structured uncertainty-reduction doc, peer to `/edikt:brainstorm`. Four-question interview (Known, Unknown, Kill Criteria, Discovery Plan). Graduates to PRD via `/edikt:sdlc:prd DISCOVERY-NNN`.
+
+#### Transition commands (edit-in-place lifecycle per ADR-024)
+
+PRDs evolve via edit-in-place with per-entry status markers. Four new commands:
+
+- **`/edikt:sdlc:prd:ship PRD-NNN [FR-001 ...]`** — mark FRs as `status: shipped`; flip top-level `status: shipped` when all FRs ship.
+- **`/edikt:sdlc:prd:supersede PRD-NNN`** — heavy transition (≥50% scope rewrites); authors a new PRD with `supersedes:` / `superseded_by:` links on both.
+- **`/edikt:sdlc:prd:deprecate PRD-NNN [reason]`** — was shipped or accepted, now obsolete.
+- **`/edikt:sdlc:prd:cancel PRD-NNN [reason]`** — work stopped before shipping.
+
+All transition commands mutate the sidecar via `python3` with argv (INV-003 compliant), update `revision_history`, and recompute `_sync` hashes.
+
+#### Doctor integration — four new checks
+
+- **Orphaned sidecars** — `.yaml` without `.md` or vice versa.
+- **Schema version** — surfaces sidecars with missing or unknown `schema_version`.
+- **Sidecar drift** — compares `_sync.md_hash` to current `.md` SHA-256.
+- **Broken refs** — linked `INV-NNN` missing, `SPEC-NNN` missing, `supersedes:` chain dangling, or local `solution_references` path non-existent. Figma URLs skipped (network check opt-in).
+
+#### JSON Schema for IDE autocomplete
+
+`templates/schemas/prd-sidecar.schema.json` (draft 2020-12) enables autocomplete, inline validation, and hover docs in VS Code, JetBrains, and Neovim via `yaml-language-server`. Generated sidecars include the `$schema=` comment pointing at the schema.
+
+#### ADR-024 — PRD lifecycle asymmetry vs INV-002
+
+PRDs and SPECs use edit-in-place evolution (per-entry status markers, structured `revision_history`); ADRs remain immutable under INV-002. The asymmetry is intentional: ADRs model discrete binary decisions, PRDs model continuous feature evolution. Forcing PRD immutability creates artificial supersession chains that LLMs handle worse than single evolving documents (Anthropic harness findings).
+
+#### Migration
+
+- **Grandfather.** v1 PRDs (no sidecar) continue to load in all commands. No forced migration.
+- **Template preserved.** Old `templates/prd.md.tmpl` renamed to `templates/prd-v1.md.tmpl`. The new v2 template is at `templates/prd.md.tmpl`.
+- **Back-reference writes require sidecar.** v1 PRDs linked to v2 SPECs lose the bidirectional trace link — the SPEC won't write `source_specs` back to a v1 PRD.
+- **Opt-in upgrade.** Run `/edikt:sdlc:prd PRD-NNN` on an existing v1 PRD to regenerate in v2 shape (preserves `.md` content; generates fresh sidecar from the forcing-question interview).
+
 ---
 
 ## v0.5.1 (2026-05-01)

@@ -463,6 +463,91 @@ else:
 - If unresolved gates found: `[!!] {n} unresolved gate finding(s) in last 7 days — run /edikt:session to sweep`
 - If all resolved: `[ok] Gate activity — no unresolved findings`
 
+**PRD/SPEC artifact health (SPEC-007 FR-012):**
+
+Runs four checks against every PRD sidecar (`*.yaml`) under `{paths.prds}` and every SPEC sidecar under `{paths.specs}/SPEC-*/spec.yaml` (or spec frontmatter if no sidecar file). v1 PRDs (no sidecar) are silently skipped.
+
+```bash
+PRDS_DIR="{paths.prds}"
+SPECS_DIR="{paths.specs}"
+INV_DIR="{paths.invariants}"
+```
+
+**Check 1 — Orphaned sidecars.**
+
+For each `.yaml` under `$PRDS_DIR`: verify a sibling `.md` with the same stem exists. For each `.md`: verify a sibling `.yaml` exists (if any `.yaml` sidecars exist in the dir, i.e., the project has v2 PRDs; otherwise skip).
+
+Report:
+- `[!!] Orphaned sidecar: PRD-NNN.yaml has no PRD-NNN.md` (ERROR)
+- `[!!] Orphaned narrative: PRD-NNN.md has no PRD-NNN.yaml` (ERROR, but only when project has ≥1 v2 PRD)
+- `[ok] No orphaned sidecars` if all paired
+
+**Check 2 — Schema version.**
+
+For each PRD `.yaml` sidecar:
+
+```bash
+python3 <<'PYEOF' "$YAML_PATH"
+import sys, yaml
+with open(sys.argv[1]) as f:
+    data = yaml.safe_load(f) or {}
+v = data.get("schema_version", "")
+print(v if v else "missing")
+PYEOF
+```
+
+- `schema_version == "1.0"` → `[ok]`
+- `schema_version` absent → `[  ] PRD-NNN: schema_version absent (legacy v2 sidecar). No action needed.` (INFO only)
+- `schema_version` unknown (e.g., "2.0" when current is 1.0) → `[!!] PRD-NNN: unknown schema_version "{v}". Sidecar may be from a newer edikt. Run /edikt:upgrade.`
+
+**Check 3 — Sidecar drift.**
+
+For each v2 PRD sidecar with `_sync.md_hash` non-empty:
+
+```bash
+CURRENT=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PRD_MD")
+```
+
+Compare to `_sync.md_hash`. On mismatch:
+
+- `[!!] PRD-NNN: .md edited since last sync ({_sync.synced_at}). Run /edikt:sdlc:prd:resync PRD-NNN or re-author with /edikt:sdlc:prd PRD-NNN.`
+
+This is informational severity — the PRD is still valid, the sync record is stale.
+
+**Check 4 — Broken references.**
+
+For each v2 PRD sidecar, validate:
+
+- `protections[*].ref` matching `INV-NNN`: verify file exists in `$INV_DIR/`.
+  - Missing → `[!!] PRD-NNN: protection INV-042 references non-existent invariant.`
+- `source_specs[*]` entries matching `SPEC-NNN`: verify dir matching `SPEC-NNN-*` exists in `$SPECS_DIR/`.
+  - Missing → `[!!] PRD-NNN: source_specs references non-existent SPEC-NNN.` (WARN)
+- `supersedes:` / `superseded_by:` matching `PRD-NNN`: verify the referenced PRD exists.
+  - Missing → `[!!] PRD-NNN: supersede chain references non-existent PRD-NNN.`
+- `solution_references[*].path_or_url` starting with `/` (absolute local): verify file exists.
+  - Missing → `[!!] PRD-NNN: solution_references path "{path}" does not exist on disk.` (WARN)
+- `solution_references[*].path_or_url` matching `figma.com`: skip (opt-in network check not implemented).
+
+For each SPEC sidecar (same pattern):
+- `references.adrs[*]` matching `ADR-NNN`: verify in `{paths.decisions}/`.
+- `references.invariants[*]` matching `INV-NNN`: verify in `$INV_DIR/`.
+- `implements:` matching `PRD-NNN`: verify in `$PRDS_DIR/`.
+
+**Output format:**
+
+```
+PRD/SPEC ARTIFACT HEALTH
+  Orphaned sidecars: {n}
+  Schema version warnings: {n}
+  Sidecar drift: {n}
+  Broken refs: {n}
+
+  {detail lines grouped by severity}
+
+  {if n=0 across all four checks:}
+  [ok] No PRD/SPEC artifact issues.
+```
+
 **edikt version:**
 ```bash
 INSTALLED=$(cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]' || echo "unknown")
