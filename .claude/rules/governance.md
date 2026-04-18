@@ -6,7 +6,7 @@ compile_schema_version: 2
 <!-- source: 21 ADRs (19 accepted, 2 superseded), 8 invariants (8 active), 0 guidelines -->
 <!-- compiled_by: gov-compile v0.1.0 -->
 <!-- compiled_at: 2026-04-17T23:18:49Z -->
-<!-- directives: 127 across 7 topic files -->
+<!-- directives: 104 across 7 topic files -->
 
 # Governance Directives
 

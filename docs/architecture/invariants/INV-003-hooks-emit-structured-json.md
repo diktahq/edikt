@@ -53,7 +53,7 @@ python3 -c 'import json,sys; print(json.dumps({"systemMessage": f"File: {sys.arg
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
+source_hash: d85dbb0f0e29de22a287f929cb16453e14bf658016a74979cf5a9e9db4cdf7d6
 directives_hash: pending
 compiler_version: "0.4.3"
 paths:

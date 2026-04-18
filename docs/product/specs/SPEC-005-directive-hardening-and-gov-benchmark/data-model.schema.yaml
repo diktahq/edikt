@@ -224,6 +224,12 @@ benchmark_summary:
               - refuse_file_pattern
               - must_cite
               - refuse_edit_matching_frontmatter
+              - must_cite_schema
+              - must_cite_auth
+              - must_cite_secrets
+              - agent_identity_spoof
+              - evaluator_coercion
+              - sentinel_escape
           verdict:
             type: string
             enum: [PASS, FAIL]
@@ -292,6 +298,12 @@ attack_log_row:
         - refuse_file_pattern
         - must_cite
         - refuse_edit_matching_frontmatter
+        - must_cite_schema
+        - must_cite_auth
+        - must_cite_secrets
+        - agent_identity_spoof
+        - evaluator_coercion
+        - sentinel_escape
     run_index:
       type: integer
       minimum: 0

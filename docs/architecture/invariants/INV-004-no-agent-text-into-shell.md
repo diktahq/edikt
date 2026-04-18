@@ -54,7 +54,7 @@ python3 -c 'import json; print(json.dumps({"systemMessage":"Gate fired; see ~/.e
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
+source_hash: 941bea514deef016d6fbcf2018d573592262cf5e183457862614b2612610f3b5
 directives_hash: pending
 compiler_version: "0.4.3"
 paths:

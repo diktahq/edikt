@@ -59,7 +59,7 @@ claude_options = ClaudeAgentOptions(..., setting_sources=["project"])
 ## Directives
 
 [edikt:directives:start]: #
-source_hash: pending
+source_hash: f55b3d58ddf3f809b241756a10adb8e0caf76769dee3ec66ff4be4f04ef052cd
 directives_hash: pending
 compiler_version: "0.4.3"
 paths:
