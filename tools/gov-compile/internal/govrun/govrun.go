@@ -145,7 +145,7 @@ func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
 		if isINVDoc(d) {
 			invDocs = append(invDocs, d)
 		} else {
-			if d.Sentinel.Topic == "" {
+			if len(d.Sentinel.Topics) == 0 {
 				warnings = append(warnings, fmt.Sprintf("no topic: field — delegate to LLM for grouping: %s", d.Path))
 			}
 			topicDocs = append(topicDocs, d)
