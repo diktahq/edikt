@@ -744,6 +744,213 @@ def project_with_accepted_prd(tmp_path: Path) -> Path:
 
 
 @pytest.fixture()
+def project_with_v2_prd(tmp_path: Path) -> Path:
+    """Project containing a v2 PRD (split artifact: .md + .yaml sidecar).
+
+    Used by SPEC-007 Layer 2 tests that exercise the full v2 surface —
+    forcing questions, rigor calibration, protection auto-link, transition
+    commands, back-reference emission.
+
+    Pre-seeded invariants are deliberately present so protection-section
+    auto-link has something to grep against.
+    """
+    project = tmp_path / "project-v2-prd"
+    project.mkdir()
+    (project / ".edikt").mkdir()
+    (project / ".edikt" / "config.yaml").write_text(
+        textwrap.dedent(
+            """\
+            edikt_version: 0.6.0
+            base: docs
+            stack: []
+            paths:
+              decisions: docs/architecture/decisions
+              invariants: docs/architecture/invariants
+              plans: docs/plans
+              prds: docs/product/prds
+              specs: docs/product/specs
+            gates:
+              quality-gates: true
+            evaluator:
+              mode: headless
+            """
+        )
+    )
+
+    # Pre-seed invariants so protection auto-link has real targets
+    inv_dir = project / "docs" / "architecture" / "invariants"
+    inv_dir.mkdir(parents=True)
+    (inv_dir / "INV-001-unsubscribe-compliance.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            type: invariant
+            id: INV-001
+            title: Unsubscribe link must always work
+            status: active
+            ---
+
+            # INV-001: Unsubscribe link compliance
+
+            ## Rule
+
+            Every email sent to users MUST include a working unsubscribe link
+            that processes within 24h. This is a CAN-SPAM / GDPR requirement.
+
+            ## Enforcement
+
+            Manual review during email template changes.
+            """
+        )
+    )
+    (inv_dir / "INV-002-email-deliverability.md").write_text(
+        textwrap.dedent(
+            """\
+            ---
+            type: invariant
+            id: INV-002
+            title: Email deliverability rate must stay >98%
+            status: active
+            ---
+
+            # INV-002: Email deliverability
+
+            ## Rule
+
+            Aggregate email deliverability MUST stay above 98% week-over-week.
+
+            ## Enforcement
+
+            Monitoring dashboard alerts on 24h rolling deliverability.
+            """
+        )
+    )
+
+    # Pre-seed a v2 PRD pair — used by transition / spec tests that need an
+    # existing PRD to mutate or read.
+    prd_dir = project / "docs" / "product" / "prds"
+    prd_dir.mkdir(parents=True)
+    (prd_dir / "PRD-001-renewal-reminders.md").write_text(
+        textwrap.dedent(
+            """\
+            # PRD-001: Renewal reminder emails
+
+            **Status:** accepted
+            **Rigor:** solo
+            **Sidecar:** [PRD-001-renewal-reminders.yaml](./PRD-001-renewal-reminders.yaml)
+
+            ## Problem
+
+            Users forget about upcoming renewals and get surprised by charges,
+            leading to chargebacks and churn.
+
+            ## Requirements
+
+            See sidecar for structured FRs.
+            """
+        )
+    )
+    (prd_dir / "PRD-001-renewal-reminders.yaml").write_text(
+        textwrap.dedent(
+            """\
+            schema_version: "1.0"
+            type: prd
+            id: PRD-001
+            title: Renewal reminder emails
+            slug: renewal-reminders
+            status: accepted
+            rigor: solo
+            author: Test Author
+            created_at: "2026-04-18T00:00:00Z"
+            requirements:
+              - id: FR-001
+                text: Send reminder email 7 days before renewal
+                status: accepted
+              - id: FR-002
+                text: Handle email bounces gracefully
+                status: accepted
+              - id: FR-003
+                text: Provide working unsubscribe link
+                status: accepted
+            acceptance_criteria:
+              - id: AC-001-1
+                fr: FR-001
+                given: a user with an active subscription
+                when: their renewal date is 7 days away
+                then: they receive an email reminder
+                status: accepted
+              - id: AC-002-1
+                fr: FR-002
+                given: an email bounces permanently
+                when: the bounce is received
+                then: the address is marked and retries stop
+                status: accepted
+            protections:
+              - ref: INV-001
+                note: Unsubscribe link compliance
+              - ref: INV-002
+                note: Deliverability target
+            solution_references: []
+            stakeholders: []
+            dependencies: []
+            nfrs: []
+            risks: []
+            open_questions: []
+            source_specs: []
+            supersedes: null
+            superseded_by: null
+            deprecated_at: null
+            deprecated_reason: null
+            cancelled_at: null
+            cancelled_reason: null
+            forcing_questions:
+              problem_behind_problem: Users get surprised by charges
+              evidence_or_hypothesis: "23 support tickets in last quarter"
+              north_metric_and_counter: "renewal rate up 5%, support volume flat"
+              must_not_change: "unsubscribe link must stay working"
+              riskiest_assumption: "7-day window is the right signal time"
+            revision_history:
+              - at: "2026-04-18T00:00:00Z"
+                author: Test Author
+                action: created
+                note: Initial draft
+            extensions: {}
+            _sync:
+              md_hash: ""
+              yaml_hash: ""
+              synced_at: ""
+            """
+        )
+    )
+
+    (project / "docs" / "architecture" / "decisions").mkdir(parents=True)
+    (project / "docs" / "product" / "specs").mkdir(parents=True)
+    (project / "docs" / "plans").mkdir(parents=True)
+
+    (project / "CLAUDE.md").write_text(
+        textwrap.dedent(
+            """\
+            # Project
+
+            Test project for edikt SPEC-007 v2 PRD tests.
+
+            [edikt:start]: # managed by edikt — do not edit this block manually
+            ## edikt
+
+            ### Project
+            A test project for the SPEC-007 Layer 2 integration tests.
+
+            ### Build & Test Commands
+            No build commands — this is a test fixture.
+            [edikt:end]: #
+            """
+        )
+    )
+    _link_edikt_commands(project)
+    return project
+
+
+@pytest.fixture()
 def project_with_spec_and_artifacts(tmp_path: Path) -> Path:
     """Project with an accepted spec AND pre-generated artifact files.
 
