@@ -334,23 +334,28 @@ with open(out, 'a', encoding='utf-8') as f:
     f.write(json.dumps({"ts": ts, "event": "phase_evaluation", "plan": plan, "phase": phase, "exit": exit_code}) + "\n")
 PY
 
-# Parse the JSON verdict (ADR-018) and enforce the evidence gate.
-# The evaluator emits a structured JSON verdict as the first non-empty JSON
-# object in stdout. A PASS is rejected and forced to BLOCKED unless every
-# criterion whose id looks like a test-runner command has evidence_type
-# set to "test_run".
+# Parse the JSON verdict (ADR-018), enforce the evidence gate, persist the
+# verdict JSON, and update the criteria sidecar. All three writes happen
+# before any output so they are not skipped by an early sys.exit.
 export _EDIKT_EVAL_OUTPUT="$EVAL_OUTPUT"
 export _EDIKT_PHASE_NUM="$PHASE_NUM"
 export _EDIKT_SIDECAR="${SIDECAR:-}"
+export _EDIKT_PLAN_FILE="$PLAN_FILE"
+export _EDIKT_PLAN_STEM="$PLAN_STEM"
+export _EDIKT_EVAL_TS="$EVAL_TS"
 python3 - <<'PY'
 import json
 import os
 import re
 import sys
+from datetime import datetime, timezone
 
 raw = os.environ.get("_EDIKT_EVAL_OUTPUT", "")
 phase = os.environ.get("_EDIKT_PHASE_NUM", "?")
 sidecar_path = os.environ.get("_EDIKT_SIDECAR", "")
+plan_file = os.environ.get("_EDIKT_PLAN_FILE", "")
+plan_stem = os.environ.get("_EDIKT_PLAN_STEM", "")
+eval_ts = os.environ.get("_EDIKT_EVAL_TS", "") or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _find_first_json_object(text: str) -> dict | None:
@@ -369,6 +374,116 @@ def _find_first_json_object(text: str) -> dict | None:
                     except json.JSONDecodeError:
                         break
     return None
+
+
+def _persist_verdict(plan_dir: str, stem: str, phase_val, final_verdict: dict, ts: str) -> None:
+    """Write verdict JSON to docs/product/plans/verdicts/<stem>/phase-<N>.json."""
+    try:
+        verdict_dir = os.path.join(plan_dir, "verdicts", stem)
+        os.makedirs(verdict_dir, exist_ok=True)
+        verdict_path = os.path.join(verdict_dir, f"phase-{phase_val}.json")
+        payload = dict(final_verdict)
+        payload.setdefault("meta", {})["evaluated_at"] = ts
+        with open(verdict_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+            f.write("\n")
+    except OSError:
+        pass  # best-effort; non-fatal
+
+
+def _update_sidecar(path: str, eval_criteria: list, phase_num_val, ts_date: str) -> None:
+    """Update per-criterion fields in the YAML sidecar in-place.
+
+    Uses a line-by-line state machine to preserve all formatting.
+    Only modifies status, last_evaluated, fail_reason, fail_count for
+    criteria in the target phase. Top-level last_evaluated is also updated.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            in_lines = f.readlines()
+    except OSError:
+        return
+
+    results = {c["id"]: c for c in eval_criteria}
+
+    out = []
+    current_phase: int | None = None
+    current_crit_id: str | None = None
+    in_target = False
+    top_updated = False
+
+    for line in in_lines:
+        # Top-level last_evaluated (before any phase block)
+        if current_phase is None and not top_updated and re.match(r"^last_evaluated:", line):
+            out.append(f'last_evaluated: "{ts_date}"\n')
+            top_updated = True
+            continue
+
+        # Phase header: "  - phase: N"
+        m = re.match(r"^\s*-\s+phase:\s+(\d+)", line)
+        if m:
+            current_phase = int(m.group(1))
+            in_target = (current_phase == phase_num_val)
+            current_crit_id = None
+            out.append(line)
+            continue
+
+        if not in_target:
+            out.append(line)
+            continue
+
+        # Criterion start: "      - id: AC-2.1"
+        m = re.match(r"^\s*-\s+id:\s+['\"]?([^'\" \n]+)", line)
+        if m:
+            current_crit_id = m.group(1)
+            out.append(line)
+            continue
+
+        if current_crit_id and current_crit_id in results:
+            c = results[current_crit_id]
+            ev = c.get("status", "")
+            sc_status = "pass" if ev == "met" else ("blocked" if ev == "blocked" else "fail")
+
+            m = re.match(r"^(\s+)status:\s+\S+", line)
+            if m:
+                out.append(f"{m.group(1)}status: {sc_status}\n")
+                continue
+
+            m = re.match(r"^(\s+)last_evaluated:", line)
+            if m:
+                out.append(f'{m.group(1)}last_evaluated: "{ts_date}"\n')
+                continue
+
+            m = re.match(r"^(\s+)fail_reason:", line)
+            if m:
+                if sc_status == "fail":
+                    reason = str(c.get("evidence") or c.get("notes") or "")
+                    reason_safe = reason.replace('"', "'").replace("\n", " ")[:200]
+                    out.append(f'{m.group(1)}fail_reason: "{reason_safe}"\n')
+                elif sc_status == "pass":
+                    out.append(f"{m.group(1)}fail_reason: null\n")
+                else:
+                    out.append(line)
+                continue
+
+            m = re.match(r"^(\s+)fail_count:\s+(\d+)", line)
+            if m:
+                count = int(m.group(2))
+                if sc_status == "fail":
+                    count += 1
+                elif sc_status == "pass":
+                    count = 0
+                # blocked: no change
+                out.append(f"{m.group(1)}fail_count: {count}\n")
+                continue
+
+        out.append(line)
+
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(out)
+    except OSError:
+        pass  # best-effort
 
 
 verdict_json = _find_first_json_object(raw)
@@ -424,32 +539,47 @@ if not grandfathered and verdict == "PASS":
 
 if gate_violations:
     verdict = "BLOCKED"
+
+# Build user-visible output message (all paths — avoids early sys.exit before writes).
+if gate_violations:
     reason_list = "\n  - ".join(gate_violations)
-    msg = (
+    output_msg = (
         f"⚠️  Phase {phase} PASS was forced to BLOCKED by the ADR-018 "
         f"evidence gate. test_run evidence is required for:\n  - {reason_list}\n\n"
         "Re-run the evaluator with Bash available, or explicitly mark the "
         "phase blocked in the plan."
     )
-    print(json.dumps({"systemMessage": msg}))
-    sys.exit(0)
-
-if verdict == "PASS":
-    summary = f"✓ Phase {phase} evaluation: PASS"
+elif verdict == "PASS":
+    output_msg = f"✓ Phase {phase} evaluation: PASS"
     if grandfathered:
-        summary += " (grandfathered from pre-v0.5.0 verdict)"
-    print(json.dumps({"systemMessage": summary}))
-    sys.exit(0)
+        output_msg += " (grandfathered from pre-v0.5.0 verdict)"
+else:
+    # BLOCKED / FAIL — include criterion-level detail.
+    msg_lines = [f"⚠️  Phase {phase} evaluation: {verdict}"]
+    for c in criteria:
+        if c.get("status") != "met":
+            msg_lines.append(
+                f"  - {c.get('id', '?')}: {c.get('status', '?')} — {c.get('evidence', '(no evidence)')}"
+            )
+            if c.get("notes"):
+                msg_lines.append(f"      note: {c['notes']}")
+    output_msg = "\n".join(msg_lines) + "\n\nReview the findings and fix before marking the phase done."
 
-# BLOCKED / FAIL — surface to user. Include criterion-level detail.
-lines = [f"⚠️  Phase {phase} evaluation: {verdict}"]
-for c in criteria:
-    if c.get("status") != "met":
-        lines.append(
-            f"  - {c.get('id', '?')}: {c.get('status', '?')} — {c.get('evidence', '(no evidence)')}"
-        )
-        if c.get("notes"):
-            lines.append(f"      note: {c['notes']}")
-msg = "\n".join(lines) + "\n\nReview the findings and fix before marking the phase done."
-print(json.dumps({"systemMessage": msg}))
+# ── Persist verdict JSON (ADR-018) ────────────────────────────────────────────
+if plan_file and plan_stem:
+    plan_dir = os.path.dirname(os.path.abspath(plan_file))
+    final_vj = dict(verdict_json)
+    final_vj["verdict"] = verdict  # use gate-modified verdict
+    _persist_verdict(plan_dir, plan_stem, phase, final_vj, eval_ts)
+
+# ── Update criteria sidecar ───────────────────────────────────────────────────
+if sidecar_path and os.path.isfile(sidecar_path) and criteria:
+    try:
+        phase_int = int(phase)
+    except (ValueError, TypeError):
+        phase_int = phase
+    _update_sidecar(sidecar_path, criteria, phase_int, eval_ts[:10])
+
+# ── Emit output ───────────────────────────────────────────────────────────────
+print(json.dumps({"systemMessage": output_msg}))
 PY
