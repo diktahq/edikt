@@ -47,27 +47,78 @@ If no `.yaml` sidecar: error "Cannot supersede a v1 PRD. Upgrade with /edikt:sdl
 
 If the old PRD is already `status: superseded` or `status: cancelled`: error "PRD-NNN is already {status}; cannot supersede."
 
-### Step 2: Confirm Heavy Transition
+### Step 2: Gate on ≥50% Threshold (ADR-024)
 
-Per ADR-024, supersession is reserved for ≥50% scope rewrites.
+Per ADR-024, supersession is reserved for changes that rewrite ≥50% of the PRD's scope or shift the problem framing. Routine FR refinements MUST use edit-in-place transition commands instead. This step enforces that gate via four binary questions — every "no" is a signal the user should NOT supersede.
+
+First, show the user what would be lost and what the alternatives are:
 
 ```
-⚠️  Supersede is a heavy transition (per ADR-024).
+⚠️  Supersede is a heavy transition (ADR-024).
 
-It creates a new PRD with:
-  • supersedes: PRD-NNN (the old one, marked status: superseded)
-  • A fresh forcing-questions interview
-  • An independent FR/AC numbering starting at FR-001
+You are about to:
+  • Mark PRD-NNN as status: superseded (hidden from active views)
+  • Create a new PRD-MMM from scratch with its own FR/AC numbering
+  • Break the stable ID chain — existing SPECs linked to PRD-NNN FR-001
+    will no longer trace to the new PRD-MMM FR-001
 
-For routine FR changes, prefer:
-  • /edikt:sdlc:prd PRD-NNN       — continuation (add/revise FRs)
-  • /edikt:sdlc:prd:ship FR-NNN   — mark shipped
-  • /edikt:sdlc:prd:deprecate     — mark a PRD deprecated without a replacement
-
-Continue with supersession? (y/N)
+ADR-024 reserves this for rewrites ≥50% scope OR problem-framing shifts.
+For routine changes, prefer:
+  • /edikt:sdlc:prd PRD-NNN       — add/revise/refine FRs in place
+  • /edikt:sdlc:prd:ship FR-NNN   — mark individual FRs shipped
+  • /edikt:sdlc:prd:deprecate     — retire the PRD without replacement
 ```
 
-If not `y`, exit 0 without mutations.
+Then ask four gating questions, one at a time. The user must answer all four; any three "no" answers aborts the supersession.
+
+```
+Gate 1/4 — Has the PROBLEM framing changed since PRD-NNN was authored?
+(Not the solution — the problem statement itself.)
+(y/n)
+```
+
+```
+Gate 2/4 — Would ≥50% of the requirements (FR-NNN) be rewritten or removed?
+(If you're adding new FRs but keeping the old ones, answer n.)
+(y/n)
+```
+
+```
+Gate 3/4 — Are the Protections or Goals so different that ACs from the
+old PRD would no longer apply?
+(y/n)
+```
+
+```
+Gate 4/4 — Have you already tried continuation via /edikt:sdlc:prd PRD-NNN
+and concluded it is insufficient?
+(y/n)
+```
+
+Decision table:
+
+| Yes count | Action |
+|-----------|--------|
+| 4 | Supersede clearly warranted — proceed to Step 3 |
+| 3 | Supersede likely warranted — confirm one more time: "Three of four gates passed. Proceed? (y/N)" |
+| 2 | Ambiguous — show message below, offer an alternative path, require explicit override |
+| 0-1 | Supersede not warranted — abort with guidance |
+
+For ambiguous (2 yes) or insufficient (0-1 yes) cases, output:
+
+```
+⛔ Supersede gate not cleared ({n}/4 — threshold: 3/4 minimum)
+
+Based on your answers, the right next step is:
+  {if gate 2 was no:}  /edikt:sdlc:prd PRD-NNN   — continuation adds new FRs without supersession
+  {if gate 3 was no:}  /edikt:sdlc:prd PRD-NNN   — revise ACs in place; stable IDs preserved
+  {if gate 1 was no:}  /edikt:sdlc:prd:deprecate — problem no longer relevant, no replacement needed
+
+To override (you are certain this is a ≥50% rewrite):
+  /edikt:sdlc:prd:supersede PRD-NNN --force
+```
+
+If the user invoked with `--force`, skip the gate but log the override in the new PRD's revision_history: `note: "Supersede gate overridden with --force"`.
 
 ### Step 3: Delegate to /edikt:sdlc:prd
 
@@ -86,30 +137,63 @@ Once the new PRD is authored and written, proceed.
 
 ### Step 4: Link Supersession
 
-**On the new PRD's sidecar (PRD-MMM):**
+Mutate both sidecars in a single python3 heredoc (INV-003 compliant, argv for all untrusted values):
 
-```yaml
-supersedes: PRD-NNN
-revision_history:
-  - at: {now}
-    author: {git user}
-    action: supersede
-    note: "Supersedes PRD-NNN"
+```bash
+OLD_YAML="{path}/PRD-NNN-slug.yaml"
+NEW_YAML="{path}/PRD-MMM-slug.yaml"
+OLD_ID="PRD-NNN"
+NEW_ID="PRD-MMM"
+AUTHOR=$(git config user.name 2>/dev/null || echo "unknown")
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+FORCED="${FORCED:-0}"  # 1 if --force was passed
+
+python3 <<'PYEOF' "$OLD_YAML" "$NEW_YAML" "$OLD_ID" "$NEW_ID" "$AUTHOR" "$NOW" "$FORCED"
+import sys, yaml
+old_path, new_path, old_id, new_id, author, now, forced = sys.argv[1:]
+
+# Old sidecar — mark superseded
+with open(old_path) as f:
+    old = yaml.safe_load(f) or {}
+old["status"] = "superseded"
+old["superseded_by"] = new_id
+old.setdefault("revision_history", []).append({
+    "at": now, "author": author, "action": "supersede",
+    "note": f"Superseded by {new_id}",
+})
+old.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(old_path, "w") as f:
+    yaml.safe_dump(old, f, sort_keys=False)
+
+# New sidecar — record supersedes link (and --force override if applicable)
+with open(new_path) as f:
+    new = yaml.safe_load(f) or {}
+new["supersedes"] = old_id
+note = f"Supersedes {old_id}"
+if forced == "1":
+    note += " (supersede gate overridden with --force)"
+new.setdefault("revision_history", []).append({
+    "at": now, "author": author, "action": "supersede",
+    "note": note,
+})
+new.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(new_path, "w") as f:
+    yaml.safe_dump(new, f, sort_keys=False)
+PYEOF
 ```
 
-**On the old PRD's sidecar (PRD-NNN):**
+After mutation, recompute `_sync` hashes on both sidecars:
 
-```yaml
-status: superseded
-superseded_by: PRD-MMM
-revision_history:
-  - at: {now}
-    author: {git user}
-    action: supersede
-    note: "Superseded by PRD-MMM"
+```bash
+for Y in "$OLD_YAML" "$NEW_YAML"; do
+  M="${Y%.yaml}.md"
+  MD_HASH=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$M")
+  YAML_HASH=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$Y")
+  # Edit $Y's _sync block with MD_HASH, YAML_HASH, and current ISO8601 timestamp
+done
 ```
 
-Recompute `_sync` hashes on both sidecars (python3 + argv, INV-003).
+Use the Edit tool on each sidecar's `_sync:` block to insert the computed hashes.
 
 ### Step 5: Output
 

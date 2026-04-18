@@ -354,31 +354,46 @@ In the `.md` narrative, requirements render as:
 **Change 4: Back-reference emission.**
 After successfully writing the spec, update the PRD sidecar's `source_specs:` to include this SPEC identifier. Append, don't overwrite (a PRD may have multiple specs covering different FR subsets).
 
-Implementation:
+Implementation (INV-003 compliant — untrusted values passed as argv, no shell interpolation):
 
 ```bash
 PRD_YAML="{path}/PRD-NNN-slug.yaml"
 SPEC_ID="SPEC-NNN"
-# Use python3 for safe YAML mutation (INV-003 compliant — no shell interpolation)
-python3 <<'PYEOF' "$PRD_YAML" "$SPEC_ID"
-import sys, re
-path, spec_id = sys.argv[1], sys.argv[2]
+AUTHOR=$(git config user.name 2>/dev/null || echo "unknown")
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+python3 <<'PYEOF' "$PRD_YAML" "$SPEC_ID" "$AUTHOR" "$NOW"
+import sys, yaml
+path, spec_id, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+
 with open(path) as f:
-    content = f.read()
-# Append to source_specs list
-# (Use yaml library in production — pseudo-code here for clarity)
+    data = yaml.safe_load(f) or {}
+
+# Idempotent append — don't duplicate if already linked
+source_specs = data.setdefault("source_specs", [])
+if spec_id not in source_specs:
+    source_specs.append(spec_id)
+
+# Append revision_history record
+data.setdefault("revision_history", []).append({
+    "at": now,
+    "author": author,
+    "action": "edited",
+    "note": f"Back-reference added: source_specs += {spec_id}",
+    "affected": [spec_id],
+})
+
+# Clear _sync — caller recomputes hashes after this mutation
+data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, sort_keys=False)
 PYEOF
 ```
 
-After mutating, append to PRD sidecar `revision_history:`:
-```yaml
-- at: {ISO8601 now}
-  author: {git user}
-  action: edited
-  note: "Back-reference added: source_specs += SPEC-NNN"
-```
+The python3 heredoc above appends the revision_history record inline and clears `_sync` so the caller recomputes hashes.
 
-Recompute `_sync` hashes (SHA-256 via `python3 -c 'import hashlib...'` with argv, per INV-003).
+Recompute `_sync` hashes (SHA-256 via `python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())'` with argv, per INV-003). Then Edit the sidecar's `_sync:` block with the new hashes and ISO8601 timestamp.
 
 Output confirmation:
 ```

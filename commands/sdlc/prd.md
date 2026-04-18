@@ -215,11 +215,21 @@ For feature-scoped protections, assign `SP-001`, `SP-002`, ... and record as `{i
 
 **7a. Load or bootstrap rubric:**
 
+Check if the rubric file exists:
+
 ```bash
-ls .edikt/rubrics/prd.md 2>/dev/null
+test -f .edikt/rubrics/prd.md && echo "exists" || echo "missing"
 ```
 
-If absent, create `.edikt/rubrics/prd.md` with a default rubric:
+If **exists**: read its content and proceed to 7b.
+
+If **missing**: use the Write tool to create `.edikt/rubrics/prd.md` with the default rubric content below. This is a mandatory bootstrap step — do NOT proceed to scoring without the file on disk (otherwise `/edikt:prd:review` runs later will re-bootstrap and the score history becomes inconsistent).
+
+```bash
+mkdir -p .edikt/rubrics
+```
+
+Then write this content to `.edikt/rubrics/prd.md` via the Write tool:
 
 ```markdown
 # PRD Evaluator Rubric
@@ -254,6 +264,8 @@ Score each item 0 (missing/weak) or 1 (strong). Threshold varies by rigor:
 
 _Users can edit this rubric per ADR-005 template overrides._
 ```
+
+After writing, confirm to the user: `✓ Bootstrapped .edikt/rubrics/prd.md (first-run default — edit to customize)`.
 
 **7b. Score the draft:**
 
@@ -311,6 +323,29 @@ Render `{prd_md}` from `templates/prd.md.tmpl` filling placeholders with:
 - Rigor-gated sections (`{{#if team_or_platform}}`, `{{#if platform}}`) are included only when rigor matches. For `solo`, delete those sections entirely — do NOT leave empty placeholder text.
 
 Render `{prd_yaml}` from `templates/prd.yaml.tmpl` with the full structured content.
+
+**Computing `{{schema_path}}`:** The template carries a `# yaml-language-server: $schema={{schema_path}}` header that enables IDE autocomplete. Compute the relative path from the PRD's parent directory to `.edikt/schemas/prd-sidecar.schema.json`:
+
+```bash
+# Use python3 with argv for safe relative-path computation (INV-003 compliant)
+SCHEMA_PATH=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.schema.json")
+```
+
+For a PRD at `docs/product/prds/PRD-001-x.yaml` with default layout, `SCHEMA_PATH` resolves to `../../../.edikt/schemas/prd-sidecar.schema.json`.
+
+If `.edikt/schemas/prd-sidecar.schema.json` does NOT exist in the project, auto-install it as part of this step:
+
+```bash
+test -f "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.schema.json" || {
+  mkdir -p "$PROJECT_ROOT/.edikt/schemas"
+  # Source schema lives in the edikt payload — resolve via EDIKT_HOME
+  SOURCE_SCHEMA="$EDIKT_HOME/current/templates/schemas/prd-sidecar.schema.json"
+  [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$HOME/.edikt/current/templates/schemas/prd-sidecar.schema.json"
+  cp "$SOURCE_SCHEMA" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.schema.json"
+}
+```
+
+This bootstrap keeps the IDE autocomplete working on first-ever PRD creation without requiring the user to run a separate install step.
 
 **8b. Compute SHA-256 hashes (INV-003 compliant):**
 
