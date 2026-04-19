@@ -203,7 +203,7 @@ implements the same logic. bin/edikt delegates to the compiled binary when it
 exists at $EDIKT_HOME/bin/gov-install; falls back to shell otherwise.
 
 Read the SPEC-006 spec at docs/product/specs/SPEC-006-v060-sdlc-rework/spec.md
-for the full FR-002 requirements. Read tools/gov-compile/cmd/install.go for the
+for the full FR-002 requirements. Read tools/edikt/cmd/install.go for the
 pattern to follow.
 
 ## Implementation
@@ -219,7 +219,7 @@ Subcommands passed as os.Args:
   gov-install install benchmark
   gov-install uninstall benchmark
 
-Exit codes (matching tools/gov-compile/cmd/install.go conventions):
+Exit codes (matching tools/edikt/cmd/install.go conventions):
   0 = success
   1 = prereq failure (Python not found, version too low, network)
   2 = checksum mismatch

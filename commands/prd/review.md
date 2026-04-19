@@ -156,7 +156,7 @@ PRD REVIEW — PRD-NNN
 
 Next:
   • Revise PRD:  /edikt:sdlc:prd PRD-NNN
-  • Ship FRs:    /edikt:sdlc:prd:ship FR-NNN
+  • Ship FRs:    /edikt:sdlc:prd PRD-NNN ship FR-NNN
   • Write spec:  /edikt:sdlc:spec PRD-NNN
 ```
 

@@ -52,7 +52,7 @@ Before starting a task, scan this table. If your task matches any signals or sco
 | template, override, custom, rule pack, upgrade | implementation | `governance/extensibility.md` |
 | hook, PostToolUse, format, preprocessing, CLAUDE.md, sentinel, fixture, characterization, JSON protocol, systemMessage, permissions, settings.json | implementation, review | `governance/hooks.md` |
 | release, install, SHA256SUMS, cosign, signing, Sigstore, integrity, tag, upgrade | implementation, review | `governance/release.md` |
-| tier-2, helper, tools/, deterministic, gov-compile, latency, token cost | design, implementation, review | `governance/tooling.md` |
+| tier-2, helper, tools/, deterministic, edikt (gov-compile), latency, token cost | design, implementation, review | `governance/tooling.md` |
 
 ## Reminders
 

@@ -25,8 +25,8 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: tools/gov-compile/go.mod
-          cache-dependency-path: tools/gov-compile/go.sum
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
 
       - name: Install test dependencies
         run: |

@@ -167,7 +167,7 @@ The Go binary:
 - Reads all configuration from environment variables (matching the test harness:
   `EDIKT_TIER2_PYTHON`, `EDIKT_TIER2_WHEEL`, `EDIKT_TIER2_WHEEL_SHA256`,
   `EDIKT_TIER2_SKIP_PIP`, `EDIKT_TIER2_SOURCE`, `EDIKT_HOME`, `CLAUDE_HOME`).
-- Shares exit-code semantics with `tools/gov-compile/cmd/install.go`:
+- Shares exit-code semantics with `tools/edikt/cmd/install.go`:
   `0 = success`, `1 = prereq/network`, `2 = checksum`, `3 = already installed`,
   `5 = path traversal / malicious`.
 - Is compiled into `~/.edikt/bin/gov-install` at `edikt install --compile-tools` time

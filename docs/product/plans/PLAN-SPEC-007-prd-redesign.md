@@ -126,7 +126,7 @@ what's there.
 
 ## Part A: templates/prd.md.tmpl (v2)
 
-Rename existing templates/prd.md.tmpl → templates/prd-v1.md.tmpl (preserve v1).
+Rename existing templates/prd.md.tmpl → templates/prd-legacy.md.tmpl (preserve v1).
 Write new templates/prd.md.tmpl with this shape:
 
 ```markdown

@@ -1,8 +1,8 @@
 ---
 name: edikt:sdlc:prd
-description: "Write a Product Requirements Document — split artifact (.md narrative + .yaml sidecar), rigor-calibrated, with forcing questions"
+description: "Write, continue, or transition a PRD — split artifact (.md + .yaml sidecar), rigor-calibrated. Also handles lifecycle: ship, cancel, deprecate, supersede."
 effort: high
-argument-hint: "<feature description | PRD-NNN to continue | DISCOVERY-NNN to graduate>"
+argument-hint: "<feature description | PRD-NNN | PRD-NNN ship | PRD-NNN cancel | PRD-NNN deprecate | PRD-NNN supersede | DISCOVERY-NNN>"
 allowed-tools:
   - Read
   - Write
@@ -18,7 +18,7 @@ allowed-tools:
 
 Write a Product Requirements Document using the v2 split artifact model: a `.md` narrative for humans + a `.yaml` sidecar as the structured source of truth for requirements, acceptance criteria, status, and revision history.
 
-PRDs evolve via edit-in-place (per ADR-024). To change a shipped PRD, use the transition commands (`prd:ship`, `prd:deprecate`) rather than re-running this command.
+PRDs evolve via edit-in-place (per ADR-024). Lifecycle transitions (ship, cancel, deprecate, supersede) are handled by this same command — see [Lifecycle Transitions](#lifecycle-transitions) below.
 
 CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
 ```
@@ -30,6 +30,10 @@ Exit plan mode first, then run the command again.
 
 - `<feature description>` — short description of the feature to scope
 - `PRD-NNN` — continue/revise an existing PRD
+- `PRD-NNN ship [FR-001 FR-002 ...]` — mark requirements as shipped
+- `PRD-NNN cancel [reason]` — cancel a PRD (never shipped; work stopped)
+- `PRD-NNN deprecate [reason]` — deprecate a PRD (shipped or accepted, now obsolete)
+- `PRD-NNN supersede` — supersede with a new PRD (≥50% scope change, per ADR-024)
 - `DISCOVERY-NNN` — graduate a discovery doc into a PRD (pre-populates Known → Problem, Unknown → Open Questions)
 - Empty — ask what to build
 
@@ -59,24 +63,29 @@ The correct next PRD number is in the `<!-- edikt:live -->` block at the top. Us
 
 ### Step 2: Dispatch on Arguments
 
-Inspect `$ARGUMENTS`:
+Inspect `$ARGUMENTS`. Check in this order:
 
-1. **Matches `PRD-\d+`** → continuation mode
-   - Load the existing `.md` and `.yaml` sidecar
+1. **Matches `PRD-\d+\s+(ship|cancel|deprecate|supersede)`** (or natural-language equivalent: "ship PRD-001", "cancel PRD-002 — budget cut") → **lifecycle transition mode**
+   - Extract the PRD identifier and the lifecycle verb.
+   - Extract any remaining text as the optional reason/FR list.
+   - Jump directly to [Lifecycle Transitions](#lifecycle-transitions). Do NOT run Steps 3–9.
+
+2. **Matches `PRD-\d+` with no lifecycle verb** → continuation mode
+   - Load the existing `.md` and `.yaml` sidecar.
    - Confirm: "Continuing PRD-NNN. Are you (a) adding new requirements, (b) revising existing requirements, or (c) answering open questions?"
-   - Apply the relevant subset of steps below based on the answer
-   - Skip Step 3 (rigor triage — already set) and Step 4 (forcing questions — already answered)
-   - Jump to Step 5 or Step 6 depending on the user's choice
+   - Apply the relevant subset of steps below based on the answer.
+   - Skip Step 3 (rigor triage — already set) and Step 4 (forcing questions — already answered).
+   - Jump to Step 5 or Step 6 depending on the user's choice.
 
-2. **Matches `DISCOVERY-\d+`** → graduation mode
-   - Load the discovery doc
-   - Seed: `problem` ← discovery Context + Known; `open_questions` ← discovery Unknown; `evidence` ← discovery Known
-   - Continue to Step 3 with the seeded content pre-filled
-   - In the final output, mark the discovery's `graduates_to: PRD-NNN` field (edit the discovery front-matter)
+3. **Matches `DISCOVERY-\d+`** → graduation mode
+   - Load the discovery doc.
+   - Seed: `problem` ← discovery Context + Known; `open_questions` ← discovery Unknown; `evidence` ← discovery Known.
+   - Continue to Step 3 with the seeded content pre-filled.
+   - In the final output, mark the discovery's `graduates_to: PRD-NNN` field (edit the discovery front-matter).
 
-3. **Empty or description** → new PRD mode
+4. **Empty or description** → new PRD mode
    - If empty, ask: "What are you building? Short description — I'll ask for the rest."
-   - Continue to Step 3
+   - Continue to Step 3.
 
 ### Step 3: Rigor Triage
 
@@ -443,7 +452,7 @@ Next steps:
   • Review the draft, flip status to accepted when ready
   • Write the technical spec:   /edikt:sdlc:spec PRD-{NNN}
   • Re-score anytime:           /edikt:prd:review PRD-{NNN}
-  • Ship requirements:          /edikt:sdlc:prd:ship FR-NNN
+  • Ship requirements:          /edikt:sdlc:prd PRD-{NNN} ship FR-NNN
 ```
 
 If a DISCOVERY-NNN graduated, also edit the discovery doc's front-matter to set `graduates_to: PRD-{NNN}`.
@@ -462,7 +471,7 @@ The evaluator scores them. "I didn't think about this" is the gap the forcing qu
 
 ### Edit-in-place model (ADR-024)
 
-This command creates PRDs in `status: draft`. Transition commands (`/edikt:sdlc:prd:ship`, `:deprecate`, `:cancel`) handle state changes. Supersession is rare — reserved for ≥50% scope rewrites via `/edikt:sdlc:prd:supersede`.
+This command creates PRDs in `status: draft`. Lifecycle transitions (ship, cancel, deprecate, supersede) are dispatched via this same command — pass the verb after the PRD identifier (e.g. `/edikt:sdlc:prd PRD-001 ship FR-001`). Supersession is rare — reserved for ≥50% scope rewrites.
 
 ### v1 compatibility
 
@@ -473,9 +482,292 @@ Projects with older v1 PRDs (no sidecar) continue to work. This command does not
 - `/edikt:sdlc:discovery` — upstream uncertainty-reduction before PRD authoring
 - `/edikt:sdlc:spec` — technical spec from this PRD
 - `/edikt:prd:review` — re-score the PRD against the rubric
-- `/edikt:sdlc:prd:ship` / `:deprecate` / `:cancel` / `:supersede` — transitions
 - `/edikt:invariant:new` — promote a feature-scoped protection into a project-wide invariant
 
 REMEMBER: A PRD captures REQUIREMENTS with evidence and measurable outcomes, not feature descriptions. Every FR must be testable. Every AC must have a Verify: method. Five forcing questions are mandatory — they are the minimum bar for a PRD that can be evaluated. If any question is skipped, the sidecar is incomplete and the evaluator will fail it.
 
 Next: Review the PRD with /edikt:prd:review to score it against the rubric, then run /edikt:sdlc:spec to generate the technical spec.
+
+---
+
+## Lifecycle Transitions
+
+Reached via Step 2 dispatch when a lifecycle verb is detected. These steps are self-contained — Steps 3–9 do NOT run.
+
+All common setup:
+
+```bash
+PRD_ID="PRD-NNN"   # extracted from arguments
+AUTHOR=$(git config user.name 2>/dev/null || echo "unknown")
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# Resolve PRD_YAML and PRD_MD from paths.prds in .edikt/config.yaml
+```
+
+If no `.yaml` sidecar found: error "PRD-NNN not found (or is v1 — no sidecar to mutate). Upgrade first with `/edikt:sdlc:prd PRD-NNN`."
+
+### ship
+
+Marks one or more requirements as `status: shipped`. If all FRs are shipped, flips the top-level `status:` to `shipped` too.
+
+**Parse FRs to ship:** Extract any `FR-\d+` tokens from arguments. If none, list unshipped FRs and ask:
+
+```
+PRD-NNN has {n} non-shipped requirements:
+
+  [1] FR-001 (proposed)  — "{text}"
+  [2] FR-002 (accepted)  — "{text}"
+
+Which to ship? (comma-separated numbers, "all", or "cancel")
+>
+```
+
+**Validate:** Skip any FR already `shipped` or `deprecated` (warn, not error). Error on unknown FR IDs.
+
+**Mutate sidecar (INV-003 compliant):**
+
+```bash
+python3 <<'PYEOF' "$PRD_YAML" "$FR_LIST" "$AUTHOR" "$NOW"
+import sys, yaml
+path, frs_raw, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+frs = frs_raw.split(",")
+with open(path) as f:
+    data = yaml.safe_load(f)
+affected = []
+for req in data.get("requirements", []):
+    if req["id"] in frs and req.get("status") != "shipped":
+        req["status"] = "shipped"
+        req["shipped_at"] = now
+        affected.append(req["id"])
+data.setdefault("revision_history", []).append({
+    "at": now, "author": author, "action": "ship",
+    "note": f"Marked shipped: {', '.join(affected)}",
+    "affected": affected,
+})
+all_shipped = all(r.get("status") == "shipped" for r in data.get("requirements", []))
+if all_shipped and data.get("requirements"):
+    data["status"] = "shipped"
+data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, sort_keys=False)
+print(",".join(affected))
+PYEOF
+```
+
+Recompute `_sync` hashes after mutation (same pattern as Step 8b–8c).
+
+**Output:**
+
+```
+✅ PRD-NNN: shipped FR-001, FR-002
+
+  Top-level status: shipped  (all requirements shipped)  ← or: accepted ({n}/{total} shipped)
+  Revision history updated. Sync hashes recomputed.
+
+Next:
+  • Drift check:  /edikt:sdlc:drift PRD-NNN
+```
+
+---
+
+### cancel
+
+Marks a PRD as `status: cancelled`. Use when work stopped before shipping (hypothesis was wrong, priority shifted, merged into a different PRD without formal supersession).
+
+**Difference from deprecate:** cancel = never shipped; deprecate = was shipped/accepted, now obsolete.
+
+**Guard:** If already `cancelled` or `deprecated` → error "PRD-NNN is already {status}." If `shipped` → confirm "PRD-NNN is shipped. Cancel a shipped PRD? Usually you want deprecate. Continue? (y/N)".
+
+**Get reason:** Extract from arguments remainder. If missing, ask:
+
+```
+Why is PRD-NNN being cancelled? (short description — recorded in revision_history)
+
+>
+```
+
+Minimum 10 characters. Reject empty.
+
+**Mutate sidecar:**
+
+```bash
+python3 <<'PYEOF' "$PRD_YAML" "$REASON" "$AUTHOR" "$NOW"
+import sys, yaml
+path, reason, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(path) as f:
+    data = yaml.safe_load(f)
+data["status"] = "cancelled"
+data["cancelled_at"] = now
+data["cancelled_reason"] = reason
+data.setdefault("revision_history", []).append({
+    "at": now, "author": author, "action": "cancel",
+    "note": f"Cancelled: {reason}",
+})
+data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, sort_keys=False)
+PYEOF
+```
+
+Recompute `_sync` hashes.
+
+**Output:**
+
+```
+✅ PRD-NNN cancelled
+
+  Reason:  {reason}
+  At:      {timestamp}
+
+File kept as historical record. Hidden from active views.
+Linked SPECs ({count}) are not automatically touched — review each manually.
+```
+
+---
+
+### deprecate
+
+Marks a PRD as `status: deprecated`. Use when a feature is abandoned, no longer strategically relevant, or replaced by a different approach without direct supersession.
+
+**Guard:** If already `deprecated` or `cancelled` → error "PRD-NNN is already {status}."
+
+**Get reason:** Extract from arguments remainder. If missing, ask:
+
+```
+Why is PRD-NNN being deprecated? (short description — recorded in revision_history)
+
+>
+```
+
+Minimum 10 characters. Reject empty.
+
+**Mutate sidecar:**
+
+```bash
+python3 <<'PYEOF' "$PRD_YAML" "$REASON" "$AUTHOR" "$NOW"
+import sys, yaml
+path, reason, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+with open(path) as f:
+    data = yaml.safe_load(f)
+data["status"] = "deprecated"
+data["deprecated_at"] = now
+data["deprecated_reason"] = reason
+data.setdefault("revision_history", []).append({
+    "at": now, "author": author, "action": "deprecate",
+    "note": f"Deprecated: {reason}",
+})
+data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, sort_keys=False)
+PYEOF
+```
+
+Recompute `_sync` hashes.
+
+**Output:**
+
+```
+✅ PRD-NNN deprecated
+
+  Reason:  {reason}
+  At:      {timestamp}
+
+Revision history updated. File kept as historical record.
+Linked SPECs ({count}) not automatically updated — review each.
+```
+
+---
+
+### supersede
+
+Supersede is reserved for ≥50% scope rewrites or problem-framing shifts (ADR-024). For routine FR changes, use continuation or ship/cancel/deprecate instead.
+
+**Guard:** If old PRD is already `superseded` or `cancelled` → error "PRD-NNN is already {status}; cannot supersede."
+
+**Gate on ≥50% threshold (ADR-024):**
+
+Show what will be lost:
+
+```
+⚠️  Supersede is a heavy transition (ADR-024).
+
+You are about to:
+  • Mark PRD-NNN as status: superseded (hidden from active views)
+  • Create a new PRD-MMM with its own FR/AC numbering
+  • Break the stable ID chain — SPECs linked to PRD-NNN FR-001
+    will no longer trace to PRD-MMM FR-001
+
+For routine changes, prefer:
+  • /edikt:sdlc:prd PRD-NNN       — add/revise FRs in place
+  • /edikt:sdlc:prd PRD-NNN ship  — mark FRs shipped
+  • /edikt:sdlc:prd PRD-NNN deprecate — retire without replacement
+```
+
+Ask four gating questions one at a time (y/n):
+
+```
+Gate 1/4 — Has the PROBLEM framing changed since PRD-NNN was authored?
+Gate 2/4 — Would ≥50% of the requirements (FR-NNN) be rewritten or removed?
+Gate 3/4 — Are the Protections or Goals so different that old ACs would no longer apply?
+Gate 4/4 — Have you tried continuation via /edikt:sdlc:prd PRD-NNN and found it insufficient?
+```
+
+| Yes count | Action |
+|-----------|--------|
+| 4 | Proceed |
+| 3 | Confirm once more: "Three of four gates passed. Proceed? (y/N)" |
+| 2 | Show alternatives, require explicit override (`--force`) |
+| 0–1 | Abort with guidance |
+
+If `--force` was passed, skip gate but log `"Supersede gate overridden with --force"` in revision_history.
+
+**Author the new PRD:** Run the full creation flow (Steps 3–9) for the new PRD, seeding:
+- `title` — ask if user wants to keep old title or change
+- `problem_statement`, `user_archetypes`, `solution_references` — seed from old; user edits
+- `forcing_questions` — ask all five fresh (do NOT seed from old)
+
+The new PRD gets its own `id: PRD-MMM` from the live-injected next number.
+
+**Link supersession (INV-003 compliant):**
+
+```bash
+python3 <<'PYEOF' "$OLD_YAML" "$NEW_YAML" "$OLD_ID" "$NEW_ID" "$AUTHOR" "$NOW" "$FORCED"
+import sys, yaml
+old_path, new_path, old_id, new_id, author, now, forced = sys.argv[1:]
+with open(old_path) as f:
+    old = yaml.safe_load(f) or {}
+old["status"] = "superseded"
+old["superseded_by"] = new_id
+note = f"Superseded by {new_id}"
+if forced == "1":
+    note += " (supersede gate overridden with --force)"
+old.setdefault("revision_history", []).append({"at": now, "author": author, "action": "supersede", "note": note})
+old.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(old_path, "w") as f:
+    yaml.safe_dump(old, f, sort_keys=False)
+with open(new_path) as f:
+    new = yaml.safe_load(f) or {}
+new["supersedes"] = old_id
+new.setdefault("revision_history", []).append({"at": now, "author": author, "action": "supersede", "note": f"Supersedes {old_id}"})
+new.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
+with open(new_path, "w") as f:
+    yaml.safe_dump(new, f, sort_keys=False)
+PYEOF
+```
+
+Recompute `_sync` hashes on both sidecars.
+
+**Output:**
+
+```
+✅ Supersession complete
+
+  Old:  PRD-NNN  (status: superseded → PRD-MMM)
+  New:  PRD-MMM  (supersedes: PRD-NNN)
+
+Both sidecars updated. Revision history logged on both.
+SPECs linked to old PRD are not auto-migrated — review each manually.
+
+Next:
+  • Review new PRD:  /edikt:prd:review PRD-MMM
+  • Write spec:      /edikt:sdlc:spec PRD-MMM
+```

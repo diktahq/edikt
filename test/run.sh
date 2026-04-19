@@ -62,9 +62,9 @@ FAILED_SUITES=0
 if [ ! -f "$PROJECT_ROOT/bin/edikt" ]; then
     if command -v go >/dev/null 2>&1; then
         echo ""
-        printf 'Building bin/edikt from tools/gov-compile... '
+        printf 'Building bin/edikt from tools/edikt... '
         mkdir -p "$PROJECT_ROOT/bin"
-        if (cd "$PROJECT_ROOT/tools/gov-compile" && CGO_ENABLED=0 go build \
+        if (cd "$PROJECT_ROOT/tools/edikt" && CGO_ENABLED=0 go build \
                -trimpath -ldflags='-s -w' \
                -o "$PROJECT_ROOT/bin/edikt" .) 2>/tmp/edikt-go-build-err; then
             BUILT_EDIKT_BINARY=1

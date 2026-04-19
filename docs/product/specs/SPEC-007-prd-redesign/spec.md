@@ -53,7 +53,7 @@ Four workstreams:
    grep-traceable chain from PRD to implementation.
 
 4. **New command surface** — `/edikt:prd:review`, `/edikt:spec:review`,
-   `/edikt:sdlc:discovery`, and transition commands (`prd:ship`, `prd:supersede`,
+   `/edikt:sdlc:discovery`, and transition commands (`/edikt:sdlc:prd <id> ship`, and lifecycle transitions (ship,
    `prd:deprecate`, `prd:cancel`). Review commands close the audit gap where every
    governance artifact type (ADR, INV, guideline) has a review command except PRD/SPEC.
 
@@ -219,14 +219,14 @@ into a formal discovery with the additional sections populated.
 
 Four explicit transition commands (all on `sdlc:prd:` prefix):
 
-- **`/edikt:sdlc:prd:ship FR-001`** — marks FR-NNN entries as `status: shipped`;
+- **`/edikt:sdlc:prd PRD-NNN ship FR-001`** — marks FR-NNN entries as `status: shipped`;
   updates `revision_history:` with timestamp. Sets top-level status to `shipped` when
   all FRs shipped.
-- **`/edikt:sdlc:prd:supersede PRD-001`** — creates new PRD-NNN with
+- **`/edikt:sdlc:prd PRD-001 supersede`** — creates new PRD-NNN with
   `supersedes: PRD-001`; sets `superseded_by: PRD-NNN` on original.
-- **`/edikt:sdlc:prd:deprecate PRD-001`** — sets `status: deprecated` with
+- **`/edikt:sdlc:prd PRD-001 deprecate`** — sets `status: deprecated` with
   `deprecated_at:` and optional `reason:`.
-- **`/edikt:sdlc:prd:cancel PRD-001`** — sets `status: cancelled`; hides from active
+- **`/edikt:sdlc:prd PRD-001 cancel`** — sets `status: cancelled`; hides from active
   views. Historical record kept.
 
 ### FR-011: Schema and IDE tooling
@@ -251,7 +251,7 @@ New `/edikt:doctor` checks:
 
 - Grandfather: existing `.md` PRDs continue to work with `/edikt:sdlc:prd` and spec.
   No forced migration.
-- `prd.md` and `prd.yaml` templates (v1) are renamed to `prd-v1.md.tmpl` on init so
+- `prd.md` and `prd.yaml` templates (v1) are renamed to `prd-legacy.md.tmpl` on init so
   they're not overwritten.
 - `/edikt:upgrade` adds v2 templates; does NOT migrate existing PRDs.
 
