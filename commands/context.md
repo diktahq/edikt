@@ -66,16 +66,37 @@ ls -t {base}/product/plans/*.md {base}/plans/*.md 2>/dev/null | head -5
 
 **minimal:** Show only the current phase title and task list. No progress table, no other phases.
 
-### 4. Load Product Context (full only)
+### 4. Load Product Context
 
-Skip this step for `focused` and `minimal` depths.
+Skip this step for `minimal` depth.
 
 If `{base}/product/spec.md` exists, read and summarize:
 - Product vision
 - Current roadmap status
 - Active features
 
-If PRDs exist in `{base}/product/prds/`, list them with titles.
+**full depth:** Load all PRDs in `{base}/product/prds/`. List them with titles. If a v2 sidecar (`.yaml`) exists alongside a PRD `.md`, note the sidecar is present and the FR/AC count.
+
+**focused depth:** Load only PRD and SPEC sidecars referenced in the active plan phase (plan-scoped context loading per BRAIN-001 decision 27). This keeps context budget lean — the active plan is the signal for what is being worked on now.
+
+1. Identify the active plan phase from Step 3. If no active plan is found, skip PRD loading.
+2. Extract all `PRD-NNN` and `SPEC-NNN` identifiers from the current phase's objective, prompt, and Context Needed list:
+   ```bash
+   grep -oE '(PRD|SPEC)-[0-9]+' {active_plan_path} | sort -u
+   ```
+3. For each referenced `PRD-NNN`: find `{base}/product/prds/PRD-NNN*.yaml` (sidecar). If found, read and summarize: title, status, FR count, AC count. If only `.md` (v1 shape), note it briefly.
+4. For each referenced `SPEC-NNN`: find `{base}/product/specs/SPEC-NNN*/spec.yaml` (sidecar). If found, note title and coverage status.
+5. If no identifiers found in the phase, fall back to listing PRD titles (no content load):
+   ```
+   Note: no PRD/SPEC refs found in active phase — listing all PRDs (titles only)
+   ```
+
+Output in focused depth:
+```
+  PRDs (plan-scoped — active phase references):
+    PRD-NNN ({title}) — {n} FRs, {m} ACs — {status}
+    (no sidecar — v1 shape)
+```
 
 ### 5. Load Architecture Decisions
 

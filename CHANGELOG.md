@@ -179,6 +179,49 @@ PRDs and SPECs use edit-in-place evolution (per-entry status markers, structured
 - **Back-reference writes require sidecar.** v1 PRDs linked to v2 SPECs lose the bidirectional trace link — the SPEC won't write `source_specs` back to a v1 PRD.
 - **Opt-in upgrade.** Run `/edikt:sdlc:prd PRD-NNN` on an existing v1 PRD to regenerate in v2 shape (preserves `.md` content; generates fresh sidecar from the forcing-question interview).
 
+### PRD redesign additions — context budget, source flexibility, plan model (BRAIN-001 decisions 27-29)
+
+Three decisions from BRAIN-001 that were deferred during SPEC-007 implementation, shipped in the same v0.6.0 release.
+
+#### Decision 27 — Plan-scoped context loading
+
+`/edikt:context --depth=focused` now loads PRD and SPEC sidecars referenced in the **active plan phase**, not all active PRDs. Context budget stays proportional to what's being built right now.
+
+- `full` depth: loads all PRDs unchanged.
+- `focused` depth: scans the current plan phase's objective, prompt, and Context Needed for `PRD-NNN`/`SPEC-NNN` identifiers; reads only those sidecars. Falls back to listing all PRD titles (no content) when no identifiers are found in the phase.
+- `minimal` depth: unchanged (skips PRDs entirely).
+
+#### Decision 28 — SPEC source flexibility: `source_prd`, `source_brainstorm`, `source_prompt`
+
+Technical SPECs without an upstream PRD (refactors, infra migrations, performance work) were previously forced into an awkward PRD-derived shape. `/edikt:sdlc:spec` now accepts three source types:
+
+- **`PRD-NNN`** — existing v2 flow; full FR coverage check and AC pass-through (unchanged).
+- **`BRAIN-NNN`** — brainstorm-derived SPEC. Coverage is advisory: decisions and open questions from the brainstorm are surfaced as a checklist the SPEC should address. Back-reference: `produced_specs: [SPEC-NNN]` written to the brainstorm doc.
+- **Free text / no arg** — direct-prompt SPEC. Self-contained; evaluator judges on its own merits. No back-reference written.
+
+The spec sidecar (`spec.yaml`) carries exactly one non-null source field: `source_prd`, `source_brainstorm`, or `source_prompt`. `templates/schemas/spec-sidecar.schema.json` validates this structure and ships IDE autocomplete alongside the PRD schema.
+
+#### Decision 29 — Plan frontmatter model with per-phase overrides
+
+Plan files now carry machine-readable YAML frontmatter with model assignments:
+
+```yaml
+---
+type: plan
+id: PLAN-{slug}
+model: claude-sonnet-4-6          # plan-level default
+phases:
+  - id: 1
+    model: claude-haiku-4-5-20251001   # per-phase override (cheap/routine)
+  - id: 3
+    model: claude-opus-4-7             # per-phase override (complex/architectural)
+---
+```
+
+Inheritance chain: per-phase `model` > plan-level `model` > `defaults.plan_model` in `.edikt/config.yaml` > `claude-sonnet-4-6`.
+
+`/edikt:sdlc:plan` reads `defaults.plan_model:` from config. The Model Assignment table and per-phase `**Model:**` field now also record the choice in the frontmatter for machine consumption.
+
 ---
 
 ## v0.5.1 (2026-05-01)

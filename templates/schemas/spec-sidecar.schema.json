@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/spec-sidecar-1.0.json",
+  "title": "edikt SPEC sidecar",
+  "description": "Structured sidecar (.yaml) that accompanies a v2 SPEC. Source of truth for requirements, ACs, coverage, and cross-references. BRAIN-001 decision 28 adds source_prd/source_brainstorm/source_prompt fields to support SPECs with no upstream PRD.",
+  "type": "object",
+  "required": ["schema_version", "type", "id", "title", "status", "author", "created_at"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["spec"]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^SPEC-\\d{3,}$",
+      "description": "Stable SPEC identifier, e.g. SPEC-007."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "accepted", "in-progress", "shipped", "superseded", "deprecated", "cancelled"]
+    },
+    "author": { "type": "string" },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_prd": {
+      "type": ["string", "null"],
+      "pattern": "^PRD-\\d{3,}$",
+      "description": "Set when this SPEC derives from a PRD. Exactly one of source_prd / source_brainstorm / source_prompt is non-null. (BRAIN-001 decision 28)"
+    },
+    "source_brainstorm": {
+      "type": ["string", "null"],
+      "pattern": "^BRAIN-\\d{3,}$",
+      "description": "Set when this SPEC derives from a brainstorm doc. The brainstorm's produced_specs: receives a back-reference. (BRAIN-001 decision 28)"
+    },
+    "source_prompt": {
+      "type": ["string", "null"],
+      "description": "Set when this SPEC is self-contained (no upstream artifact). Stores the originating prompt (≤200 chars). No back-reference written. (BRAIN-001 decision 28)"
+    },
+    "source_prd_coverage": {
+      "type": "object",
+      "description": "Only present when source_prd is set and PRD is v2. Emitted by /edikt:sdlc:spec (FR-007 change 1).",
+      "required": ["prd"],
+      "properties": {
+        "prd": { "type": "string", "pattern": "^PRD-\\d{3,}$" },
+        "covered": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["fr", "by"],
+            "properties": {
+              "fr": { "type": "string", "pattern": "^FR-\\d{3,}$" },
+              "by": { "type": "array", "items": { "type": "string", "pattern": "^SR-\\d{3,}$" } }
+            }
+          }
+        },
+        "deferred": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["fr", "rationale"],
+            "properties": {
+              "fr": { "type": "string", "pattern": "^FR-\\d{3,}$" },
+              "rationale": { "type": "string" }
+            }
+          }
+        },
+        "uncovered": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^FR-\\d{3,}$" },
+          "description": "Non-empty list blocks /edikt:sdlc:drift."
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "description": "SPEC requirements (SR-NNN). Each may implement a PRD FR-NNN.",
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^SR-\\d{3,}$" },
+          "implements": {
+            "type": ["string", "null"],
+            "pattern": "^FR-\\d{3,}$",
+            "description": "Links to PRD FR. Null for spec-only requirements."
+          },
+          "text": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "description": "AC-NNN-M from PRD (pass-through, source: prd) + SAC-NNN added by SPEC (source: spec).",
+      "items": {
+        "type": "object",
+        "required": ["id", "source"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(AC-\\d{3,}-\\d+|SAC-\\d{3,})$"
+          },
+          "source": { "type": "string", "enum": ["prd", "spec"] },
+          "fr": { "type": ["string", "null"], "pattern": "^FR-\\d{3,}$" },
+          "given": { "type": "string" },
+          "when": { "type": "string" },
+          "then": { "type": "string" }
+        }
+      }
+    },
+    "protections": {
+      "type": "array",
+      "description": "Inherited from PRD (source: prd) + spec-layer additions (source: spec).",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ref": { "type": "string", "pattern": "^INV-\\d{3,}$" },
+          "id": { "type": "string", "pattern": "^S?SP-\\d{3,}$" },
+          "text": { "type": "string" },
+          "source": { "type": "string", "enum": ["prd", "spec"] }
+        }
+      }
+    },
+    "solution_references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "path_or_url"],
+        "properties": {
+          "type": { "type": "string", "enum": ["figma", "screenshot", "url", "doc", "diagram", "prototype"] },
+          "path_or_url": { "type": "string" },
+          "description": { "type": "string" },
+          "source": { "type": "string", "enum": ["prd", "spec"] }
+        }
+      }
+    },
+    "revision_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["at", "author", "action"],
+        "properties": {
+          "at": { "type": "string" },
+          "author": { "type": "string" },
+          "action": {
+            "type": "string",
+            "enum": ["created", "edited", "ship", "deprecate", "cancel", "supersede", "resync", "review"]
+          },
+          "note": { "type": "string" },
+          "affected": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "description": "User-managed extension zone. LLM NEVER writes here.",
+      "additionalProperties": true
+    }
+  }
+}

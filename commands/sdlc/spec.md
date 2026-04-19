@@ -52,14 +52,15 @@ Read `.edikt/config.yaml`. Resolve paths from the `paths:` section:
 
 The correct next SPEC number is provided at the top of this prompt in the `<!-- edikt:live -->` block. Use it exactly.
 
-### 2. Find and Validate the PRD
+### 2. Detect Source Type and Resolve Source Artifact
 
-If `$ARGUMENTS` is a PRD identifier (e.g., `PRD-005`):
+`$ARGUMENTS` determines the spec's source. Detect in order:
+
+**PRD source (`source_prd`):** `$ARGUMENTS` matches `PRD-\d+` or is a path ending in `.md` that resolves to a PRD.
+
 ```bash
-find {BASE}/product/prds/ -name "PRD-005*" -type f
+find {BASE}/product/prds/ -name "PRD-005*" -type f   # e.g. PRD-005
 ```
-
-If `$ARGUMENTS` is a path, read it directly.
 
 Read the PRD file. Check the frontmatter `status:` field:
 - If `status: accepted` → proceed
@@ -70,6 +71,26 @@ Read the PRD file. Check the frontmatter `status:` field:
      Review the PRD and change status to "accepted" first.
   ```
 - If no frontmatter status → treat as accepted (backwards compatibility with pre-v4 PRDs)
+
+Set `$SOURCE_TYPE = prd` and `$SOURCE_REF = PRD-NNN`.
+
+**Brainstorm source (`source_brainstorm`):** `$ARGUMENTS` matches `BRAIN-\d+` or is a path under `docs/brainstorms/`.
+
+```bash
+find {BASE}/brainstorms/ -maxdepth 2 -name "BRAIN-001*" -type f 2>/dev/null | head -3
+```
+
+Read the brainstorm document. Extract its title and decisions list (look for `## Decisions` section).
+
+Set `$SOURCE_TYPE = brainstorm` and `$SOURCE_REF = BRAIN-NNN`.
+
+Output: `Source: brainstorm (BRAIN-NNN — {title}). Coverage validation will be advisory only.`
+
+**Prompt source (`source_prompt`):** `$ARGUMENTS` is free text (not a PRD-NNN or BRAIN-NNN reference) or empty.
+
+Set `$SOURCE_TYPE = prompt` and `$SOURCE_REF = $ARGUMENTS` (the prompt text itself, truncated to 200 chars for storage).
+
+Output: `Source: direct prompt (no upstream PRD or brainstorm). Spec is self-contained.`
 
 ### 2b. Detect PRD Version (v1 vs v2)
 
@@ -183,7 +204,11 @@ id: SPEC-{NNN}
 title: {Title}
 status: draft
 author: {git user.name}
-implements: {PRD identifier}
+implements: {PRD identifier if source_prd, else null}
+# Source traceability — exactly one of these three fields is set (BRAIN-001 decision 28):
+source_prd: {PRD-NNN | null}           # set when source_type == prd
+source_brainstorm: {BRAIN-NNN | null}  # set when source_type == brainstorm
+source_prompt: {truncated prompt | null}  # set when source_type == prompt
 architecture_source:   # optional: verikt.yaml if present
 created_at: {ISO8601 timestamp}
 references:
@@ -281,9 +306,52 @@ Features deferred, approaches rejected, scope boundaries.}
 
 A spec should be 200-400 lines. If longer, the feature should be split. The spec is the engineering response to a PRD — it defines HOW, not WHAT.
 
-### 7b. v2 PRD flow — seven concrete changes (SPEC-007 FR-007)
+### 7b. Source-aware coverage and traceability (SPEC-007 FR-007 + BRAIN-001 decision 28)
 
-Apply these seven changes when `$PRD_VERSION == v2` (sidecar exists). Skip them for v1 PRDs — they require sidecar data that doesn't exist in the legacy shape.
+Coverage validation adapts to the source type (`$SOURCE_TYPE`):
+
+**`source_type == prd` AND `$PRD_VERSION == v2`:** Apply all seven FR-007 changes below.
+
+**`source_type == prd` AND `$PRD_VERSION == v1`:** Skip all seven changes (legacy shape, no sidecar). The v1 PRD warning was already shown in Step 2b.
+
+**`source_type == brainstorm`:** Coverage is advisory only.
+1. Read the brainstorm's `## Decisions` and `## Open Questions` sections.
+2. Surface them as a checklist the SPEC should address:
+   ```
+   Advisory coverage from BRAIN-NNN:
+     Decision 1: {text} — addressed? (y/skip)
+     Decision 2: {text} — addressed? (y/skip)
+     Open Q 1: {text} — addressed? (y/skip)
+   ```
+3. For any the user marks addressed, note which SR-NNN covers it.
+4. **Back-reference emission (brainstorm):** After writing the spec, append `SPEC-NNN` to a `produced_specs:` list on the brainstorm document (update its frontmatter or append to an `## Artifacts` section if no frontmatter key exists):
+   ```bash
+   # Update BRAIN-NNN frontmatter key produced_specs
+   python3 <<'PYEOF' "{brainstorm_path}" "$SPEC_ID" "$AUTHOR" "$NOW"
+   import sys, re, pathlib
+   path, spec_id, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+   content = pathlib.Path(path).read_text()
+   # Insert or update produced_specs in frontmatter
+   if "produced_specs:" in content:
+       content = re.sub(
+           r"(produced_specs:\s*\[)([^\]]*?)(\])",
+           lambda m: m.group(1) + (m.group(2).rstrip(", ") + ", " if m.group(2).strip() else "") + spec_id + m.group(3),
+           content
+       )
+   else:
+       content = content.replace("---\n", f"---\nproduced_specs: [{spec_id}]\n", 1)
+   pathlib.Path(path).write_text(content)
+   PYEOF
+   ```
+   Output: `✅ Updated BRAIN-NNN: produced_specs += SPEC-NNN`
+
+**`source_type == prompt`:** No coverage check. The spec is self-contained. Evaluator judges on its own merits (Step 7 change 7). No back-reference (no upstream artifact to update).
+
+---
+
+#### FR-007 changes (applied only when source_type == prd AND PRD is v2)
+
+Apply these seven changes when `$SOURCE_TYPE == prd` AND `$PRD_VERSION == v2` (sidecar exists). Skip them for all other source types.
 
 **Change 1: FR coverage check.**
 Read every `FR-NNN` from the PRD sidecar `requirements:`. For each FR, the spec must do one of:
@@ -438,16 +506,21 @@ REMEMBER: The spec must include Non-Goals (explicit scope exclusions), Alternati
 ✅ Spec created: {specs_dir}/SPEC-{NNN}-{slug}/spec.md
 
   SPEC-{NNN}: {Title}
-  Implements: {PRD identifier}
-  PRD version: {v1 | v2}
-  Status: draft
-  References: {count} ADRs, {count} invariants
+  Source:      {prd: PRD-NNN (v2) | prd: PRD-NNN (v1) | brainstorm: BRAIN-NNN | prompt: direct}
+  Implements:  {PRD identifier, or "(none — brainstorm/prompt source)"}
+  Status:      draft
+  References:  {count} ADRs, {count} invariants
 
-  {if v2}
+  {if source_prd AND v2}
   FR coverage:  {covered}/{total} covered, {deferred} deferred, {uncovered} uncovered
   ACs:          {n} from PRD (pass-through) + {m} spec-added (SAC-NNN)
-  Evaluator:    {score}/{total} ({PASS | below threshold})
   Back-ref:     Updated PRD-NNN sidecar: source_specs += SPEC-NNN
+
+  {if source_brainstorm}
+  Decisions addressed:  {n}/{total} from BRAIN-NNN
+  Back-ref:             Updated BRAIN-NNN: produced_specs += SPEC-NNN
+
+  Evaluator:    {score}/{total} ({PASS | below threshold})
 
   Review and change status to "accepted" when ready.
   Next: Run /edikt:sdlc:artifacts for SPEC-{NNN}

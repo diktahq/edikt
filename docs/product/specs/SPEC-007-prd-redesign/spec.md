@@ -255,6 +255,61 @@ New `/edikt:doctor` checks:
   they're not overwritten.
 - `/edikt:upgrade` adds v2 templates; does NOT migrate existing PRDs.
 
+### FR-014: Plan-scoped context loading in `/edikt:context`
+
+`/edikt:context --depth=focused` loads PRD and SPEC sidecars referenced in the **active plan phase**, not all active PRDs. The active plan is the orchestration signal for what is being worked on now. As plan phases complete and new phases activate, the loaded sidecar set changes automatically.
+
+- Full depth: loads all PRDs (unchanged behavior).
+- Focused depth: scans the current plan phase's objective, prompt, and Context Needed for `PRD-NNN` and `SPEC-NNN` identifiers; reads only those sidecars. Falls back to listing all PRD titles (no content) if no identifiers are found in the phase.
+- Minimal depth: skips PRDs entirely (unchanged behavior).
+
+This keeps the context budget lean and aligns loaded context with active work.
+
+### FR-015: SPEC source flexibility — `source_prd`, `source_brainstorm`, `source_prompt`
+
+`/edikt:sdlc:spec` accepts three source types, not just PRD-derived:
+
+- **`source_prd: PRD-NNN`** — classic PRD-derived SPEC. Full FR coverage check (FR-007 seven changes apply).
+- **`source_brainstorm: BRAIN-NNN`** — brainstorm-derived SPEC (technical exploration converged into a build). Coverage is advisory only: decisions and open questions from the brainstorm are surfaced as a checklist the SPEC should address. Back-reference: brainstorm doc receives `produced_specs: [SPEC-NNN]`.
+- **`source_prompt: "..."`** — direct-prompt SPEC with no upstream artifact. No coverage check; evaluator judges the SPEC on its own merits. No back-reference written.
+
+Source type is detected from the argument:
+- `PRD-NNN` or path to PRD `.md` → `source_prd`
+- `BRAIN-NNN` or path under `docs/brainstorms/` → `source_brainstorm`
+- Free text or empty → `source_prompt`
+
+The spec sidecar (`spec.yaml`) carries exactly one non-null source field:
+```yaml
+source_prd: PRD-001       # or
+source_brainstorm: BRAIN-001  # or
+source_prompt: "implement auth middleware refactor"
+```
+
+`templates/schemas/spec-sidecar.schema.json` validates this structure.
+
+### FR-016: Plan frontmatter model with per-phase overrides
+
+Plan files carry machine-readable YAML frontmatter with model assignments:
+
+```yaml
+---
+type: plan
+id: PLAN-{slug}
+model: claude-sonnet-4-6      # plan-level default
+phases:
+  - id: 1
+    model: claude-haiku-4-5-20251001   # per-phase override (cheaper/routine)
+  - id: 2
+    model: claude-opus-4-7             # per-phase override (complex/architectural)
+---
+```
+
+Inheritance chain: per-phase `model` > plan-level `model` > `defaults.plan_model` in `.edikt/config.yaml` > `claude-sonnet-4-6`.
+
+`/edikt:sdlc:plan` reads `defaults.plan_model:` from config when generating plans. Model assignment in the Phase Structure and Model Assignment table is recorded in both the frontmatter and the plan phase section (`**Model:** \`{model}\``).
+
+This enables cost/quality optimization per phase and documents model choices as machine-readable plan metadata.
+
 ---
 
 ## Out of Scope
@@ -294,3 +349,8 @@ per Anthropic harness findings. The asymmetry is intentional; it is not a gap.
 - [ ] `/edikt:doctor` reports broken refs, schema version, orphaned sidecars
 - [ ] Existing v1 PRDs still load without error in spec command
 - [ ] ADR-024 written and accepted
+- [ ] `/edikt:context --depth=focused` loads only plan-phase-referenced PRD sidecars, not all PRDs (FR-014)
+- [ ] `/edikt:sdlc:spec BRAIN-NNN` sets `source_brainstorm:` in spec sidecar and writes `produced_specs:` back to brainstorm (FR-015)
+- [ ] `/edikt:sdlc:spec` with free-text arg sets `source_prompt:` in spec sidecar with no back-reference written (FR-015)
+- [ ] Plan files written by `/edikt:sdlc:plan` include YAML frontmatter with `model:` and per-phase `model:` fields (FR-016)
+- [ ] `templates/schemas/spec-sidecar.schema.json` validates `source_prd`/`source_brainstorm`/`source_prompt` fields (FR-015)

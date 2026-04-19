@@ -73,6 +73,7 @@ CRITICAL: NEVER write a plan file without running the pre-flight specialist revi
    - `evaluator.mode` (default: `headless`) — `"headless"` for separate `claude -p`, `"subagent"` for Agent tool
    - `evaluator.max-attempts` (default: `5`) — max retries before stuck. Store as `MAX_ATTEMPTS` for use in the progress table and stuck detection.
    - `evaluator.model` (default: `sonnet`) — model for headless evaluator
+   - `defaults.plan_model` (default: `claude-sonnet-4-6`) — plan-level default model for phase execution (BRAIN-001 decision 29). Per-phase model overrides this. Inheritance chain: per-phase model > `defaults.plan_model` > `claude-sonnet-4-6`.
    If the `evaluator` section is absent in config, use all defaults.
 
 2. Determine the task from `$ARGUMENTS`. Check in order — use first match:
@@ -307,7 +308,7 @@ Each phase requires:
 - Number (e.g., 1, 2, 3)
 - Title
 - Objective (one sentence)
-- Model recommendation with reasoning
+- Model recommendation with reasoning. The model chosen here is written to the plan frontmatter's `phases[].model` field (per BRAIN-001 decision 29). Inheritance chain: per-phase model in frontmatter > `defaults.plan_model` in config > `claude-sonnet-4-6`.
 - Detailed prompt (full implementation instructions — be specific and self-contained)
 - Completion promise (shell-safe: uppercase, numbers, spaces, dots ONLY)
 - Acceptance criteria (binary PASS/FAIL assertions for the evaluator)
@@ -684,6 +685,17 @@ Domains detected: {list} ({n} of 6 checked)
 ### Plan File Template
 
 ```markdown
+---
+type: plan
+id: PLAN-{slug}
+model: {defaults.plan_model from config, default: claude-sonnet-4-6}
+phases:
+  - id: 1
+    model: {per-phase model override, or omit to inherit plan-level default}
+  - id: 2
+    model: {per-phase model override, or omit to inherit plan-level default}
+---
+
 # Plan: {Title}
 
 ## Overview
