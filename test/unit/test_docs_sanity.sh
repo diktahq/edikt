@@ -51,10 +51,14 @@ grep -q "^## v0.5.0" "$CHANGELOG" && \
     fail "CHANGELOG.md has v0.5.0 entry" "no '## v0.5.0' heading found"
 
 # ─── 3. Launcher version constant is defined ─────────────────────────────────
-#
-# v0.5.0: bin/edikt is now the Go binary (ADR-022). LAUNCHER_VERSION was a
-# bash-era constant; the Go binary exposes the version via `edikt version`.
-# Skip pending v0.6.0 when test should assert against `edikt version` output.
+# Since v0.6.0 (ADR-022) the launcher is a Go binary — check via version subcommand.
+
+test_start "bin/edikt defines LAUNCHER_VERSION"
+if [ -x "$LAUNCHER" ] && "$LAUNCHER" version --binary 2>&1 | grep -qE "^[0-9]+\.[0-9]+\.[0-9]"; then
+    pass "bin/edikt defines LAUNCHER_VERSION"
+else
+    fail "bin/edikt defines LAUNCHER_VERSION" "bin/edikt version --binary returned no semver (or binary missing)"
+fi
 
 # ─── 4. README has brew install section ──────────────────────────────────────
 

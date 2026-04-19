@@ -35,7 +35,9 @@ if [ -z "$STAGED_FILES" ]; then
 fi
 
 # Invariant compliance check on staged diff (INV-001, INV-002, INV-003)
-RESULT=$(python3 - "$STAGED_FILES" <<'PY'
+# Write Python to a temp file — <<'DELIM' inside $() confuses bash 3.2 (macOS).
+_EDIKT_PY=$(mktemp /tmp/edikt-prepush-XXXXX.py)
+cat > "$_EDIKT_PY" << 'PY'
 import sys, os, re, subprocess
 
 staged_raw = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -81,8 +83,9 @@ else:
     print("OK")
     sys.exit(0)
 PY
-)
+RESULT=$(python3 "$_EDIKT_PY" "$STAGED_FILES")
 INVARIANT_EXIT=$?
+rm -f "$_EDIKT_PY"
 
 if [ $INVARIANT_EXIT -ne 0 ]; then
     # Extract violation lines

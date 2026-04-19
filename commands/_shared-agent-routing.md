@@ -12,12 +12,12 @@ This document defines the domain signal table and specialist spawning procedure 
 
 | Domain | Signals | Agent subagent_type |
 |--------|---------|---------------------|
-| Database | SQL, query, schema, migration, index, database, db, table, foreign key, join, transaction, ORM, Postgres, MySQL, SQLite, MongoDB | `principal-dba` |
-| Infrastructure | deploy, docker, kubernetes, k8s, terraform, helm, CI, CD, infra, container, Dockerfile, compose, nginx, AWS, GCP, Azure, cloud | `staff-sre` |
-| Security | auth, JWT, OAuth, payment, PCI, HIPAA, token, secret, encrypt, credential, password, permission, role, RBAC, CORS, XSS, injection | `staff-security` |
-| API | API, endpoint, REST, GraphQL, route, webhook, contract, openapi, swagger, versioning, breaking change | `senior-api` |
-| Architecture | bounded context, domain, architecture, refactor, pattern, layer, dependency, coupling, abstraction, interface, hexagonal, clean arch | `principal-architect` |
-| Performance | performance, N+1, cache, latency, throughput, slow, optimize, index, query optimization, benchmark | `senior-performance` |
+| Database | SQL, query, schema, migration, index, database, db, table, foreign key, join, transaction, ORM, Postgres, MySQL, SQLite, MongoDB | `dba` |
+| Infrastructure | deploy, docker, kubernetes, k8s, terraform, helm, CI, CD, infra, container, Dockerfile, compose, nginx, AWS, GCP, Azure, cloud | `sre` |
+| Security | auth, JWT, OAuth, payment, PCI, HIPAA, token, secret, encrypt, credential, password, permission, role, RBAC, CORS, XSS, injection | `security` |
+| API | API, endpoint, REST, GraphQL, route, webhook, contract, openapi, swagger, versioning, breaking change | `api` |
+| Architecture | bounded context, domain, architecture, refactor, pattern, layer, dependency, coupling, abstraction, interface, hexagonal, clean arch | `architect` |
+| Performance | performance, N+1, cache, latency, throughput, slow, optimize, index, query optimization, benchmark | `performance` |
 
 ## detect_signals(text) procedure
 
@@ -35,12 +35,12 @@ and stop.
 
 For each detected domain, use the Agent tool to spawn the matching specialist concurrently (single message, multiple Agent tool calls):
 
-- database → `subagent_type: "principal-dba"`
-- infrastructure → `subagent_type: "staff-sre"`
-- security → `subagent_type: "staff-security"`
-- api → `subagent_type: "senior-api"`
-- architecture → `subagent_type: "principal-architect"`
-- performance → `subagent_type: "senior-performance"`
+- database → `subagent_type: "dba"`
+- infrastructure → `subagent_type: "sre"`
+- security → `subagent_type: "security"`
+- api → `subagent_type: "api"`
+- architecture → `subagent_type: "architect"`
+- performance → `subagent_type: "performance"`
 
 Each specialist:
 1. Reads the task/plan/review content

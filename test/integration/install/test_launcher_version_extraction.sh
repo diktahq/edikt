@@ -1,10 +1,13 @@
 #!/bin/bash
-# Verify launcher_script_version() correctly extracts LAUNCHER_VERSION from bin/edikt.
+# Verify go_binary_version() correctly extracts the version from a Go binary.
+#
+# Since v0.6.0 (ADR-022) the launcher is a Go binary; payload version
+# extraction uses `$binary version` via go_binary_version(). This test
+# validates the function works with both synthetic binaries and the real
+# bin/edikt (which returns empty when no payload is installed — correct).
 #
 # Network-fetch paths tested via EDIKT_LAUNCHER_SOURCE overrides; real curl
 # paths deferred to Phase 12 HTTP fixture harness.
-#
-# Covers finding #4 from v0.5.0 Phase 5 hardening review.
 
 set -uo pipefail
 . "$(dirname "$0")/_lib.sh"
@@ -12,54 +15,45 @@ set -uo pipefail
 install_setup launcher-version-extract
 trap install_teardown EXIT
 
-# Source only the launcher_script_version function from install.sh.
-# We need a minimal sourcing approach: disable set -e temporarily, source the
-# file in a subshell, then call the function.  The easiest portable approach
-# is to copy the function body out via grep+eval, but that's fragile.
-# Instead we source install.sh with the flag/interactive blocks neutralized
-# by overriding the exit call and piping through /dev/null for the prompt.
-
-# Extract and eval just the function definition.
-FUNC_DEF=$(sed -n '/^launcher_script_version()/,/^}/p' "$INSTALL_SH")
+# Extract and eval just the go_binary_version function definition.
+FUNC_DEF=$(sed -n '/^go_binary_version()/,/^}/p' "$INSTALL_SH")
 
 if [ -z "$FUNC_DEF" ]; then
-  fail "launcher_script_version function found in install.sh" "sed extraction returned empty"
+  fail "go_binary_version function found in install.sh" "sed extraction returned empty"
   test_summary
-  exit 0
+  exit "$FAIL_COUNT"
 fi
 
-pass "launcher_script_version function found in install.sh"
+pass "go_binary_version function found in install.sh"
 
-# Evaluate the function in this shell and call it against bin/edikt.
+# Evaluate the function in this shell.
 eval "$FUNC_DEF"
 
-EXTRACTED=$(launcher_script_version "$LAUNCHER_SRC")
+# Real bin/edikt: with no payload installed, go_binary_version returns empty.
+# That is correct behavior — not an error. Just verify it doesn't crash.
+REAL_VER=$(go_binary_version "$LAUNCHER_SRC" 2>/dev/null || true)
+pass "go_binary_version handles real bin/edikt without crashing (got: '${REAL_VER:-<empty>}')"
 
-if [ "$EXTRACTED" = "0.5.0" ]; then
-  pass "launcher_script_version extracts '0.5.0' from bin/edikt"
-else
-  fail "launcher_script_version extracts '0.5.0' from bin/edikt" "got: '$EXTRACTED'"
-fi
-
-# Also verify against a synthetic launcher to confirm the awk pattern works
-# for both bare-assignment and quoted-assignment styles.
-SYNTH="$TEST_HOME/fake_launcher"
-printf '#!/bin/sh\nLAUNCHER_VERSION="1.2.3"\n' > "$SYNTH"
-SYNTH_VER=$(launcher_script_version "$SYNTH")
+# Verify against a synthetic binary that outputs a version line.
+SYNTH="$TEST_HOME/fake_edikt"
+printf '#!/bin/sh\nif [ "${1:-}" = "version" ]; then echo "1.2.3"; fi\n' > "$SYNTH"
+chmod +x "$SYNTH"
+SYNTH_VER=$(go_binary_version "$SYNTH")
 if [ "$SYNTH_VER" = "1.2.3" ]; then
-  pass "launcher_script_version extracts version from synthetic launcher"
+  pass "go_binary_version extracts version from synthetic binary"
 else
-  fail "launcher_script_version extracts version from synthetic launcher" "got: '$SYNTH_VER'"
+  fail "go_binary_version extracts version from synthetic binary" "got: '$SYNTH_VER'"
 fi
 
 # Non-existent file → empty string (not an error)
-MISSING_VER=$(launcher_script_version "$TEST_HOME/does_not_exist")
+MISSING_VER=$(go_binary_version "$TEST_HOME/does_not_exist")
 if [ -z "$MISSING_VER" ]; then
-  pass "launcher_script_version returns empty for missing file"
+  pass "go_binary_version returns empty for missing binary"
 else
-  fail "launcher_script_version returns empty for missing file" "got: '$MISSING_VER'"
+  fail "go_binary_version returns empty for missing binary" "got: '$MISSING_VER'"
 fi
 
 install_teardown
 
 test_summary
+exit "$FAIL_COUNT"

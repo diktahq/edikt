@@ -32,7 +32,7 @@ mkdir -p "$INSTALL_HOME/hooks"
 for cmd in "$PROJECT_ROOT"/commands/*.md; do
     cp "$cmd" "$INSTALL_HOME/commands/edikt/"
 done
-for ns in adr invariant guideline gov sdlc docs deprecated; do
+for ns in adr invariant guideline gov sdlc docs; do
     mkdir -p "$INSTALL_HOME/commands/edikt/${ns}"
     for cmd in "$PROJECT_ROOT"/commands/${ns}/*.md; do
         [ -f "$cmd" ] && cp "$cmd" "$INSTALL_HOME/commands/edikt/${ns}/"
@@ -70,18 +70,21 @@ done
 
 cp "$PROJECT_ROOT/VERSION" "$INSTALL_HOME/VERSION"
 
-# Verify command count (52 markdown files: 12 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated + 2 new)
+# Verify command count (38 markdown files: 12 flat + 3 adr + 3 invariant + 3 guideline + 7 gov + 8 sdlc + 2 docs)
 # v0.3.0 added commands/guideline/compile.md + commands/gov/score.md
 # v0.4.0 added commands/config.md
 # v0.6.0 (SPEC-005): added commands/gov/_shared-directive-checks.md (non-command partial)
 #                    and commands/gov/benchmark.md (tier-2 opt-in — per ADR-015 this
 #                    is bundled with the payload tarball but ONLY surfaced to users
 #                    via `edikt install benchmark`, never by install.sh).
+# v0.6.0 (SPEC-006): added commands/sdlc/discovery.md
+# v0.6.0: removed commands/deprecated/ (stubs past v0.4.0 removal window;
+#         routing now lives in CLAUDE.md trigger table).
 CMD_COUNT=$(find "$INSTALL_HOME/commands/edikt/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$CMD_COUNT" -eq 52 ]; then
-    pass "52 commands installed"
+if [ "$CMD_COUNT" -eq 38 ]; then
+    pass "38 commands installed"
 else
-    fail "Expected 52 commands, found $CMD_COUNT"
+    fail "Expected 38 commands, found $CMD_COUNT"
 fi
 
 # Verify agent count (20 agents: 19 original + evaluator-headless)
@@ -95,16 +98,17 @@ fi
 
 # Verify hook count (v0.5.0 per ADR-014: removed pre-compact.sh; added
 # session-end, subagent-start, task-completed, worktree-create,
-# worktree-remove, status-line; original 16 − 1 + 6 = 21)
+# worktree-remove, status-line; original 16 − 1 + 6 = 21
+# v0.6.0 (SPEC-006): added pre-push.sh (git pre-push invariant compliance) → 22)
 HOOK_COUNT=$(ls "$INSTALL_HOME/templates/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-if [ "$HOOK_COUNT" -eq 21 ]; then
-    pass "21 hook scripts installed (v0.5.0 event set + status-line + utilities)"
+if [ "$HOOK_COUNT" -eq 22 ]; then
+    pass "22 hook scripts installed (v0.5.0 event set + status-line + utilities + pre-push)"
 else
-    fail "Expected 21 hook files, found $HOOK_COUNT"
+    fail "Expected 22 hook files, found $HOOK_COUNT"
 fi
 
 # Verify all v0.5.0 hooks exist as files (pre-compact REMOVED per ADR-014)
-for hook in session-start pre-tool-use post-tool-use stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask session-end subagent-start task-completed worktree-create worktree-remove status-line; do
+for hook in session-start pre-tool-use post-tool-use stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask session-end subagent-start task-completed worktree-create worktree-remove status-line pre-push; do
     assert_file_exists "$INSTALL_HOME/templates/hooks/${hook}.sh" "Hook script exists: ${hook}.sh"
 done
 
@@ -866,17 +870,22 @@ for inv in "$PROJECT_ROOT"/docs/architecture/invariants/*.md; do
 done
 
 # ============================================================
-# TEST 12: Deprecated command stubs
+# TEST 12: Deprecated command stubs — REMOVED in v0.6.0
 # ============================================================
+# Per the same pattern as team.md (test-v031-team-consolidation.sh), the
+# deprecated stub directory was fully removed in v0.6.0. Stubs were
+# redirect-only boilerplate whose removal window (v0.4.0) had long passed.
+# Routing for old command names is handled by intent-matching in the
+# CLAUDE.md trigger table.
 
 echo ""
-echo -e "${BOLD}TEST 12: Deprecated command stubs${NC}"
+echo -e "${BOLD}TEST 12: Deprecated command stubs removed${NC}"
 
-for old_cmd in adr invariant compile review-governance rules-update sync prd spec spec-artifacts plan review drift audit docs intake; do
-    stub="$PROJECT_ROOT/commands/deprecated/${old_cmd}.md"
-    assert_file_exists "$stub" "Deprecated stub exists: $old_cmd"
-    assert_file_contains "$stub" "deprecated" "Stub contains deprecation message: $old_cmd"
-    assert_file_contains "$stub" "v0.4.0" "Stub mentions removal version: $old_cmd"
-done
+if [ ! -d "$PROJECT_ROOT/commands/deprecated" ]; then
+    pass "commands/deprecated/ removed in v0.6.0"
+else
+    fail "commands/deprecated/ should be removed in v0.6.0" \
+         "stubs past their v0.4.0 removal window — routing lives in CLAUDE.md trigger table"
+fi
 
 test_summary

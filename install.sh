@@ -539,23 +539,24 @@ stage_launcher() {
   fi
   # ── Content sanity checks (guard against HTML error pages) ───────────────
   # ADR-022 Phase 3: bin/edikt is the Go binary (ELF/Mach-O). Shell-script
-  # sanity checks (shebang, MIN_PAYLOAD_VERSION, bash -n) only apply to the
-  # bare-file install path (used in development/test overrides only).
+  # sanity checks (shebang, bash -n) only apply when the bare-file launcher
+  # is a shell script (begins with #!). Binary launchers are validated by
+  # checksum only.
   if [ "$LAUNCHER_IS_TARBALL" != "1" ]; then
-    _first_line=$(head -n1 "$stage")
-    case "$_first_line" in
-      '#!'*) ;;
-      *) error "downloaded launcher missing shebang"; return $EX_NETWORK ;;
-    esac
-    # Bare-file installs in dev/test mode: validate it looks like a shell script.
-    if ! grep -qE '^(#!/|set -)' "$stage" 2>/dev/null; then
-      error "downloaded bare-file launcher does not look like a shell script"
-      return $EX_NETWORK
+    if LC_ALL=C head -c2 "$stage" | grep -q '^#!'; then
+      # Shell script launcher — apply shebang and bash -n checks.
+      _first_line=$(head -n1 "$stage")
+      case "$_first_line" in
+        '#!'*) ;;
+        *) error "downloaded launcher missing shebang"; return $EX_NETWORK ;;
+      esac
+      if ! bash -n "$stage" 2>/dev/null; then
+        error "downloaded shell launcher failed syntax check (bash -n)"
+        return $EX_NETWORK
+      fi
     fi
-    if ! bash -n "$stage" 2>/dev/null; then
-      error "downloaded shell launcher failed syntax check (bash -n)"
-      return $EX_NETWORK
-    fi
+    # Binary launchers (Go/ELF/Mach-O) skip shell checks — validated by
+    # checksum only.
   fi
   chmod +x "$stage"
   return 0
@@ -783,11 +784,14 @@ PY
 # ─── Flow orchestration ─────────────────────────────────────────────────────
 run_launcher_step() {
   # Args: subcommand and its args. Honors EDIKT_INSTALL_SOURCE pass-through.
+  # Pass EDIKT_ROOT explicitly so the Go binary uses the env-override path
+  # instead of the ancestor walk (which can find an unrelated system install
+  # when $HOME is overridden in test sandboxes).
   if $DRY_RUN; then
-    dryrun_do "$EDIKT_ROOT/bin/edikt $*"
+    dryrun_do "EDIKT_ROOT=$EDIKT_ROOT $EDIKT_ROOT/bin/edikt $*"
     return 0
   fi
-  "$EDIKT_ROOT/bin/edikt" "$@"
+  EDIKT_ROOT="$EDIKT_ROOT" "$EDIKT_ROOT/bin/edikt" "$@"
 }
 
 do_fresh_install() {

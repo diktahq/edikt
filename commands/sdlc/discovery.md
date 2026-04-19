@@ -173,3 +173,5 @@ Next steps:
 - `/edikt:brainstorm` — open-ended exploration
 - `/edikt:sdlc:prd` — PRD authoring (accepts a DISCOVERY-NNN as seed argument)
 - `/edikt:sdlc:spec` — technical spec from accepted PRD
+
+Next: When experiments are complete and unknowns are resolved, run /edikt:sdlc:prd DISCOVERY-NNN to author the PRD.

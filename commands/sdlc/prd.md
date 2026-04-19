@@ -45,7 +45,7 @@ And stop.
 
 ### Step 1: Resolve Paths and Context
 
-Read `.edikt/config.yaml`. Resolve:
+Read `.edikt/config.yaml`. Resolve paths from the `paths:` section:
 - PRDs dir: `paths.prds` (default: `docs/product/prds`)
 - Invariants dir: `paths.invariants` (default: `docs/architecture/invariants`)
 - Discovery dir: `{base}/product/discovery/` (base defaults to `docs`)
@@ -152,7 +152,7 @@ Using the forcing question answers + user description + project context, generat
 
 **AC numbering:** `AC-NNN-M` where NNN = FR number (exact match, not sequential within AC list), M = criterion index within that FR starting at 1. So a FR-001 with 2 ACs has `AC-001-1` and `AC-001-2`.
 
-**Given/When/Then:** Every AC uses this format. Example:
+**Given/When/Then:** Every AC uses this format. Each AC also includes a `verify` field with the method to check the criterion is met. Example:
 
 ```yaml
 - id: AC-001-1
@@ -160,6 +160,7 @@ Using the forcing question answers + user description + project context, generat
   given: "a user with an active subscription"
   when: "their renewal date is 7 days away"
   then: "they receive an email reminder"
+  verify: "Verify: send a test event and assert an email is queued within 30 s"
   status: proposed
 ```
 
@@ -474,3 +475,7 @@ Projects with older v1 PRDs (no sidecar) continue to work. This command does not
 - `/edikt:prd:review` — re-score the PRD against the rubric
 - `/edikt:sdlc:prd:ship` / `:deprecate` / `:cancel` / `:supersede` — transitions
 - `/edikt:invariant:new` — promote a feature-scoped protection into a project-wide invariant
+
+REMEMBER: A PRD captures REQUIREMENTS with evidence and measurable outcomes, not feature descriptions. Every FR must be testable. Every AC must have a Verify: method. Five forcing questions are mandatory — they are the minimum bar for a PRD that can be evaluated. If any question is skipped, the sidecar is incomplete and the evaluator will fail it.
+
+Next: Review the PRD with /edikt:prd:review to score it against the rubric, then run /edikt:sdlc:spec to generate the technical spec.
