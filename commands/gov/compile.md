@@ -124,23 +124,79 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
 
     This is the **primary path** — no extraction, no distillation. The `<artifact>:compile` commands are responsible for keeping `directives:` current; `gov:compile` trusts that output and applies only the user overrides.
 
-12. **If no sentinel block:** generate one inline before compiling:
-   - **From ADRs** — read the `## Decision` section. Every decision statement becomes a directive using MUST/NEVER language. Preserve specifics (namespaces, tools, patterns, thresholds). Drop rationale, context, alternatives.
-   - **From invariants** — read the `## Rule` section. Already constraint-shaped — translate to directive format.
-   - **From guidelines** — extract enforceable bullet points.
-   - Derive `paths:` by scanning the project directory for files related to the topic.
-   - Derive `scope:` from the document type: invariants get `[planning, design, review, implementation]`, ADRs get scopes matching their domain, guidelines get `[implementation]`.
-   - Add a `content_hash:` field — MD5 of the human-readable content above the sentinel block, for staleness detection.
-   - **Validate cross-references:** for every generated directive that references INV-NNN or ADR-NNN, verify the reference exists in the source document. Strip fabricated references (keep directive text if otherwise accurate).
-   - Write the sentinel block into the source document (at the end, or before a closing `---` line).
-   - Report what was generated:
-     ```
-     ⚙ Generated directive sentinels for {n} documents:
-       docs/architecture/decisions/ADR-001-edikt-architecture.md
-       docs/architecture/invariants/INV-001-plain-markdown-only.md
-       ...
-       Run /edikt:gov:review to review language quality.
-     ```
+12. **If no sentinel block:** abort and redirect to per-artifact compile.
+
+    `gov:compile` is read-only with respect to source documents. Generating a conforming sentinel block (with `source_hash`, `directives_hash`, `compiler_version`, `manual_directives`, `suppressed_directives` per ADR-008) is the responsibility of `<artifact>:compile`. Duplicating that path here drifts from the schema (the prior inline path wrote a `content_hash` field that ADR-008 deprecated, and never wrote the v0.5.0+ schema fields).
+
+    Collect every source document that lacks a sentinel block, group by artifact type (ADR / invariant / guideline), and emit a single actionable error:
+
+    ```
+    ✗ {N} source document(s) have no directive sentinel block.
+
+      gov:compile does not generate sentinels — that's <artifact>:compile's job
+      (per ADR-008, which requires source_hash + directives_hash + compiler_version
+      on every write).
+
+      Run the matching per-artifact compile first:
+
+        /edikt:adr:compile           ({n_adr} ADR(s) need sentinels)
+        /edikt:invariant:compile     ({n_inv} invariant(s) need sentinels)
+        /edikt:guideline:compile     ({n_gl} guideline(s) need sentinels)
+
+      Then re-run /edikt:gov:compile.
+
+      Documents missing sentinels:
+        {path1}
+        {path2}
+        ...
+    ```
+
+    Exit non-zero. Do not write `governance.md`. Do not partial-process the documents that DO have sentinels — fail the whole run so the user gets a complete picture.
+
+    The per-artifact compile commands all support a no-arg invocation that processes every artifact in their respective directory (`/edikt:adr:compile` with no args = compile every accepted ADR), so first-time adoption is a three-command sequence, not a per-file ceremony.
+
+### Schema Completeness Gate
+
+12a. **Before grouping, validate every parsed sentinel block against the ADR-008 schema.**
+
+This is defense-in-depth: even though step 12 redirects no-sentinel cases to per-artifact compile, a stale or partially-written block can still land here. The compile MUST refuse to claim success on incomplete input.
+
+For each parsed sentinel block, verify the following fields are present (presence-check only — content validation happens elsewhere):
+
+- `source_hash` — required by ADR-008
+- `directives_hash` — required by ADR-008
+- `compiler_version` — required by ADR-008
+- `manual_directives` — required as an empty list `[]` when not in use
+- `suppressed_directives` — required as an empty list `[]` when not in use
+
+A block missing any of the above is **incomplete** under the v0.5.0+ schema and indicates either a stale `<artifact>:compile` run (old code) or a hand-authored block missing required fields. Either way, `gov:compile` MUST NOT silently produce a `governance.md` derived from incomplete inputs.
+
+If any blocks are incomplete, abort with:
+
+```
+✗ {N} sentinel block(s) are missing required fields.
+
+  ADR-008 requires every directives block to carry source_hash, directives_hash,
+  compiler_version, manual_directives, and suppressed_directives. The blocks below
+  are incomplete:
+
+    {path}: missing [source_hash, directives_hash]
+    {path}: missing [compiler_version]
+    ...
+
+  Re-run the matching <artifact>:compile to regenerate these blocks under the
+  current schema:
+
+    /edikt:adr:compile {ADR-NNN}
+    /edikt:invariant:compile {INV-NNN}
+    /edikt:guideline:compile {slug}
+
+  Then re-run /edikt:gov:compile.
+```
+
+Exit non-zero. Like step 12, treat this as a complete-the-list failure: do not partial-write `governance.md`.
+
+**Why this lives here:** the parse pass (step 11) reads only the *content* fields needed for the merge formula (`directives`, `manual_directives`, `suppressed_directives`). The hash/metadata fields are explicitly NOT read at step 11 — that's `<artifact>:compile`'s concern. But `gov:compile` is the right place to *audit* their presence, because it's the seam where source documents hand off to the compiled output.
 
 ### Validate Cross-References
 
