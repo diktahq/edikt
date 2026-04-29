@@ -171,30 +171,93 @@ For each parsed sentinel block, verify the following fields are present (presenc
 
 A block missing any of the above is **incomplete** under the v0.5.0+ schema and indicates either a stale `<artifact>:compile` run (old code) or a hand-authored block missing required fields. Either way, `gov:compile` MUST NOT silently produce a `governance.md` derived from incomplete inputs.
 
-If any blocks are incomplete, abort with:
+Run the following Python script. It takes the parsed sentinel blocks via `EDIKT_BLOCKS_JSON`, identifies any that are missing one or more required fields under the ADR-008 schema, and emits a deterministic error report. Exit code 0 = all complete. Exit code 2 = at least one block incomplete.
 
+```bash
+python3 - <<'PY'
+import json
+import os
+import sys
+
+# ── Inputs ──────────────────────────────────────────────────────────────────
+# EDIKT_BLOCKS_JSON: JSON array of {path: str, fields: list[str]}
+#   path   — source document path (string)
+#   fields — names of YAML keys present in the parsed sentinel block
+#
+# Example:
+#   [{"path": "docs/architecture/decisions/ADR-001.md",
+#     "fields": ["paths","scope","directives","manual_directives",
+#                "suppressed_directives","source_hash","directives_hash",
+#                "compiler_version"]}]
+
+raw = os.environ.get("EDIKT_BLOCKS_JSON", "").strip()
+if not raw:
+    # No blocks to validate (e.g., project has no source documents). Pass.
+    sys.exit(0)
+
+try:
+    blocks = json.loads(raw)
+except json.JSONDecodeError as e:
+    print(f"✗ EDIKT_BLOCKS_JSON is not valid JSON: {e}", file=sys.stderr)
+    sys.exit(2)
+
+if not isinstance(blocks, list):
+    print("✗ EDIKT_BLOCKS_JSON must be a JSON array.", file=sys.stderr)
+    sys.exit(2)
+
+# ── ADR-008 required fields ─────────────────────────────────────────────────
+REQUIRED = (
+    "source_hash",
+    "directives_hash",
+    "compiler_version",
+    "manual_directives",
+    "suppressed_directives",
+)
+
+incomplete = []
+for entry in blocks:
+    if not isinstance(entry, dict):
+        print(f"✗ block entry is not a JSON object: {entry!r}", file=sys.stderr)
+        sys.exit(2)
+    path = entry.get("path", "<unknown>")
+    fields = entry.get("fields", [])
+    if not isinstance(fields, list):
+        print(f"✗ block fields for {path!r} must be a list", file=sys.stderr)
+        sys.exit(2)
+    present = set(str(f) for f in fields)
+    missing = [k for k in REQUIRED if k not in present]
+    if missing:
+        incomplete.append((path, missing))
+
+if not incomplete:
+    sys.exit(0)
+
+# ── Render error report ─────────────────────────────────────────────────────
+n = len(incomplete)
+plural = "s" if n != 1 else ""
+print(f"✗ {n} sentinel block{plural} are missing required fields.")
+print()
+print("  ADR-008 requires every directives block to carry source_hash,")
+print("  directives_hash, compiler_version, manual_directives, and")
+print(f"  suppressed_directives. The block{plural} below {'is' if n == 1 else 'are'} incomplete:")
+print()
+for path, missing in incomplete:
+    print(f"    {path}: missing [{', '.join(missing)}]")
+print()
+print("  Re-run the matching <artifact>:compile to regenerate under the")
+print("  current schema:")
+print()
+print("    /edikt:adr:compile {ADR-NNN}")
+print("    /edikt:invariant:compile {INV-NNN}")
+print("    /edikt:guideline:compile {slug}")
+print()
+print("  Then re-run /edikt:gov:compile.")
+
+sys.exit(2)
+PY
 ```
-✗ {N} sentinel block(s) are missing required fields.
 
-  ADR-008 requires every directives block to carry source_hash, directives_hash,
-  compiler_version, manual_directives, and suppressed_directives. The blocks below
-  are incomplete:
-
-    {path}: missing [source_hash, directives_hash]
-    {path}: missing [compiler_version]
-    ...
-
-  Re-run the matching <artifact>:compile to regenerate these blocks under the
-  current schema:
-
-    /edikt:adr:compile {ADR-NNN}
-    /edikt:invariant:compile {INV-NNN}
-    /edikt:guideline:compile {slug}
-
-  Then re-run /edikt:gov:compile.
-```
-
-Exit non-zero. Like step 12, treat this as a complete-the-list failure: do not partial-write `governance.md`.
+Like step 12, treat this as a complete-the-list failure: do not partial-write `governance.md`.
 
 **Why this lives here:** the parse pass (step 11) reads only the *content* fields needed for the merge formula (`directives`, `manual_directives`, `suppressed_directives`). The hash/metadata fields are explicitly NOT read at step 11 — that's `<artifact>:compile`'s concern. But `gov:compile` is the right place to *audit* their presence, because it's the seam where source documents hand off to the compiled output.
 
