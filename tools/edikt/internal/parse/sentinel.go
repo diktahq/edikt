@@ -21,6 +21,13 @@ var knownSentinelLists = map[string]bool{
 type Sentinel struct {
 	Present bool
 
+	// PresentFields records which YAML keys appeared in the parsed block.
+	// The map distinguishes "key absent" from "key present with empty value"
+	// — needed by the schema-completeness gate (ADR-008) since
+	// `manual_directives: []` and an absent `manual_directives:` decode to
+	// the same nil slice but mean different things under the schema.
+	PresentFields map[string]bool
+
 	// Hashes written by the per-artifact compile step (ADR-008).
 	SourceHash     string `yaml:"source_hash,omitempty"`
 	DirectivesHash string `yaml:"directives_hash,omitempty"`
@@ -177,6 +184,7 @@ func findLineStart(body, needle string) int {
 // refuses to parse. We therefore extract list fields manually.
 func parseSentinelBlock(inner string) (Sentinel, error) {
 	var s Sentinel
+	s.PresentFields = make(map[string]bool)
 	lines := strings.Split(inner, "\n")
 	currentList := ""
 	var bsLines []string
@@ -246,6 +254,7 @@ func parseSentinelBlock(inner string) (Sentinel, error) {
 		rest := strings.TrimSpace(trimmed[ci+1:])
 
 		if knownSentinelLists[key] {
+			s.PresentFields[key] = true
 			currentList = key
 			if strings.HasPrefix(rest, "- ") {
 				appendItem(key, strings.TrimPrefix(rest, "- "))
@@ -254,6 +263,7 @@ func parseSentinelBlock(inner string) (Sentinel, error) {
 		}
 
 		if key == "behavioral_signal" {
+			s.PresentFields[key] = true
 			inBS = true
 			continue
 		}
@@ -261,12 +271,16 @@ func parseSentinelBlock(inner string) (Sentinel, error) {
 		v := strings.Trim(rest, `"'`)
 		switch key {
 		case "source_hash":
+			s.PresentFields["source_hash"] = true
 			s.SourceHash = v
 		case "directives_hash":
+			s.PresentFields["directives_hash"] = true
 			s.DirectivesHash = v
 		case "compiler_version":
+			s.PresentFields["compiler_version"] = true
 			s.CompilerVersion = v
 		case "topic":
+			s.PresentFields["topic"] = true
 			// Support both scalar ("topic: hooks") and inline YAML list
 			// ("topic: [hooks, agent-rules]").
 			if strings.HasPrefix(rest, "[") && strings.HasSuffix(rest, "]") {
