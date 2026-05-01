@@ -124,36 +124,47 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
 
     This is the **primary path** — no extraction, no distillation. The `<artifact>:compile` commands are responsible for keeping `directives:` current; `gov:compile` trusts that output and applies only the user overrides.
 
-12. **If no sentinel block:** abort and redirect to per-artifact compile.
+12. **If no sentinel block (or schema-incomplete blocks):** auto-chain to the per-artifact compile commands, then re-run the gate.
 
-    `gov:compile` is read-only with respect to source documents. Generating a conforming sentinel block (with `source_hash`, `directives_hash`, `compiler_version`, `manual_directives`, `suppressed_directives` per ADR-008) is the responsibility of `<artifact>:compile`. Duplicating that path here drifts from the schema (the prior inline path wrote a `content_hash` field that ADR-008 deprecated, and never wrote the v0.5.0+ schema fields).
+    `gov:compile` does NOT generate sentinels itself — that responsibility stays with `<artifact>:compile` per ADR-008 (which owns the `source_hash` / `directives_hash` / `compiler_version` writes). But `gov:compile` MAY orchestrate: if it detects missing or schema-incomplete sentinels, it invokes the matching per-artifact compile commands in order, then re-runs the schema completeness gate (Step 12a). The actual writes still happen inside `<artifact>:compile` — `gov:compile` is the conductor, not the writer.
 
-    Collect every source document that lacks a sentinel block, group by artifact type (ADR / invariant / guideline), and emit a single actionable error:
+    **Auto-chain rule.** Group missing/incomplete documents by artifact type. For each non-empty type, invoke its compile command via the SlashCommand tool:
 
     ```
-    ✗ {N} source document(s) have no directive sentinel block.
+    Missing/incomplete groupings:
+      ADR(s):        {n_adr}
+      Invariant(s):  {n_inv}
+      Guideline(s):  {n_gl}
 
-      gov:compile does not generate sentinels — that's <artifact>:compile's job
-      (per ADR-008, which requires source_hash + directives_hash + compiler_version
-      on every write).
+    Auto-running per-artifact compile to populate the v0.5.0+ schema:
+      → /edikt:adr:compile           (no-arg = recompile all accepted ADRs)
+      → /edikt:invariant:compile     (no-arg = recompile all active invariants)
+      → /edikt:guideline:compile     (no-arg = recompile all guidelines)
 
-      Run the matching per-artifact compile first:
-
-        /edikt:adr:compile           ({n_adr} ADR(s) need sentinels)
-        /edikt:invariant:compile     ({n_inv} invariant(s) need sentinels)
-        /edikt:guideline:compile     ({n_gl} guideline(s) need sentinels)
-
-      Then re-run /edikt:gov:compile.
-
-      Documents missing sentinels:
-        {path1}
-        {path2}
-        ...
+    After each completes, re-run Step 11 (parse sentinels) and Step 12a
+    (schema completeness gate). If the gate now passes, continue to Step 13.
+    If sentinels are STILL missing or incomplete after the chain, abort
+    with the full list — at that point the per-artifact compile failed
+    on its own, which is a separate bug to investigate.
     ```
 
-    Exit non-zero. Do not write `governance.md`. Do not partial-process the documents that DO have sentinels — fail the whole run so the user gets a complete picture.
+    **Telling the user what's happening.** Before the chain, print a clear preview so the user understands the LLM phase isn't gov:compile silently doing magic:
 
-    The per-artifact compile commands all support a no-arg invocation that processes every artifact in their respective directory (`/edikt:adr:compile` with no args = compile every accepted ADR), so first-time adoption is a three-command sequence, not a per-file ceremony.
+    ```
+    ℹ Detected legacy schema. First-run migration will invoke:
+       → /edikt:adr:compile         ({n_adr} ADRs)
+       → /edikt:invariant:compile   ({n_inv} invariants)
+       → /edikt:guideline:compile   ({n_gl} guidelines)
+
+       After this, gov:compile resolves any remaining missing topic: fields,
+       then renders governance.md. Future runs are deterministic and <100ms.
+    ```
+
+    After each `<artifact>:compile` completes, print a one-line summary (e.g. `→ adr:compile: 22 ADRs migrated`).
+
+    **Headless mode.** When `EDIKT_HEADLESS=1` or no `/dev/tty` is attached, the auto-chain is **disabled** — print the same actionable error the prior version emitted (the explicit run-these-three list) and exit non-zero. Headless callers (CI, scripts) must opt in to the migration phase explicitly so they're never surprised by an LLM-cost spike on a path that used to be deterministic.
+
+    **Why this preserves ADR-008.** The "gov:compile is read-only with respect to source documents" invariant is about *who writes to which file*, not about *who triggers what*. Each `<artifact>:compile` invocation does its own reads + writes, with its own hash gates and its own interview flow. `gov:compile` calling them is no different from a human running them in sequence.
 
 ### Schema Completeness Gate
 
