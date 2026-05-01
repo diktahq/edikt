@@ -48,7 +48,7 @@ edikt/
 
 1. Read ADR-001 in `docs/architecture/decisions/`
 2. Read INV-001 in `docs/architecture/invariants/`
-3. Read the implementation plan in `docs/plans/PLAN-edikt-v1.md`
+3. Read the implementation plan in `docs/internal/plans/PLAN-edikt-v1.md`
 4. Read `.edikt/project-context.md` for project identity
 
 ## Testing
@@ -72,7 +72,7 @@ edikt is the governance layer for agentic engineering. It enforces coding standa
 ### Before Writing Code
 1. Read `docs/project-context.md` for project context
 2. Rules are enforced automatically via `.claude/rules/`
-3. If a plan is active, read it in `docs/plans/` — check progress table for current state
+3. If a plan is active, read it in `docs/internal/plans/` — check progress table for current state
 4. If a spec exists, read it in `docs/product/specs/` — the spec and its artifacts are the engineering blueprint
 5. All paths are configurable in `.edikt/config.yaml` under `paths:`
 

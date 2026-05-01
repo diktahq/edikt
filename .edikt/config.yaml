@@ -9,7 +9,7 @@ stack: []  # edikt is pure markdown, no language stack
 paths:
   decisions: docs/architecture/decisions
   invariants: docs/architecture/invariants
-  plans: docs/plans
+  plans: docs/internal/plans
   specs: docs/product/specs
   prds: docs/product/prds
   guidelines: docs/guidelines

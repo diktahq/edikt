@@ -36,7 +36,7 @@ is not installed.
 
 The v0.5.0 security audit surfaced 48 findings (7 Critical, 14 High,
 14 Medium, 13 Low). Every fix landed in Phases 1-13 of
-`docs/product/plans/PLAN-v0.5.0-security-hardening.md`. These tests
+`docs/internal/plans/PLAN-v0.5.0-security-hardening.md`. These tests
 exist so that a refactor, dependency bump, or contributor PR that
 re-introduces any of the fixed classes fails loudly before it merges.
 
