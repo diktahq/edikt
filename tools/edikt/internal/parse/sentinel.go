@@ -12,7 +12,7 @@ import (
 // We extract these with a custom line parser instead of YAML.
 var knownSentinelLists = map[string]bool{
 	"directives": true, "manual_directives": true, "suppressed_directives": true,
-	"paths": true, "scope": true, "reminders": true, "verification": true,
+	"paths": true, "scope": true, "signals": true, "reminders": true, "verification": true,
 	"canonical_phrases": true,
 }
 
@@ -43,6 +43,13 @@ type Sentinel struct {
 	// topic file.
 	Paths []string `yaml:"paths,omitempty"`
 	Scope []string `yaml:"scope,omitempty"`
+
+	// Routing keywords aggregated into governance.md's routing table.
+	// Each artifact contributes its signals; gov:compile unions them per
+	// topic (preserving insertion order, deduped). Per ADR-020 §c the
+	// per-artifact compile commands are responsible for generating these
+	// from artifact content; gov:compile aggregates without invoking LLM.
+	Signals []string `yaml:"signals,omitempty"`
 
 	// Three-list schema from ADR-008.
 	Directives           []string `yaml:"directives"`
@@ -203,6 +210,8 @@ func parseSentinelBlock(inner string) (Sentinel, error) {
 			s.Paths = append(s.Paths, item)
 		case "scope":
 			s.Scope = append(s.Scope, item)
+		case "signals":
+			s.Signals = append(s.Signals, item)
 		case "reminders":
 			s.Reminders = append(s.Reminders, item)
 		case "verification":

@@ -580,7 +580,11 @@ Set `EDIKT_PROJECT_ROOT` to the root of the project being compiled (the director
 
     This step makes the difference between "first run is LLM-driven, future runs deterministic" (correct) and "every run is LLM-driven" (regression vs ADR-020).
 
-13b. **Re-emit `source_hash` and `directives_hash` after the topic-write.** Adding `topic:` to the sentinel changes the file body; without re-hashing, the next `<artifact>:compile` run will see a stale hash and trigger an unnecessary interview. Recompute both hashes and update the sentinel.
+13b. **While writing back `topic:`, also write back `signals:`.** During the LLM grouping pass for an artifact lacking `topic:`, also derive 4–12 routing keywords from the artifact body (concrete domain nouns, tool names, feature terms — same rubric as `<artifact>:compile`). Persist them to the same sentinel block as a `signals:` list. The Go binary aggregates these per topic into the routing-table row, eliminating the need for a hardcoded `topic→signals` map.
+
+    If the artifact already has a non-empty `signals:` list, preserve it verbatim — only emit when missing.
+
+13c. **Re-emit `source_hash` and `directives_hash` after the topic-write and signals-write.** Adding fields to the sentinel changes the file body; without re-hashing, the next `<artifact>:compile` run will see a stale hash and trigger an unnecessary interview. Recompute both hashes and update the sentinel.
 
 ### Derive Path Patterns
 

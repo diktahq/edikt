@@ -23,6 +23,7 @@ type Topic struct {
 	Rules   []Rule
 	Paths   []string // union of contributing source paths, sorted, deduped
 	Scope   []string // union of contributing source scopes, sorted, deduped
+	Signals []string // union of contributing source signals (routing keywords), insertion-order, deduped
 	Sources []string // artifact IDs, sorted, deduped
 }
 
@@ -135,6 +136,7 @@ func Group(docs []*parse.Document) (map[string]*Topic, []string, error) {
 			}
 			t.Paths = mergeSortedUnique(t.Paths, doc.Sentinel.Paths)
 			t.Scope = mergeSortedUnique(t.Scope, doc.Sentinel.Scope)
+			t.Signals = mergeSortedUnique(t.Signals, doc.Sentinel.Signals)
 			if !contains(t.Sources, src) {
 				t.Sources = append(t.Sources, src)
 				sort.Strings(t.Sources)

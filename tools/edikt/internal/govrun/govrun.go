@@ -205,8 +205,16 @@ func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
 	var routingRows []render.RoutingRow
 	for _, name := range topicNames {
 		t := topicMap[name]
+		// Signals: prefer the aggregated set from artifact sentinels (per
+		// ADR-020 §c — per-artifact compile derives them, gov:compile merges).
+		// Fall back to the hardcoded map only when no artifact has yet
+		// contributed signals (covers projects partway through migration).
+		signals := t.Signals
+		if len(signals) == 0 {
+			signals = signalsForTopic(name)
+		}
 		routingRows = append(routingRows, render.RoutingRow{
-			Signals: strings.Join(signalsForTopic(name), ", "),
+			Signals: strings.Join(signals, ", "),
 			Scope:   strings.Join(dedup(t.Scope), ", "),
 			File:    "governance/" + name + ".md",
 		})

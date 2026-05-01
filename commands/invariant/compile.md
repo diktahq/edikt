@@ -273,6 +273,14 @@ The block MUST include a `topic:` field (lowercase kebab-case, ≤ 32 chars, mat
 - If `topic:` is missing, derive a topic slug from the invariant's `## Rule` section. Most invariants belong to a cross-cutting topic — common slugs are `architecture`, `compile`, `hooks`, `release`, `tooling`, `agent-rules`, `extensibility`. Reuse one if it fits.
 - Topic slugs MUST match `[a-z][a-z0-9-]*` and be ≤ 32 chars.
 
+**`signals:` field rules (ADR-020 §c):**
+
+The block MUST include a `signals:` list of routing keywords below `topic:`. The Go binary unions signals across all artifacts in a topic into the routing-table row.
+
+- If the existing block has `signals:`, preserve verbatim.
+- If missing, derive 3–8 keywords from the invariant's `## Rule` and `## Why`. Prefer concrete nouns and rule-related terms.
+- Each signal: lowercase, hyphen-or-underscore-separated, ≤ 32 chars.
+
 Assemble the new block content:
 
 ```yaml

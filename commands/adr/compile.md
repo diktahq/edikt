@@ -266,6 +266,27 @@ The block MUST include a `topic:` field (lowercase kebab-case, ≤ 32 chars, mat
 - Reuse a topic slug already in use by another artifact in this project if the new ADR fits there. Only invent a new slug when no existing topic fits — keeping the topic set small reduces governance file fragmentation.
 - The slug becomes the filename of the topic file Claude reads at session time: `topic: ai-processing` → `.claude/rules/governance/ai-processing.md`.
 
+**`signals:` field rules (ADR-020 §c, completes the aggregation contract):**
+
+The block MUST include a `signals:` list of routing keywords below `topic:`. These are the semantic terms a reader's prompt or a file path might match to indicate "this ADR is relevant" — they populate the routing table at the top of `governance.md` so Claude proactively loads the matching topic file.
+
+- If the existing block already has a `signals:` field, **preserve it verbatim** — never overwrite signals the user has tuned.
+- If `signals:` is missing, derive 4–12 keywords from the ADR's title and `## Decision` section. Prefer concrete domain nouns (`postgres`, `pgx`, `migration`), tool/library names (`react-flow`, `chi`, `deepgram`), and specific feature terms (`watermark`, `idempotency-key`, `confidence`). Avoid generic words ("system", "code", "data").
+- Each signal MUST be lowercase, hyphen-or-underscore-separated, ≤ 32 chars.
+- The Go binary aggregates signals across all ADRs/INVs/guidelines sharing a topic into the routing-table row for that topic. No LLM call at aggregation time — generation here is the only LLM pass.
+
+Example for an ADR about Postgres event sourcing:
+
+```yaml
+signals:
+  - postgres
+  - pgx
+  - event-sourcing
+  - audit-log
+  - migration
+  - sql
+```
+
 Assemble the new block content:
 
 ```yaml
