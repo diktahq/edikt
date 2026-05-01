@@ -155,11 +155,12 @@ jobs:
             Formula/edikt.rb
           echo "Patched Formula/edikt.rb:"
           cat Formula/edikt.rb
-          # Safety: verikt.rb must be byte-identical to HEAD.
-          git diff Formula/verikt.rb && {
+          # Safety: verikt.rb must be byte-identical to HEAD. `git diff` always
+          # exits 0 — use --quiet so a non-empty diff exits 1 and triggers abort.
+          if ! git diff --quiet Formula/verikt.rb; then
             echo "::error::verikt.rb was modified — aborting"
             exit 1
-          } || true
+          fi
 
       - name: Commit and push staging branch
         run: |
