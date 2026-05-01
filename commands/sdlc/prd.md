@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:prd
+name: sdlc:prd
 description: "Write, continue, or transition a PRD — split artifact (.md + .yaml sidecar), rigor-calibrated. Also handles lifecycle: ship, cancel, deprecate, supersede."
 effort: high
 argument-hint: "<feature description | PRD-NNN | PRD-NNN ship | PRD-NNN cancel | PRD-NNN deprecate | PRD-NNN supersede | DISCOVERY-NNN>"

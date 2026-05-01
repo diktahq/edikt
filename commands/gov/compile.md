@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:compile
+name: gov:compile
 description: "Compile ADRs and invariants into governance directives"
 effort: high
 allowed-tools:

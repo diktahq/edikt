@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:review
+name: gov:review
 description: "Review governance document language for enforceability and clarity"
 effort: high
 allowed-tools:

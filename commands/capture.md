@@ -1,5 +1,5 @@
 ---
-name: edikt:capture
+name: capture
 description: "Mid-session sweep — surface uncaptured ADRs, invariants, and doc gaps before moving on"
 effort: normal
 allowed-tools:

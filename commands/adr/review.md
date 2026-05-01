@@ -1,5 +1,5 @@
 ---
-name: edikt:adr:review
+name: adr:review
 description: "Review ADR language quality for enforceability and directive strength"
 effort: high
 argument-hint: "[ADR-NNN] — omit to review all accepted ADRs"

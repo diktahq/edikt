@@ -1,5 +1,5 @@
 ---
-name: edikt:guideline:compile
+name: guideline:compile
 description: "Generate or regenerate directive sentinel blocks for one guideline or all"
 effort: normal
 argument-hint: "[guideline-slug] [--regenerate | --strategy=regenerate|preserve] — omit to process all guidelines"

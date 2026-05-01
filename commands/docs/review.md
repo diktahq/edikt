@@ -1,5 +1,5 @@
 ---
-name: edikt:docs:review
+name: docs:review
 description: "Audit documentation gaps — find what changed in code but wasn't reflected in docs"
 effort: high
 context: fork

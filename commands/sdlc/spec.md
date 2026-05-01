@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:spec
+name: sdlc:spec
 description: "Technical specification from an accepted PRD"
 effort: high
 argument-hint: "<PRD identifier, e.g. PRD-005>"

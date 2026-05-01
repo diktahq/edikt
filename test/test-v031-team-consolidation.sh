@@ -33,7 +33,7 @@ echo ""
 echo -e "${BOLD}TEST 2: Config command${NC}"
 
 assert_file_exists "$CONFIG_CMD" "commands/config.md exists"
-assert_file_contains "$CONFIG_CMD" "name: edikt:config" "Config has correct frontmatter name"
+assert_file_contains "$CONFIG_CMD" "name: config" "Config has correct frontmatter name"
 assert_file_contains "$CONFIG_CMD" "get {key}" "Config supports get subcommand"
 assert_file_contains "$CONFIG_CMD" "set {key} {value}" "Config supports set subcommand"
 

@@ -1,5 +1,5 @@
 ---
-name: edikt:status
+name: status
 description: "Governance dashboard — chain status, gates, agents, hooks"
 effort: low
 context: fork

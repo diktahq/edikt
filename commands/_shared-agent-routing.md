@@ -1,5 +1,5 @@
 ---
-name: edikt:_shared-agent-routing
+name: _shared-agent-routing
 description: "Shared domain signal detection and specialist spawning procedure — referenced by plan, review, drift"
 tier: 1
 ---

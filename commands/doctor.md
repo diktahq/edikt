@@ -1,5 +1,5 @@
 ---
-name: edikt:doctor
+name: doctor
 description: "Validate governance setup and report actionable warnings"
 effort: normal
 context: fork

@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:review
+name: sdlc:review
 description: "Post-implementation specialist review — routes to relevant domain agents based on what was built"
 effort: high
 context: fork

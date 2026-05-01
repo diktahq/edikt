@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:discovery
+name: sdlc:discovery
 description: "Structured discovery doc — define what you know, what you don't, and how to find out"
 effort: medium
 argument-hint: "<description or BRAIN-NNN to lift>"

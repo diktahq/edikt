@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:sync
+name: gov:sync
 description: "Sync AI rules from linter configs — translate .golangci-lint.yaml, .eslintrc, ruff.toml etc. into .claude/rules/"
 effort: normal
 allowed-tools:

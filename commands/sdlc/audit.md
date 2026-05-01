@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:audit
+name: sdlc:audit
 description: "Security audit — OWASP scan, secret detection, auth coverage, vulnerability patterns"
 effort: high
 context: fork

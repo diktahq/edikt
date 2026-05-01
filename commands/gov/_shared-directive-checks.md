@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:_shared-directive-checks
+name: gov:_shared-directive-checks
 description: "Shared directive-quality sub-procedure — not a top-level command"
 effort: low
 ---

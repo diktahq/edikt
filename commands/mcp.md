@@ -1,5 +1,5 @@
 ---
-name: edikt:mcp
+name: mcp
 description: "Manage MCP server configuration for project management integrations"
 effort: low
 allowed-tools:

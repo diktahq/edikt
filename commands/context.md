@@ -1,5 +1,5 @@
 ---
-name: edikt:context
+name: context
 description: "Load all project context into session"
 effort: low
 argument-hint: "[--depth=full|focused|minimal]"

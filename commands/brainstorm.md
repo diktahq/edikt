@@ -1,5 +1,5 @@
 ---
-name: edikt:brainstorm
+name: brainstorm
 description: "Brainstorm features, explore design space, converge toward PRD or spec"
 effort: high
 argument-hint: "[topic or feature idea] [--fresh]"

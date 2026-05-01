@@ -11,7 +11,7 @@ echo ""
 assert_file_exists "$PROJECT_ROOT/commands/gov/sync.md" "sync command exists"
 
 # Has correct frontmatter
-assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "name: edikt:gov:sync" "sync has name"
+assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "name: gov:sync" "sync has name"
 assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "edikt:gov:sync\|edikt:sync" "sync references itself"
 
 # Supports expected linters

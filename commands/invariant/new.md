@@ -1,5 +1,5 @@
 ---
-name: edikt:invariant:new
+name: invariant:new
 description: "Capture a hard architectural constraint that must never be violated"
 effort: normal
 argument-hint: "[constraint description] — omit to extract from conversation"

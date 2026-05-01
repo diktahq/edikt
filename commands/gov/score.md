@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:score
+name: gov:score
 description: "Score overall governance quality — context budget, directive compliance metrics, manual directive health"
 effort: normal
 allowed-tools:

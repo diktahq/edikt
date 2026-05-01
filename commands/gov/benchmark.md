@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:benchmark
+name: gov:benchmark
 description: "Run adversarial attack prompts against directives to verify they hold under pressure"
 effort: high
 tier: 2

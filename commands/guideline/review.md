@@ -1,5 +1,5 @@
 ---
-name: edikt:guideline:review
+name: guideline:review
 description: "Review guideline language quality for enforceability"
 effort: normal
 argument-hint: "[filename] — omit to review all guidelines"

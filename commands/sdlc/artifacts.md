@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:artifacts
+name: sdlc:artifacts
 description: "Generate implementable artifacts from an accepted spec"
 effort: high
 allowed-tools:

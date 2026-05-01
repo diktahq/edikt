@@ -1,5 +1,5 @@
 ---
-name: edikt:init
+name: init
 description: "Intelligent onboarding — detect project, infer architecture, install guardrails"
 effort: normal
 allowed-tools:

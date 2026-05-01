@@ -1,5 +1,5 @@
 ---
-name: edikt:invariant:review
+name: invariant:review
 description: "Review invariant language quality for enforceability"
 effort: high
 argument-hint: "[INV-NNN] — omit to review all active invariants"

@@ -1,5 +1,5 @@
 ---
-name: edikt:upgrade
+name: upgrade
 description: "Upgrade edikt in this project — launcher version check, then hooks, agents, and rules"
 effort: normal
 allowed-tools:

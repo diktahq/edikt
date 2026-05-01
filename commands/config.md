@@ -1,5 +1,5 @@
 ---
-name: edikt:config
+name: config
 description: "View and modify edikt project configuration"
 effort: low
 allowed-tools:

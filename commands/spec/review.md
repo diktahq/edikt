@@ -1,5 +1,5 @@
 ---
-name: edikt:spec:review
+name: spec:review
 description: "Re-run the SPEC evaluator rubric and verify PRD coverage + AC pass-through"
 effort: low
 argument-hint: "<SPEC-NNN>"

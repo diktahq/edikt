@@ -219,12 +219,16 @@ install-local:
 	cd $(REPO_ROOT)/tools/edikt && \
 	  CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tmp/edikt-install-local . && \
 	  cd $(REPO_ROOT); \
+	echo "Packaging payload tarball (matches release shape)..."; \
+	rm -f /tmp/edikt-payload-local.tar.gz; \
+	cd $(REPO_ROOT) && tar -czf /tmp/edikt-payload-local.tar.gz \
+	  templates/ commands/ install.sh CHANGELOG.md VERSION; \
 	EDIKT_LAUNCHER_SOURCE="/tmp/edikt-install-local" \
-	EDIKT_INSTALL_SOURCE="$(REPO_ROOT)" \
+	EDIKT_INSTALL_SOURCE="/tmp/edikt-payload-local.tar.gz" \
 	EDIKT_RELEASE_TAG="$$TAG" \
 	EDIKT_INSTALL_INSECURE=1 \
 	bash install.sh --global --ref "$$TAG"; \
-	rm -f /tmp/edikt-install-local
+	rm -f /tmp/edikt-install-local /tmp/edikt-payload-local.tar.gz
 
 ## dev-global: link your real ~/.edikt/ to this repo's working tree
 dev-global:

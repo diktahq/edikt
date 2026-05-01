@@ -1,5 +1,5 @@
 ---
-name: edikt:guideline:new
+name: guideline:new
 description: "Create a new team guideline file"
 effort: normal
 argument-hint: "[guideline topic] — omit to be prompted"

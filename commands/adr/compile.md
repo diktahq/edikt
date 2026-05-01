@@ -1,5 +1,5 @@
 ---
-name: edikt:adr:compile
+name: adr:compile
 description: "Generate or regenerate directive sentinel blocks for one ADR or all"
 effort: normal
 argument-hint: "[ADR-NNN] [--regenerate | --strategy=regenerate|preserve] — omit to process all accepted ADRs"

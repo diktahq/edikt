@@ -1,5 +1,5 @@
 ---
-name: edikt:adr:new
+name: adr:new
 description: "Capture an architecture decision record — from scratch or from the current conversation"
 effort: normal
 argument-hint: "[decision topic] — omit to extract from conversation"

@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:plan
+name: sdlc:plan
 description: "Create execution plan with interview and codebase analysis"
 effort: high
 argument-hint: "[task, ticket, SPEC-NNN, or PLAN-NNN to continue]"

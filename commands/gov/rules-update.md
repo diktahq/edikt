@@ -1,5 +1,5 @@
 ---
-name: edikt:gov:rules-update
+name: gov:rules-update
 description: "Check for outdated rule packs and update them"
 effort: normal
 allowed-tools:

@@ -704,7 +704,7 @@ assert_file_contains "$DOCTOR" "State machine" "doctor checks state machine viol
 # Spec command exists with correct structure
 SPEC_CMD="$PROJECT_ROOT/commands/sdlc/spec.md"
 assert_file_exists "$SPEC_CMD" "commands/sdlc/spec.md exists"
-assert_file_contains "$SPEC_CMD" "name: edikt:sdlc:spec" "sdlc/spec.md has correct name"
+assert_file_contains "$SPEC_CMD" "name: sdlc:spec" "sdlc/spec.md has correct name"
 assert_file_contains "$SPEC_CMD" "implements:" "sdlc/spec.md references source PRD in template"
 assert_file_contains "$SPEC_CMD" "architecture_source" "sdlc/spec.md has archway integration field"
 assert_file_contains "$SPEC_CMD" "references:" "sdlc/spec.md has references field in template"
@@ -719,7 +719,7 @@ assert_file_contains "$SPEC_CMD" "artifacts" "sdlc/spec.md suggests spec-artifac
 # Spec-artifacts command exists with correct structure
 SPECART_CMD="$PROJECT_ROOT/commands/sdlc/artifacts.md"
 assert_file_exists "$SPECART_CMD" "commands/sdlc/artifacts.md exists"
-assert_file_contains "$SPECART_CMD" "name: edikt:sdlc:artifacts" "sdlc/artifacts.md has correct name"
+assert_file_contains "$SPECART_CMD" "name: sdlc:artifacts" "sdlc/artifacts.md has correct name"
 assert_file_contains "$SPECART_CMD" "data-model" "sdlc/artifacts.md generates data model"
 assert_file_contains "$SPECART_CMD" "api-contract\|contracts/api" "sdlc/artifacts.md generates API contracts"
 assert_file_contains "$SPECART_CMD" "test-strategy" "sdlc/artifacts.md generates test strategy"
@@ -758,7 +758,7 @@ assert_file_contains "$PROJECT_ROOT/commands/init.md" "specs:" "init.md adds spe
 
 DRIFT_CMD="$PROJECT_ROOT/commands/sdlc/drift.md"
 assert_file_exists "$DRIFT_CMD" "commands/sdlc/drift.md exists"
-assert_file_contains "$DRIFT_CMD" "name: edikt:sdlc:drift" "sdlc/drift.md has correct name"
+assert_file_contains "$DRIFT_CMD" "name: sdlc:drift" "sdlc/drift.md has correct name"
 assert_file_contains "$DRIFT_CMD" "scope" "sdlc/drift.md supports scoping"
 assert_file_contains "$DRIFT_CMD" "prd" "sdlc/drift.md checks PRD acceptance criteria"
 assert_file_contains "$DRIFT_CMD" "spec" "sdlc/drift.md checks spec requirements"
@@ -788,7 +788,7 @@ assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "edikt:sdlc:drift\|
 
 COMPILE_CMD="$PROJECT_ROOT/commands/gov/compile.md"
 assert_file_exists "$COMPILE_CMD" "commands/gov/compile.md exists"
-assert_file_contains "$COMPILE_CMD" "name: edikt:gov:compile" "gov/compile.md has correct name"
+assert_file_contains "$COMPILE_CMD" "name: gov:compile" "gov/compile.md has correct name"
 assert_file_contains "$COMPILE_CMD" "governance.md" "gov/compile.md outputs to governance.md"
 assert_file_contains "$COMPILE_CMD" "accepted" "gov/compile.md filters by accepted status"
 assert_file_contains "$COMPILE_CMD" "superseded" "gov/compile.md handles superseded ADRs"

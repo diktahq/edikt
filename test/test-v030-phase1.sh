@@ -30,8 +30,8 @@ GUIDELINE_COMPILE="$PROJECT_ROOT/commands/guideline/compile.md"
 assert_file_exists "$GUIDELINE_COMPILE" \
     "commands/guideline/compile.md exists (new in v0.3.0)"
 
-assert_file_contains "$GUIDELINE_COMPILE" "name: edikt:guideline:compile" \
-    "guideline/compile.md frontmatter has name: edikt:guideline:compile"
+assert_file_contains "$GUIDELINE_COMPILE" "name: guideline:compile" \
+    "guideline/compile.md frontmatter has name: guideline:compile"
 
 assert_file_contains "$GUIDELINE_COMPILE" "edikt:directives:start" \
     "guideline/compile.md documents directive sentinel generation"

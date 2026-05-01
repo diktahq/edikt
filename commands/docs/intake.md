@@ -1,5 +1,5 @@
 ---
-name: edikt:docs:intake
+name: docs:intake
 description: "Onboard existing docs into edikt's standard structure"
 effort: normal
 allowed-tools:

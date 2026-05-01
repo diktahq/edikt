@@ -1,5 +1,5 @@
 ---
-name: edikt:agents
+name: agents
 description: "List, inspect, and manage specialist agents"
 effort: low
 allowed-tools:

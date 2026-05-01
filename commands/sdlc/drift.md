@@ -1,5 +1,5 @@
 ---
-name: edikt:sdlc:drift
+name: sdlc:drift
 description: "Verify implementation matches spec, PRD, and ADRs"
 effort: high
 allowed-tools:

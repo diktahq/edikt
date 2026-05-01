@@ -1,5 +1,5 @@
 ---
-name: edikt:prd:review
+name: prd:review
 description: "Re-run the PRD evaluator rubric on an existing PRD and report score + gaps + drift + broken refs"
 effort: low
 argument-hint: "<PRD-NNN>"

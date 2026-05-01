@@ -1,5 +1,5 @@
 ---
-name: edikt:invariant:compile
+name: invariant:compile
 description: "Generate or regenerate directive sentinel blocks for one Invariant Record or all"
 effort: normal
 argument-hint: "[INV-NNN] [--regenerate | --strategy=regenerate|preserve] — omit to process all active invariants"
