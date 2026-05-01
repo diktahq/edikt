@@ -150,6 +150,42 @@ If you have an existing flat `governance.md` from v0.1.x, running `/edikt:gov:co
 
 For best results, run `/edikt:gov:review` first to generate directive sentinel blocks in your source documents.
 
+## Orphan ADR detection (v0.5.0)
+
+Compile detects ADRs with no directives and no `no-directives:` reason field.
+
+**Warn-then-block semantics:**
+
+1. First compile with an orphan ADR — warns with the ADR path and exits 0 (non-blocking).
+2. Second consecutive compile with the same orphan (or a superset) — blocks with exit ≠ 0.
+
+Resolve by:
+- Adding a directive sentinel block to the ADR (`/edikt:adr:compile`)
+- Or marking the ADR with `no-directives: <reason ≥ 10 chars>` in its frontmatter (for ADRs that are deliberately non-directive, e.g., purely contextual records)
+
+**State persistence:**
+
+Orphan state is tracked in `.edikt/state/compile-history.json` via atomic rename. The `.edikt/state/` directory is auto-appended to `.gitignore` — this is local machine state, not repo state.
+
+## Directive quality checks (v0.5.0)
+
+Before writing, compile invokes the shared directive-quality sub-procedure (`commands/gov/_shared-directive-checks.md`) — the same sub-procedure used by `/edikt:gov:review`. It covers:
+
+- **FR-003a** — warns on multi-sentence directives without `canonical_phrases`
+- **FR-003b** — warns when a `canonical_phrase` value does not appear in the directive body
+- **`no-directives` reason validation** — if `no-directives:` is present, the reason must be ≥ 10 characters and not a placeholder (`tbd`, `todo`, `fix later`)
+
+FR-003a is warn-only in v0.5.0. Hard-fail is targeted for the next release.
+
+## Extended sentinel fields (v0.5.0)
+
+The compile parser now reads two new optional fields from sentinel blocks:
+
+- `canonical_phrases:` — forwarded into the compiled governance topic file verbatim; consumed by FR-003b checks
+- `behavioral_signal:` — stored for `/edikt:gov:benchmark`; not included in `.claude/rules/` output
+
+Missing fields are treated as `[]` / `{}` — fully backward-compatible.
+
 ## When to run
 
 Run after:

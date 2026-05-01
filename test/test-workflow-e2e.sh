@@ -288,9 +288,11 @@ pass "Errors wrapped with context"
 # TEST 5: Update Plan Progress
 section "TEST 5: Update Plan with Execution Results"
 
-# Simulate updating progress table
-sed -i '' 's/| 1     | -      | -       |/| 1     | done   | 2026-03-06 |/' docs/product/plans/PLAN-auth-feature.md
-sed -i '' 's/| 2     | -      | -       |/| 2     | done   | 2026-03-06 |/' docs/product/plans/PLAN-auth-feature.md
+# Simulate updating progress table — portable sed (BSD vs GNU `-i` differ).
+plan_file="docs/product/plans/PLAN-auth-feature.md"
+sed -e 's/| 1     | -      | -       |/| 1     | done   | 2026-03-06 |/' \
+    -e 's/| 2     | -      | -       |/| 2     | done   | 2026-03-06 |/' \
+    "$plan_file" > "$plan_file.tmp" && mv "$plan_file.tmp" "$plan_file"
 
 grep -q "| 1     | done" docs/product/plans/PLAN-auth-feature.md || fail "Phase 1 progress not updated"
 pass "Phase 1 marked done"

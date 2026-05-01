@@ -67,7 +67,7 @@ If the required file is missing:
 ```
 ❌ Evaluator template missing — cannot run evaluation.
    Expected: {path}
-   Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+   Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
    Or disable evaluation: /edikt:config set evaluator.phase-end false
 ```
 The plan MUST NOT silently skip evaluation when the evaluator is enabled but the template is missing. This is a hard failure — the user must either reinstall or explicitly disable evaluation.

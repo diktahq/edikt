@@ -14,6 +14,8 @@ edikt is the governance layer for agentic engineering. It delivers on the vision
 
 **Architecture governance & compliance.** Capture architecture decisions (ADRs), hard constraints (invariants), and team conventions (guidelines). `/edikt:gov:compile` reads all three, checks for contradictions, and produces topic-grouped rule files under `.claude/rules/` that Claude reads automatically — every session, before writing any code. Rule packs add correctness guardrails to the same enforcement surface. Signal detection suggests capturing new decisions mid-session. Together, governed decisions and compiled enforcement define everything Claude must follow.
 
+**SPEC-005 additions (v0.5.0).** Directive hardening + governance benchmark: new optional sentinel fields (`canonical_phrases`, `behavioral_signal`), adversarial benchmark command (`/edikt:gov:benchmark`, tier-2), soft-language scan and `--backfill` in `/edikt:adr:review`, orphan ADR detection with warn-then-block in `/edikt:gov:compile`, routing-table source-file existence check in `/edikt:doctor`, attack-prompt template catalog (`templates/attacks/`).
+
 **Agentic SDLC governance.** A status-gated chain — PRD → spec → artifacts → plan → execute → drift detection — where each step is reviewed by specialist agents, constrained by compiled governance, and produces new decisions that feed back into the next compilation. Quality gates let specialist agents block completion on critical findings. The plan harness tracks iterations with backoff, hands off context between phases, and carries acceptance criteria as a structured sidecar so the evaluator checks against the criteria you defined.
 
 The two systems create a flywheel: the lifecycle produces engineering decisions, and compiled decisions govern the lifecycle. Decisions compound rather than decay. Every session is more governed than the last.
@@ -26,8 +28,8 @@ edikt fixes this by:
 
 1. **Governing architecture and compiling into enforcement** — ADRs, invariants, and guidelines are captured, managed, and compiled into enforcement-grade directives with primacy/recency attention mechanics
 2. **Governing the Agentic SDLC** — PRD → spec → artifacts → plan → execute → drift detection, with status enforcement at each transition
-3. **Enforcing through hooks** — 13 lifecycle hooks: auto-format, plan injection, compaction recovery, signal detection, quality gates, file change detection
-4. **Specialist review** — 19 domain agents (DBA, security, SRE, architect, evaluator, and more) review plans and implementations
+3. **Enforcing through hooks** — 20 lifecycle hooks: auto-format, plan injection, compaction recovery, signal detection, quality gates, file change detection
+4. **Specialist review** — 20 domain agents (DBA, security, SRE, architect, evaluator, and more) review plans and implementations
 5. **Quality gates** — specialist agents block phase completion on critical findings before work is marked done
 6. **Detecting drift** — Verifies implementation matches the spec, PRD, and ADRs with confidence-based severity
 

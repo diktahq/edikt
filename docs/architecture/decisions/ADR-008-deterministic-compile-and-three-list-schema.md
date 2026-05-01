@@ -258,6 +258,7 @@ No user intervention required for migration. Existing v0.2.x artifacts continue 
 source_hash: pending
 directives_hash: pending
 compiler_version: "0.3.0"
+topic: compile
 paths:
   - "commands/adr/compile.md"
   - "commands/invariant/compile.md"

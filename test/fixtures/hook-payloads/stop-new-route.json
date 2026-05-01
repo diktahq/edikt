@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Added POST /api/v1/invoices and GET /api/v1/invoices/:id.",
+  "cwd": "${HOME}/projects/greenfield"
+}

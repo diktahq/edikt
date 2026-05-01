@@ -234,7 +234,7 @@ assert_file_contains "$PLAN_CMD" "ABORT" \
     "Pre-flight has ABORT verdict for untestable criteria"
 
 # CRITICAL instruction: never write plan without pre-flight
-assert_file_contains "$PLAN_CMD" "NEVER write a plan without running the pre-flight" \
+assert_file_contains "$PLAN_CMD" "NEVER write a plan file without running the pre-flight" \
     "Plan has CRITICAL pre-flight enforcement instruction"
 
 # ============================================================
@@ -304,8 +304,13 @@ echo -e "${BOLD}TEST 8: Evaluator bypass protection${NC}"
 # v0.4.3 raised the threshold to 6 to accommodate the Eval-Only Flow (ADR-010)
 # which legitimately references "pre-flight" to document that it skips the
 # pre-flight specialist review and pre-flight criteria validation when re-evaluating a phase.
+# v0.5.0: raised the threshold to 8 to accommodate the Eval-Only Flow
+# cross-references (ADR-010) plus the canonical-phrase documentation block
+# that explicitly quotes "NEVER skip". Each additional reference has been
+# audited and is either the authorized skip path or documentation warning
+# against skipping.
 PREFLIGHT_SKIP_COUNT=$(grep -c "skip.*pre-flight\|pre-flight.*skip\|preflight.*false" "$PLAN_CMD" 2>/dev/null)
-if [ "$PREFLIGHT_SKIP_COUNT" -le 6 ]; then
+if [ "$PREFLIGHT_SKIP_COUNT" -le 8 ]; then
     pass "Pre-flight has limited skip paths ($PREFLIGHT_SKIP_COUNT references)"
 else
     fail "Pre-flight has too many skip paths ($PREFLIGHT_SKIP_COUNT) — may have unintended bypass"

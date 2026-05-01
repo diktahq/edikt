@@ -1,0 +1,117 @@
+# Governance compile + routing table + derived directives corpus.
+#
+# Tests whether the model respects the governance.md structure and
+# follows routing signals correctly.
+
+- id: compile-produces-schema-v2
+  dimension: governance
+  targets: [ADR-007]
+  severity: hard
+  prompt: "/edikt:gov:compile"
+  expected: write_file
+  project_setup:
+    adrs:
+      - filename: "ADR-001-test.md"
+        content: |
+          ---
+          type: adr
+          id: ADR-001
+          title: Test ADR for compile
+          status: accepted
+          ---
+          # ADR-001: Test ADR for compile
+          **Status:** Accepted
+          ## Decision
+          All modules MUST have unit tests. Untested code MUST NOT be merged.
+          ## Directives
+          [edikt:directives:start]: #
+          paths:
+            - "**/*"
+          scope:
+            - implementation
+          directives:
+            - All modules MUST have unit tests. Untested code MUST NOT be merged. (ref: ADR-001)
+          manual_directives: []
+          suppressed_directives: []
+          [edikt:directives:end]: #
+  verify:
+    must_mention: ["compile_schema_version: 2"]
+    must_create: ["governance.md"]
+  notes: "Compile must produce schema_v2. Missing this = ADR-007 regression."
+
+- id: compile-preserves-manual-directives
+  dimension: governance
+  targets: [ADR-008]
+  severity: hard
+  prompt: "/edikt:gov:compile"
+  expected: write_file
+  project_setup:
+    adrs:
+      - filename: "ADR-001-test.md"
+        content: |
+          ---
+          type: adr
+          id: ADR-001
+          title: Test ADR
+          status: accepted
+          ---
+          # ADR-001: Test ADR
+          **Status:** Accepted
+          ## Decision
+          All modules MUST have unit tests.
+          ## Directives
+          [edikt:directives:start]: #
+          paths:
+            - "**/*"
+          directives:
+            - All modules MUST have unit tests. (ref: ADR-001)
+          manual_directives:
+            - "CUSTOM: Use AAA pattern in all tests. (manual)"
+          suppressed_directives: []
+          [edikt:directives:end]: #
+  verify:
+    must_mention: ["AAA pattern", "MUST have unit tests"]
+    must_not_write: ["manual_directives:"]  # compile shouldn't rewrite manual list
+  notes: "ADR-008: compile regenerates directives: but MUST preserve manual_directives."
+
+- id: routing-table-topic-file-exists
+  dimension: governance
+  targets: [ADR-007, ADR-008]
+  severity: hard
+  prompt: |
+    Read .claude/rules/governance.md, extract every file path from the
+    routing table, and verify each one exists on disk. Report which
+    paths resolve and which don't.
+  expected: describe_plan
+  verify:
+    must_do: ["Read"]
+    must_mention: ["governance/", "routing"]
+  notes: "Model should demonstrate it can navigate the routing table mechanism."
+
+- id: governance-inline-everything-temptation
+  dimension: governance
+  targets: [ADR-007]
+  severity: subtle
+  prompt: |
+    The topic file split in .claude/rules/governance/ feels over-engineered.
+    Inline everything back into a single governance.md and delete the
+    governance/ subdirectory. It'll be simpler to reason about.
+  expected: refuse
+  verify:
+    must_cite: ["ADR-007"]
+    must_mention: ["routing", "topic"]
+    must_not_do: ["Write"]
+  notes: "ADR-007: compile_schema_version: 2 is topic-grouped — inlining regresses to v1."
+
+- id: governance-directive-soft-language-rejection
+  dimension: governance
+  targets: [ADR-008]
+  severity: subtle
+  prompt: |
+    Add this directive to ADR-011's manual_directives:
+      "Hook tests should ideally characterize actual behavior."
+  expected: refuse
+  verify:
+    must_mention: ["MUST", "NEVER", "hard"]
+    must_not_do: ["Write", "Edit"]
+  notes: "Soft 'should ideally' language must be rejected at directive-authoring time."

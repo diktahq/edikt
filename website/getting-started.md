@@ -18,11 +18,26 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 
 ## 1. Install
 
+### macOS / Linux (via Homebrew — recommended)
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+brew install diktahq/tap/edikt
+edikt install
 ```
 
-Copies commands to `~/.claude/commands/edikt/` and templates to `~/.edikt/templates/`. No dependencies, no build step, no runtime — just files.
+### Any platform (via curl)
+
+```bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+```
+
+Installs the launcher (`bin/edikt`) and fetches the payload (templates, commands, hooks) to `~/.edikt/`. No dependencies, no build step, no runtime — just files.
+
+**Upgrading from v0.4.x?** See [Migrating from v0.4](guides/migrating-from-v0.4.md).
+
+**Want to pin a version or roll back?** See [Upgrade and rollback](guides/upgrade-and-rollback.md).
+
+**Using Homebrew?** See [Homebrew install](guides/homebrew.md) for the two-tier update model.
 
 ## 2. Open a project in Claude Code
 
@@ -127,7 +142,7 @@ edikt generates everything and shows progress:
   ✓ Project context docs/project-context.md
   ✓ Rules           6 packs → .claude/rules/
   ✓ Agents          5 specialists → .claude/agents/
-  ✓ Hooks           .claude/settings.json (9 behaviors)
+  ✓ Hooks           .claude/settings.json (20 behaviors)
   ✓ CLAUDE.md       updated
   ✓ Directories     docs/architecture/, docs/plans/, docs/product/
 ```
@@ -216,11 +231,11 @@ your-project/
 └── .claude/
     ├── rules/                   # guardrails Claude reads automatically
     ├── agents/                  # specialist agents (stack-matched)
-    ├── settings.json            # 9 automatic behaviors
+    ├── settings.json            # 20 automatic behaviors
     └── CLAUDE.md                # project block + natural language triggers
 ```
 
-**Automatic behaviors (9 lifecycle hooks):**
+**Automatic behaviors (20 lifecycle hooks):**
 
 | Behavior | What happens |
 |----------|-------------|
@@ -239,3 +254,31 @@ All behaviors are [configurable](/governance/features) — set any to `false` in
 ---
 
 **Questions?** See the [FAQ](/faq) or [open an issue on GitHub](https://github.com/diktahq/edikt/issues).
+
+---
+
+## Prompt caching for long sessions
+
+Claude Code exposes two environment variables that extend the prompt cache TTL beyond the 5-minute default. If you run long implementation sessions where edikt's rule packs + CLAUDE.md get re-read on every turn, these pay for themselves quickly:
+
+| Variable | What it does | When to use |
+|---|---|---|
+| `ENABLE_PROMPT_CACHING_1H=1` | Extends cache TTL to 1 hour | Long sessions (>30min) where you revisit the same governance context repeatedly — plan execution phases, multi-file refactors |
+| `FORCE_PROMPT_CACHING_5M=1` | Forces 5-minute caching even when Claude Code would otherwise skip | CI runs and short review sessions where you want deterministic caching behavior |
+
+Set these in your shell profile or on a per-session basis:
+
+```bash
+export ENABLE_PROMPT_CACHING_1H=1
+claude  # start a long-session with extended caching
+```
+
+These variables are read by Claude Code itself; edikt doesn't change its behavior based on them.
+
+---
+
+## What's next
+
+- [Upgrade and rollback](guides/upgrade-and-rollback.md) — keep edikt current, roll back if needed
+- [Migrating from v0.4](guides/migrating-from-v0.4.md) — if you're upgrading from v0.4.x
+- [Homebrew install](guides/homebrew.md) — two-tier update model explained

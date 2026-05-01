@@ -9,7 +9,7 @@ allowed-tools:
   - Bash
   - Glob
 ---
-!`INV_DIR=$(grep "^  invariants:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$INV_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); for d in "${BASE}/architecture/invariants" "${BASE}/invariants"; do [ -d "$d" ] && INV_DIR="$d" && break; done; [ -z "$INV_DIR" ] && INV_DIR="${BASE}/architecture/invariants"; fi; COUNT=$(ls "${INV_DIR}/"INV-*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${INV_DIR}/"INV-*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext INV number: INV-%s\nExisting invariants: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext INV number: INV-001\nExisting invariants: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  invariants:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/architecture/invariants"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; COUNT=$(find "$DIR" -maxdepth 1 -type f -name "INV-*.md" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type f -name "INV-*.md" 2>/dev/null | sort | xargs -I{} basename {} .md | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext INV number: INV-%s\nExisting invariants: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
 
 # edikt:invariant:new
 
@@ -178,15 +178,19 @@ Tokens matching `{prefix}/{name}` where `{prefix}` is `feature`, `feat`, `fix`, 
 - Use the source pool to fill the Rationale and Consequences-of-violation sections directly.
 - Interview only for gaps: Statement wording (if the source pool isn't declarative enough), Enforcement mechanism (often not in specs), and whether the constraint should be ACTIVE or PROPOSED initially.
 
-#### 3d. Interview for gaps
+#### 3d. Interview for gaps (batched presentation per Opus 4.7 guidance)
 
-Ask ONE focused question per missing element:
-- **Statement** — "What's the constraint in one declarative sentence?" (Only ask if the source pool didn't give a clear one)
-- **Rationale** — "Why is this non-negotiable?" (Usually in the source pool if a compliance doc or incident report was referenced)
-- **Consequences of violation** — "What specifically goes wrong if this is violated?" (Concrete failure mode, required)
-- **Enforcement** — "How will we catch violations?" (Automated test / linter / edikt directive / review checklist — at least one is mandatory per ADR-009)
+**Present ALL gap questions in a single message as a numbered list — do NOT ask one-at-a-time.** Ask ONLY about missing elements not present in the source pool. Every user turn adds reasoning overhead; batching respects the user's attention budget. Each question must be labeled:
+- `[required]` — blocking; the invariant cannot be written without this
+- `[optional — default: <value>]` — default applied silently if skipped
 
-Do not ask about anything already covered by the source pool. If the source pool is comprehensive enough that no interview is needed, skip directly to 3e.
+Gap questions to batch (one per missing element):
+- **Statement** — "What's the constraint in one declarative sentence?" [required if source pool unclear]
+- **Rationale** — "Why is this non-negotiable?" [optional — default: infer from source pool]
+- **Consequences of violation** — "What specifically goes wrong if this is violated?" [required — concrete failure mode]
+- **Enforcement** — "How will we catch violations?" [required per ADR-009 — at least one of: automated test, linter, edikt directive, review checklist]
+
+Accept a single user reply covering any subset. Skip the interview entirely when the source pool covers all four elements.
 
 **Examples:**
 

@@ -12,7 +12,7 @@ allowed-tools:
   - Agent
   - AskUserQuestion
 ---
-!`PLAN_DIR=$(grep "^  plans:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$PLAN_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); PLAN_DIR="${BASE}/plans"; fi; PLAN=$(ls -t "${PLAN_DIR}/"*.md 2>/dev/null | head -1); if [ -z "$PLAN" ]; then PLAN=$(ls -t docs/product/plans/*.md 2>/dev/null | head -1); fi; if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -iE '\|.*in[_ -]progress' "$PLAN" 2>/dev/null | head -1 | tr -d '|' | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi`
+!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && exit 0; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  plans:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/plans"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; PLAN=$(find "$DIR" -maxdepth 1 -type f -name "*.md" 2>/dev/null | while read f; do printf "%s\t%s\n" "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" "$f"; done | sort -rn | head -1 | cut -f2); if [ -z "$PLAN" ]; then PLAN=$(find "$PROOT/docs/product/plans" -maxdepth 1 -type f -name "*.md" 2>/dev/null | while read f; do printf "%s\t%s\n" "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" "$f"; done | sort -rn | head -1 | cut -f2); fi; if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -iE "\|.*in[_ -]progress" "$PLAN" 2>/dev/null | head -1 | tr -d "|" | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi'`
 
 # edikt:plan
 
@@ -26,17 +26,46 @@ CRITICAL: This command requires live back-and-forth interview with the user. Che
   ```
 - If you are not in plan mode, proceed normally with the interview.
 
-CRITICAL: NEVER write a plan without running the pre-flight specialist review — skip it only if `--no-review` is explicitly passed.
+## CRITICAL GATE — DO NOT PROCEED PAST THIS LINE WITHOUT READING
+
+Writing the plan file is GATED on producing each of the evidence markers listed below. The agent MUST emit each marker to stdout at the exact point in the flow it represents. **If you are about to write the plan file and you cannot point to each marker in your own preceding output, you MUST stop and re-run the missing step.** Prose rationalizations like "we already did this at an earlier layer", "the work is mechanical", or "this is redundant given context" are explicitly disallowed. They are the exact failure mode this gate exists to catch.
+
+Required evidence markers (in order):
+
+```
+[PREFLIGHT:SPECIALIST-REVIEW:STARTED]
+[PREFLIGHT:SPECIALIST-REVIEW:COMPLETED findings=<N critical, M warnings>]
+[PREFLIGHT:CRITERIA-VALIDATION:STARTED]
+[PREFLIGHT:CRITERIA-VALIDATION:COMPLETED classified=<N testable / M vague / K subjective / L blocked>]
+[PREFLIGHT:READY-TO-WRITE]
+```
+
+**Authorized skip path.** The ONLY way to skip a pre-flight step is:
+1. `$ARGUMENTS` contains the literal flag `--no-review` (skips specialist review only). Emit `[PREFLIGHT:SPECIALIST-REVIEW:SKIPPED reason=flag]` then continue.
+2. `evaluator.preflight: false` in `.edikt/config.yaml` (skips criteria validation only). Emit `[PREFLIGHT:CRITERIA-VALIDATION:SKIPPED reason=config]` then continue.
+
+**Any other skip path — including "helpful override" based on context reasoning — is forbidden.** If you believe a step is redundant, you MUST:
+1. Emit `[PREFLIGHT:SPECIALIST-REVIEW:PROPOSING-SKIP reason="<your reason>"]`
+2. Stop, explain the reason to the user, and ask explicitly: "Do you want me to skip this step?"
+3. Proceed only on explicit user approval in the same session; emit `[PREFLIGHT:SPECIALIST-REVIEW:SKIPPED reason=user-approved]`.
+
+Canonical phrases you should echo when encountering this gate: "pre-flight review", "specialist review", "NEVER skip", "MUST emit evidence markers". These phrases exist so hooks, benchmarks, and `/edikt:gov:review` can detect compliance with this gate.
+
+CRITICAL: NEVER write a plan file without running the pre-flight specialist review — skip it only by one of the two authorized skip paths above.
 
 ## Arguments
 
 - `$ARGUMENTS` — Optional. Any of: a task description, ticket ID, SPEC identifier, plan name, or nothing (triggers interview)
 - `--eval-only {phase}` — Re-run evaluation for a specific phase in the active plan without re-running the generator. Used to recover from BLOCKED verdicts (ADR-010) after fixing the underlying cause (e.g. switching `evaluator.mode` to headless). `{phase}` is the phase number (1-indexed). Optionally combine with `--plan {slug}` to disambiguate when multiple plans exist. Cannot be combined with a positional task argument.
 - `--plan {slug}` — Optional companion to `--eval-only`. Names the plan file by slug (e.g. `v0.4.3-evaluator-headless-default`) when multiple plans exist in `docs/plans/` or `docs/product/plans/`.
+- `--sidecar-only [PLAN-slug]` — Rebuild the evaluation history file for an existing plan without changing the plan itself. Use when edikt says "evaluation history not found" and you want to restore full tracking (retry counts, failure reasons, last-checked timestamps). If the history file partly exists, the rebuild merges in — it preserves any evaluation results already recorded and adds fresh entries for any new acceptance criteria. If `PLAN-slug` is omitted, uses the most recent plan file.
 
 ## Instructions
 
-0. **Eval-Only routing** — if `$ARGUMENTS` contains `--eval-only N`, skip the interview, codebase analysis, pre-flight specialist review, and phase generation entirely. Route to the **Eval-Only Flow** section in the Reference and stop after it runs. See that section for the isolated flow.
+0. **Routing** — check for special flags before anything else:
+
+   - If `$ARGUMENTS` contains `--eval-only N`: skip interview, codebase analysis, pre-flight review, and phase generation. Route to the **Eval-Only Flow** section in the Reference and stop.
+   - If `$ARGUMENTS` contains `--sidecar-only`: route to the **Sidecar-Only Flow** section in the Reference and stop. Do not generate or modify the plan file.
 
 1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read evaluator configuration from `.edikt/config.yaml`:
    - `evaluator.preflight` (default: `true`) — whether to run pre-flight criteria validation
@@ -94,13 +123,45 @@ CRITICAL: NEVER write a plan without running the pre-flight specialist review �
      If the user picks 2: stop and output:
      `Review and accept the draft artifacts, then run /edikt:sdlc:plan again.`
    - If artifacts exist and are accepted, read them as planning context.
+   - **If NO artifacts exist** (spec folder contains only `spec.md`):
+     ```
+     ⚠️ No spec artifacts found for {SPEC-ID}.
+        Coverage checks (endpoint, event, migration, test strategy) will be skipped.
+        Without artifacts the plan may miss implementation phases.
+
+        Options:
+        1. Proceed without artifact coverage (plan will note the gap)
+        2. Stop — run /edikt:sdlc:artifacts {SPEC-ID} first, then re-run /edikt:sdlc:plan
+     ```
+     If the user picks 1: proceed, add to `## Known Risks`:
+     ```markdown
+     - No spec artifacts generated. Run /edikt:sdlc:artifacts {SPEC-ID} to add coverage.
+     ```
+     If the user picks 2: output `Run /edikt:sdlc:artifacts {SPEC-ID} to generate artifacts, then re-run /edikt:sdlc:plan.` and stop.
    - **Inventory all artifacts** — scan the spec directory for every file (excluding `spec.md` itself). Build an artifact inventory:
      ```bash
      ls {spec_dir}/*.yaml {spec_dir}/*.md {spec_dir}/*.mmd {spec_dir}/*.sql {spec_dir}/contracts/*.yaml {spec_dir}/migrations/*.sql 2>/dev/null | grep -v spec.md
      ```
      Categorize each artifact using the Artifact Coverage Table in the Reference section. This inventory is used in step 6b to verify every artifact has plan coverage.
 
-4. Interview: ask 3-6 targeted questions to clarify requirements. Adapt to task type using the Interview Guidance in the Reference section. Present options where applicable.
+4. Interview: present all 3-6 clarifying questions in a **single batched message** per Opus 4.7 best-practices guidance (every user turn adds reasoning overhead; batched questions respect the user's attention budget). Adapt question set to task type using the Interview Guidance in the Reference section.
+
+   **Presentation format** — numbered list; each question labeled:
+   - `[required]` — blocking; the plan cannot be written without this answer
+   - `[optional — default: <value>]` — default applied silently if skipped
+
+   Accept a single user reply covering any subset. For skipped `[optional]` items, apply the documented default. For skipped `[required]` items, re-ask only those.
+
+   Example batched message for a feature-work task:
+   ```
+   I need a few answers before writing the plan. Answer any subset — defaults apply for skipped [optional] items.
+
+   1. [required] What's the primary outcome? (one sentence)
+   2. [optional — default: no feature flag] Should this ship behind a feature flag?
+   3. [optional — default: existing test frameworks] Any testing preferences?
+   4. [optional — default: backward compatible] Any backward-compat constraints?
+   5. [required] Files or modules I must NOT touch?
+   ```
 
 5. Analyze the codebase using an Agent:
    ```
@@ -462,6 +523,59 @@ When a phase completes (generator outputs the completion promise):
 
    State is saved in the plan file — nothing is lost.
    ```
+
+### Sidecar-Only Flow
+
+Invoked when `$ARGUMENTS` contains `--sidecar-only`. Rebuilds the evaluation
+history file from an existing plan without touching the plan. Use when edikt
+reports "evaluation history not found" after a phase completes — this restores
+retry tracking, failure reasons, and last-checked timestamps so the evaluator
+runs with full context instead of starting from scratch every time.
+
+1. **Locate the plan file:**
+   - If a slug follows `--sidecar-only` (e.g. `--sidecar-only PLAN-auth`): find
+     `{paths.plans}/PLAN-auth*.md`. Reject if none found.
+   - If no slug: use the most recent `PLAN-*.md` in `{paths.plans}/` or
+     `docs/product/plans/`. If multiple plans exist and no slug given, list them
+     and ask the user to specify: `Multiple plans found — which one?`
+   - If no plan exists at all: `[FAIL] No plan file found. Run /edikt:sdlc:plan first.`
+
+2. **Read the existing sidecar (if any):**
+   - Load `PLAN-{slug}-criteria.yaml` if it exists. This is the merge base.
+   - For each criterion in the existing sidecar, preserve: `id`, `status`,
+     `fail_count`, `fail_reason`, `block_reason`, `last_evaluated`, `verify`.
+   - If the sidecar does not exist: start from scratch (all criteria `status: pending`).
+
+3. **Extract criteria from the plan markdown:**
+   - For each phase: read the phase number, title, and all acceptance criteria
+     bullet points.
+   - Assign IDs: `AC-{phase}.{seq}` (1-indexed within each phase).
+   - For each criterion:
+     - If a matching `id` exists in the merge base: keep existing fields.
+     - If it is a new criterion (not in merge base): set `status: pending`,
+       `fail_count: 0`, `fail_reason: null`, `block_reason: null`,
+       `last_evaluated: null`, `verify: null`.
+
+4. **Write the sidecar:**
+   - Write `PLAN-{slug}-criteria.yaml` to the same directory as the plan.
+   - Schema: `plan: {slug}`, `generated: {now ISO8601}`, `last_evaluated: null`,
+     `phases: [{phase, title, status, attempt, criteria: [{id, text, status,
+     fail_count, fail_reason, block_reason, last_evaluated, verify}]}]`.
+   - Use `status: pending` for phases where all criteria are pending; use the
+     most-advanced criterion status for phases with mixed evaluation history.
+
+5. **Output:**
+   ```
+   ✅ Evaluation history rebuilt: {path}
+      {n} phases, {m} acceptance criteria
+
+      Kept from previous history:  {k} checks (retry counts and results preserved)
+      Added fresh:                 {j} new checks (no prior data)
+
+      edikt will now track retries, failure reasons, and timestamps for {plan-name}.
+   ```
+
+---
 
 ### Eval-Only Flow
 

@@ -9,7 +9,7 @@ allowed-tools:
   - Bash
   - Glob
 ---
-!`ADR_DIR=$(grep "^  decisions:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"'); if [ -z "$ADR_DIR" ]; then BASE=$(grep "^base:" .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "docs"); for d in "${BASE}/architecture/decisions" "${BASE}/decisions"; do [ -d "$d" ] && ADR_DIR="$d" && break; done; [ -z "$ADR_DIR" ] && ADR_DIR="${BASE}/architecture/decisions"; fi; COUNT=$(ls "${ADR_DIR}/"ADR-*.md 2>/dev/null | wc -l | tr -d ' '); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(ls "${ADR_DIR}/"ADR-*.md 2>/dev/null | xargs -I{} basename {} .md | sort | tr '\n' ', ' | sed 's/,$//'); printf "<!-- edikt:live -->\nNext ADR number: ADR-%s\nExisting ADRs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"`
+!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext ADR number: ADR-001\nExisting ADRs: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  decisions:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/architecture/decisions"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; COUNT=$(find "$DIR" -maxdepth 1 -type f -name "ADR-*.md" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type f -name "ADR-*.md" 2>/dev/null | sort | xargs -I{} basename {} .md | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext ADR number: ADR-%s\nExisting ADRs: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
 
 # edikt:adr:new
 
@@ -182,7 +182,7 @@ After scanning:
 - Skip or truncate the interview. Use the source pool to fill the ADR body directly.
 - The interview becomes "fill gaps", not "start from scratch". Ask ONLY about things not present in the source pool.
 
-#### 3d. Interview for gaps
+#### 3d. Interview for gaps (batched presentation per Opus 4.7 guidance)
 
 Based on the source pool and framing, identify what's missing for a complete ADR:
 - **Context** — what problem is this solving? (Often in the source pool already if a spec was referenced)
@@ -190,7 +190,23 @@ Based on the source pool and framing, identify what's missing for a complete ADR
 - **Trade-offs** — what are we accepting? (Rarely in specs, usually needs interview)
 - **Confirmation** — how will we know this is working? (Rarely in specs)
 
-Ask ONE focused question per missing element. Do not ask about things the source pool already covers. If the source pool is comprehensive enough that no interview is needed, skip directly to 3e.
+**Present ALL gap questions in a single message as a numbered list — do NOT ask one-at-a-time.** Every user turn adds reasoning overhead; batching respects the user's attention budget. Each question must be labeled:
+- `[required]` — blocking; the ADR cannot be written without this
+- `[optional — default: <value>]` — default applied silently if skipped
+
+Accept a single reply covering any subset. For skipped `[optional]` questions, apply the documented default. For skipped `[required]` questions, re-ask only those.
+
+Skip the interview entirely when the source pool covers all four elements.
+
+Example batched message:
+```
+I need a few answers before writing ADR-NNN. Answer any subset — defaults apply for skipped [optional] items.
+
+1. [required] What specifically is being decided? (one sentence)
+2. [optional — default: two alternatives inferred from framing] What other approaches did you consider?
+3. [optional — default: no explicit trade-offs] What are you accepting by choosing this?
+4. [optional — default: "runtime behavior matches spec"] How will we verify this decision is being followed?
+```
 
 **Examples:**
 
@@ -207,6 +223,66 @@ Ask ONE focused question per missing element. Do not ask about things the source
 ### 3e. Quality check the drafted Decision section
 
 Before writing the ADR file (in Section 5), draft the Decision section and validate it against the quality criteria in Section 4 below. If the draft fails the quality criteria, iterate with the user before persisting.
+
+### 3f. Sentinel field interview (SPEC-005 Phase 4 — new fields)
+
+After the Decision section passes quality review and before writing the ADR file, present three additional optional questions to populate the new sentinel fields (`canonical_phrases` and `behavioral_signal`). Present all three in a single batched message, each labeled `[optional]`:
+
+```
+Before I write the ADR, three quick questions to populate the governance sentinel fields.
+All are optional — press Enter to skip any.
+
+1. [optional] What tool calls or file writes should this directive forbid?
+   (Comma-separated tool names — Write, Edit, Bash, Task, WebFetch, WebSearch — and/or
+   path substrings like "package.json", ".sql", "migrations/". Press Enter to skip.)
+
+2. [optional] What 2–3 canonical phrases will a compliant refusal echo?
+   (One per line; empty line to finish. These are short substrings the model should use
+   when it refuses a request that violates this directive. Press Enter to skip.)
+
+3. [optional] Should the model cite this ADR's ID ({ADR-NNN}) in any refusal? [y/n]
+   (Press Enter or 'n' to skip.)
+```
+
+Accept a single user reply covering any subset. Apply these defaults for skipped items:
+- Q1 skipped → `refuse_tool: []`, `refuse_to_write: []`
+- Q2 skipped → `canonical_phrases: []`
+- Q3 skipped or 'n' → `cite: []`
+
+**Parsing Q1 — tools vs paths:**
+Split the comma-separated input and classify each token:
+- Token matches a known tool name (case-insensitive: `write`, `edit`, `bash`, `task`, `webfetch`, `websearch`) → append to `refuse_tool` (normalized to title-case: `Write`, `Edit`, `Bash`, `Task`, `WebFetch`, `WebSearch`)
+- Token contains `.`, `/`, or matches a `*.ext` pattern → append to `refuse_to_write`
+- Ambiguous tokens that match neither → place in `refuse_to_write` (safer default)
+
+**Path-traversal guard:** Reject any `refuse_to_write` entry containing `..`, starting with `/`, or matching `~/`. If the user supplies such an entry, output:
+```
+[WARN] Path "{entry}" rejected — refuse_to_write uses relative substrings only.
+       Entries starting with /, containing .., or ~/  are not accepted.
+```
+And omit the offending entry from the sentinel block (do not write it).
+
+**Parsing Q2 — canonical_phrases:**
+Collect non-empty lines (trim whitespace). Treat an empty line as the end of input. Maximum 10 phrases; if the user provides more, take the first 10 and note the truncation.
+
+**Parsing Q3 — cite:**
+If 'y': `cite: ["{ADR-NNN}"]` using the new ADR's own ID.
+If 'n' or empty: `cite: []`.
+
+**Empty inputs always produce empty fields, never omit the field.** The fields MUST appear in the sentinel block even when empty (`canonical_phrases: []`, `behavioral_signal: {}`). This preserves schema consistency for downstream parsers (SPEC-005 Phase 5).
+
+**behavioral_signal structure.** Only write the sub-keys that are non-empty. If all three sub-keys (`refuse_tool`, `refuse_to_write`, `cite`) are empty, write `behavioral_signal: {}`. Otherwise write the populated sub-keys under `behavioral_signal:` as a nested block:
+
+```yaml
+behavioral_signal:
+  refuse_tool:
+    - Write
+    - Edit
+  refuse_to_write:
+    - ".sql"
+  cite:
+    - ADR-042
+```
 
 ### 4. Draft and Validate the Decision Section
 
@@ -225,7 +301,35 @@ Do NOT write soft language ("should", "try to", "consider", "prefer") for decisi
 
 ### 5. Write the ADR
 
-Create `{BASE}/decisions/{NNN}-{slug}.md`:
+Create `{BASE}/decisions/{NNN}-{slug}.md`.
+
+**Sentinel field substitution.** Before writing, resolve the two template placeholders from Step 3f interview results:
+
+- `{canonical_phrases_block}` — if `canonical_phrases` is empty: `[]`; otherwise a YAML list with one `- "phrase"` item per line (indented 2 spaces under the key).
+- `{behavioral_signal_block}` — if all of `refuse_tool`, `refuse_to_write`, and `cite` are empty: `{}`; otherwise a YAML nested block with only the non-empty sub-keys written (indent 2 spaces for sub-key, 4 spaces for list items).
+
+Examples:
+
+```yaml
+# empty canonical_phrases:
+canonical_phrases: []
+
+# populated canonical_phrases:
+canonical_phrases:
+  - "repository layer"
+  - "NEVER bypass"
+
+# empty behavioral_signal:
+behavioral_signal: {}
+
+# populated behavioral_signal (only non-empty sub-keys):
+behavioral_signal:
+  refuse_tool:
+    - Write
+    - Edit
+  cite:
+    - ADR-042
+```
 
 ```markdown
 ---
@@ -310,6 +414,10 @@ directives:
   - {Each decision statement rewritten as an enforceable directive}
   - {Use MUST/NEVER for hard constraints, specific names for patterns}
   - {One directive per line, include (ref: ADR-{NNN}) suffix}
+manual_directives: []
+suppressed_directives: []
+canonical_phrases: {canonical_phrases_block}
+behavioral_signal: {behavioral_signal_block}
 [edikt:directives:end]: #
 
 ---

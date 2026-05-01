@@ -2,25 +2,62 @@
 name: edikt:sdlc:artifacts
 description: "Generate implementable artifacts from an accepted spec"
 effort: high
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - Agent
 ---
 
 # edikt:spec-artifacts
 
 Generate implementable artifacts (data model, API contracts, migrations, test strategy) from an accepted technical specification. Each artifact is reviewed by the appropriate domain specialist.
 
-CRITICAL: This command requires interactive input. If you are in plan mode (you can only describe actions, not perform them), output this and stop:
-```
-⚠️  This command requires user interaction and cannot run in plan mode.
-Exit plan mode first, then run the command again.
-```
+CRITICAL: Check immediately whether you are in plan mode:
+- If you are in plan mode (you can only describe actions, not perform them), output exactly this and stop:
+  ```
+  ⚠️  /edikt:sdlc:artifacts requires interactive input and cannot run in plan mode.
+  Exit plan mode first, then run /edikt:sdlc:artifacts again.
+  ```
+- If you are not in plan mode, proceed normally with artifact generation.
 
 ## Arguments
 
 - `$ARGUMENTS` — SPEC identifier (e.g., `SPEC-005`) or path to the spec folder
+- `--missing-only` — Only generate artifact types that do not yet exist in the
+  spec folder. Skips regenerating artifacts that are already present (regardless
+  of status). Use when you ran artifacts previously, got a partial set, and want
+  to fill in the gaps without overwriting reviewed artifacts.
+  Example: `SPEC-005 --missing-only` regenerates only what SPEC-005 is missing.
 
 ## Instructions
 
-### 0. Config Guard
+### 0. Config Guard + Routing
+
+If `$ARGUMENTS` contains `--missing-only`:
+1. Resolve the spec folder normally (steps 1–2).
+2. Scan the spec folder for existing artifact files (excluding `spec.md`).
+3. Build a **missing set**: artifact types from the Artifact Coverage Table that
+   have no corresponding file in the spec folder.
+4. If no artifacts are missing: output
+   ```
+   ✅ All expected artifacts already exist for {SPEC-ID}.
+      Run /edikt:sdlc:artifacts {SPEC-ID} (without --missing-only) to regenerate.
+   ```
+   and stop.
+5. Otherwise: proceed with artifact generation **scoped to the missing set only**.
+   Skip any artifact type that already has a file. Do not overwrite existing files.
+
+If `.edikt/config.yaml` does not exist, output:
+```
+No edikt config found. Run /edikt:init to set up this project.
+```
+And stop.
+
+### 0b. Standard Config Guard
 
 If `.edikt/config.yaml` does not exist, output:
 ```

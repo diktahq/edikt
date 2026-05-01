@@ -71,6 +71,7 @@ Some commands (`edikt:context`, `edikt:init`) need to write to the session's wor
 ## Directives
 
 [edikt:directives:start]: #
+topic: [hooks, agent-rules]
 paths:
   - "templates/hooks/**"
   - "templates/settings.json.tmpl"

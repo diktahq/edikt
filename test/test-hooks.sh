@@ -32,15 +32,15 @@ if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
 hooks = s.get('hooks', {})
-required = ['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact']
+required = ['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop', 'PostCompact']
 for h in required:
     if h not in hooks:
         print(f'MISSING: {h}')
         sys.exit(1)
 " 2>/dev/null; then
-    pass "All five hook types present (SessionStart, PreToolUse, PostToolUse, Stop, PreCompact)"
+    pass "All five hook types present (SessionStart, PreToolUse, PostToolUse, Stop, PostCompact)"
 else
-    fail "All five hook types present (SessionStart, PreToolUse, PostToolUse, Stop, PreCompact)"
+    fail "All five hook types present (SessionStart, PreToolUse, PostToolUse, Stop, PostCompact)"
 fi
 
 # Check nested hooks[] array format for each hook
@@ -65,6 +65,7 @@ else
 fi
 
 # Stop hook must be type:command referencing stop-hook.sh
+# The template uses ${EDIKT_HOOK_DIR}/stop-hook.sh (Phase 8 parameterization).
 if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
@@ -72,7 +73,8 @@ stop = s['hooks']['Stop'][0]['hooks'][0]
 if stop['type'] != 'command':
     print(f'Stop hook type is {stop[\"type\"]}, expected command')
     sys.exit(1)
-if '.edikt/hooks/stop-hook.sh' not in stop.get('command', ''):
+cmd = stop.get('command', '')
+if 'stop-hook.sh' not in cmd:
     print('Stop hook command does not reference stop-hook.sh')
     sys.exit(1)
 " 2>/dev/null; then
@@ -99,7 +101,7 @@ else
 fi
 
 # Hook scripts exist in templates/hooks/
-for hook_file in session-start.sh pre-tool-use.sh post-tool-use.sh pre-compact.sh; do
+for hook_file in session-start.sh pre-tool-use.sh post-tool-use.sh post-compact.sh; do
     if [ -f "$HOOKS_DIR/$hook_file" ]; then
         pass "Hook script exists: templates/hooks/$hook_file"
     else
@@ -107,7 +109,9 @@ for hook_file in session-start.sh pre-tool-use.sh post-tool-use.sh pre-compact.s
     fi
 done
 
-# Settings.json.tmpl references .edikt/hooks/ scripts (not inline bash)
+# Settings.json.tmpl references hook scripts via the EDIKT_HOOK_DIR placeholder
+# (Phase 8: parameterized for project-mode parity). The placeholder is
+# substituted at install time. Check that every command ends in a .sh name.
 if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
@@ -117,13 +121,13 @@ for name, entries in hooks.items():
         for h in entry.get('hooks', []):
             if h.get('type') == 'command':
                 cmd = h.get('command', '')
-                if '.edikt/hooks/' not in cmd:
-                    print(f'{name}: command does not reference .edikt/hooks/: {cmd}')
+                if not cmd.endswith('.sh'):
+                    print(name + ': command does not end in .sh: ' + cmd)
                     sys.exit(1)
 " 2>/dev/null; then
-    pass "All command hooks reference \$HOME/.edikt/hooks/ scripts"
+    pass "All command hooks reference .sh scripts"
 else
-    fail "All command hooks reference \$HOME/.edikt/hooks/ scripts"
+    fail "All command hooks reference .sh scripts"
 fi
 
 # ============================================================
@@ -295,14 +299,14 @@ else
 fi
 
 # ============================================================
-# PreCompact script content assertions
+# PreCompact hook — REMOVED in v0.5.0 (ADR-014)
+# The stub hook was deleted; /edikt:session supersedes its reminder.
 # ============================================================
 
-# PreCompact hook contains /edikt:session
-if grep -q '/edikt:session' "$PRECOMPACT_HOOK"; then
-    pass "PreCompact hook contains '/edikt:session'"
+if [ ! -f "$PRECOMPACT_HOOK" ]; then
+    pass "PreCompact hook removed per ADR-014"
 else
-    fail "PreCompact hook contains '/edikt:session'"
+    fail "PreCompact hook should be removed per ADR-014 (file still exists)"
 fi
 
 # ============================================================
@@ -392,13 +396,15 @@ if python3 -c "
 import json, sys
 s = json.load(open('$SETTINGS'))
 count = len(s.get('hooks', {}))
-if count != 13:
-    print(f'Expected 13 hooks, found {count}')
+# v0.5.0 (ADR-014): 17 hooks after removing PreCompact + adding SessionEnd,
+# SubagentStart, TaskCompleted, WorktreeCreate, WorktreeRemove
+if count != 17:
+    print(f'Expected 17 hooks, found {count}')
     sys.exit(1)
 " 2>/dev/null; then
-    pass "settings.json.tmpl has exactly 13 hook types"
+    pass "settings.json.tmpl has exactly 17 hook types"
 else
-    fail "settings.json.tmpl has exactly 13 hook types"
+    fail "settings.json.tmpl has exactly 17 hook types"
 fi
 
 # ============================================================
@@ -740,8 +746,9 @@ assert_file_contains "$PROJECT_ROOT/commands/sdlc/plan.md" "spec-artifacts" "sdl
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "product/specs" "init.md creates specs directory"
 assert_file_contains "$PROJECT_ROOT/commands/init.md" "specs:" "init.md adds specs config"
 
-# Install includes new commands (sdlc namespace covers artifacts)
-assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace"
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # v4.3 — Drift Detection
@@ -769,8 +776,9 @@ assert_file_contains "$DRIFT_CMD" "architect" "sdlc/drift.md routes to architect
 assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "DRIFT CHECK" "sdlc/review.md integrates drift detection"
 assert_file_contains "$PROJECT_ROOT/commands/sdlc/review.md" "edikt:sdlc:drift\|edikt:drift" "sdlc/review.md references drift command"
 
-# Install includes drift (via sdlc namespace)
-assert_file_contains "$PROJECT_ROOT/install.sh" "sdlc" "install.sh includes sdlc namespace (covers drift)"
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # v4.0 — Compile command
@@ -793,7 +801,8 @@ assert_file_contains "$COMPILE_CMD" "event_log\|edikt_log_event" "gov/compile.md
 assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "edikt:gov:compile\|edikt:compile" "adr/new.md suggests /edikt:gov:compile after creation"
 assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "edikt:gov:compile\|edikt:compile" "invariant/new.md suggests /edikt:gov:compile after creation"
 
-# Install includes compile (via gov namespace)
-assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers compile)"
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 test_summary

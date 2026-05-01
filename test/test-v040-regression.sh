@@ -110,11 +110,17 @@ else
     pass "Override match: nonexistent agent → correctly rejected"
 fi
 
-# Verify the actual hook uses piped grep (same-line matching), not two separate greps
-if grep -q 'gate-overrides.jsonl.*|.*grep -qF' "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" 2>/dev/null; then
-    pass "subagent-stop.sh uses piped grep for same-line override matching"
+# Verify the hook does structural same-record matching on override records.
+# v0.5.0 INV-003 hardening replaced the original piped-grep implementation with
+# a python3 json.loads match that is semantically equivalent but not vulnerable
+# to JSON-escape surprises in untrusted agent or finding strings. Either flavour
+# satisfies the same-line/same-record requirement.
+if grep -q 'gate-overrides.jsonl.*|.*grep -qF' "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" 2>/dev/null \
+   || grep -Eq "json\.loads.*gate-overrides|gate-overrides.*json\.loads" "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" 2>/dev/null \
+   || grep -q "rec.get('agent')" "$PROJECT_ROOT/templates/hooks/subagent-stop.sh" 2>/dev/null; then
+    pass "subagent-stop.sh does same-record override matching"
 else
-    fail "subagent-stop.sh should pipe grep for same-line matching, not two separate greps"
+    fail "subagent-stop.sh should do same-record override matching (pipe-grep or python3 json.loads)"
 fi
 
 # ============================================================
@@ -130,16 +136,20 @@ AGENT_COUNT_WITH_HEADLESS=$(find "$PROJECT_ROOT/templates/agents" -name "*.md" |
 
 echo "  Agent templates: $AGENT_COUNT (+ evaluator-headless = $AGENT_COUNT_WITH_HEADLESS)"
 
-# Website pages should match
-for f in website/commands/agents.md website/guides/specialist-agents.md; do
+# Website pages should match the current file count. As of v0.5.0 the product
+# surface counts evaluator-headless alongside evaluator (they are delivery variants
+# of the same role), so the user-facing "specialist agents" number tracks
+# AGENT_COUNT_WITH_HEADLESS.
+EXPECTED_DOCS_COUNT="$AGENT_COUNT_WITH_HEADLESS"
+for f in website/commands/agents.md website/guides/specialist-agents.md website/agents.md; do
     if [ -f "$PROJECT_ROOT/$f" ]; then
-        # Check that neither 19 nor 20 appears where 18 is correct
-        if grep -q "20 specialist\|ships 20\|20 agents" "$PROJECT_ROOT/$f" 2>/dev/null; then
-            fail "$f still says 20 agents"
-        elif grep -q "19 specialist\|ships 19\|19 agents" "$PROJECT_ROOT/$f" 2>/dev/null; then
-            fail "$f says 19 agents — should be $AGENT_COUNT"
+        DOC_NUM=$(grep -Eo "[0-9]+ (specialist|agents)" "$PROJECT_ROOT/$f" | head -1 | awk '{print $1}')
+        if [ -z "$DOC_NUM" ]; then
+            pass "$f agent count is consistent (no pinned count)"
+        elif [ "$DOC_NUM" = "$EXPECTED_DOCS_COUNT" ]; then
+            pass "$f agent count is consistent ($DOC_NUM)"
         else
-            pass "$f agent count is consistent"
+            fail "$f says $DOC_NUM agents — should be $EXPECTED_DOCS_COUNT"
         fi
     fi
 done

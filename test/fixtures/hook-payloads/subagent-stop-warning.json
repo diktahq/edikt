@@ -1,0 +1,10 @@
+{
+  "hook_event_name": "SubagentStop",
+  "subagent_type": "qa",
+  "verdict": "WARN",
+  "evaluator_output": {
+    "severity": "warning",
+    "findings": ["Coverage dropped below 60% on changed files"]
+  },
+  "cwd": "${HOME}/projects/greenfield"
+}

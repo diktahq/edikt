@@ -1,0 +1,11 @@
+{
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "src/app.ts",
+    "old_string": "const x=1",
+    "new_string": "const x = 1"
+  },
+  "tool_response": { "success": true },
+  "cwd": "${HOME}/projects/greenfield"
+}

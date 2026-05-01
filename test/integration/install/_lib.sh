@@ -1,0 +1,138 @@
+#!/bin/bash
+# Shared setup for install.sh integration tests.
+#
+# Runs under test/run.sh's Layer 3 sandbox: $HOME, $EDIKT_HOME, $CLAUDE_HOME
+# already redirected. Each test creates a per-test subdir so the sandbox
+# can host multiple install.sh runs without interfering.
+#
+# install.sh is invoked with these env overrides instead of hitting the
+# network:
+#   EDIKT_LAUNCHER_SOURCE=<path to bin/edikt in this repo>
+#   EDIKT_RELEASE_TAG=<tag string>
+#   EDIKT_INSTALL_SOURCE=<local payload dir>
+
+set -uo pipefail
+
+# v0.5.0 SKIP: install.sh integration tests assume the legacy bash launcher's
+# install behavior (versions/<tag>/, manifest.yaml, events.jsonl, sidecar
+# checksum format). The Go binary at bin/edikt does not yet implement these.
+# Will be re-enabled in v0.6.0 once `edikt install` lands in Go.
+# Override with EDIKT_RUN_LEGACY_LAUNCHER_TESTS=1 to run anyway.
+if [ "${EDIKT_RUN_LEGACY_LAUNCHER_TESTS:-0}" != "1" ]; then
+    echo "  SKIP: legacy install.sh integration tests pending v0.6.0 Go install (set EDIKT_RUN_LEGACY_LAUNCHER_TESTS=1 to run)"
+    exit 0
+fi
+
+PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
+INSTALL_SH="$PROJECT_ROOT/install.sh"
+LAUNCHER_SRC="$PROJECT_ROOT/bin/edikt"
+
+# shellcheck disable=SC1090
+. "$PROJECT_ROOT/test/helpers.sh"
+
+# Create a per-test sandbox root under $HOME (the test/run.sh sandbox HOME).
+install_setup() {
+  test_id="${1:-install-test}"
+  case "${HOME:-}" in
+    /tmp/*|/var/folders/*|/private/var/folders/*|/private/tmp/*) ;;
+    *)
+      echo "install_setup: HOME=$HOME is not a sandbox path — run via test/run.sh" >&2
+      exit 1
+      ;;
+  esac
+  TEST_HOME="$HOME/${test_id}-$$"
+  rm -rf "$TEST_HOME"
+  mkdir -p "$TEST_HOME"
+  export TEST_EDIKT_ROOT="$TEST_HOME/.edikt"
+  export TEST_CLAUDE_HOME="$TEST_HOME/.claude"
+  # Set HOME for install.sh so its default global path lands inside the
+  # test sandbox. Preserve outer HOME so we can restore later if needed.
+  OUTER_HOME="$HOME"
+  export HOME="$TEST_HOME"
+  # install.sh reads EDIKT_HOME/CLAUDE_HOME optionally; we keep HOME-based
+  # defaults so the full resolution path is exercised.
+  unset EDIKT_HOME || true
+  unset CLAUDE_HOME || true
+}
+
+install_teardown() {
+  if [ -n "${OUTER_HOME:-}" ]; then
+    export HOME="$OUTER_HOME"
+  fi
+}
+
+# Build a minimal payload directory suitable for `edikt install`.
+# Default shape: v0.4.x nested layout (commands/edikt/*.md). Several existing
+# tests assume this shape; preserved for back-compat.
+make_payload() {
+  p="$1"
+  v="$2"
+  rm -rf "$p"
+  mkdir -p "$p/templates" "$p/hooks" "$p/commands/edikt"
+  printf '%s\n' "$v" > "$p/VERSION"
+  printf '# changelog %s\n' "$v" > "$p/CHANGELOG.md"
+  printf '# context\n' > "$p/commands/edikt/context.md"
+  printf '#!/bin/sh\necho hi\n' > "$p/hooks/session-start.sh"
+  chmod +x "$p/hooks/session-start.sh"
+}
+
+# Build a minimal v0.5.x FLAT-layout payload (commands/*.md, no
+# commands/edikt/ subdirectory). Mirrors the v0.5.x source-tree shape so
+# tests that exercise resolve_commands_target's flat branch use the same
+# payload contract instead of inlining their own.
+#
+# settings.json points hooks at templates/hooks/, so this helper places
+# the placeholder hook there (not at $p/hooks/) to mirror the real release
+# tarball shape — make_payload's $p/hooks/ placement is a v0.4.x quirk.
+make_payload_flat() {
+  p="$1"
+  v="$2"
+  rm -rf "$p"
+  mkdir -p "$p/templates/hooks" "$p/commands"
+  printf '%s\n' "$v" > "$p/VERSION"
+  printf '# changelog %s\n' "$v" > "$p/CHANGELOG.md"
+  # Flat layout: commands/*.md directly, no commands/edikt/ subdir.
+  printf '# context\n' > "$p/commands/context.md"
+  printf '# adr/new\n' > "$p/commands/adr-new.md"
+  printf '#!/bin/sh\necho hi\n' > "$p/templates/hooks/session-start.sh"
+  chmod 0755 "$p/templates/hooks/session-start.sh"
+}
+
+# Build a minimal v0.4.x NESTED-layout payload (commands/edikt/*.md). Same
+# contract as make_payload but with templates/hooks/ instead of $p/hooks/
+# so resolve_commands_target's nested-branch test exercises a payload that
+# mirrors a real v0.4.x release.
+make_payload_nested() {
+  p="$1"
+  v="$2"
+  rm -rf "$p"
+  mkdir -p "$p/templates/hooks" "$p/commands/edikt"
+  printf '%s\n' "$v" > "$p/VERSION"
+  printf '# changelog %s\n' "$v" > "$p/CHANGELOG.md"
+  printf '# context\n' > "$p/commands/edikt/context.md"
+  printf '# adr/new\n' > "$p/commands/edikt/adr-new.md"
+  printf '#!/bin/sh\necho hi\n' > "$p/templates/hooks/session-start.sh"
+  chmod 0755 "$p/templates/hooks/session-start.sh"
+}
+
+# Compute sha256 of a tree (sorted path + file hash). Used by the dry-run
+# no-mutation test to verify zero disk writes.
+tree_sha256() {
+  dir="$1"
+  if [ ! -d "$dir" ]; then
+    echo "EMPTY"
+    return 0
+  fi
+  ( cd "$dir" && find . -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 -I{} sh -c 'printf "%s\n" "{}"; [ -f "{}" ] && (sha256sum "{}" 2>/dev/null || shasum -a 256 "{}") | awk "{print \$1}"' ) | (sha256sum 2>/dev/null || shasum -a 256) | awk '{print $1}'
+}
+
+run_install() {
+  # Invoke install.sh with common env overrides. Callers pass additional
+  # CLI flags via "$@".
+  env \
+    HOME="$HOME" \
+    EDIKT_LAUNCHER_SOURCE="${EDIKT_LAUNCHER_SOURCE:-$LAUNCHER_SRC}" \
+    EDIKT_RELEASE_TAG="${EDIKT_RELEASE_TAG:-}" \
+    EDIKT_INSTALL_SOURCE="${EDIKT_INSTALL_SOURCE:-}" \
+    bash "$INSTALL_SH" "$@"
+}

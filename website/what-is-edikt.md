@@ -138,6 +138,24 @@ Update an ADR, recompile. One source of truth, one enforcement point.
 
 **Command reference:** `/edikt:gov:compile`
 
+### Governance benchmark — `/edikt:gov:benchmark`
+
+Compiled directives tell Claude what to do. The benchmark tests whether they hold under adversarial prompts.
+
+> "Run the governance benchmark"
+
+edikt runs attack prompts against every directive with a `behavioral_signal` block — the machine-testable predicate that defines what a violation looks like. Each directive gets PASS, FAIL, or SKIP (no `behavioral_signal` populated yet).
+
+The dogfood baseline: 2/2 PASS on INV-001 + INV-002 under Opus 4.7. 15 of 17 directives are pending `behavioral_signal` authoring.
+
+The benchmark is a tier-2 tool — install separately:
+
+```bash
+./bin/edikt install benchmark
+```
+
+**Command reference:** `/edikt:gov:benchmark`
+
 ### Correctness guardrails — `.claude/rules/`
 
 One `.md` file per standard. Path-conditional — each rule only fires on the files it's relevant to.
@@ -164,7 +182,7 @@ Compiled governance and rule packs share the same enforcement surface — `.clau
 
 ### Lifecycle hooks
 
-Nine hooks govern the session lifecycle — ensuring governance stays present throughout, not just at session start:
+Twenty lifecycle hooks govern the session — ensuring governance stays present throughout, not just at session start. Core hooks include:
 
 | Hook | What it does |
 |------|-------------|
@@ -315,7 +333,7 @@ edikt is built on Claude Code's platform primitives. Other tools don't have them
 | Feature | Claude Code | Cursor | Copilot | Windsurf |
 |---------|:-----------:|:------:|:-------:|:--------:|
 | Path-conditional rules | Yes | No | No | No |
-| Lifecycle hooks (9 types) | Yes | No | No | No |
+| Lifecycle hooks (20 types) | Yes | No | No | No |
 | Pre-compact recovery | Yes | No | No | No |
 | Slash commands | Yes | No | No | No |
 | Specialist agents | Yes | No | No | No |

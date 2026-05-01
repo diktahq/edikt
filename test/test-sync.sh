@@ -34,8 +34,9 @@ assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "source: linter" "gene
 # Has generated-by marker
 assert_file_contains "$PROJECT_ROOT/commands/gov/sync.md" "generated-by: edikt:sync" "generated rules have generated-by marker"
 
-# install.sh includes sync (via gov namespace)
-assert_file_contains "$PROJECT_ROOT/install.sh" "gov" "install.sh includes gov namespace (covers sync)"
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # doctor checks linter sync
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "edikt:sync" "doctor references edikt:sync"

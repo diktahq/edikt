@@ -33,27 +33,47 @@ QUESTION=$(echo "$INPUT" | python3 -c "import json,sys; print(json.load(sys.stdi
 
 if [ -z "$QUESTION" ]; then exit 0; fi
 
-# Check for predefined answers in config
-ANSWER=$(python3 -c "
-import yaml, sys
+# Look up the answer in config. YAML errors are loud per LOW-12 — a malformed
+# config must not silently suppress headless policy.
+ANSWER=$(python3 - <<'PY' "$QUESTION"
+import sys
 try:
-    config = yaml.safe_load(open('.edikt/config.yaml'))
-    answers = config.get('headless', {}).get('answers', {})
-    question = sys.argv[1].lower()
-    for pattern, answer in answers.items():
-        if pattern.lower() in question:
-            print(answer)
-            sys.exit(0)
-except:
-    pass
-# Default: answer 'yes' for yes/no questions, 'skip' for choices
-if any(w in question.lower() for w in ['proceed', 'continue', 'confirm', 'y/n']):
+    import yaml
+except ImportError:
+    print("[edikt] headless-ask: pyyaml not installed; returning default", file=sys.stderr)
+    print("yes")
+    sys.exit(0)
+try:
+    with open('.edikt/config.yaml') as f:
+        config = yaml.safe_load(f) or {}
+except yaml.YAMLError as e:
+    print(f"[edikt] headless-ask: .edikt/config.yaml is not valid YAML: {e}", file=sys.stderr)
+    sys.exit(2)
+except OSError as e:
+    print(f"[edikt] headless-ask: cannot read .edikt/config.yaml: {e}", file=sys.stderr)
+    sys.exit(2)
+answers = (config.get('headless') or {}).get('answers') or {}
+question = sys.argv[1].lower()
+for pattern, answer in answers.items():
+    if str(pattern).lower() in question:
+        print(answer)
+        sys.exit(0)
+# Default heuristics for unmapped questions
+if any(w in question for w in ['proceed', 'continue', 'confirm', 'y/n']):
     print('yes')
-elif any(w in question.lower() for w in ['which', 'select', 'choose']):
+elif any(w in question for w in ['which', 'select', 'choose']):
     print('skip')
 else:
     print('yes')
-" "$QUESTION" 2>/dev/null || echo "yes")
+PY
+)
+ANSWER_EXIT=$?
+if [ "$ANSWER_EXIT" -ne 0 ]; then
+  # YAML unparseable — loudly fail so the policy isn't silently suppressed.
+  exit "$ANSWER_EXIT"
+fi
 
-# Return the answer via permissionDecision + updatedInput
-echo "{\"permissionDecision\":\"allow\",\"updatedInput\":\"${ANSWER}\"}"
+# Return the answer via permissionDecision + updatedInput, built with
+# json.dumps so quotes/newlines in $ANSWER cannot inject hook-protocol
+# keys (INV-003; closes audit CRIT-4).
+python3 -c 'import json,sys; print(json.dumps({"permissionDecision": "allow", "updatedInput": sys.argv[1]}))' "$ANSWER"

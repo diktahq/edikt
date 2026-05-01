@@ -1,5 +1,60 @@
 # edikt changelog
 
+## v0.5.0 (2026-04-29)
+
+First release with a pure Go binary, full release-integrity signing, and the security-hardened hook surface. Two themes: **edikt is now a single signed binary**, and **the security audit findings are closed with new invariants that prevent regression**.
+
+### Highlights
+
+- **Pure Go binary.** `edikt` is now a single static Go binary (`tools/edikt/`). The previous `edikt-shell` POSIX helper is deleted; `edikt migrate` is native Go. No runtime dependency on bash for user-facing commands.
+- **Sigstore keyless release signing.** Every release publishes `SHA256SUMS.sig.bundle` signed by the release workflow's GitHub OIDC identity. `install.sh` and `edikt upgrade` verify with `cosign verify-blob` before extracting any artifact. Without cosign, install aborts unless `EDIKT_INSTALL_INSECURE=1` is set (loud banner).
+- **Versioned payload layout + rollback.** Payloads live at `~/.edikt/versions/<tag>/` with a `current` symlink and `lock.yaml` tracking active, previous, pinned. `edikt upgrade` and `edikt rollback` swap generations atomically. Migrations (M1–M5) carry forward and are not rolled back.
+- **Homebrew distribution.** `brew install diktahq/tap/edikt` installs the launcher; `edikt install` fetches the payload. Launcher and payload update independently.
+- **Evaluator verdict persistence (ADR-018).** Phase-end evaluator writes structured JSON to `docs/product/plans/verdicts/<plan>/phase-<N>.json` and updates the criteria sidecar in-place after every run. The plan harness rejects PASS for test-command criteria without `evidence_type: "test_run"` — coerced PASS verdicts are forced to BLOCKED. Existing `done` phases are grandfathered on first upgrade.
+- **Directive hardening + governance benchmark (SPEC-005).** Directive sentinels gain `canonical_phrases` and `behavioral_signal` fields (backward-compatible). New `/edikt:gov:benchmark` tier-2 command runs adversarial prompts against every governed directive. `/edikt:adr:review --backfill` retrofits `canonical_phrases` onto existing ADRs with per-entry approval. `/edikt:gov:compile` detects orphan ADRs with warn-then-block semantics. `/edikt:doctor` verifies every ADR/INV in the routing table exists on disk.
+- **`gov:compile` schema-completeness gate.** The compile no longer silently produces `governance.md` from sentinel blocks missing ADR-008-required fields (`source_hash`, `directives_hash`, `compiler_version`, `manual_directives`, `suppressed_directives`). Aborts with a redirect to the per-artifact compile commands. The inline-fallback that wrote non-conforming blocks via the deprecated `content_hash` field is removed — `<artifact>:compile` is the only sentinel-writing path.
+
+### Security hardening
+
+The v0.5.0 security audit closed the following failure classes and locked them behind new invariants. Six new invariants, four new ADRs — each one prevents an entire category of regression, not a single bug.
+
+#### New invariants
+
+- **INV-003** — Hooks emit structured JSON, never shell-concatenated strings. Every hook uses `python3 json.dumps` with untrusted values passed as argv. CI lint fails on `echo '{'` / `printf '{'` in hook scripts.
+- **INV-004** — Hooks must not instruct Claude to execute shell built from untrusted text.
+- **INV-005** — Managed-region integrity is verified before overwrite. Markdown sentinels use byte-range overlap checks (not regex over `old_string`); `settings.json` uses an out-of-band sidecar at `~/.edikt/state/settings-managed.json`.
+- **INV-006** — Externally-controlled inputs are shape-validated before use, with NFKC + casefold + whitespace-strip normalization so Unicode lookalikes cannot bypass allowlists.
+- **INV-007** — Benchmark and test sandboxes are hermetic. No copy of the host's `~/.claude/settings.json`, user-global settings, or hooks; `setting_sources: ["project"]` only; `shutil.copytree(..., symlinks=True)` with a realpath guard.
+- **INV-008** — Release install URLs are tag-pinned, never branch-tracking. CI fails on `raw.githubusercontent.com/.../main/` or `releases/latest/download/` in `README.md`, `website/`, or `.github/workflows/`.
+
+#### New ADRs
+
+- **ADR-016** — Release integrity and Sigstore keyless signing (supersedes ADR-013).
+- **ADR-017** — Default permissions posture in `settings.json.tmpl`: 23 deny patterns, 17 allow entries, `defaultMode: askBeforeAllow`. See `docs/guides/permissions.md`.
+- **ADR-018** — Evaluator verdict schema with per-criterion `evidence_type`.
+- **ADR-019** — Narrow carve-out of ADR-014 for four security-rewritten hooks.
+
+### Testing and CI
+
+- **Three-layer harness (SPEC-004).** Layer 1: hook unit tests with JSON fixtures (9 suites). Layer 2: Agent SDK integration tests against real Claude (6 tests + 4-test regression museum). Layer 3: sandboxed runner — `$HOME`, `$EDIKT_HOME`, `$CLAUDE_HOME` redirected to per-run temp. No test contaminates developer state.
+- **CI gates.** Layers 1 + 3 on every PR. Layer 2 on tag push (requires `ANTHROPIC_API_KEY` secret).
+- **Governance integrity tests.** Offline verification of sentinel hashes, routing table linkage, config schema completeness.
+
+### Breaking changes — upgrade notes
+
+- **Install URL changed.** Update bookmarks and CI scripts from `raw.githubusercontent.com/.../main/install.sh` to `https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh`.
+- **New default permissions may prompt.** First-time Claude invocations of `curl http://` or other denied patterns now produce a permission prompt. Allow once if legitimate. User-added permissions belong in a `userPermissions` top-level key (outside the managed region).
+- **Install requires cosign.** Set `EDIKT_INSTALL_INSECURE=1` to bypass (loud banner). Recommended: install cosign first.
+- **`/edikt:gov:compile` evidence gate.** Existing `done` phases are grandfathered (`meta.grandfathered: true`) — no regression. New phases require `evidence_type: "test_run"` for test-command criteria.
+- **`/edikt:gov:compile` aborts on incomplete sentinels.** First-time adoption on a project without sentinels now redirects to `/edikt:adr:compile`, `/edikt:invariant:compile`, `/edikt:guideline:compile` (each supports a no-arg "process all" invocation). Run those once to populate sentinels under the v0.5.0+ schema, then run `gov:compile`.
+- **Multi-sentence directives warn.** Directives without `canonical_phrases` produce a compile warning in v0.5.0 (no block). Run `/edikt:adr:review --backfill` to retrofit. Hard-fail is targeted for a subsequent release.
+
+### Rollback
+
+`edikt rollback v0.5.0` restores `~/.claude/settings.json` from the pre-upgrade backup, removes the managed-region sidecar and grandfather stubs. Idempotent. Backup preserved at `~/.edikt/backup/pre-v0.5.0-<ts>/`.
+
+---
+
 ## v0.4.3 (2026-04-14)
 
 ### Bug fixes

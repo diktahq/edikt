@@ -70,14 +70,18 @@ done
 
 cp "$PROJECT_ROOT/VERSION" "$INSTALL_HOME/VERSION"
 
-# Verify command count (50 commands: 12 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated)
+# Verify command count (52 markdown files: 12 flat + 3 adr + 3 invariant + 3 guideline + 5 gov + 7 sdlc + 2 docs + 15 deprecated + 2 new)
 # v0.3.0 added commands/guideline/compile.md + commands/gov/score.md
 # v0.4.0 added commands/config.md
+# v0.6.0 (SPEC-005): added commands/gov/_shared-directive-checks.md (non-command partial)
+#                    and commands/gov/benchmark.md (tier-2 opt-in — per ADR-015 this
+#                    is bundled with the payload tarball but ONLY surfaced to users
+#                    via `edikt install benchmark`, never by install.sh).
 CMD_COUNT=$(find "$INSTALL_HOME/commands/edikt/" -name "*.md" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$CMD_COUNT" -eq 50 ]; then
-    pass "50 commands installed"
+if [ "$CMD_COUNT" -eq 52 ]; then
+    pass "52 commands installed"
 else
-    fail "Expected 50 commands, found $CMD_COUNT"
+    fail "Expected 52 commands, found $CMD_COUNT"
 fi
 
 # Verify agent count (20 agents: 19 original + evaluator-headless)
@@ -89,19 +93,27 @@ else
     fail "Expected 20 agents, found $AGENT_COUNT"
 fi
 
-# Verify hook count (15 hooks including headless-ask and phase-end-detector)
-# 15 event hooks + 1 utility (event-log.sh) = 16
+# Verify hook count (v0.5.0 per ADR-014: removed pre-compact.sh; added
+# session-end, subagent-start, task-completed, worktree-create,
+# worktree-remove, status-line; original 16 − 1 + 6 = 21)
 HOOK_COUNT=$(ls "$INSTALL_HOME/templates/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-if [ "$HOOK_COUNT" -eq 16 ]; then
-    pass "16 hook scripts installed (15 hooks + event-log utility)"
+if [ "$HOOK_COUNT" -eq 21 ]; then
+    pass "21 hook scripts installed (v0.5.0 event set + status-line + utilities)"
 else
-    fail "Expected 16 hook files, found $HOOK_COUNT"
+    fail "Expected 21 hook files, found $HOOK_COUNT"
 fi
 
-# Verify all hooks listed in install.sh exist as files
-for hook in session-start pre-tool-use post-tool-use pre-compact stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask; do
+# Verify all v0.5.0 hooks exist as files (pre-compact REMOVED per ADR-014)
+for hook in session-start pre-tool-use post-tool-use stop-hook user-prompt-submit post-compact subagent-stop instructions-loaded stop-failure task-created cwd-changed file-changed headless-ask session-end subagent-start task-completed worktree-create worktree-remove status-line; do
     assert_file_exists "$INSTALL_HOME/templates/hooks/${hook}.sh" "Hook script exists: ${hook}.sh"
 done
+
+# pre-compact.sh MUST NOT exist in v0.5.0 (ADR-014 deletion)
+if [ ! -f "$INSTALL_HOME/templates/hooks/pre-compact.sh" ]; then
+    pass "pre-compact.sh removed per ADR-014"
+else
+    fail "pre-compact.sh should be removed per ADR-014"
+fi
 
 # Verify evaluator agent exists
 assert_file_exists "$INSTALL_HOME/templates/agents/evaluator.md" "Evaluator agent installed"
@@ -223,7 +235,7 @@ assert_file_contains "$INIT_PROJECT/CLAUDE.md" "edikt:start" "CLAUDE.md has star
 assert_file_contains "$INIT_PROJECT/CLAUDE.md" "edikt:end" "CLAUDE.md has end sentinel"
 
 # Verify settings.json has all hook events
-for event in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop StopFailure SubagentStop PreCompact PostCompact InstructionsLoaded TaskCreated CwdChanged FileChanged; do
+for event in SessionStart UserPromptSubmit PreToolUse PostToolUse Stop StopFailure SubagentStop PostCompact InstructionsLoaded TaskCreated CwdChanged FileChanged SessionEnd SubagentStart TaskCompleted WorktreeCreate WorktreeRemove; do
     if python3 -c "
 import json, sys
 s = json.load(open('$INIT_PROJECT/.claude/settings.json'))
@@ -508,14 +520,17 @@ echo -e "${BOLD}TEST 4: Command UX consistency${NC}"
 
 CMD_DIR="$PROJECT_ROOT/commands"
 
-# Build list of all non-deprecated command files
+# Build list of all non-deprecated command files.
+# Files prefixed with "_" are partials (shared sub-procedures called by
+# top-level commands, e.g. gov/_shared-directive-checks.md) — they are
+# not user-facing commands and don't need completion signals.
 ALL_CMDS=()
 for cmd in "$CMD_DIR"/*.md; do
-    [ -f "$cmd" ] && ALL_CMDS+=("$cmd")
+    [ -f "$cmd" ] && [ "$(basename "$cmd" | cut -c1)" != "_" ] && ALL_CMDS+=("$cmd")
 done
 for ns in adr invariant guideline gov sdlc docs; do
     for cmd in "$CMD_DIR/${ns}"/*.md; do
-        [ -f "$cmd" ] && ALL_CMDS+=("$cmd")
+        [ -f "$cmd" ] && [ "$(basename "$cmd" | cut -c1)" != "_" ] && ALL_CMDS+=("$cmd")
     done
 done
 
@@ -685,16 +700,14 @@ echo -e "${BOLD}TEST 7: Installer safety${NC}"
 
 INSTALL="$PROJECT_ROOT/install.sh"
 
+# v0.5.0: install.sh is a thin launcher bootstrap; payload enumeration
+# (hooks, agents, commands) has moved into the release tarball fetched by
+# bin/edikt. Pre-v0.5.0 string-presence assertions are skipped.
 assert_file_contains "$INSTALL" "DRY_RUN" "Installer has dry-run support"
-assert_file_contains "$INSTALL" "install_file" "Installer has backup function"
-assert_file_contains "$INSTALL" "BACKUP_DIR" "Installer creates backup dir"
-assert_file_contains "$INSTALL" "edikt:custom" "Installer respects custom markers"
-assert_file_contains "$INSTALL" "headless-ask" "Installer includes headless hook"
-assert_file_contains "$INSTALL" "evaluator" "Installer includes evaluator agent"
-assert_file_contains "$INSTALL" "stop-failure" "Installer includes StopFailure hook"
-assert_file_contains "$INSTALL" "task-created" "Installer includes TaskCreated hook"
-assert_file_contains "$INSTALL" "cwd-changed" "Installer includes CwdChanged hook"
-assert_file_contains "$INSTALL" "file-changed" "Installer includes FileChanged hook"
+
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # Verify install.sh is valid bash
 if bash -n "$INSTALL" 2>/dev/null; then

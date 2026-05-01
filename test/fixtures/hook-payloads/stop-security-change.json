@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Switched JWT signing from HS256 to RS256 and rotated the bearer token issuer. Password hashes now use bcrypt cost 12.",
+  "cwd": "${HOME}/projects/greenfield"
+}

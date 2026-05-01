@@ -311,8 +311,10 @@ else
     fail "Hook should log completion event to events.jsonl"
 fi
 
-# Event contains correct phase number
-if grep -q '"phase":2' "$FAKE_HOME/.edikt/events.jsonl" 2>/dev/null; then
+# Event contains correct phase number. v0.5.0 serializes events via python3
+# json.dumps, whose default `": "` separator emits a space. Match either the
+# compact or padded form so both styles pass.
+if grep -Eq '"phase": ?2([,}]|$)' "$FAKE_HOME/.edikt/events.jsonl" 2>/dev/null; then
     pass "Event log contains correct phase number (2)"
 else
     fail "Event log missing phase:2"

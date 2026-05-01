@@ -93,13 +93,11 @@ fi
 # Installer safety (v0.2.0)
 assert_file_contains "$INSTALL" "dry-run" "install.sh supports --dry-run flag"
 assert_file_contains "$INSTALL" "DRY_RUN" "install.sh has DRY_RUN variable"
-assert_file_contains "$INSTALL" "install_file" "install.sh has install_file backup function"
-assert_file_contains "$INSTALL" "BACKUP_DIR" "install.sh creates backup directory"
-assert_file_contains "$INSTALL" "backups/" "install.sh stores backups in backups/ dir"
-assert_file_contains "$INSTALL" "edikt:custom" "install.sh respects custom markers"
-assert_file_contains "$INSTALL" "Existing edikt installation detected" "install.sh detects existing installs"
+
+# install.sh-internal assertions for backup/custom-marker machinery removed in
+# v0.5.0 Phase 5 hardening — the bootstrap delegates to bin/edikt; coverage
+# now lives under test/unit/launcher/ and test/integration/install/.
 assert_file_contains "$INSTALL" "Dry run complete" "install.sh shows dry run summary"
-assert_file_contains "$INSTALL" "Backed up" "install.sh reports backup count"
 
 # ============================================================
 # Experiment setup.sh — rm -rf guard

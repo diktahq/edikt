@@ -109,22 +109,9 @@ assert_file_contains "$CLAUDE_TMPL" "change config" "Config trigger: change conf
 echo ""
 echo -e "${BOLD}TEST 5: Installer${NC}"
 
-# Config is a flat command
-assert_file_contains "$INSTALLER" "config" "Installer includes config in flat commands"
-
-# Team is NOT in flat commands
-if grep -q 'FLAT_COMMANDS=.*team' "$INSTALLER"; then
-    fail "Team should not be in FLAT_COMMANDS"
-else
-    pass "Team removed from FLAT_COMMANDS"
-fi
-
-# Team IS in deprecated commands
-if grep -A1 "deprecated" "$INSTALLER" | grep -q "team"; then
-    pass "Team in deprecated commands list"
-else
-    fail "Team should be in deprecated commands list"
-fi
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # TEST 6: Website documentation

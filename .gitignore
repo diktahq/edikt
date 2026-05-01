@@ -14,3 +14,31 @@ test/experiments/directive-effect/*
 !test/experiments/directive-effect/run.sh
 test/experiments/long-running/*
 !test/experiments/long-running/run.sh
+
+# pytest
+__pycache__/
+.pytest_cache/
+
+# local development sandbox (make dev)
+.sandbox/
+
+# local secrets — never commit
+.env
+.env.local
+
+# Python build artifacts (tier-2 tools)
+tools/*/build/
+tools/*/*.egg-info/
+
+# edikt ephemeral state
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+.edikt/state/
+tools/edikt/
+docs/STATUS.md
+
+# test run artifacts (not checked in)
+test/integration/benchmarks/results/
+test/integration/failures/
+docs/product/plans/verdicts/
+bin/edikt

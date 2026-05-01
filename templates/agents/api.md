@@ -10,6 +10,7 @@ disallowedTools:
   - Edit
 maxTurns: 10
 effort: medium
+initialPrompt: "Read the API contracts in docs/product/specs/*/contracts/ and the relevant ADRs. Note existing endpoint conventions before responding."
 ---
 
 You are an API design specialist. You design and review APIs that are intuitive, evolvable, and don't trap the team in backwards-compatibility nightmares.

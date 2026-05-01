@@ -92,20 +92,9 @@ assert_file_contains "$INV_EXAMPLES_DIR/WRITING-GUIDE.md" "seven-question self-t
 # Contract 4: install.sh ships invariants examples
 # ============================================================
 
-INSTALL_SH="$PROJECT_ROOT/install.sh"
-
-assert_file_contains "$INSTALL_SH" "templates/examples/invariants" \
-    "install.sh creates templates/examples/invariants directory"
-assert_file_contains "$INSTALL_SH" "Canonical Invariant Record examples" \
-    "install.sh has the canonical examples install block"
-
-for example in tenant-isolation money-precision README WRITING-GUIDE; do
-    if grep -qF "${example}.md" "$INSTALL_SH"; then
-        pass "install.sh ships ${example}.md"
-    else
-        fail "install.sh ships ${example}.md" "Not found in install.sh"
-    fi
-done
+# install.sh-internal assertions removed in v0.5.0 Phase 5 hardening — the
+# bootstrap delegates to bin/edikt; coverage now lives under
+# test/unit/launcher/ and test/integration/install/.
 
 # ============================================================
 # Contract 5: Website pages exist

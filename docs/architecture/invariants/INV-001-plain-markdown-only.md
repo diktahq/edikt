@@ -22,6 +22,9 @@ Every edikt command is a `.md` file. No TypeScript, no compiled binaries, no bui
 ## Directives
 
 [edikt:directives:start]: #
+source_hash: dd097e717f15b54b64b5959c4334f78093be9871e8ac33af0b1febc4eaf9a9cc
+directives_hash: a3cd524585a3f28cefbffd7c75c4df3181605ab79d592bf26c935069da4b8509
+compiler_version: "0.6.0"
 paths:
   - "**/*"
 scope:
@@ -31,4 +34,19 @@ scope:
   - implementation
 directives:
   - Every command and template MUST be a `.md` or `.yaml` file. No TypeScript, no compiled binaries, no build step. Installation is copy files only — no npm, no package managers. (ref: INV-001)
+manual_directives: []
+suppressed_directives: []
+canonical_phrases:
+  - "plain markdown"
+  - "no build step"
+  - "copy install"
+behavioral_signal:
+  refuse_to_write:
+    - ".ts"
+    - ".js"
+    - ".py"
+    - "package.json"
+    - "tsconfig.json"
+  cite:
+    - "INV-001"
 [edikt:directives:end]: #

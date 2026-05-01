@@ -1,6 +1,6 @@
 ---
 name: edikt:upgrade
-description: "Upgrade edikt in this project — hooks, agents, and rules to the latest installed version"
+description: "Upgrade edikt in this project — launcher version check, then hooks, agents, and rules"
 effort: normal
 allowed-tools:
   - Read
@@ -14,7 +14,7 @@ allowed-tools:
 
 # edikt:upgrade
 
-Upgrade edikt in this project to match the currently installed edikt version. Updates hooks, agent templates, and rule packs — never overwrites customizations without asking.
+Upgrade edikt to the latest version and update this project's hooks, agents, and rule packs. Detects major-version jumps and redirects to the installer when needed.
 
 ## Arguments
 
@@ -26,14 +26,35 @@ Upgrade edikt in this project to match the currently installed edikt version. Up
 
 If `--offline` is in `$ARGUMENTS`, skip this step entirely and proceed to Step 1.
 
-Otherwise, check if a newer edikt version is available:
+#### 0a. Read the installed version
 
 ```bash
-LATEST_VERSION=$(curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/main/VERSION" 2>/dev/null | tr -d '[:space:]')
-INSTALLED_VERSION=$(cat .edikt/VERSION 2>/dev/null || cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]')
+# Prefer the launcher's VERSION file; fall back to project-mode .edikt/VERSION
+INSTALLED_VERSION=$(
+  edikt version 2>/dev/null \
+  || cat "$HOME/.edikt/current/VERSION" 2>/dev/null \
+  || cat .edikt/VERSION 2>/dev/null \
+  || cat ~/.edikt/VERSION 2>/dev/null \
+  | tr -d '[:space:]'
+)
 ```
 
-Three outcomes:
+Strip any leading `v` from INSTALLED_VERSION for comparisons.
+
+#### 0b. Fetch the latest stable release
+
+The launcher subcommand (`edikt upgrade`) uses the GitHub releases API, but for the slash command we also support a direct VERSION check:
+
+```bash
+# Primary: GitHub releases API (used by launcher)
+LATEST_TAG=$(curl -fsSL --max-time 15 \
+  "https://api.github.com/repos/diktahq/edikt/releases/latest" 2>/dev/null \
+  | grep '"tag_name"' | head -1 | awk -F'"' '{print $4}')
+LATEST_VERSION=$(echo "$LATEST_TAG" | sed 's/^v//')
+
+# Fallback: raw VERSION file (used by legacy upgrade path)
+# curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/main/VERSION" 2>/dev/null
+```
 
 **Fetch failed** (no network, timeout, empty response):
 ```
@@ -42,19 +63,70 @@ Three outcomes:
 ```
 Proceed to Step 1 normally.
 
-**Latest version matches installed** — proceed to Step 1 silently.
+#### 0c. Launcher presence check
 
-**Latest version is newer than installed:**
+Check whether `edikt version` responds (i.e., the launcher is installed):
+
+```bash
+LAUNCHER_OK=0
+edikt version >/dev/null 2>&1 && LAUNCHER_OK=1
 ```
-📦 edikt {LATEST_VERSION} is available (you have {INSTALLED_VERSION}).
 
-  Update now:
-    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+#### 0d. Major-version detection
 
-  Then re-run /edikt:upgrade to apply changes to this project.
-  To skip this check: /edikt:upgrade --offline
+Parse the major component of both versions (X in X.Y.Z, stripping leading `v`):
+
+```bash
+INSTALLED_MAJOR=$(echo "$INSTALLED_VERSION" | awk -F. '{print $1+0}')
+LATEST_MAJOR=$(echo "$LATEST_VERSION" | awk -F. '{print $1+0}')
 ```
-Stop here — do not proceed to Step 1. The user needs to update global templates first, otherwise the project upgrade would use stale templates.
+
+**If launcher is missing OR `$LATEST_MAJOR > $INSTALLED_MAJOR`:**
+
+This is a major upgrade. The launcher cannot self-upgrade across major versions — the installer must re-bootstrap the binary.
+
+```
+This is a major upgrade (v{INSTALLED_VERSION} → v{LATEST_VERSION}).
+Run the installer to complete the upgrade:
+
+  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+
+Then re-run /edikt:upgrade to apply project changes.
+```
+
+Stop here — do not proceed to Step 1. Do not mutate any files.
+
+#### 0e. Minor-version bump: delegate to launcher
+
+If `$LATEST_MAJOR == $INSTALLED_MAJOR` AND `$LATEST_VERSION` differs from `$INSTALLED_VERSION`:
+
+```bash
+edikt upgrade --yes
+```
+
+If the launcher upgrade fails (non-zero exit), report the error and stop. Do not proceed to Step 1 until the launcher upgrade succeeds.
+
+#### 0f. Post-launcher-upgrade summary
+
+After a successful `edikt upgrade --yes`, print:
+
+```
+Launcher upgrade complete: v{INSTALLED_VERSION} → v{LATEST_VERSION}
+```
+
+Note any migrations that were applied by reading recent entries from `~/.edikt/events.jsonl`:
+
+```bash
+tail -20 ~/.edikt/events.jsonl 2>/dev/null | grep '"event":"layout_migrated"' | head -3
+```
+
+For each migration event found, print: `  Migration applied: {event details}`
+
+Suggest verification: `Run edikt doctor to verify the installation.`
+
+Then proceed to Step 1 to apply project-level changes.
+
+---
 
 ### 1. Check Prerequisites
 
@@ -142,12 +214,11 @@ grep -qF '<!-- edikt:start' CLAUDE.md 2>/dev/null && echo "old"
 
 Note when outdated: "CLAUDE.md using old HTML sentinels — Claude Code v2.1.72+ hides these, preventing Claude from seeing section boundaries"
 
-#### 2c. Agent check
-
+#### 2c. Agent check — provenance-first (SPEC-004 §8)
 
 List files in `.claude/agents/`. For each, check if a matching template exists in `~/.edikt/templates/agents/`.
 
-**Skip customized agents.** An agent is customized if:
+**Skip customized agents first.** An agent is customized (and therefore skipped before any hash logic runs) if:
 1. It contains `<!-- edikt:custom -->` anywhere in the file, OR
 2. It is listed in `.edikt/config.yaml` under `agents.custom`
 
@@ -155,11 +226,146 @@ List files in `.claude/agents/`. For each, check if a matching template exists i
 # .edikt/config.yaml
 agents:
   custom:
-    - dba       # skip on upgrade — team has customized this agent
-    - my-team-reviewer    # not from edikt templates
+    - dba
+    - my-team-reviewer
 ```
 
-For each agent that is NOT customized and has a edikt template, compare content hashes — NOT modification times:
+For every remaining agent with a matching template, execute the provenance-first flow below. **Follow the control flow exactly — do not paraphrase or reorder the branches.**
+
+```
+for each installed agent at .claude/agents/{slug}.md:
+  # Step 1 — read provenance frontmatter
+  stored_hash = yaml_frontmatter(installed).get("edikt_template_hash")
+
+  # Step 2 — legacy fallback (pre-v0.5.0 install, no provenance)
+  if stored_hash is absent:
+    emit_event "upgrade_agent_path" { agent: slug, path: "legacy_classifier_entered" }
+    run Legacy Classifier Fallback (see below) — do NOT simplify
+    continue
+
+  # Step 3 — compute current template hash (md5 of raw template bytes,
+  # matching the init hashing rule in SPEC-004 §7 — BEFORE substitution
+  # and BEFORE stack filtering).
+  current_template_hash = md5_raw(~/.edikt/templates/agents/{slug}.md)
+
+  # Step 4 — fast preserve
+  if stored_hash == current_template_hash:
+    emit_event "upgrade_agent_path" { agent: slug, path: "fast_preserve" }
+    emit_event "upgrade_agent_preserved" {
+      agent: slug,
+      hash: stored_hash,
+      reason: "template unchanged"
+    }
+    # Template has not moved. Any on-disk difference is a user edit.
+    # Do not touch the file.
+    report "   ✓ {slug}.md — template unchanged (preserved)"
+    continue
+
+  # Step 5 — re-synthesize what init WOULD have produced from the stored
+  # template plus the current project config. If the installed file is
+  # byte-identical to that re-synthesis, the user never touched it and
+  # the new template is safe to apply.
+  stored_template = reconstruct_template_at(stored_hash)
+  #   Lookup order:
+  #     1. ~/.edikt/versions/<edikt_template_version>/templates/agents/{slug}.md
+  #        (preferred — written at install time by the versioned layout)
+  #     2. cached copy under ~/.edikt/cache/template-by-hash/{stored_hash}.md
+  #   If neither is available, fall through to Step 7 (threeway_prompt) using
+  #   the current template for both "stored" and "current" columns.
+  #
+  #   Note: a `git show` fallback is NOT supported. The edikt source repo is
+  #   not guaranteed to be present after a normal user install, so any fallback
+  #   relying on it would silently fail for most users.
+
+  resynth = apply_stack_filter(
+             apply_substitutions(stored_template, config.paths),
+             config.stack)
+
+  installed_body = read_file_without_provenance_frontmatter(installed)
+  resynth_body   = resynth   # (no provenance frontmatter written yet)
+
+  if installed_body == resynth_body:
+    # Step 6 — safe replace. User never edited; template moved forward.
+    new_content = apply_stack_filter(
+                    apply_substitutions(current_template, config.paths),
+                    config.stack)
+    write_with_provenance(installed,
+      content = new_content,
+      edikt_template_hash    = current_template_hash,
+      edikt_template_version = CURRENT_EDIKT_VERSION)
+
+    emit_event "upgrade_agent_path" { agent: slug, path: "resynth_safe_replace" }
+    emit_event "upgrade_agent_replaced" {
+      agent: slug,
+      hash_old: stored_hash,
+      hash_new: current_template_hash,
+      user_accepted: false         # auto-applied, no prompt needed
+    }
+    report "   ⬆ {slug}.md — template updated (no user edits detected)"
+    continue
+
+  # Step 7 — 3-way prompt. User edited AND template moved. Show the user
+  # all three sides and let them choose.
+  emit_event "upgrade_agent_path" { agent: slug, path: "threeway_prompt" }
+
+  run Three-Way Diff Prompt (see below)
+  # Prompt records resolution and performs the selected action.
+```
+
+**Three-Way Diff Prompt.**
+
+Write the three bodies to temp files and invoke `diff3` to show a merged view. On systems without `diff3`, print each section separately under clearly labelled headers.
+
+```bash
+STORED=$(mktemp) ; echo "$stored_template_resynth"  > "$STORED"
+RESYNTH=$(mktemp); echo "$current_template_resynth" > "$RESYNTH"
+INSTALLED=$(mktemp); cat .claude/agents/{slug}.md   > "$INSTALLED"
+
+if command -v diff3 >/dev/null 2>&1; then
+  diff3 -L "old template" -L "your edits" -L "new template" \
+    "$STORED" "$INSTALLED" "$RESYNTH"
+else
+  echo "── old template (stored_hash=$stored_hash) ──" ; cat "$STORED"
+  echo "── your edits (installed) ──"                  ; cat "$INSTALLED"
+  echo "── new template (current) ──"                  ; cat "$RESYNTH"
+fi
+
+rm -f "$STORED" "$RESYNTH" "$INSTALLED"
+```
+
+Then prompt:
+
+```
+{slug}.md — template moved AND you have local edits.
+
+  [a] Apply new template   — overwrites your edits with the new template
+  [k] Keep current         — keep your file; miss this template update
+  [m] Merge interactively  — open $EDITOR with conflict markers
+  [s] Skip this agent      — decide later; ask again next upgrade
+
+Choice [a/k/m/s]:
+```
+
+Record the resolution with `upgrade_agent_conflict_resolved` and perform the action:
+
+| Choice | Action                                                                                                                                                                                               | `upgrade_agent_replaced.user_accepted` |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| `a`    | Write `apply_stack_filter(apply_substitutions(current_template))` to the installed path, update `edikt_template_hash` + `edikt_template_version`. Emit `upgrade_agent_replaced` with `user_accepted: true`. | `true`                                 |
+| `k`    | Do not modify the file. Emit `upgrade_agent_preserved` with `reason: "user kept edits on moved template"`.                                                                                           | —                                      |
+| `m`    | Write a merge file at `.claude/agents/{slug}.md.merge` with `diff3 -m` conflict markers, open `$EDITOR`, and after the editor exits require the user to re-run `/edikt:upgrade`. Do not update frontmatter or the installed file until merge completes cleanly. Emit `upgrade_agent_merge_requested { agent, merge_file, hash_old, hash_new }`. | —                                      |
+| `s`    | Exclude from this run. No file change. No frontmatter update.                                                                                                                                        | —                                      |
+
+In every case emit:
+
+```
+upgrade_agent_conflict_resolved { agent: slug, resolution: "a" | "k" | "m" | "s" }
+```
+
+**Legacy Classifier Fallback (pre-v0.5.0 agents only — retained verbatim from v0.4.3).**
+
+Do NOT simplify or refactor this block. It is exercised byte-for-byte by `test_upgrade_legacy_agent_uses_classifier` and preserves the exact behavior shipped in commit `d81f6e3`.
+
+For each agent that lacks `edikt_template_hash` in its frontmatter and is NOT customized, compare content hashes — NOT modification times:
 ```bash
 template_hash=$(md5 -q ~/.edikt/templates/agents/{slug}.md 2>/dev/null || md5sum ~/.edikt/templates/agents/{slug}.md 2>/dev/null | awk '{print $1}')
 installed_hash=$(md5 -q .claude/agents/{slug}.md 2>/dev/null || md5sum .claude/agents/{slug}.md 2>/dev/null | awk '{print $1}')
@@ -180,6 +386,8 @@ Classify into three buckets:
 - **PURE EXPANSION**: only additions, no deletions (except trivial whitespace). Safe to apply — the template added content.
 - **PATH SUBSTITUTION**: deletions match the user's configured paths. Safe to apply if we re-substitute paths after upgrade. For now: flag as USER DIVERGENCE.
 - **USER DIVERGENCE**: deletions exist that aren't just path substitutions. The installed file has content the template doesn't — likely user customization. Require explicit confirmation with diff preview.
+
+When a legacy classifier run ends with a decision (auto-apply, keep, or skip), emit `upgrade_agent_replaced` / `upgrade_agent_preserved` with the matching fields plus `reason: "legacy_classifier"` so downstream events.jsonl analysis can distinguish provenance-path resolutions from legacy-path resolutions.
 
 Do NOT touch agents that have no matching template (user-created agents) or that are marked as custom.
 
@@ -407,7 +615,7 @@ for hook_type in ['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompa
 write_json('.claude/settings.json', settings)
 ```
 
-**Never remove** hooks that exist in `settings.json` but not in the template (the user may have added their own).
+**Never remove** hooks that exist in `settings.json` but not in the template (the user may have added their own). This upgrade never overwrites user-added hooks — it only updates or adds what the template defines.
 
 #### Agents
 

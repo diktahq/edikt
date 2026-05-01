@@ -83,6 +83,7 @@ Keep agents passive, require users to invoke them. Rejected: creates the same "y
 ## Directives
 
 [edikt:directives:start]: #
+topic: agent-rules
 paths:
   - "templates/agents/**"
   - "commands/review.md"
