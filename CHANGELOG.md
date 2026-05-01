@@ -1,5 +1,19 @@
 # edikt changelog
 
+## v0.5.1 (2026-05-01)
+
+Patch release: multi-platform binaries (ADR-021).
+
+v0.5.0 shipped a single linux-amd64 binary for everyone, breaking macOS Homebrew installs (Mach-O vs ELF mismatch). v0.5.1 fixes packaging:
+
+- Release workflow cross-compiles for darwin-arm64, darwin-amd64, linux-arm64, linux-amd64.
+- Asset naming: `edikt-v0.5.1-<goos>-<goarch>.tar.gz`. SHA256SUMS covers all four launchers + payload.
+- Homebrew formula uses `on_macos`/`on_linux` × `on_arm`/`on_intel` blocks, served from the right asset per platform.
+- `install.sh` detects `uname -s` / `uname -m` and fetches the matching tarball.
+- No code or governance changes — pure packaging fix.
+
+If you installed v0.5.0 via Homebrew on macOS: `brew upgrade edikt`. If via curl on Linux: `edikt upgrade` is a no-op (already on the right binary).
+
 ## v0.5.0 (2026-04-29)
 
 First release with a pure Go binary, full release-integrity signing, and the security-hardened hook surface. Two themes: **edikt is now a single signed binary**, and **the security audit findings are closed with new invariants that prevent regression**.

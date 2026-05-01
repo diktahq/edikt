@@ -316,9 +316,23 @@ if [ -n "${EDIKT_LAUNCHER_SOURCE:-}" ]; then
   warn "EDIKT_LAUNCHER_SOURCE override active: $EDIKT_LAUNCHER_SOURCE"
   LAUNCHER_SRC_LOCAL="$EDIKT_LAUNCHER_SOURCE"
 else
-  # Strip leading "v" if present; release assets are named edikt-v<ver>.tar.gz.
+  # Detect platform — release assets are platform-specific (ADR-021).
+  _uname_s="$(uname -s 2>/dev/null)"
+  _uname_m="$(uname -m 2>/dev/null)"
+  case "$_uname_s" in
+    Darwin) _goos="darwin" ;;
+    Linux)  _goos="linux" ;;
+    *) error "unsupported OS: $_uname_s (need Darwin or Linux)"; exit "$EX_GENERAL" ;;
+  esac
+  case "$_uname_m" in
+    arm64|aarch64) _goarch="arm64" ;;
+    x86_64|amd64)  _goarch="amd64" ;;
+    *) error "unsupported arch: $_uname_m (need arm64 or amd64)"; exit "$EX_GENERAL" ;;
+  esac
+  # Strip leading "v" if present; assets named edikt-v<ver>-<goos>-<goarch>.tar.gz.
   _ver_only="${TAG#v}"
-  LAUNCHER_URL="https://github.com/${REPO}/releases/download/${TAG}/edikt-v${_ver_only}.tar.gz"
+  LAUNCHER_PLATFORM="${_goos}-${_goarch}"
+  LAUNCHER_URL="https://github.com/${REPO}/releases/download/${TAG}/edikt-v${_ver_only}-${LAUNCHER_PLATFORM}.tar.gz"
   LAUNCHER_IS_TARBALL=1
 fi
 
@@ -459,7 +473,7 @@ stage_launcher() {
         # Pick the filename to look up based on what was downloaded.
         _ver_only="${TAG#v}"
         if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
-          _expected_name="edikt-v${_ver_only}.tar.gz"
+          _expected_name="edikt-v${_ver_only}-${LAUNCHER_PLATFORM:-darwin-arm64}.tar.gz"
         else
           _expected_name="bin/edikt"
         fi

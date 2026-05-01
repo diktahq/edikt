@@ -16,12 +16,15 @@ permissions:
   id-token: write   # Sigstore keyless signing via GitHub OIDC (ADR-016)
 
 jobs:
-  # ─── Build tarballs and upload release assets ────────────────────────────────
+  # ─── Build per-platform launcher tarballs + payload, sign, upload ────────────
   build:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
-      launcher_sha256: ${{ steps.checksums.outputs.launcher_sha256 }}
+      sha_darwin_arm64: ${{ steps.checksums.outputs.sha_darwin_arm64 }}
+      sha_darwin_amd64: ${{ steps.checksums.outputs.sha_darwin_amd64 }}
+      sha_linux_arm64:  ${{ steps.checksums.outputs.sha_linux_arm64 }}
+      sha_linux_amd64:  ${{ steps.checksums.outputs.sha_linux_amd64 }}
 
     steps:
       - uses: actions/checkout@v4
@@ -59,20 +62,23 @@ jobs:
           go-version-file: tools/edikt/go.mod
           cache-dependency-path: tools/edikt/go.sum
 
-      - name: Build edikt Go binary (ADR-022 — bin/edikt is the Go binary)
-        run: |
-          mkdir -p bin
-          cd tools/edikt
-          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$GITHUB_WORKSPACE/bin/edikt" .
-
-      - name: Build launcher tarball
+      - name: Cross-compile launcher binaries (ADR-021 — darwin/linux × arm64/amd64)
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          # Launcher tarball: bin/edikt, LICENSE, README.md ONLY.
-          # Templates, commands, and hooks are fetched by `edikt install` at runtime.
-          tar -czf "edikt-v${VERSION}.tar.gz" bin/edikt LICENSE README.md
-          echo "Launcher tarball contents:"
-          tar -tzf "edikt-v${VERSION}.tar.gz"
+          for plat in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            goos="${plat%/*}"
+            goarch="${plat#*/}"
+            outdir="$GITHUB_WORKSPACE/build/${goos}-${goarch}"
+            mkdir -p "$outdir/bin"
+            ( cd tools/edikt && \
+              GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
+                go build -trimpath -ldflags='-s -w' -o "$outdir/bin/edikt" . )
+            cp LICENSE README.md "$outdir/"
+            ( cd "$outdir" && \
+              tar -czf "$GITHUB_WORKSPACE/edikt-v${VERSION}-${goos}-${goarch}.tar.gz" \
+                bin/edikt LICENSE README.md )
+            echo "Built edikt-v${VERSION}-${goos}-${goarch}.tar.gz"
+          done
 
       - name: Build payload tarball
         run: |
@@ -87,13 +93,18 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
           sha256sum \
-            "edikt-v${VERSION}.tar.gz" \
+            "edikt-v${VERSION}-darwin-arm64.tar.gz" \
+            "edikt-v${VERSION}-darwin-amd64.tar.gz" \
+            "edikt-v${VERSION}-linux-arm64.tar.gz" \
+            "edikt-v${VERSION}-linux-amd64.tar.gz" \
             "edikt-payload-v${VERSION}.tar.gz" \
             > SHA256SUMS
           echo "SHA256SUMS:"
           cat SHA256SUMS
-          LAUNCHER_SHA=$(awk '/edikt-v[^-]/ {print $1}' SHA256SUMS)
-          echo "launcher_sha256=$LAUNCHER_SHA" >> "$GITHUB_OUTPUT"
+          for plat in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
+            sha=$(awk -v f="edikt-v${VERSION}-${plat}.tar.gz" '$2==f {print $1}' SHA256SUMS)
+            echo "sha_${plat//-/_}=${sha}" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Sign SHA256SUMS with Sigstore keyless (ADR-016)
         run: |
@@ -111,7 +122,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            edikt-v${{ steps.version.outputs.version }}.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-darwin-amd64.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-linux-arm64.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-linux-amd64.tar.gz
             edikt-payload-v${{ steps.version.outputs.version }}.tar.gz
             SHA256SUMS
             SHA256SUMS.sig.bundle
@@ -141,22 +155,57 @@ jobs:
           git checkout -b "$BRANCH"
           echo "branch=$BRANCH" >> "$GITHUB_ENV"
 
-      - name: Patch Formula/edikt.rb
+      - name: Regenerate Formula/edikt.rb (multi-platform, ADR-021)
         run: |
           VERSION="${{ needs.build.outputs.version }}"
-          SHA="${{ needs.build.outputs.launcher_sha256 }}"
-          URL="https://github.com/diktahq/edikt/releases/download/v${VERSION}/edikt-v${VERSION}.tar.gz"
+          BASE="https://github.com/diktahq/edikt/releases/download/v${VERSION}"
           cd tap
-          # Patch url and sha256 — scope strictly to edikt.rb, never touch verikt.rb.
-          sed -i \
-            -e "s|url \".*\"|url \"${URL}\"|" \
-            -e "s|sha256 \".*\"|sha256 \"${SHA}\"|" \
-            -e "s|version \".*\"|version \"${VERSION}\"|" \
-            Formula/edikt.rb
-          echo "Patched Formula/edikt.rb:"
+          cat > Formula/edikt.rb <<EOF
+          # typed: false
+          # frozen_string_literal: true
+
+          class Edikt < Formula
+            desc "Governance layer for agentic engineering"
+            homepage "https://github.com/diktahq/edikt"
+            license "Elastic-2.0"
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "${BASE}/edikt-v${VERSION}-darwin-arm64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_darwin_arm64 }}"
+              end
+              on_intel do
+                url "${BASE}/edikt-v${VERSION}-darwin-amd64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_darwin_amd64 }}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "${BASE}/edikt-v${VERSION}-linux-arm64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_linux_arm64 }}"
+              end
+              on_intel do
+                url "${BASE}/edikt-v${VERSION}-linux-amd64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_linux_amd64 }}"
+              end
+            end
+
+            def install
+              bin.install "bin/edikt"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/edikt version")
+            end
+          end
+          EOF
+          # Strip leading two-space heredoc indent (matches surrounding YAML block).
+          sed -i 's/^  //' Formula/edikt.rb
+          echo "Generated Formula/edikt.rb:"
           cat Formula/edikt.rb
-          # Safety: verikt.rb must be byte-identical to HEAD. `git diff` always
-          # exits 0 — use --quiet so a non-empty diff exits 1 and triggers abort.
+          # Safety: verikt.rb must be byte-identical to HEAD.
           if ! git diff --quiet Formula/verikt.rb; then
             echo "::error::verikt.rb was modified — aborting"
             exit 1
@@ -183,8 +232,11 @@ jobs:
             --body "Automated formula bump from \`diktahq/edikt\` release workflow.
 
           **Version:** v${VERSION}
-          **Launcher tarball:** \`edikt-v${VERSION}.tar.gz\`
-          **SHA256:** \`${{ needs.build.outputs.launcher_sha256 }}\`
+          **Platforms:** darwin-arm64, darwin-amd64, linux-arm64, linux-amd64
+          **darwin-arm64 SHA256:** \`${{ needs.build.outputs.sha_darwin_arm64 }}\`
+          **darwin-amd64 SHA256:** \`${{ needs.build.outputs.sha_darwin_amd64 }}\`
+          **linux-arm64 SHA256:**  \`${{ needs.build.outputs.sha_linux_arm64 }}\`
+          **linux-amd64 SHA256:**  \`${{ needs.build.outputs.sha_linux_amd64 }}\`
 
           This PR was opened by the release workflow and will auto-merge when tap CI passes.
           The \`verikt.rb\` formula is unchanged." \
