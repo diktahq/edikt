@@ -191,14 +191,12 @@ func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
 			invRules = append(invRules, compile.Rule{Text: r, Source: src})
 		}
 	}
-	var invRestated []compile.Rule
-	for _, r := range invRules {
-		s := r.Text
-		if len(s) > 90 {
-			s = s[:87] + "..."
-		}
-		invRestated = append(invRestated, compile.Rule{Text: s, Source: r.Source})
-	}
+	// The bottom-section "Reminder: Non-Negotiable Constraints" repeats the
+	// invariant directives verbatim for emphasis, not as a truncated summary.
+	// v0.4.3's spec — "repeat invariant directives" — and the slash-command
+	// path both render full text. Earlier 87-char truncation produced
+	// ".../mid-sentence cuts in the rendered governance.md.
+	invRestated := append([]compile.Rule(nil), invRules...)
 
 	// ── Routing table + aggregations ─────────────────────────────────────────
 	topicNames := sortedKeys(topicMap)

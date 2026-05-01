@@ -23,7 +23,7 @@ compile_schema_version: 2
 <!-- topic: hooks -->
 <!-- sources: ADR-003, ADR-006, ADR-014, ADR-017, ADR-019 -->
 <!-- compiled_by: gov-compile v0.1.0 -->
-<!-- compiled_at: 2026-05-01T13:34:28Z -->
+<!-- compiled_at: 2026-05-01T20:47:41Z -->
 
 # Hooks
 
