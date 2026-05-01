@@ -1,4 +1,4 @@
-module github.com/diktahq/edikt/tools/gov-compile
+module github.com/diktahq/edikt/tools/edikt
 
 go 1.22
 

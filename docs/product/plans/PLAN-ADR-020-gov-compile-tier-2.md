@@ -26,7 +26,7 @@
 | Phase | Task | Model | Reasoning | Est. Cost |
 |-------|------|-------|-----------|-----------|
 | 1 | Add `topic:` field to existing sentinel blocks | haiku | Mechanical edit across ~40 files | $0.01 |
-| 2 | Write `tools/gov-compile/` Go module (cmd + pkg + tests) | opus | Novel Go module, ports 600 lines of compile.md logic | $0.80 |
+| 2 | Write `tools/edikt/` Go module (cmd + pkg + tests) | opus | Novel Go module, ports 600 lines of compile.md logic | $0.80 |
 | 3 | Update `commands/gov/compile.md` to delegate to helper | sonnet | Markdown + flow changes | $0.08 |
 | 4 | Regression test: byte-equal output across runs | sonnet | Python pytest + fixture harness | $0.08 |
 | 5 | CHANGELOG + integration with `edikt install gov-compile` | haiku | Docs + install manifest | $0.01 |
@@ -80,7 +80,7 @@ When complete, output: TOPICS SEEDED
 
 ---
 
-## Phase 2: Write `tools/gov-compile/` (Go)
+## Phase 2: Write `tools/edikt/` (Go)
 
 **Objective:** Port the deterministic parts of `commands/gov/compile.md` into a Go binary (~500-800 lines across a few files) that can be invoked standalone. All logic except the three LLM-required cases moves here. Per ADR-021, tier-2 helpers are Go modules producing single static binaries.
 **Model:** `opus`
@@ -90,7 +90,7 @@ When complete, output: TOPICS SEEDED
 
 **Prompt:**
 ```
-Create tools/gov-compile/ with:
+Create tools/edikt/ with:
 
 - go.mod / go.sum — Go module. Primary external dep: gopkg.in/yaml.v3
   for frontmatter and sentinel-block parsing. Everything else is stdlib
@@ -136,11 +136,11 @@ The helper must:
 9. Group by `topic:` field. Fail with a clear error if any source has no
    topic (after Phase 1 this should be impossible; legacy blocks fall
    back to the LLM one-shot in the markdown command).
-10. For each topic, render tools/gov-compile/templates/topic.md.tmpl with:
+10. For each topic, render tools/edikt/templates/topic.md.tmpl with:
     frontmatter paths (from config or sentinel), directives list (effective_rules
     merged across sources for this topic, de-duplicated by exact string match,
     first-occurrence source ref preserved), topic name, sources list.
-11. Render tools/gov-compile/templates/index.md.tmpl with: invariant directives,
+11. Render tools/edikt/templates/index.md.tmpl with: invariant directives,
     routing table, aggregated reminders (cap 10), aggregated verification (cap 15).
 12. Write output atomically: tmp + os.replace. Mkdir as needed.
 13. Orphan detection: port the Python block from compile.md §12d into a
@@ -206,7 +206,7 @@ When complete, output: COMMAND REWIRED
 
 **Prompt:**
 ```
-Add tools/gov-compile/tests/test_determinism.py:
+Add tools/edikt/tests/test_determinism.py:
 
 1. Copy the repo's current docs/architecture/ and .edikt/config.yaml into
    a tmp dir.
@@ -218,7 +218,7 @@ Add tools/gov-compile/tests/test_determinism.py:
 
 Add a CI job (or extend test/run.sh) that invokes this test. Include the
 test in test/security/run.sh if it fits there; otherwise keep in
-tools/gov-compile/tests/.
+tools/edikt/tests/.
 
 Add also: time-budget assertion. First run of 40-source corpus must
 complete in < 5s. No-op recompile < 500ms.
@@ -243,7 +243,7 @@ When complete, output: DETERMINISM PINNED
    linux-arm64}:
      - Cross-compile: GOOS=$OS GOARCH=$ARCH CGO_ENABLED=0 \
          go build -trimpath -ldflags='-s -w' -o gov-compile-$OS-$ARCH \
-         ./tools/gov-compile/cmd/gov-compile
+         ./tools/edikt/cmd/gov-compile
      - Verify statically linked (file command).
      - Emit SHA-256 to append to the pre-existing SHA256SUMS BEFORE
        the cosign sign-blob step (so the binary hashes are inside the
@@ -255,8 +255,8 @@ When complete, output: DETERMINISM PINNED
      - Download the matching binary from the release asset URL.
      - Verify against the cosign-verified SHA256SUMS (reuse the existing
        _cosign_verify_release_checksums flow from install.sh).
-     - chmod +x, atomic move into $EDIKT_ROOT/tools/gov-compile.
-     - Symlink $EDIKT_ROOT/bin/gov-compile -> $EDIKT_ROOT/tools/gov-compile
+     - chmod +x, atomic move into $EDIKT_ROOT/tools/edikt.
+     - Symlink $EDIKT_ROOT/bin/gov-compile -> $EDIKT_ROOT/tools/edikt
        so the helper is invocable as `gov-compile` from $PATH.
    Idempotent uninstall: `edikt uninstall gov-compile` removes the binary
    and the symlink; exits 0 if already removed.

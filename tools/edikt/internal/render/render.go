@@ -11,7 +11,7 @@ import (
 	"text/template"
 	"unicode"
 
-	"github.com/diktahq/edikt/tools/gov-compile/internal/compile"
+	"github.com/diktahq/edikt/tools/edikt/internal/compile"
 )
 
 //go:embed templates/topic.md.tmpl

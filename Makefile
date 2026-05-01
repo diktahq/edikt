@@ -216,7 +216,7 @@ install-local:
 	esac; \
 	echo "Installing working tree as $$TAG"; \
 	echo "Building Go binary..."; \
-	cd $(REPO_ROOT)/tools/gov-compile && \
+	cd $(REPO_ROOT)/tools/edikt && \
 	  CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o /tmp/edikt-install-local . && \
 	  cd $(REPO_ROOT); \
 	EDIKT_LAUNCHER_SOURCE="/tmp/edikt-install-local" \

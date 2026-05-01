@@ -141,7 +141,7 @@ func compareFiles(t *testing.T, golden, actual, label string) {
 
 func goldenRoot(t *testing.T) string {
 	t.Helper()
-	// This file is at tools/gov-compile/cmd/gov/ — repo root is 4 levels up.
+	// This file is at tools/edikt/cmd/gov/ — repo root is 4 levels up.
 	abs, err := filepath.Abs("../../../../")
 	if err != nil {
 		t.Fatal(err)

@@ -96,10 +96,10 @@ We will adopt **Go** as the language for tier-2 deterministic helpers.
 
 ## Confirmation
 
-- `tools/gov-compile/` exists as a Go module (`go.mod` + `go.sum` committed) producing a binary named `gov-compile`.
+- `tools/edikt/` exists as a Go module (`go.mod` + `go.sum` committed) producing a binary named `gov-compile`.
 - The binary links statically and runs on darwin-arm64, darwin-amd64, linux-amd64, linux-arm64 with no host-side Go install needed.
 - `.github/workflows/release.yml` cross-compiles the binary for all four target platforms, adds per-binary SHA-256 entries to `SHA256SUMS`, uploads the binaries as release assets.
-- `bin/edikt install gov-compile` downloads the platform-matching binary, verifies against the cosign-signed `SHA256SUMS`, symlinks into `$EDIKT_ROOT/tools/gov-compile`.
+- `bin/edikt install gov-compile` downloads the platform-matching binary, verifies against the cosign-signed `SHA256SUMS`, symlinks into `$EDIKT_ROOT/tools/edikt`.
 - Any future tier-2 helper ships under the same contract: `tools/<name>/` as a Go module, cross-compiled in CI, installed via `edikt install <name>`.
 - ADR-015 is edited (in a draft ADR-NNN supersession if needed, or as prose clarification if strictly an addition) to note that Go binaries satisfy the "pinned deps" contract via `go.sum` at build time.
 

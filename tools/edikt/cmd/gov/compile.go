@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/diktahq/edikt/tools/gov-compile/internal/govrun"
-	"github.com/diktahq/edikt/tools/gov-compile/model"
+	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
+	"github.com/diktahq/edikt/tools/edikt/model"
 	"github.com/spf13/cobra"
 )
 

@@ -32,13 +32,13 @@ fi
 
 # ── 3. Go upgrade command uses releases/download (not auto-archive).
 # bin/edikt (bash launcher) was deleted in ADR-022 Phase 3 — the URL
-# check now applies to the Go upgrade implementation in tools/gov-compile/.
-if grep -rq 'archive/refs/tags' tools/gov-compile/cmd/upgrade.go 2>/dev/null; then
-    echo "[ADR-016] tools/gov-compile/cmd/upgrade.go still references archive/refs/tags" >&2
+# check now applies to the Go upgrade implementation in tools/edikt/.
+if grep -rq 'archive/refs/tags' tools/edikt/cmd/upgrade.go 2>/dev/null; then
+    echo "[ADR-016] tools/edikt/cmd/upgrade.go still references archive/refs/tags" >&2
     fail=1
 fi
-if ! grep -rq 'releases/download' tools/gov-compile/cmd/upgrade.go 2>/dev/null; then
-    echo "[ADR-016] tools/gov-compile/cmd/upgrade.go does not use releases/download URL base" >&2
+if ! grep -rq 'releases/download' tools/edikt/cmd/upgrade.go 2>/dev/null; then
+    echo "[ADR-016] tools/edikt/cmd/upgrade.go does not use releases/download URL base" >&2
     fail=1
 fi
 

@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/diktahq/edikt/tools/gov-compile/cmd/gov"
+	"github.com/diktahq/edikt/tools/edikt/cmd/gov"
 )
 
 func init() {

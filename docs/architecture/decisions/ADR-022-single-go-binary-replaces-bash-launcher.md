@@ -143,7 +143,7 @@ Complex last: `install`, `migrate`, `dev`. Each migration shrinks `edikt-shell`.
   when `bin/edikt-shell` is absent.
 - No user-visible command (`edikt --help`, any subcommand) surfaces the word
   "edikt-shell" or any bash internals.
-- `tools/gov-compile/.gitignore` excludes compiled binary artifacts; the binary
+- `tools/edikt/.gitignore` excludes compiled binary artifacts; the binary
   is shipped only via release assets (ADR-016), never committed to the repo.
 
 ## Directives
@@ -154,7 +154,7 @@ directives_hash: pending
 compiler_version: "0.4.3"
 topic: tooling
 paths:
-  - "tools/gov-compile/**"
+  - "tools/edikt/**"
   - "bin/edikt"
   - "bin/edikt-shell"
   - "install.sh"
@@ -163,7 +163,7 @@ scope:
   - design
   - review
 directives:
-  - The user-facing `edikt` binary MUST be the Go binary in `tools/gov-compile/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)
+  - The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)
   - Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)
   - Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)
   - When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)

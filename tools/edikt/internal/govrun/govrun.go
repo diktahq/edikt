@@ -12,12 +12,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diktahq/edikt/tools/gov-compile/internal/compile"
-	"github.com/diktahq/edikt/tools/gov-compile/internal/hash"
-	"github.com/diktahq/edikt/tools/gov-compile/internal/orphan"
-	"github.com/diktahq/edikt/tools/gov-compile/internal/parse"
-	"github.com/diktahq/edikt/tools/gov-compile/internal/render"
-	"github.com/diktahq/edikt/tools/gov-compile/model"
+	"github.com/diktahq/edikt/tools/edikt/internal/compile"
+	"github.com/diktahq/edikt/tools/edikt/internal/hash"
+	"github.com/diktahq/edikt/tools/edikt/internal/orphan"
+	"github.com/diktahq/edikt/tools/edikt/internal/parse"
+	"github.com/diktahq/edikt/tools/edikt/internal/render"
+	"github.com/diktahq/edikt/tools/edikt/model"
 	"gopkg.in/yaml.v3"
 )
 

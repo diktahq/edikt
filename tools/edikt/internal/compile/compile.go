@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/diktahq/edikt/tools/gov-compile/internal/parse"
+	"github.com/diktahq/edikt/tools/edikt/internal/parse"
 )
 
 // Rule is a single directive destined for compiled output. Source is the

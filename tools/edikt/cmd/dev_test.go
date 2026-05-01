@@ -11,7 +11,7 @@ func TestDevLinkAndUnlink(t *testing.T) {
 	t.Setenv("EDIKT_ROOT", root)
 
 	// dev link points at the edikt repo which has templates/, commands/.
-	repoRoot := "../../../../.." // tools/gov-compile/cmd/ → repo root
+	repoRoot := "../../../../.." // tools/edikt/cmd/ → repo root
 	abs, _ := filepath.Abs(repoRoot)
 
 	buf, err := runCmd(t, "dev", "link", abs)

@@ -72,12 +72,12 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: tools/gov-compile/go.mod
-          cache-dependency-path: tools/gov-compile/go.sum
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
 
       - name: gov compile golden-file test
         run: |
-          cd tools/gov-compile
+          cd tools/edikt
           go test ./cmd/gov -run TestCompileGolden -timeout=60s -v
 
   # ─── Layer 2: Agent SDK integration tests (tag push only, needs API) ─────────
