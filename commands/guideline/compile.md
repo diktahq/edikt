@@ -267,6 +267,13 @@ Derive `scope:` from the topic:
 
 #### 3e. Write the sentinel block
 
+The block MUST include a `topic:` field (lowercase kebab-case, ≤ 32 chars, matching `[a-z][a-z0-9-]*`) below `compiler_version:` and above `paths:`. Per ADR-020 §c this field is required so the deterministic Go binary helper at `gov compile` can group guidelines without invoking an LLM.
+
+**`topic:` field rules:**
+- If the existing block already has a `topic:` field, **preserve it verbatim** — never re-assign a topic the user (or a prior run) has set.
+- If `topic:` is missing, derive a topic slug from the guideline's primary domain. Reuse a topic slug already in use in this project if the guideline fits there.
+- Topic slugs MUST match `[a-z][a-z0-9-]*` and be ≤ 32 chars.
+
 Assemble the new block:
 
 ```yaml

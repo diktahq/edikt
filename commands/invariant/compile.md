@@ -266,6 +266,13 @@ Because invariants are non-negotiable across the entire SDLC. If the invariant i
 
 #### 3e. Write the sentinel block
 
+The block MUST include a `topic:` field (lowercase kebab-case, ≤ 32 chars, matching `[a-z][a-z0-9-]*`) below `compiler_version:` and above `paths:`. Per ADR-020 §c this field is required so the deterministic Go binary helper at `gov compile` can group invariants without invoking an LLM.
+
+**`topic:` field rules:**
+- If the existing block already has a `topic:` field, **preserve it verbatim** — never re-assign a topic the user (or a prior run) has set.
+- If `topic:` is missing, derive a topic slug from the invariant's `## Rule` section. Most invariants belong to a cross-cutting topic — common slugs are `architecture`, `compile`, `hooks`, `release`, `tooling`, `agent-rules`, `extensibility`. Reuse one if it fits.
+- Topic slugs MUST match `[a-z][a-z0-9-]*` and be ≤ 32 chars.
+
 Assemble the new block content:
 
 ```yaml

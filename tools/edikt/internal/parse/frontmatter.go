@@ -169,18 +169,52 @@ func parseFrontmatter(body string) (Frontmatter, error) {
 	return fm, nil
 }
 
-// extractBoldStatus pulls "**Status:** <value>" from the first 40 lines of
-// the body. Matches INV-001/INV-002 legacy header form and ADRs written
-// before the YAML frontmatter convention landed.
+// extractBoldStatus pulls a status value from the first 40 lines of the
+// body. Recognized forms:
+//
+//   "**Status:** Accepted"          ← inline-bold (INV-001/INV-002 legacy)
+//   "Status: Accepted"              ← plain inline (some hand-written ADRs)
+//   "## Status\n\nAccepted"         ← section heading + value-on-next-line
+//
+// All three are case-insensitive on the label and tolerant of leading
+// whitespace. Returns the empty string if no form matches.
 func extractBoldStatus(body string) string {
-	lines := strings.SplitN(body, "\n", 40)
-	for _, line := range lines {
+	allLines := strings.Split(body, "\n")
+	limit := 40
+	if len(allLines) < limit {
+		limit = len(allLines)
+	}
+	lines := allLines[:limit]
+
+	for i, line := range lines {
 		trim := strings.TrimSpace(line)
-		if !strings.HasPrefix(trim, "**Status:**") {
-			continue
+		// Inline-bold form: "**Status:** Accepted"
+		if strings.HasPrefix(trim, "**Status:**") {
+			return strings.TrimSpace(strings.TrimPrefix(trim, "**Status:**"))
 		}
-		v := strings.TrimSpace(strings.TrimPrefix(trim, "**Status:**"))
-		return v
+		// Plain inline form: "Status: Accepted"
+		if strings.HasPrefix(strings.ToLower(trim), "status:") {
+			v := strings.TrimSpace(trim[len("status:"):])
+			// Skip if this is actually a section heading marker we picked up
+			if v != "" && !strings.HasPrefix(v, "#") {
+				return v
+			}
+		}
+		// Heading form: "## Status" → next non-empty line is the value
+		if strings.HasPrefix(trim, "##") &&
+			strings.EqualFold(strings.TrimSpace(strings.TrimLeft(trim, "#")), "Status") {
+			for j := i + 1; j < len(lines); j++ {
+				next := strings.TrimSpace(lines[j])
+				if next == "" {
+					continue
+				}
+				// Stop if we hit another heading without finding a value
+				if strings.HasPrefix(next, "#") {
+					break
+				}
+				return next
+			}
+		}
 	}
 	return ""
 }

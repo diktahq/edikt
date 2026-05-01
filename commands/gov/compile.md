@@ -179,6 +179,7 @@ For each parsed sentinel block, verify the following fields are present (presenc
 - `compiler_version` — required by ADR-008
 - `manual_directives` — required as an empty list `[]` when not in use
 - `suppressed_directives` — required as an empty list `[]` when not in use
+- `topic` — required so the deterministic Go binary helper can group without invoking an LLM (per ADR-020 §c). When missing, the auto-chain in Step 12 routes to per-artifact compile, which generates the topic.
 
 A block missing any of the above is **incomplete** under the v0.5.0+ schema and indicates either a stale `<artifact>:compile` run (old code) or a hand-authored block missing required fields. Either way, `gov:compile` MUST NOT silently produce a `governance.md` derived from incomplete inputs.
 
@@ -216,13 +217,14 @@ if not isinstance(blocks, list):
     print("✗ EDIKT_BLOCKS_JSON must be a JSON array.", file=sys.stderr)
     sys.exit(2)
 
-# ── ADR-008 required fields ─────────────────────────────────────────────────
+# ── ADR-008 + ADR-020 §c required fields ────────────────────────────────────
 REQUIRED = (
     "source_hash",
     "directives_hash",
     "compiler_version",
     "manual_directives",
     "suppressed_directives",
+    "topic",
 )
 
 incomplete = []
@@ -544,6 +546,41 @@ Set `EDIKT_PROJECT_ROOT` to the root of the project being compiled (the director
     - If a rule doesn't fit an obvious topic, group it under `architecture.md` (cross-cutting)
     - Invariants are special — their effective rules go into `governance.md` (the index), not into topic files
     - Across source documents: if the same rule string appears in multiple effective sets, de-duplicate by exact string match. Keep the first occurrence's source reference.
+
+13a. **CRITICAL — write the resolved `topic:` back to each source document's sentinel block.** Per ADR-020 §c, the LLM grouping is a one-shot fallback; the resolved topic MUST be persisted into the artifact's sentinel so subsequent runs are deterministic and the Go binary helper can group without invoking an LLM.
+
+    For every source document whose sentinel block lacks a `topic:` field, edit the artifact in place to add the assigned topic to its sentinel YAML. The line goes ABOVE `directives:` for readability:
+
+    ```yaml
+    [edikt:directives:start]: #
+    <!-- edikt:directives — auto-generated, do not edit manually -->
+    source_hash: <unchanged>
+    directives_hash: <unchanged>
+    compiler_version: <unchanged>
+    topic: <assigned-topic-slug>          ← NEW LINE
+    paths:
+      - "**/*"
+    scope: [planning, design]
+    directives:
+      - ...
+    manual_directives: []
+    suppressed_directives: []
+    [edikt:directives:end]: #
+    ```
+
+    NEVER overwrite a `topic:` field that the user (or a prior run) has already set — only add when missing. Topic slugs MUST be lowercase kebab-case (`ai-processing`, `database`, `frontend`). Reuse an existing topic name if any other artifact already routes to it; only invent a new slug when no existing topic fits.
+
+    After all writes, log a summary line per artifact:
+
+    ```
+    → wrote topic: ai-processing → docs/architecture/decisions/ADR-001-...md
+    → wrote topic: frontend → docs/architecture/decisions/ADR-002-...md
+    ...
+    ```
+
+    This step makes the difference between "first run is LLM-driven, future runs deterministic" (correct) and "every run is LLM-driven" (regression vs ADR-020).
+
+13b. **Re-emit `source_hash` and `directives_hash` after the topic-write.** Adding `topic:` to the sentinel changes the file body; without re-hashing, the next `<artifact>:compile` run will see a stale hash and trigger an unnecessary interview. Recompute both hashes and update the sentinel.
 
 ### Derive Path Patterns
 
