@@ -41,3 +41,4 @@ docs/STATUS.md
 test/integration/benchmarks/results/
 test/integration/failures/
 docs/product/plans/verdicts/
+bin/edikt
