@@ -29,6 +29,17 @@ jobs:
           sudo apt-get install -y jq rsync
           python3 -m pip install --quiet pytest pytest-asyncio pyyaml
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Build edikt launcher (ADR-022 — bin/edikt is the Go binary)
+        run: |
+          mkdir -p bin
+          cd tools/edikt
+          CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o "$GITHUB_WORKSPACE/bin/edikt" .
+
       - name: INV-003 lint — hooks must not shell-interpolate JSON
         run: |
           # Catch double-quoted echo/printf that opens a JSON object — these can
