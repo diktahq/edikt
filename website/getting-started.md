@@ -280,6 +280,8 @@ These variables are read by Claude Code itself; edikt doesn't change its behavio
 
 ## What's next
 
+- [Cheatsheet](cheatsheet.md) — every slash command on one page
+- [Natural-language triggers](natural-language.md) — phrases Claude routes to commands
 - [Upgrade and rollback](guides/upgrade-and-rollback.md) — keep edikt current, roll back if needed
 - [Migrating from v0.4](guides/migrating-from-v0.4.md) — if you're upgrading from v0.4.x
 - [Homebrew install](guides/homebrew.md) — two-tier update model explained

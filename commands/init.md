@@ -990,7 +990,15 @@ Four cases:
 
 Never Write the whole file — use Read + Edit.
 
-**`.claude/settings.json`** — Read the template from `~/.edikt/templates/settings.json.tmpl` and use it EXACTLY as-is for hook configuration. Do NOT invent or modify hook filenames — the template contains the correct paths. If settings.json exists, merge hooks from the template — preserve existing non-edikt settings. The exact hook filenames are: `session-start.sh`, `pre-tool-use.sh`, `post-tool-use.sh`, `stop-hook.sh`, `pre-compact.sh`, `post-compact.sh`, `user-prompt-submit.sh`, `subagent-stop.sh`, `instructions-loaded.sh`.
+**`.claude/settings.json`** — Read the template from `~/.edikt/templates/settings.json.tmpl`. The template contains the placeholder `${EDIKT_HOOK_DIR}` which MUST be substituted before writing — Claude Code does NOT expand environment variables in `command:` strings, so unsubstituted placeholders make hooks fail with `/bin/sh: /<hook>.sh: No such file or directory`.
+
+**Substitution rule:**
+- Global mode (project lives outside an existing `.claude/`): replace `${EDIKT_HOOK_DIR}` with the absolute path `<HOME>/.edikt/hooks` (resolve `<HOME>` to the actual home directory, e.g. `/Users/alice`).
+- Project mode (project has its own `.claude/`): replace `${EDIKT_HOOK_DIR}` with the absolute path `<project_root>/.edikt/hooks`.
+
+NEVER write the literal string `$HOME` or `${EDIKT_HOOK_DIR}` into the final settings.json — Claude Code reads it verbatim.
+
+Do NOT invent or modify hook filenames — the template contains the correct paths. If settings.json exists, merge hooks from the substituted template — preserve existing non-edikt settings. The exact hook filenames are: `session-start.sh`, `pre-tool-use.sh`, `post-tool-use.sh`, `stop-hook.sh`, `pre-compact.sh`, `post-compact.sh`, `user-prompt-submit.sh`, `subagent-stop.sh`, `instructions-loaded.sh`.
 
 **PR template** — Only install `.github/pull_request_template.md` if it does NOT already exist. Never overwrite.
 

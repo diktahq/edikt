@@ -606,12 +606,22 @@ For each outdated hook, replace ONLY that hook's entry — do not touch other ho
 ```python
 # Pseudocode
 settings = read_json('.claude/settings.json')
-template_hooks = read_json('~/.edikt/templates/settings.json.tmpl')['hooks']
+template_text = read_file('~/.edikt/templates/settings.json.tmpl')
+
+# CRITICAL: substitute ${EDIKT_HOOK_DIR} BEFORE parsing as JSON.
+# Claude Code does not expand env vars in `command:` strings — unsubstituted
+# placeholders cause /bin/sh: /<hook>.sh: No such file or directory.
+hook_dir = f"{HOME}/.edikt/hooks"   # global mode (or {project}/.edikt/hooks for project mode)
+template_text = template_text.replace("${EDIKT_HOOK_DIR}", hook_dir)
+template_hooks = json.loads(template_text)['hooks']
 
 for hook_type in ['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact']:
     if hook_type needs upgrade:
         settings['hooks'][hook_type] = template_hooks[hook_type]
 
+# Sanity check before writing — block any leftover placeholders.
+serialized = json.dumps(settings)
+assert "${EDIKT_HOOK_DIR}" not in serialized, "settings.json still contains unsubstituted placeholders"
 write_json('.claude/settings.json', settings)
 ```
 

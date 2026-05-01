@@ -167,6 +167,31 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 			fmt.Printf("  commands:    %s (ok)\n", ediktCmds)
 		}
 
+		// settings.json placeholder check — Claude Code does not expand env
+		// vars in `command:` strings, so an unsubstituted ${EDIKT_HOOK_DIR}
+		// or $HOME makes hooks fail with `/bin/sh: /<hook>.sh: No such file`.
+		// Check both global (~/.claude/settings.json) and the project-local
+		// (.claude/settings.json) if we're inside a project.
+		for _, candidate := range []string{
+			filepath.Join(claudeRoot, "settings.json"),
+			filepath.Join(".", ".claude", "settings.json"),
+		} {
+			data, err := os.ReadFile(candidate)
+			if err != nil {
+				continue
+			}
+			content := string(data)
+			placeholders := []string{"${EDIKT_HOOK_DIR}", "$HOME/.edikt"}
+			for _, p := range placeholders {
+				if strings.Contains(content, p) {
+					fmt.Printf("  ERROR: %s contains unsubstituted placeholder %q — hooks will fail. Re-run /edikt:init to regenerate, or substitute manually.\n",
+						candidate, p)
+					errN++
+					break
+				}
+			}
+		}
+
 		// Summary.
 		if errN > 0 {
 			fmt.Printf("result: %d errors, %d warnings\n", errN, warnN)
