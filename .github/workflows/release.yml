@@ -170,12 +170,12 @@ jobs:
             --title "bump: edikt v${VERSION}" \
             --body "Automated formula bump from \`diktahq/edikt\` release workflow.
 
-**Version:** v${VERSION}
-**Launcher tarball:** \`edikt-v${VERSION}.tar.gz\`
-**SHA256:** \`${{ needs.build.outputs.launcher_sha256 }}\`
+          **Version:** v${VERSION}
+          **Launcher tarball:** \`edikt-v${VERSION}.tar.gz\`
+          **SHA256:** \`${{ needs.build.outputs.launcher_sha256 }}\`
 
-This PR was opened by the release workflow and will auto-merge when tap CI passes.
-The \`verikt.rb\` formula is unchanged." \
+          This PR was opened by the release workflow and will auto-merge when tap CI passes.
+          The \`verikt.rb\` formula is unchanged." \
           )
           PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
