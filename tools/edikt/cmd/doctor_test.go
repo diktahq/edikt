@@ -20,9 +20,22 @@ func TestDoctorMinimalLayout(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("EDIKT_ROOT", root)
 
-	if err := os.MkdirAll(filepath.Join(root, "versions", "0.5.0"), 0o755); err != nil {
+	// INV-007: isolate from host ~/.claude — never read user state in tests.
+	claudeRoot := t.TempDir()
+	t.Setenv("CLAUDE_HOME", claudeRoot)
+	if err := os.MkdirAll(filepath.Join(claudeRoot, "commands"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "versions", "0.5.0", "commands"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(
+		filepath.Join(root, "versions", "0.5.0", "commands"),
+		filepath.Join(claudeRoot, "commands", "edikt"),
+	); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := os.Symlink(
 		filepath.Join(root, "versions", "0.5.0"),
 		filepath.Join(root, "current"),
