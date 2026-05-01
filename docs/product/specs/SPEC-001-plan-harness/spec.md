@@ -11,8 +11,8 @@ references:
   adrs: [ADR-001, ADR-004]
   invariants: [INV-001]
   source_artifacts:
-    - docs/plans/artifacts/phase-context-handoff-example.md
-    - docs/plans/artifacts/plan-criteria-schema.yaml
+    - docs/internal/plans/artifacts/phase-context-handoff-example.md
+    - docs/internal/plans/artifacts/plan-criteria-schema.yaml
 ---
 
 # SPEC-001: Plan Harness — Iteration Tracking, Context Handoff, Criteria Sidecar
@@ -46,7 +46,7 @@ The Long-Running Harness Plan (phases 2, 3, 5) and two existing artifacts define
 - **Plan command:** `commands/sdlc/plan.md` (~360 lines). Steps 1-11 handle interview, codebase scan, phase generation, pre-flight review, and criteria validation. Progress table template is in the Reference section (~line 315).
 - **PostCompact hook:** `templates/hooks/post-compact.sh` (~60 lines). Parses the progress table via regex to find the active phase, injects plan name + phase number + invariants as a `systemMessage`.
 - **Evaluator agent:** `templates/agents/evaluator.md`. Pre-flight mode (criteria classification) and phase-end mode (PASS/FAIL with evidence). Currently runs as a subagent via Agent tool.
-- **Reference artifacts:** `docs/plans/artifacts/plan-criteria-schema.yaml` (sidecar schema), `docs/plans/artifacts/phase-context-handoff-example.md` (format examples).
+- **Reference artifacts:** `docs/internal/plans/artifacts/plan-criteria-schema.yaml` (sidecar schema), `docs/internal/plans/artifacts/phase-context-handoff-example.md` (format examples).
 
 ## Proposed Design
 
@@ -150,10 +150,10 @@ Before implementing any plan phase:
 The plan command emits a `PLAN-{slug}-criteria.yaml` file alongside the plan markdown. The evaluator reads and updates it.
 
 **File location:** Always a sibling of the plan file.
-- `docs/plans/PLAN-foo.md` → `docs/plans/PLAN-foo-criteria.yaml`
-- `docs/product/plans/PLAN-bar.md` → `docs/product/plans/PLAN-bar-criteria.yaml`
+- `docs/plans/PLAN-foo.md` → `docs/plans/PLAN-foo-criteria.yaml` (default `paths.plans`)
+- `docs/internal/plans/PLAN-bar.md` → `docs/internal/plans/PLAN-bar-criteria.yaml` (custom `paths.plans` — sibling rule still applies)
 
-**Schema:** Per `docs/plans/artifacts/plan-criteria-schema.yaml` (reference schema). Key fields:
+**Schema:** Per `docs/internal/plans/artifacts/plan-criteria-schema.yaml` (reference schema). Key fields:
 
 ```yaml
 plan: "PLAN-{slug}"
@@ -236,10 +236,10 @@ Invariants (2): INV-001, INV-012.
 - **Context injection:** Parse `Context Needed:` from active phase, inject file list
 - **Fail criteria injection:** Read criteria sidecar, inject failing criteria for active phase
 
-### `docs/plans/artifacts/plan-criteria-schema.yaml`
+### `docs/internal/plans/artifacts/plan-criteria-schema.yaml`
 - Already exists and matches the design. No changes needed. This file is the reference schema.
 
-### `docs/plans/artifacts/phase-context-handoff-example.md`
+### `docs/internal/plans/artifacts/phase-context-handoff-example.md`
 - Already exists with format examples. No changes needed. This file is the reference example.
 
 ## Non-Goals

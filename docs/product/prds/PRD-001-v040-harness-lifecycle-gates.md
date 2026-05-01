@@ -10,12 +10,12 @@ references:
   adrs: [ADR-001, ADR-004]
   invariants: [INV-001]
   source_documents:
-    - docs/plans/PLAN-long-running-harness.md (phases 2, 3, 5, 9)
+    - docs/internal/plans/PLAN-long-running-harness.md (phases 2, 3, 5, 9)
     - docs/internal/product/prds/PRD-005-edikt-v4-control-plane.md (R7, R11)
   existing_artifacts:
-    - docs/plans/artifacts/phase-context-handoff-example.md
-    - docs/plans/artifacts/plan-criteria-schema.yaml
-    - docs/plans/artifacts/experiment-evaluator-spec.md
+    - docs/internal/plans/artifacts/phase-context-handoff-example.md
+    - docs/internal/plans/artifacts/plan-criteria-schema.yaml
+    - docs/internal/plans/artifacts/experiment-evaluator-spec.md
 ---
 
 # PRD-001: v0.4.0 — Harness Improvements, Artifact Lifecycle, Quality Gate UX
@@ -81,7 +81,7 @@ Engineers who use edikt's SDLC chain to build features with Claude Code — from
 - FR-007: PostCompact hook injects context file list alongside plan phase and attempt count [MUST]
 
 **Structured criteria sidecar:**
-- FR-008: `/edikt:sdlc:plan` emits `PLAN-{slug}-criteria.yaml` alongside plan markdown. This is the runtime file; `docs/plans/artifacts/plan-criteria-schema.yaml` is the reference schema. [MUST]
+- FR-008: `/edikt:sdlc:plan` emits `PLAN-{slug}-criteria.yaml` alongside plan markdown. This is the runtime file; `docs/internal/plans/artifacts/plan-criteria-schema.yaml` is the reference schema. [MUST]
 - FR-009: Criteria sidecar tracks per-criterion status (pending/pass/fail), fail_reason, fail_count, verify command [MUST]
 - FR-010: Evaluator reads and updates the criteria sidecar after each evaluation. Depends on FR-008 and FR-009. [MUST]
 
@@ -178,12 +178,12 @@ Engineers who use edikt's SDLC chain to build features with Claude Code — from
 - **PRD-005 R7 context:** Gate configuration (`gates:` in config.yaml) and the "engineers cannot disable gates" constraint are already implemented. This PRD adds logging (FR-015) and re-fire prevention (FR-016) to the existing gate mechanism.
 - **PRD-005 R11 context:** Spec requires PRD `accepted`, and artifacts requires spec `accepted` — both already shipped. This PRD adds the remaining guard rails: plan warns on draft (FR-017), drift filters by status (FR-018), doctor flags stale drafts (FR-019).
 - Existing artifacts to preserve and reference (move to spec folder when spec is created):
-  - `docs/plans/artifacts/phase-context-handoff-example.md`
-  - `docs/plans/artifacts/plan-criteria-schema.yaml`
-  - `docs/plans/artifacts/experiment-evaluator-spec.md`
+  - `docs/internal/plans/artifacts/phase-context-handoff-example.md`
+  - `docs/internal/plans/artifacts/plan-criteria-schema.yaml`
+  - `docs/internal/plans/artifacts/experiment-evaluator-spec.md`
 - Quality gate hook is a shell script (`templates/hooks/subagent-stop.sh`) — override UX happens via Claude's systemMessage, not the hook itself
 - Experiment runner is bash (`test/experiments/directive-effect/run.sh`) — LLM evaluator adds a second `claude -p` invocation per run
-- Criteria sidecar naming: `PLAN-{slug}.md` → `PLAN-{slug}-criteria.yaml`. The existing `docs/plans/artifacts/plan-criteria-schema.yaml` is the reference schema, not the runtime file.
+- Criteria sidecar naming: `PLAN-{slug}.md` → `PLAN-{slug}-criteria.yaml`. The existing `docs/internal/plans/artifacts/plan-criteria-schema.yaml` is the reference schema, not the runtime file.
 - **Dependency note:** FR-010 requires FR-008 and FR-009. FR-001 and FR-002 require the status values defined in FR-023.
 - **Artifact lifecycle states:** `draft → accepted → in-progress → implemented → superseded`. Transitions: `draft → accepted` (user manual), `accepted → in-progress` (plan auto, FR-020), `in-progress → implemented` (drift auto, FR-021), `any → superseded` (user creates replacement).
 

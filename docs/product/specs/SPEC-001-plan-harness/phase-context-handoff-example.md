@@ -27,7 +27,7 @@ Added between the dependency graph and Phase 1 details:
 **Dependencies:** Phase 1
 **Context Needed:**
 - `templates/agents/evaluator.md` — pre-flight section added in Phase 1
-- `docs/plans/artifacts/plan-criteria-schema.yaml` — reference schema
+- `docs/internal/plans/artifacts/plan-criteria-schema.yaml` — reference schema
 - `commands/sdlc/plan.md` — current plan command (to add sidecar emission)
 - `docs/architecture/evaluator-tuning.md` — tuning framework (to understand integration point)
 ```

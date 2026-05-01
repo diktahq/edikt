@@ -11,7 +11,7 @@ references:
   adrs: [ADR-001, ADR-004]
   invariants: [INV-001]
   source_artifacts:
-    - docs/plans/artifacts/experiment-evaluator-spec.md
+    - docs/internal/plans/artifacts/experiment-evaluator-spec.md
 ---
 
 # SPEC-002: Evaluator Configuration, Headless Execution, and LLM Experiment Evaluator
@@ -32,14 +32,14 @@ The evaluator agent (`templates/agents/evaluator.md`) exists and is invoked by t
 
 Anthropic's harness research recommends a generator-evaluator split where the evaluator is a separate invocation with zero shared state. Claude Code's `claude -p` flag makes this possible — headless, non-interactive, with `--bare` to skip hooks and memory.
 
-Separately, the experiment runner (`test/experiments/directive-effect/run.sh`, internal/gitignored) uses grep assertions (`assertion.sh`) that are brittle and can't detect semantic violations. An LLM evaluator design exists as an artifact (`docs/plans/artifacts/experiment-evaluator-spec.md`) with fixture 08 already having an `evaluator-criteria.yaml` file ready.
+Separately, the experiment runner (`test/experiments/directive-effect/run.sh`, internal/gitignored) uses grep assertions (`assertion.sh`) that are brittle and can't detect semantic violations. An LLM evaluator design exists as an artifact (`docs/internal/plans/artifacts/experiment-evaluator-spec.md`) with fixture 08 already having an `evaluator-criteria.yaml` file ready.
 
 ## Existing Architecture
 
 - **Evaluator agent:** `templates/agents/evaluator.md` (~130 lines). Subagent with `disallowedTools: [Write, Edit]`, `maxTurns: 15`. Pre-flight mode (criteria classification) and phase-end mode (PASS/FAIL with evidence). Skeptical by default.
 - **Plan command:** `commands/sdlc/plan.md`. Step 11 invokes evaluator for pre-flight. Phase-end flow spawns evaluator after completion promise. Currently uses Agent tool (subagent).
 - **Experiment runners:** Three directories under `test/experiments/`: `rule-compliance/` (shipped), `directive-effect/` (gitignored), `long-running/` (gitignored). The `directive-effect/run.sh` runner invokes `claude -p` for the generator, then runs `assertion.sh` for grep-based verdict.
-- **Evaluator spec artifact:** `docs/plans/artifacts/experiment-evaluator-spec.md` (~355 lines). Full design for dual-mode grep+LLM evaluation, severity tiers, verdict logic, cost model.
+- **Evaluator spec artifact:** `docs/internal/plans/artifacts/experiment-evaluator-spec.md` (~355 lines). Full design for dual-mode grep+LLM evaluation, severity tiers, verdict logic, cost model.
 - **Fixture 08:** `test/experiments/directive-effect/fixtures/08-long-context-invoicing/evaluator-criteria.yaml` — 8 criteria with severity tiers, ready for LLM evaluation.
 
 ## Proposed Design
@@ -138,7 +138,7 @@ When `evaluator.phase-end: false`:
 
 **File:** `test/experiments/directive-effect/run.sh`
 
-The runner gains a second evaluation step after the grep assertion. Design per `docs/plans/artifacts/experiment-evaluator-spec.md`.
+The runner gains a second evaluation step after the grep assertion. Design per `docs/internal/plans/artifacts/experiment-evaluator-spec.md`.
 
 **Invocation conditions** — the LLM evaluator runs when ANY of:
 1. The fixture contains `evaluator-criteria.yaml`

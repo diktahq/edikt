@@ -56,7 +56,7 @@ Constraints this spec honors:
 
 - `commands/upgrade.md` — orchestrates detection + diff + copy. Reads `$HOME/.edikt/VERSION` (authority) and `.edikt/config.yaml:edikt_version:` (project record).
 - Diff model: MD5 hash vs. installed file, `<!-- edikt:custom -->` / config-list skip, interactive preview.
-- v0.4.3 added a diff classifier (`docs/plans/PLAN-upgrade-diff-classifier.md`) to distinguish "template moved" from "user customized" via heuristics. Heuristics go away for agents with provenance (FR-028).
+- v0.4.3 added a diff classifier (internal plan, no longer a public artifact) to distinguish "template moved" from "user customized" via heuristics. Heuristics go away for agents with provenance (FR-028).
 
 ### Test runner (current)
 
