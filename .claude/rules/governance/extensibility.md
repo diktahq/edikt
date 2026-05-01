@@ -10,7 +10,7 @@ compile_schema_version: 2
 <!-- topic: extensibility -->
 <!-- sources: ADR-005 -->
 <!-- compiled_by: gov-compile v0.1.0 -->
-<!-- compiled_at: 2026-05-01T20:47:41Z -->
+<!-- compiled_at: 2026-05-01T23:08:05Z -->
 
 # Extensibility
 

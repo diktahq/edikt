@@ -2,11 +2,12 @@
 type: adr
 id: ADR-018
 title: Evaluator verdict schema — structured JSON with per-criterion evidence_type
-status: accepted
+status: superseded
+superseded_by: ADR-025
 decision-makers: [Daniel Gomes]
 created_at: 2026-04-17T00:00:00Z
 references:
-  adrs: [ADR-010]
+  adrs: [ADR-010, ADR-025]
   invariants: [INV-001]
   prds: []
   specs: [SPEC-005]
@@ -14,7 +15,7 @@ references:
 
 # ADR-018: Evaluator verdict schema — structured JSON with per-criterion evidence_type
 
-**Status:** Accepted
+**Status:** Superseded by ADR-025
 **Date:** 2026-04-17
 **Decision-makers:** Daniel Gomes
 

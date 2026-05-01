@@ -33,8 +33,8 @@ Or use `edikt upgrade` interactively for the activation prompt.
 ### Visible on your first Claude Code session after upgrade
 
 - A one-time permission prompt may appear when Claude tries a newly-denied tool (e.g. `curl http://example.com` — TLS-only is now the default). Allow once if the request is legitimate. See `docs/guides/permissions.md` for the full deny/allow list.
-- In-flight plan phases that were marked `done` pre-upgrade now have grandfather verdict stubs at `docs/product/plans/verdicts/<plan-slug>/<phase-id>.json` with `meta.grandfathered: true`. These bypass the new ADR-018 evidence gate on a one-time basis; their PASS status is preserved.
-- New evaluations (future `/edikt:sdlc:plan` phase-ends) use the structured JSON verdict schema from ADR-018. The evaluator emits a machine-readable object; the plan harness enforces `evidence_type: "test_run"` for criteria that name a shell command.
+- In-flight plan phases that were marked `done` pre-upgrade now have grandfather verdict stubs at `<paths.plans>/verdicts/<plan-slug>/<phase-id>.json` with `meta.grandfathered: true` — where `<paths.plans>` is the value resolved from your `.edikt/config.yaml` (default `docs/plans`). These bypass the new evidence gate on a one-time basis; their PASS status is preserved.
+- New evaluations (future `/edikt:sdlc:plan` phase-ends) use the structured JSON verdict schema. The evaluator emits a machine-readable object; the plan harness enforces `evidence_type: "test_run"` for criteria that name a shell command. (Verdict schema and evidence gate per ADR-018; verdict storage path corrected to be config-driven per ADR-025.)
 
 ### Invisible but real
 
@@ -103,7 +103,7 @@ Expected: `Verified OK` on stderr.
 - Full CHANGELOG: `CHANGELOG.md`, section "v0.5.0 (2026-04-17)" → "Security hardening".
 - Security sign-off: `docs/reports/v0.5.0-security-signoff-2026-04-17.md`.
 - Source audit: `docs/reports/security-audit-v0.5.0-2026-04-17.md`.
-- Plan: `docs/product/plans/PLAN-v0.5.0-security-hardening.md`.
+- Plan rollup is in the CHANGELOG entry above; the full execution plan is an internal artifact.
 
 If `edikt rollback v0.5.0` doesn't work, manually restore from the backup:
 ```bash
