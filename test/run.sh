@@ -66,6 +66,7 @@ if [ -d "$SCRIPT_DIR/unit" ]; then
 
         chmod +x "$unit_test"
         if ! bash "$unit_test" "$PROJECT_ROOT"; then
+            echo -e "${RED}>>> SUITE FAILED: $suite_name (exit $?)${NC}"
             FAILED_SUITES=$((FAILED_SUITES + 1))
         fi
     done < <(find "$SCRIPT_DIR/unit" -type f -name 'test_*.sh' | sort)
@@ -85,6 +86,7 @@ for test_file in "$SCRIPT_DIR"/test-*.sh; do
 
     chmod +x "$test_file"
     if ! bash "$test_file" "$PROJECT_ROOT"; then
+        echo -e "${RED}>>> SUITE FAILED: $suite_name (exit $?)${NC}"
         FAILED_SUITES=$((FAILED_SUITES + 1))
     fi
 done
@@ -102,6 +104,7 @@ if [ -d "$SCRIPT_DIR/integration/release" ]; then
 
         chmod +x "$it_test"
         if ! bash "$it_test" "$PROJECT_ROOT"; then
+            echo -e "${RED}>>> SUITE FAILED: $suite_name (exit $?)${NC}"
             FAILED_SUITES=$((FAILED_SUITES + 1))
         fi
     done < <(find "$SCRIPT_DIR/integration/release" -type f -name 'test_*.sh' | sort)
@@ -121,6 +124,7 @@ if [ -d "$SCRIPT_DIR/integration/install" ]; then
 
         chmod +x "$it_test"
         if ! bash "$it_test" "$PROJECT_ROOT"; then
+            echo -e "${RED}>>> SUITE FAILED: $suite_name (exit $?)${NC}"
             FAILED_SUITES=$((FAILED_SUITES + 1))
         fi
     done < <(find "$SCRIPT_DIR/integration/install" -type f -name 'test_*.sh' | sort)
@@ -144,6 +148,7 @@ if [ -d "$SCRIPT_DIR/integration/init" ]; then
 
         chmod +x "$it_test"
         if ! bash "$it_test" "$PROJECT_ROOT"; then
+            echo -e "${RED}>>> SUITE FAILED: $suite_name (exit $?)${NC}"
             FAILED_SUITES=$((FAILED_SUITES + 1))
         fi
     done < <(find "$SCRIPT_DIR/integration/init" -type f -name 'test_*.sh' | sort)
@@ -165,6 +170,7 @@ if [ "${SKIP_INTEGRATION:-0}" != "1" ] && [ -d "$SCRIPT_DIR/integration" ] && \
     # installed edikt commands (~/.claude/commands/edikt/) and credentials.
     # EDIKT_HOME stays sandboxed — SDK tests don't write to it.
     if ! (cd "$SCRIPT_DIR/integration" && HOME="$REAL_HOME" CLAUDE_HOME="$REAL_CLAUDE_HOME" pytest -v); then
+        echo -e "${RED}>>> SUITE FAILED: $suite_name (exit $?)${NC}"
         FAILED_SUITES=$((FAILED_SUITES + 1))
     fi
 elif [ "${SKIP_INTEGRATION:-0}" = "1" ]; then
