@@ -193,6 +193,26 @@ artifacts:
 
 Override `versions` to pin older spec versions when your toolchain requires it (e.g., `openapi: "3.0.0"` if your code generator doesn't support 3.1 yet).
 
+## Aspirational fixtures
+
+Generated `fixtures.yaml` records that describe expected outputs from a not-yet-built behavior (hook outputs, API responses, CLI output) default to `status: aspirational` with a `target_phase` and `target_contract`:
+
+```yaml
+- entity: file
+  records:
+    - path: webhook-success.expected.json
+      format: json
+      status: aspirational
+      target_phase: "Phase 4 — webhook delivery"
+      target_contract: "POST /webhooks/test emits {event: delivered}"
+      content: {}
+      _note: "verify against running code before marking characterized"
+```
+
+You verify the fixture against the running implementation, then flip `status: aspirational` to `status: characterized` and add `verified_by` (the command that asserts the contract) and `verified_at`. `/edikt:doctor` reports a characterization rate so it's clear how much of your test surface is grounded in real behavior versus assumed behavior.
+
+The default exists because hand-authoring expected outputs ahead of implementation produces drift the moment the code lands. Aspirational status makes the placeholder explicit instead of pretending it's truth.
+
 ## After generating
 
 Review each artifact. Accept them individually by changing `status: draft` to `status: accepted` in the frontmatter. All artifacts must be accepted before running `/edikt:sdlc:plan`.

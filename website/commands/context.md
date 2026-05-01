@@ -73,6 +73,22 @@ The `SessionStart` hook installed by `/edikt:init` fires when you open the proje
 
 `--depth=full` is the default. On large projects (>15 ADRs or >5 PRDs), edikt suggests `--depth=focused` before proceeding.
 
+## Focused mode (v0.6.0)
+
+`--depth=focused` is now plan-scoped: it scans the active plan's current phase for `PRD-NNN` and `SPEC-NNN` identifiers and loads only the referenced sidecars.
+
+The active plan is the signal for what's being worked on right now. If your phase prompt says "implements PRD-005's FR-002 and FR-003," only `PRD-005`'s sidecar gets loaded — not every PRD in the project. Same for SPECs.
+
+```text
+PRDs (plan-scoped — active phase references):
+  PRD-005 (Webhook delivery) — 5 FRs, 8 ACs — accepted
+  PRD-007 (Retry budget)     — 3 FRs, 5 ACs — accepted
+```
+
+If no PRD or SPEC identifiers appear in the current phase, focused mode falls back to listing all PRD titles without loading their content. `full` and `minimal` modes are unchanged.
+
+This keeps the context budget lean on projects with dozens of PRDs while still surfacing exactly what the current phase needs.
+
 ## Natural language triggers
 
 - "remind yourself"

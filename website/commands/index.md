@@ -21,8 +21,11 @@ The full cycle from requirements through verification.
 
 | Command | What it does |
 |---------|-------------|
-| [`/edikt:sdlc:prd`](/commands/sdlc/prd) | Write a product requirement document |
-| [`/edikt:sdlc:spec`](/commands/sdlc/spec) | Technical specification from an accepted PRD |
+| [`/edikt:sdlc:discovery`](/commands/sdlc/discovery) | Structured uncertainty doc — Known, Unknown, Kill Criteria, Discovery Plan |
+| [`/edikt:sdlc:prd`](/commands/sdlc/prd) | Write, continue, or transition a PRD (split markdown + YAML sidecar) |
+| [`/edikt:prd:review`](/commands/prd/review) | Re-score a PRD against the rubric, report drift and broken refs |
+| [`/edikt:sdlc:spec`](/commands/sdlc/spec) | Technical spec from a PRD, brainstorm, or free-text prompt |
+| [`/edikt:spec:review`](/commands/spec/review) | Re-score a SPEC, verify FR coverage and AC pass-through |
 | [`/edikt:sdlc:artifacts`](/commands/sdlc/artifacts) | Data model, contracts, migrations from an accepted spec |
 | [`/edikt:sdlc:plan`](/commands/sdlc/plan) | Phased execution plan with pre-flight specialist review |
 | [`/edikt:sdlc:review`](/commands/sdlc/review) | Post-implementation specialist review — routes to domain agents |

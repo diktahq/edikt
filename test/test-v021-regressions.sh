@@ -16,10 +16,16 @@ echo ""
 # ============================================================
 # Regression 1: website content has no dead links to old flat paths
 # ============================================================
-# The v0.2.0 namespacing refactor moved these commands. Any surviving
-# `/commands/<old>` link in website markdown will break the VitePress build.
+# The v0.2.0 namespacing refactor moved these commands under /commands/sdlc/.
+# Any surviving direct `/commands/<old>)` link (closing paren, no subcommand)
+# in website markdown is a v0.2.0-era leftover and breaks the VitePress build.
+#
+# Note: in v0.6.0 we introduced legitimate top-level review commands at
+# /commands/prd/review and /commands/spec/review — those are NOT flat paths,
+# they are namespaced. The trailing `\)` (closing paren only, no slash) below
+# distinguishes the two cases.
 
-WEBSITE_CONTENT_DEAD_LINKS=$(grep -rEn '\]\(/commands/(prd|spec|spec-artifacts|plan|compile|drift|audit|review-governance|rules-update|sync|intake)(\)|/)' \
+WEBSITE_CONTENT_DEAD_LINKS=$(grep -rEn '\]\(/commands/(spec-artifacts|plan|compile|drift|audit|review-governance|rules-update|sync|intake)\)' \
     "$PROJECT_ROOT/website" \
     --include="*.md" \
     --exclude-dir=".vitepress" \
@@ -35,8 +41,9 @@ fi
 for file in website/commands/brainstorm.md website/governance/chain.md website/governance/compile.md website/governance/drift.md; do
     full_path="$PROJECT_ROOT/$file"
     if [ -f "$full_path" ]; then
-        # Must NOT contain these broken links (must use new namespace paths)
-        BROKEN=$(grep -E '\]\(/commands/(prd|spec|plan|compile|drift|spec-artifacts)(\)|/)' "$full_path" 2>/dev/null || true)
+        # Must NOT contain these broken links (must use new namespace paths).
+        # Same caveat as above: closing paren only — /commands/prd/review is fine.
+        BROKEN=$(grep -E '\]\(/commands/(plan|compile|drift|spec-artifacts)\)' "$full_path" 2>/dev/null || true)
         if [ -z "$BROKEN" ]; then
             pass "No flat-path dead links: $file"
         else

@@ -117,6 +117,9 @@ export default withMermaid(defineConfig({
           { text: 'CI/CD Governance', link: '/guides/ci' },
           { text: 'Keeping Up to Date', link: '/guides/upgrading' },
           { text: 'Upgrading to v0.5.0', link: '/guides/v0.5.0-upgrade' },
+          { text: 'Upgrading to v0.6.0', link: '/guides/v0.6.0-upgrade' },
+          { text: 'PRD v2 Deep Dive', link: '/guides/prd-v2' },
+          { text: 'Configuring Evaluator Gates', link: '/guides/evaluator-gates' },
         ],
       },
       {
@@ -143,8 +146,11 @@ export default withMermaid(defineConfig({
           {
             text: 'SDLC Chain',
             items: [
+              { text: 'sdlc:discovery', link: '/commands/sdlc/discovery' },
               { text: 'sdlc:prd', link: '/commands/sdlc/prd' },
+              { text: 'prd:review', link: '/commands/prd/review' },
               { text: 'sdlc:spec', link: '/commands/sdlc/spec' },
+              { text: 'spec:review', link: '/commands/spec/review' },
               { text: 'sdlc:artifacts', link: '/commands/sdlc/artifacts' },
               { text: 'sdlc:plan', link: '/commands/sdlc/plan' },
               { text: 'sdlc:review', link: '/commands/sdlc/review' },

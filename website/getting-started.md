@@ -34,6 +34,7 @@ curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh 
 Installs the launcher (`bin/edikt`) and fetches the payload (templates, commands, hooks) to `~/.edikt/`. No dependencies, no build step, no runtime — just files.
 
 **Upgrading from v0.4.x?** See [Migrating from v0.4](guides/migrating-from-v0.4.md).
+**Upgrading from v0.5.x to v0.6.0?** See [Upgrading to v0.6.0](guides/v0.6.0-upgrade.md) — PRD v2, structured evaluator gates, plan model assignment.
 
 **Want to pin a version or roll back?** See [Upgrade and rollback](guides/upgrade-and-rollback.md).
 

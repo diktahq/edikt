@@ -148,28 +148,42 @@ Controls how `/edikt:sdlc:artifacts` generates design blueprints.
 |-----|---------|-------------|
 | `agents.custom` | `[]` | List of agent slugs to skip on `/edikt:upgrade`. Use for agents you've customized or created yourself. |
 
-### `gates.*` — Quality gate configuration
+### `gates.*` — Quality gate severity per agent
 
-Gates are team-level config — engineers can override findings but cannot disable gates.
+Gates are team-level config — engineers can override findings but cannot disable gates. As of v0.6.0, gate thresholds are configured per agent domain. The SubagentStop hook reads `evaluator_output.agent` from the structured verdict (per ADR-023) and resolves the threshold from this section.
 
 ```yaml
 gates:
-  security:
-    level: critical
-    agents:
-      - security
-  database:
-    level: critical
-    agents:
-      - dba
+  security:    warning    # block on warning and above
+  dba:         critical
+  sre:         warning
+  architect:   warning
+  performance: critical
+  api:         warning
+  default:     critical   # fallback for any unlisted agent
 ```
 
-| Field | Description |
-|-------|-------------|
-| `gates.{name}.level` | `critical` or `warning` — severity threshold for this gate |
-| `gates.{name}.agents` | List of agent slugs that trigger this gate |
+| Key | Default | Valid values | Description |
+|-----|---------|-------------|-------------|
+| `gates.security` | `warning` | `critical`, `warning`, `info` | Threshold for the security agent. `warning` blocks on warning + critical. |
+| `gates.dba` | `critical` | `critical`, `warning`, `info` | Threshold for the dba agent. |
+| `gates.sre` | `warning` | `critical`, `warning`, `info` | Threshold for the sre agent. |
+| `gates.architect` | `warning` | `critical`, `warning`, `info` | Threshold for the architect agent. |
+| `gates.performance` | `critical` | `critical`, `warning`, `info` | Threshold for the performance agent. |
+| `gates.api` | `warning` | `critical`, `warning`, `info` | Threshold for the api agent. |
+| `gates.default` | `critical` | `critical`, `warning`, `info` | Fallback for agents not individually configured. |
 
-See [Quality Gates](/governance/gates) for the override flow and audit log.
+Severity ordering: `critical (3) > warning (2) > info (1)`. The gate fires when `finding.severity_level >= threshold_level`.
+
+`EDIKT_GATE_SEVERITY_THRESHOLD` overrides all gates per-invocation — useful for one-off "tighten everything" or "loosen everything" runs without editing the config.
+
+See [Configuring Evaluator Gates](/guides/evaluator-gates) for the worked example and [Quality Gates](/governance/gates) for the override flow and audit log.
+
+### `defaults.*` — Defaults for plan and execution
+
+| Key | Default | Valid values | Description |
+|-----|---------|-------------|-------------|
+| `defaults.plan_model` | `claude-sonnet-4-6` | model identifier | Plan-level default model. Plans inherit this when no `model:` is set in plan frontmatter; per-phase `model:` overrides it. |
 
 ### `hooks.*` — Git hook control
 

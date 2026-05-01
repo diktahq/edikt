@@ -186,6 +186,31 @@ phases:
 
 The evaluator reads and updates this file after each evaluation — no markdown parsing needed. Pre-flight validation populates the `verify` field with proposed shell commands.
 
+## Plan-level and per-phase model assignment
+
+As of v0.6.0, plan files carry a `model:` field at the top level and per-phase overrides:
+
+```yaml
+---
+type: plan
+id: PLAN-bulk-orders
+model: claude-sonnet-4-6        # plan-level default
+phases:
+  - id: 1
+    model: claude-haiku-4         # cheap CRUD work
+  - id: 2
+    model: claude-opus-4          # security-sensitive logic
+  - id: 3
+    # no model — inherits the plan-level default
+---
+```
+
+The inheritance chain is per-phase override → plan-level default → `defaults.plan_model` in `.edikt/config.yaml` → `claude-sonnet-4-6`. Set the project-wide default once and let plans override per phase only when the cost/capability tradeoff actually matters.
+
+```bash
+/edikt:config set defaults.plan_model claude-sonnet-4-6
+```
+
 ## Evaluator configuration
 
 The evaluator's behavior is configurable in `.edikt/config.yaml`:

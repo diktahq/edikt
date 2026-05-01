@@ -31,6 +31,56 @@ Validate governance setup and report what's healthy, what's missing, and how to 
 | Linter sync | ✅ | Config newer than rules → suggest `/edikt:gov:sync` |
 | edikt version | ✅ match | Project version differs from installed → suggest `/edikt:upgrade` |
 
+### PRD/SPEC artifact health (v0.6.0)
+
+Doctor runs four checks against every PRD sidecar and every SPEC sidecar:
+
+| Check | What it catches |
+|-------|----------------|
+| **Orphaned sidecars** | A `.yaml` with no sibling `.md`, or vice versa (only flagged when the project has at least one v2 PRD). |
+| **Schema version** | Sidecar's `schema_version` is missing or unknown (e.g., a sidecar from a newer edikt). |
+| **Sidecar drift** | The `.md` was edited after the last sync — `_sync.md_hash` no longer matches the file. Informational; the PRD is still valid, the sync record is stale. |
+| **Broken refs** | Linked invariants, source SPECs, supersede chains, or solution_references that point to files that don't exist. |
+
+```text
+PRD/SPEC ARTIFACT HEALTH
+  Orphaned sidecars: 0
+  Schema version warnings: 0
+  Sidecar drift: 1
+  Broken refs: 1
+
+  ⚠ PRD-005: .md edited since last sync (2026-04-12). Re-author with /edikt:sdlc:prd PRD-005.
+  ⚠ PRD-007: protection INV-042 references non-existent invariant.
+```
+
+v1 PRDs (no sidecar) are silently skipped — the checks need the structured sidecar.
+
+### Fixture characterization rate
+
+For each spec with a `fixtures.yaml` containing expected-output records, doctor reports the ratio of `characterized` to `aspirational` records:
+
+```text
+[!!] Fixture characterization rate is low (35%). Most test expectations are unverified against running code.
+[ok] Fixtures fully characterized (12 records)
+[--]  3 aspirational fixture record(s) — run verified_by commands to characterize
+```
+
+Set `EDIKT_DOCTOR_DEEP=1` to also re-run safe `verified_by` commands on `characterized` records older than 90 days and flag stale verifications.
+
+### Gate activity (last 7 days)
+
+Doctor reads `~/.edikt/events.jsonl` and reports unresolved gate findings from the last 7 days, plus override activity from the last 30 days:
+
+```text
+Gate activity:
+  Unresolved: 2
+    2026-04-25T14:22:00Z : security gate (critical) — no resolution recorded
+    2026-04-26T09:01:00Z : dba gate (warning) — no resolution recorded
+  Overrides (last 30 days): 1
+```
+
+Use this with `/edikt:session` to sweep unresolved findings before the work compounds.
+
 ### Routing-table source-file check (v0.5.0)
 
 Doctor verifies that every ADR and invariant referenced in the routing table inside `.claude/rules/governance.md` exists on disk.
