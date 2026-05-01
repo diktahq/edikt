@@ -17,8 +17,12 @@ PLAN_DIR=$(grep -A1 '^plans:' .edikt/config.yaml 2>/dev/null | grep 'dir:' | awk
 
 if [ ! -d "$PLAN_DIR" ]; then exit 0; fi
 
-# Get most recent plan file by modification time
-PLAN=$(find "$PLAN_DIR" -maxdepth 1 -name '*.md' -exec stat -f '%m %N' {} + 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+# Get most recent plan file by modification time (BSD/macOS vs GNU/Linux stat).
+if stat -f '%m' . >/dev/null 2>&1; then
+  PLAN=$(find "$PLAN_DIR" -maxdepth 1 -name '*.md' -exec stat -f '%m %N' {} + 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+else
+  PLAN=$(find "$PLAN_DIR" -maxdepth 1 -name '*.md' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+fi
 if [ -z "$PLAN" ] || [ ! -f "$PLAN" ]; then exit 0; fi
 
 # Check if plan has any in-progress phase
