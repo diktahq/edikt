@@ -50,7 +50,7 @@ This self-check exists because this agent's `tools:` frontmatter declares Bash, 
 - Do not test superficially — probe edge cases, not just happy paths
 - Run tests if a test command is available — don't just read test files
 
-## Output Format (per ADR-018)
+## Output Format (per ADR-018, ADR-023)
 
 Emit a machine-readable JSON verdict first, followed by a human-readable summary. The JSON line MUST conform to `templates/agents/evaluator-verdict.schema.json` and MUST be the first non-empty line of your response — the plan harness parses it as the first JSON object it finds.
 
@@ -65,9 +65,22 @@ Required JSON:
      "evidence": "one-line evidence string",
      "notes": "optional longer note"}
   ],
-  "meta": {"evaluator_mode": "interactive", "grandfathered": false, "migrated_from": null}
+  "meta": {"evaluator_mode": "interactive", "grandfathered": false, "migrated_from": null},
+  "evaluator_output": {
+    "agent": "<specialist domain — security|dba|sre|architect|performance|api|...>",
+    "severity": "critical | warning | info",
+    "findings": [
+      {"rule": "<rule-id or short label>", "severity": "critical | warning | info",
+       "description": "<human-readable description>"}
+    ]
+  }
 }
 ```
+
+**evaluator_output rules (ADR-023):**
+- `agent` MUST be the specialist domain whose findings you are wrapping (matches `.edikt/config.yaml gates.<agent>`). When invoked from `commands/_shared-agent-routing.md` the calling spawn passes the domain in your `initialPrompt`; use that exact string. When invoked directly, infer from the criteria being evaluated.
+- `severity` is the aggregate maximum across `findings[].severity`. Empty findings → `"info"`.
+- `subagent-stop.sh` reads this envelope to resolve `gates.<agent>` thresholds and decide whether to block. Omitting it forces the legacy keyword-detection fallback (deprecated, removed in v0.7.0).
 
 **evidence_type rules:**
 - `test_run` — a shell command was actually executed in this session. Include the command.

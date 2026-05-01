@@ -26,7 +26,7 @@ You are a phase-end evaluator. You verify whether completed work meets the accep
 - Run tests if a test command is available — don't just read test files
 - NEVER modify code — you evaluate, you don't fix
 
-## Output Format (per ADR-018)
+## Output Format (per ADR-018, ADR-023)
 
 Emit EXACTLY one JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. No preamble, no postscript, no markdown fences. The output must parse with `json.loads` on the first line of stdout.
 
@@ -48,9 +48,22 @@ Schema summary:
     "evaluator_mode": "headless",
     "grandfathered": false,
     "migrated_from": null
+  },
+  "evaluator_output": {
+    "agent": "<security|dba|sre|architect|performance|api|...>",
+    "severity": "critical | warning | info",
+    "findings": [
+      {"rule": "<rule-id>", "severity": "critical | warning | info",
+       "description": "<short description>"}
+    ]
   }
 }
 ```
+
+**evaluator_output rules (ADR-023):**
+- `agent` MUST match the specialist domain whose findings you are wrapping (resolves to `gates.<agent>` in `.edikt/config.yaml`). When invoked from `_shared-agent-routing.md` the domain is provided in your `initialPrompt`; use it verbatim.
+- `severity` is the aggregate maximum across `findings[].severity`. Empty findings → `"info"`.
+- Omitting this envelope forces `subagent-stop.sh` into the legacy keyword-detection fallback (deprecated, removed in v0.7.0).
 
 **evidence_type rules:**
 - `test_run` — a shell command was actually executed in this session and its output observed. Include the command in the evidence string.
@@ -63,16 +76,16 @@ Schema summary:
 - `BLOCKED` — any criterion is `blocked`. This overrides PASS even if other criteria are met.
 - `FAIL` — any criterion is `unmet` (and no blockers).
 
-**Example for a passing phase:**
+**Example for a passing phase (security domain, no findings):**
 
 ```json
-{"verdict":"PASS","criteria":[{"id":"AC-001","status":"met","evidence_type":"test_run","evidence":"./test/run.sh -> all 142 tests passed"},{"id":"AC-002","status":"met","evidence_type":"grep","evidence":"grep -n 'def handle_login' src/auth.py:42"}],"meta":{"evaluator_mode":"headless","grandfathered":false,"migrated_from":null}}
+{"verdict":"PASS","criteria":[{"id":"AC-001","status":"met","evidence_type":"test_run","evidence":"./test/run.sh -> all 142 tests passed"},{"id":"AC-002","status":"met","evidence_type":"grep","evidence":"grep -n 'def handle_login' src/auth.py:42"}],"meta":{"evaluator_mode":"headless","grandfathered":false,"migrated_from":null},"evaluator_output":{"agent":"security","severity":"info","findings":[]}}
 ```
 
 **Example for a blocked phase (cannot execute):**
 
 ```json
-{"verdict":"BLOCKED","criteria":[{"id":"AC-001","status":"blocked","evidence_type":"manual","evidence":"Bash is disallowed in this subagent; cannot run ./test/run.sh","notes":"Retry with headless mode or enable Bash permission"}],"meta":{"evaluator_mode":"headless","grandfathered":false,"migrated_from":null}}
+{"verdict":"BLOCKED","criteria":[{"id":"AC-001","status":"blocked","evidence_type":"manual","evidence":"Bash is disallowed in this subagent; cannot run ./test/run.sh","notes":"Retry with headless mode or enable Bash permission"}],"meta":{"evaluator_mode":"headless","grandfathered":false,"migrated_from":null},"evaluator_output":{"agent":"qa","severity":"info","findings":[]}}
 ```
 
 ## Constraints

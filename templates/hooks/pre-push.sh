@@ -53,11 +53,22 @@ for f in staged:
     except Exception:
         continue
 
-    # INV-001: no compiled code in commands/ or templates/
-    if re.search(r'^(commands|templates)/', f):
-        for ext in ('.ts', '.js', '.py', '.rb', '.go', '.rs'):
+    # INV-001: commands/ and templates/ MUST be .md or .yaml only.
+    # Block both source files (.ts/.py/.go/...) and compiled outputs
+    # (.js/.wasm/.pyc/.so/...). Hooks are the one exception — templates/hooks/
+    # ships shell scripts that the launcher runs.
+    if re.search(r'^(commands|templates)/', f) and not f.startswith('templates/hooks/'):
+        banned = (
+            # Source files
+            '.ts', '.tsx', '.js', '.jsx', '.py', '.rb', '.go', '.rs',
+            '.java', '.kt', '.swift', '.c', '.cpp', '.h', '.hpp',
+            # Compiled outputs
+            '.wasm', '.pyc', '.class', '.so', '.dylib', '.dll', '.a', '.o',
+        )
+        for ext in banned:
             if f.endswith(ext):
-                violations.append(f"INV-001: {f} — compiled code in commands/ or templates/ is forbidden")
+                violations.append(f"INV-001: {f} — only .md and .yaml allowed in commands/ and templates/")
+                break
 
     # INV-002: accepted ADRs are immutable
     if re.search(r'docs/architecture/decisions/ADR-\d+', f):

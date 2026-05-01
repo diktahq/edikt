@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://edikt.dev/schemas/evaluator-verdict/v1.json",
   "title": "edikt evaluator verdict",
-  "description": "Structured output of the evaluator agent. Per ADR-018, the plan harness rejects PASS unless every criterion that names a shell command has evidence_type='test_run'.",
+  "description": "Structured output of the evaluator agent. Per ADR-018, the plan harness rejects PASS unless every criterion that names a shell command has evidence_type='test_run'. Per ADR-023, evaluator_output carries the specialist-domain envelope subagent-stop.sh reads to resolve gate severity.",
   "type": "object",
-  "required": ["verdict", "criteria", "meta"],
+  "required": ["verdict", "criteria", "meta", "evaluator_output"],
   "additionalProperties": false,
   "properties": {
     "verdict": {
@@ -56,6 +56,43 @@
         "migrated_from": {
           "type": ["string", "null"],
           "description": "edikt version this verdict was grandfathered from (e.g. '0.4.3'). Null for native v0.5.0+ verdicts."
+        }
+      }
+    },
+    "evaluator_output": {
+      "description": "Specialist-domain envelope. subagent-stop.sh reads .agent to resolve gates.<agent> threshold and .severity to decide whether to fire (ADR-023).",
+      "type": "object",
+      "required": ["agent", "severity", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "description": "Specialist domain identifier matching .edikt/config.yaml gates.<agent> (e.g. 'security', 'dba', 'sre', 'architect', 'performance', 'api'). Must match the specialist whose findings the evaluator wrapped."
+        },
+        "severity": {
+          "enum": ["critical", "warning", "info"],
+          "description": "Aggregate severity across findings — the maximum of any individual finding's severity. The hook compares this against gates.<agent>'s threshold."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule", "severity", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "rule": {
+                "type": "string",
+                "description": "Rule identifier or short label (e.g. 'OWASP-A03', 'no-hardcoded-secret')."
+              },
+              "severity": {
+                "enum": ["critical", "warning", "info"]
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable finding description."
+              }
+            }
+          }
         }
       }
     }

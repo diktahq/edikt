@@ -31,26 +31,11 @@ ADR-018 (evaluator verdict schema) established a structured JSON schema for eval
 
 ### 1. Structured hook payload contract
 
-`subagent-stop.sh` MUST read the PostToolUse hook input JSON and extract verdict data exclusively from the `tool_result` field's structured content. The required input shape is:
+`subagent-stop.sh` MUST read the SubagentStop hook input JSON from stdin and extract verdict data from the top-level `evaluator_output` field. The required input shape is:
 
 ```json
 {
-  "tool_result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "<json-encoded evaluator output>"
-      }
-    ]
-  }
-}
-```
-
-The `text` field is a JSON-encoded evaluator output string (double-encoded). `subagent-stop.sh` MUST parse it as:
-
-```json
-{
-  "verdict": "PASS | BLOCKED",
+  "verdict": "PASS | BLOCKED | FAIL",
   "evaluator_output": {
     "agent": "<agent-domain>",
     "severity": "critical | warning | info",
@@ -64,6 +49,8 @@ The `text` field is a JSON-encoded evaluator output string (double-encoded). `su
   }
 }
 ```
+
+The evaluator emits this JSON object on stdout per the schema at `templates/agents/evaluator-verdict.schema.json` (see §3 below); Claude Code wires the agent's stdout into the hook input directly — there is no `tool_result.content[].text` indirection.
 
 This is the **canonical payload shape** for SPEC-006 and beyond.
 

@@ -34,8 +34,8 @@ v0.6.0 is the first feature release after the v0.5.0 stability sprint. It ships 
 grouped workstreams:
 
 1. **Tier-2 install system** — `edikt install benchmark` / `edikt uninstall benchmark`
-   verbs in `bin/edikt` backed by a new Go binary at
-   `tools/gov-benchmark/cmd/install.go`. Covers Python prereq check, venv isolation,
+   subcommands in the single Go binary (per ADR-022) at
+   `tools/edikt/cmd/tier2_install.go`. Covers Python prereq check, venv isolation,
    checksum verification, rollback on failure, and idempotent uninstall. Satisfies the
    12 pre-written AC-023 tests in `test/integration/test_install_tier2.py` and the
    13 e2e smoke gates in `test/integration/test_e2e_v060_release.py`.
@@ -156,27 +156,28 @@ For `tool = benchmark`, the install sequence (in order, with rollback on any fai
 **Source of truth for test behavior:** `test/integration/test_install_tier2.py` (12 tests).
 The spec follows the tests; the tests do not follow the spec.
 
-### FR-002 — Go binary backing `edikt install benchmark`
+### FR-002 — `edikt install benchmark` is a subcommand of the single Go binary
 
-A Go binary at `tools/gov-benchmark/cmd/install.go` implements the install/uninstall
-logic from FR-001. `bin/edikt` delegates to the compiled binary when available at
-`$EDIKT_HOME/bin/gov-install`, falling back to inline shell logic for dev mode (when
-`$EDIKT_TIER2_SOURCE` is set to the repo's `tools/gov-benchmark/`).
+Per ADR-022 (single Go binary), the tier-2 install logic ships as a subcommand
+of `tools/edikt/`, not a separate binary. The implementation lives at
+`tools/edikt/cmd/tier2_install.go` and is wired into the `edikt install` /
+`edikt uninstall` cobra commands. There is no separate `gov-install` binary
+to compile or place.
 
-The Go binary:
+The implementation:
 - Reads all configuration from environment variables (matching the test harness:
   `EDIKT_TIER2_PYTHON`, `EDIKT_TIER2_WHEEL`, `EDIKT_TIER2_WHEEL_SHA256`,
   `EDIKT_TIER2_SKIP_PIP`, `EDIKT_TIER2_SOURCE`, `EDIKT_HOME`, `CLAUDE_HOME`).
 - Shares exit-code semantics with `tools/edikt/cmd/install.go`:
   `0 = success`, `1 = prereq/network`, `2 = checksum`, `3 = already installed`,
   `5 = path traversal / malicious`.
-- Is compiled into `~/.edikt/bin/gov-install` at `edikt install --compile-tools` time
-  (a new sub-option, run once after `brew install edikt` or after updating the SDK).
-- Is NOT required for `EDIKT_TIER2_SKIP_PIP=1` dev runs; the shell launcher handles
-  those directly.
+- Is `EDIKT_TIER2_SKIP_PIP=1`-aware for dev/test runs; behavior matches whether
+  the binary is installed via `brew install edikt`, `go install`, or built from
+  source.
 
-**Build target:** `tools/gov-benchmark/Makefile` with `make install-binary` that builds
-and places the binary. `make test` runs the Go unit tests.
+**Build target:** the same `Makefile` and `go build` invocations that produce
+`bin/edikt` for tier-1 (no separate target). `go test ./tools/edikt/...` covers
+the tier-2 logic alongside the rest of the binary.
 
 ### FR-003 — SubagentStop structured evaluator-input contract (ADR-023)
 

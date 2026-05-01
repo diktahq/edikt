@@ -2,225 +2,39 @@
 
 ## v0.6.0 (2026-04-18 — development)
 
-### SDLC rework, tier-2 Go install, hook hardening (SPEC-006)
-
-#### ADR-023 — SubagentStop structured evaluator-input contract
-
-`subagent-stop.sh` now reads a structured `evaluator_output` envelope from the hook payload. Evaluator agents emit `{"verdict": "...", "evaluator_output": {"severity": "critical"|"warning"|"info", "findings": [...]}}`. The hook uses `evaluator_output.severity` directly instead of keyword-scanning the full payload text.
-
-- **Legacy payload fallback.** Unstructured payloads (pre-ADR-023 evaluators) trigger a warning to stderr and events.jsonl (`event: legacy_payload`) then fall through to keyword detection. They do not crash.
-- **Gate severity tiers.** Threshold resolution: `EDIKT_GATE_SEVERITY_THRESHOLD` env > `config.gates.<agent>` > `config.gates.default` > `"critical"`. Levels: critical(3) > warning(2) > info(1). Hook blocks when `severity_level >= threshold_level`.
-- **Per-agent configuration.** `.edikt/config.yaml` now ships with a `gates:` section with per-agent defaults (security: warning, dba: critical, sre: warning, architect: warning, performance: critical, api: warning, default: critical). `/edikt:config` documents all `gates.*` keys.
-- **Deterministic blocking message.** The `systemMessage` is derived from the structured payload and config only — no git identity, no timestamps. This unblocks the `subagent-stop-critical` characterization fixture, re-added in this release.
-
-#### Tier-2 Go install (ADR-015 first instance)
-
-`edikt install benchmark` and `edikt uninstall benchmark` are implemented in `bin/edikt` as shell, with an optional Go binary at `tools/gov-benchmark/cmd/install.go` that is used when present. The shell launcher delegates to the compiled binary if `$EDIKT_HOME/bin/gov-install` is executable; falls back to the shell implementation otherwise.
-
-- **Rollback on failure.** Any failure after file copies triggers rollback: removes all copied files and the venv directory before exiting non-zero.
-- **Wheel checksum verification.** When `EDIKT_TIER2_WHEEL` is set, SHA-256 is verified against `EDIKT_TIER2_WHEEL_SHA256` before pip install. Mismatch exits 2.
-- **Hermetic venv.** Installed into `~/.edikt/venv/gov-benchmark/`, never the system Python.
-- **Exact version pins.** `tools/gov-benchmark/pyproject.toml` uses `==` for all dependencies (ADR-015).
-- **`commands/gov/benchmark.md` carries `tier: 2`.** Not included in base install.
-
-#### Shared agent-routing extraction
-
-Domain signal detection was duplicated across `commands/sdlc/plan.md` and any future command that needs specialist routing. Extracted to `commands/_shared-agent-routing.md`:
-
-- Single `Domain Signal Table` with 6 domains (database, infrastructure, security, API, architecture, performance).
-- Three shared procedures: `detect_signals()`, `spawn_specialists()`, `consolidate_findings()`.
-- `commands/sdlc/plan.md` now references the shared file instead of embedding its own copy.
-
-#### Deprecated stubs removed
-
-`commands/deprecated/` directory removed. The 16 redirect-only stubs (adr, invariant, compile, review-governance, rules-update, sync, prd, spec, spec-artifacts, plan, review, drift, audit, docs, intake, team) are deleted. Intent-based routing is handled by the CLAUDE.md trigger table in every project.
-
-#### Pre-push invariant validation hook
-
-New `templates/hooks/pre-push.sh` enforces three invariant compliance checks before every push:
-
-- **INV-001** — no compiled code extensions (`.js`, `.ts`, `.wasm`, `.pyc`, `.class`, `.so`, `.dylib`) in `commands/` or `templates/`.
-- **INV-002** — accepted ADRs are immutable: detects `status: accepted` files with unstaged diffs and blocks with a path list.
-- **INV-003** — no shell JSON concatenation: greps for `echo '{'` and `printf '{'` patterns in `templates/hooks/*.sh`.
-- Bypass via `EDIKT_BYPASS_PREPUSH=1` (bypass is logged to `events.jsonl` with python3 argv — INV-003 compliant).
-
-#### Events.jsonl doctor check + session-start gate surfacing
-
-- **`/edikt:doctor`** — two new checks:
-  - *Fixture characterization rate*: warns if > 50% of fixture records in `fixtures.yaml` files have `status: aspirational`.
-  - *Gate activity (last 7 days)*: finds unresolved `gate_fired` events in `events.jsonl` and lists the most recent findings.
-- **`session-start.sh`** — surfaces the most recent unresolved gate finding from the previous session as `additionalContext`. Prompt: "⚠ Last session: \<agent> gate fired on \<finding> — was it resolved? To dismiss: run /edikt:session".
-
-#### Artifact aspirational defaults
-
-`/edikt:sdlc:artifacts` now generates expected-output fixture records with `status: aspirational` and `target_phase`/`target_contract` fields. A warning banner after generation: "These fixtures are aspirational — verify against running code and mark `status: characterized` after verification."
-
-#### Fixture characterization lifecycle (SPEC-006)
-
-`fixtures.yaml` status field now has documented semantics:
-- `characterized` — verified against running code; has `verified_by` command and `verified_at` date.
-- `aspirational` — expected behavior not yet verified against running code.
-
-`/edikt:sdlc:drift` adds a fixture characterization debt axis: shows the ratio of aspirational to characterized records with an emoji-coded severity (✅ 0%, 🟡 1-25%, 🟠 26-50%, 🔴 > 50%).
-
-#### Characterization fixture re-additions (ADR-014 follow-up)
-
-Two fixture pairs previously blocked on nondeterminism are re-added:
-
-- **`session-start-with-edikt`** — `session-start.sh` now emits `{"additionalContext": "📋 edikt project detected..."}` (JSON, ADR-014 migration). `_staged_runner.sh` provisions a stable test env via `stub_git_identity()` + `stub_clock()`, making the output deterministic.
-- **`subagent-stop-critical`** — blocking message now derives from structured payload + config only (ADR-023). No git identity or timestamps in the `systemMessage`. Re-adding closes the ADR-014 Verification Checklist item.
-
-`_staged_runner.sh` gains three determinism helpers: `stub_git_identity()`, `provision_memory_fixture()`, `stub_clock()`.
-
-#### Breaking changes
-
-- **`commands/deprecated/` removed.** Any external scripts that `cat` or `source` from `commands/deprecated/*.md` will fail. The redirect logic was unused — intent routing handles discovery.
-- **`gates:` section added to generated config.** `edikt init` now writes a `gates:` block with per-agent defaults. Existing projects are unaffected; `edikt upgrade` does not add the block automatically (opt-in via `/edikt:config set gates.security warning`).
-- **Pre-push hook enforces INV-003.** Projects that previously had `echo '{'` patterns in hook scripts will fail pre-push. Fix: replace with `python3 -c 'import json; print(json.dumps(...))'`.
-
-### PRD redesign — split artifact, rigor calibration, SDLC chain traceability (SPEC-007)
-
-v0.6.0 adds the second leg of edikt's SDLC governance story. v0.5.0 established architectural governance (ADRs, invariants, compile → enforcement). SPEC-007 establishes **product artifact governance**: a redesigned PRD surface where requirements flow with stable IDs through the full chain — PRD → SPEC → artifacts → plan → implementation → verification.
-
-Source: `docs/brainstorms/BRAIN-001-prd-as-context-bundle/` (26 locked decisions) → `docs/product/specs/SPEC-007-prd-redesign/spec.md`.
-
-#### Split artifact model
-
-Every v2 PRD now ships as two files:
-
-- `PRD-NNN-<slug>.md` — human-readable narrative (Problem, Users, Goals, Non-Goals, Solution References, Protections, Open Questions, Evidence)
-- `PRD-NNN-<slug>.yaml` — structured sidecar: source of truth for requirements, acceptance criteria, status, protections, forcing-question answers, revision history, cross-references, and the `_sync` hash block
-
-LLMs corrupt markdown table and section structure at a measurable rate across multi-turn edits (Anthropic harness findings). YAML stays intact. Narrative in markdown where it reads well; structure in YAML where commands can mutate it safely.
-
-#### Rigor-calibrated authoring
-
-Single `build` mode with `rigor: solo | team | platform`:
-
-- **solo** — Problem, Users, Goals, Non-Goals, Requirements, ACs, Solution References, Protections, Open Questions (evaluator threshold: 70%)
-- **team** — adds Stakeholders, Dependencies, Rollout Plan (threshold: 80%)
-- **platform** — adds NFRs, Risk Register, Compatibility Matrix, Compliance Hooks (threshold: 90%)
-
-One triage question at authoring start. Default `solo`.
-
-#### Five forcing questions (not skippable)
-
-Every PRD session opens with five questions (Cutler, Torres, Amazon, Intercom synthesis):
-
-1. What's the problem *behind* this problem?
-2. How do you know someone has this problem? (evidence or "hypothesis only" counts)
-3. What single metric should move, and what must NOT move?
-4. What must NOT change when this ships? (seeds Protections)
-5. What's the riskiest assumption?
-
-Answered one at a time, recorded in the sidecar's `forcing_questions:` block, scored by the rubric.
-
-#### Protection section with invariant auto-link
-
-When authoring, the PRD command greps existing invariants for topic relevance, presents candidates for linking, and offers to promote durable protections stated in Q4 into new `/edikt:invariant:new` invocations. Two-way governance growth — PRDs both reference and generate invariants.
-
-#### Stable IDs through the full chain
-
-- `FR-NNN` — PRD functional requirements
-- `AC-NNN-M` — acceptance criteria (Given/When/Then, M scopes to FR)
-- `SR-NNN` — SPEC requirements (`implements: FR-NNN`)
-- `SAC-NNN` — SPEC-added architectural ACs
-
-IDs are grep-traceable from PRD through SPEC through plan phases. `/edikt:sdlc:drift` will surface an `FR-NNN` present in a PRD sidecar but uncovered by any SPEC.
-
-#### Seven concrete changes in `/edikt:sdlc:spec` when reading a v2 PRD
-
-1. **FR coverage check** — emits `source_prd_coverage:` covering/deferred/uncovered for every PRD FR. Non-empty `uncovered:` blocks `/edikt:sdlc:drift` PASS verdict.
-2. **AC pass-through** — every PRD `AC-NNN-M` copied byte-equal to the SPEC with unchanged ID. Modification is a violation, detected by `/edikt:spec:review`.
-3. **Stable ID propagation** — every `SR-NNN` carries `implements: FR-NNN` (or `null` for spec-only requirements).
-4. **Back-reference emission** — SPEC command appends `SPEC-NNN` to PRD sidecar `source_specs:`, closing the bidirectional trace loop.
-5. **Solution reference pass-through** — SPEC inherits PRD's mockups/designs; can add architecture/sequence diagrams.
-6. **Protection propagation** — SPEC inherits PRD's protections; can add technical-layer protections annotated with `source: spec`.
-7. **Evaluator hook** — SPEC evaluator runs in-flight against `.edikt/rubrics/spec.md` with rigor inherited from the linked PRD.
-
-v1 PRDs (no sidecar) continue to work — the spec command warns once and falls through to the legacy flow.
-
-#### New commands
-
-- **`/edikt:prd:review PRD-NNN`** — re-scores an existing PRD against the rubric; reports score, gaps, sidecar drift (`_sync.md_hash` mismatch), broken refs, unstarted FRs (proposed but never specced). Closes the audit gap where every other governance artifact type has a review command except PRD.
-- **`/edikt:spec:review SPEC-NNN`** — rubric score + FR coverage completeness + AC pass-through integrity + broken refs + drift.
-- **`/edikt:sdlc:discovery`** — structured uncertainty-reduction doc, peer to `/edikt:brainstorm`. Four-question interview (Known, Unknown, Kill Criteria, Discovery Plan). Graduates to PRD via `/edikt:sdlc:prd DISCOVERY-NNN`.
-
-#### Transition commands (edit-in-place lifecycle per ADR-024)
-
-PRDs evolve via edit-in-place with per-entry status markers. Four new commands:
-
-- **`/edikt:sdlc:prd:ship PRD-NNN [FR-001 ...]`** — mark FRs as `status: shipped`; flip top-level `status: shipped` when all FRs ship.
-- **`/edikt:sdlc:prd:supersede PRD-NNN`** — heavy transition (≥50% scope rewrites); authors a new PRD with `supersedes:` / `superseded_by:` links on both.
-- **`/edikt:sdlc:prd:deprecate PRD-NNN [reason]`** — was shipped or accepted, now obsolete.
-- **`/edikt:sdlc:prd:cancel PRD-NNN [reason]`** — work stopped before shipping.
-
-All transition commands mutate the sidecar via `python3` with argv (INV-003 compliant), update `revision_history`, and recompute `_sync` hashes.
-
-#### Doctor integration — four new checks
-
-- **Orphaned sidecars** — `.yaml` without `.md` or vice versa.
-- **Schema version** — surfaces sidecars with missing or unknown `schema_version`.
-- **Sidecar drift** — compares `_sync.md_hash` to current `.md` SHA-256.
-- **Broken refs** — linked `INV-NNN` missing, `SPEC-NNN` missing, `supersedes:` chain dangling, or local `solution_references` path non-existent. Figma URLs skipped (network check opt-in).
-
-#### JSON Schema for IDE autocomplete
-
-`templates/schemas/prd-sidecar.schema.json` (draft 2020-12) enables autocomplete, inline validation, and hover docs in VS Code, JetBrains, and Neovim via `yaml-language-server`. Generated sidecars include the `$schema=` comment pointing at the schema.
-
-#### ADR-024 — PRD lifecycle asymmetry vs INV-002
-
-PRDs and SPECs use edit-in-place evolution (per-entry status markers, structured `revision_history`); ADRs remain immutable under INV-002. The asymmetry is intentional: ADRs model discrete binary decisions, PRDs model continuous feature evolution. Forcing PRD immutability creates artificial supersession chains that LLMs handle worse than single evolving documents (Anthropic harness findings).
-
-#### Migration
-
-- **Grandfather.** v1 PRDs (no sidecar) continue to load in all commands. No forced migration.
-- **Template preserved.** Old `templates/prd.md.tmpl` renamed to `templates/prd-v1.md.tmpl`. The new v2 template is at `templates/prd.md.tmpl`.
-- **Back-reference writes require sidecar.** v1 PRDs linked to v2 SPECs lose the bidirectional trace link — the SPEC won't write `source_specs` back to a v1 PRD.
-- **Opt-in upgrade.** Run `/edikt:sdlc:prd PRD-NNN` on an existing v1 PRD to regenerate in v2 shape (preserves `.md` content; generates fresh sidecar from the forcing-question interview).
-
-### PRD redesign additions — context budget, source flexibility, plan model (BRAIN-001 decisions 27-29)
-
-Three decisions from BRAIN-001 that were deferred during SPEC-007 implementation, shipped in the same v0.6.0 release.
-
-#### Decision 27 — Plan-scoped context loading
-
-`/edikt:context --depth=focused` now loads PRD and SPEC sidecars referenced in the **active plan phase**, not all active PRDs. Context budget stays proportional to what's being built right now.
-
-- `full` depth: loads all PRDs unchanged.
-- `focused` depth: scans the current plan phase's objective, prompt, and Context Needed for `PRD-NNN`/`SPEC-NNN` identifiers; reads only those sidecars. Falls back to listing all PRD titles (no content) when no identifiers are found in the phase.
-- `minimal` depth: unchanged (skips PRDs entirely).
-
-#### Decision 28 — SPEC source flexibility: `source_prd`, `source_brainstorm`, `source_prompt`
-
-Technical SPECs without an upstream PRD (refactors, infra migrations, performance work) were previously forced into an awkward PRD-derived shape. `/edikt:sdlc:spec` now accepts three source types:
-
-- **`PRD-NNN`** — existing v2 flow; full FR coverage check and AC pass-through (unchanged).
-- **`BRAIN-NNN`** — brainstorm-derived SPEC. Coverage is advisory: decisions and open questions from the brainstorm are surfaced as a checklist the SPEC should address. Back-reference: `produced_specs: [SPEC-NNN]` written to the brainstorm doc.
-- **Free text / no arg** — direct-prompt SPEC. Self-contained; evaluator judges on its own merits. No back-reference written.
-
-The spec sidecar (`spec.yaml`) carries exactly one non-null source field: `source_prd`, `source_brainstorm`, or `source_prompt`. `templates/schemas/spec-sidecar.schema.json` validates this structure and ships IDE autocomplete alongside the PRD schema.
-
-#### Decision 29 — Plan frontmatter model with per-phase overrides
-
-Plan files now carry machine-readable YAML frontmatter with model assignments:
-
-```yaml
----
-type: plan
-id: PLAN-{slug}
-model: claude-sonnet-4-6          # plan-level default
-phases:
-  - id: 1
-    model: claude-haiku-4-5-20251001   # per-phase override (cheap/routine)
-  - id: 3
-    model: claude-opus-4-7             # per-phase override (complex/architectural)
----
-```
-
-Inheritance chain: per-phase `model` > plan-level `model` > `defaults.plan_model` in `.edikt/config.yaml` > `claude-sonnet-4-6`.
-
-`/edikt:sdlc:plan` reads `defaults.plan_model:` from config. The Model Assignment table and per-phase `**Model:**` field now also record the choice in the frontmatter for machine consumption.
+Two themes: **PRD redesign** (split markdown + YAML, stable IDs, full SDLC chain traceability) and **hook hardening** (structured evaluator gates, tier-2 Go install, pre-push invariant checks).
+
+### Highlights
+
+- **PRD v2 — split artifact (SPEC-007).** Every PRD is now `PRD-NNN-<slug>.md` (narrative) + `PRD-NNN-<slug>.yaml` (sidecar with FR/AC/protections/`_sync`). LLMs corrupt structured prose under multi-turn editing; YAML stays intact. v1 PRDs continue to work — no forced migration.
+- **Five forcing questions, not skippable.** Every PRD session opens with the five questions (problem-behind-the-problem, evidence, north + counter metric, what must NOT change, riskiest assumption). Recorded in the sidecar; scored by the rubric.
+- **Rigor calibration.** `solo | team | platform` triages PRD scope and the evaluator threshold (70 / 80 / 90%). Default `solo`.
+- **Stable IDs end-to-end.** `FR-NNN` (PRD) → `SR-NNN`/`SAC-NNN` (SPEC) → plan phases → tests. `/edikt:sdlc:drift` flags FRs uncovered by any SPEC.
+- **New commands.** `/edikt:prd:review`, `/edikt:spec:review`, `/edikt:sdlc:discovery`, plus PRD lifecycle verbs `/edikt:sdlc:prd PRD-NNN {ship|supersede|deprecate|cancel}` (edit-in-place per ADR-024).
+- **JSON Schema for sidecars.** `templates/schemas/prd-sidecar.schema.json` + `spec-sidecar.schema.json` give VS Code / JetBrains / Neovim autocomplete via `yaml-language-server`.
+- **ADR-023 — structured evaluator gates.** `subagent-stop.sh` reads `evaluator_output.{agent,severity,findings}` from the verdict JSON instead of keyword-scanning prose. Per-agent thresholds in `.edikt/config.yaml gates.<agent>`; legacy payloads warn + fall through (deprecated, removed in v0.7.0).
+- **Tier-2 Go install.** `edikt install benchmark` provisions a hermetic venv at `~/.edikt/venv/<tool>/`, verifies wheel checksums, rolls back on any failure. First instance of the ADR-015 tier-2 carve-out.
+- **Pre-push invariant hook.** `templates/hooks/pre-push.sh` enforces INV-001 (`.md`/`.yaml` only in `commands/` and `templates/`), INV-002 (accepted ADRs immutable), INV-003 (no shell JSON concatenation). Bypass with `EDIKT_BYPASS_PREPUSH=1` (logged).
+- **Plan model assignment (BRAIN-001 #29).** Plan frontmatter carries `model:` at plan-level and per-phase override; inheritance chain falls back to `defaults.plan_model` in config.
+- **SPEC source flexibility (BRAIN-001 #28).** `/edikt:sdlc:spec` accepts `PRD-NNN`, `BRAIN-NNN`, or free-text; sidecar carries exactly one of `source_prd | source_brainstorm | source_prompt`.
+- **Plan-scoped context (BRAIN-001 #27).** `/edikt:context --depth=focused` loads only the PRDs/SPECs referenced in the active plan phase.
+- **Doctor checks.** Orphaned sidecars, schema version, `_sync.md_hash` drift, broken refs, fixture characterization rate, recent gate activity.
+- **Deprecated stubs removed.** `commands/deprecated/` is gone (16 redirect-only files). Intent-based routing in `CLAUDE.md` handles discovery.
+
+### Breaking changes
+
+- **`commands/deprecated/` deleted.** External scripts sourcing from there will fail.
+- **Pre-push hook enforces INV-003.** Repos with `echo '{'` patterns in hook scripts must switch to `python3 json.dumps`.
+- **`gates:` section in `.edikt/config.yaml`.** New projects get the section automatically; `edikt upgrade` leaves existing configs alone (opt-in).
+- **PRD v2 template.** Old `templates/prd.md.tmpl` renamed to `prd-v1.md.tmpl`; new template is split-artifact. v1 PRDs still load — only re-running `/edikt:sdlc:prd` on them regenerates in v2 shape.
+
+### Reference
+
+- ADR-023 — SubagentStop structured evaluator-input contract
+- ADR-024 — PRD lifecycle asymmetry vs INV-002
+- SPEC-006 — SDLC rework + tier-2 Go install
+- SPEC-007 — PRD redesign (split artifact, rigor, SDLC chain)
+- BRAIN-001 — PRD as context bundle (26 locked decisions, three shipped here as #27/#28/#29)
 
 ---
 

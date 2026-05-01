@@ -61,7 +61,7 @@ if echo "$LAST_MSG" | grep -qiE \
     # Only flag if it's a substantive change (multiple security terms or central to the response)
     SEC_COUNT=$(echo "$LAST_MSG" | grep -ioE '(JWT|OAuth|PKCE|auth[a-z]*|payment|PII|encrypt|decrypt|secret|signing key|private key|bearer token|bcrypt|password hash)' | wc -l | tr -d ' ')
     if [ "$SEC_COUNT" -ge 2 ]; then
-        SIGNALS+=("🔒 Security-sensitive change — run /edikt:audit before shipping.")
+        SIGNALS+=("🔒 Security-sensitive change — run /edikt:sdlc:audit before shipping.")
     fi
 fi
 
