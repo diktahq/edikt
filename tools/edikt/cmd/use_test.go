@@ -20,28 +20,29 @@ func TestUseExistingVersion(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("EDIKT_ROOT", root)
 
-	for _, v := range []string{"0.4.3", "0.5.0"} {
+	// Both versions must be ≥ 0.5.0 (minimum supported payload version).
+	for _, v := range []string{"0.5.0", "0.5.1"} {
 		if err := os.MkdirAll(filepath.Join(root, "versions", v), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := writeLock(root, "0.5.0", "test"); err != nil {
+	if err := writeLock(root, "0.5.1", "test"); err != nil {
 		t.Fatal(err)
 	}
 
-	buf, err := runCmd(t, "use", "0.4.3")
+	buf, err := runCmd(t, "use", "0.5.0")
 	if err != nil {
-		t.Fatalf("use 0.4.3: %v\n%s", err, buf)
+		t.Fatalf("use 0.5.0: %v\n%s", err, buf)
 	}
 
 	after, err := readLock(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Active != "0.4.3" {
-		t.Errorf("expected active=0.4.3, got %s", after.Active)
+	if after.Active != "0.5.0" {
+		t.Errorf("expected active=0.5.0, got %s", after.Active)
 	}
-	if after.Previous != "0.5.0" {
-		t.Errorf("expected previous=0.5.0, got %s", after.Previous)
+	if after.Previous != "0.5.1" {
+		t.Errorf("expected previous=0.5.1, got %s", after.Previous)
 	}
 }

@@ -6,7 +6,7 @@ import (
 
 func TestCompileCheckCleanProject(t *testing.T) {
 	// Smoke: `edikt gov compile --check <repo>` must exit 0 (warnings OK).
-	repoRoot := "../../../../../.." // tools/edikt/cmd/gov/ → repo root
+	repoRoot := "../../../.." // tools/edikt/cmd/gov/ → repo root
 	buf, err := runGovCmd(t, "gov", "compile", "--check", repoRoot)
 	if err != nil {
 		if isExitCode(err, 1) {

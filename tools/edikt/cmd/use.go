@@ -80,15 +80,33 @@ func repairExternalSymlinks(ediktRoot string) {
 	claudeRoot := resolveClaudeRoot()
 
 	// Local convenience symlinks (relative, so they work wherever EDIKT_ROOT is).
-	for _, name := range []string{"hooks", "templates"} {
-		link := filepath.Join(ediktRoot, name)
-		target := filepath.Join("current", name)
-		replaceSymlink(link, target)
+	// Layout detection for hooks: v0.4.x had hooks/ at payload root, v0.5.x
+	// keeps hooks under templates/hooks/.
+	templatesLink := filepath.Join(ediktRoot, "templates")
+	replaceSymlink(templatesLink, filepath.Join("current", "templates"))
+
+	hooksLink := filepath.Join(ediktRoot, "hooks")
+	hooksRootTarget := filepath.Join(ediktRoot, "current", "hooks")
+	hooksTemplatesTarget := filepath.Join(ediktRoot, "current", "templates", "hooks")
+	hooksTargetRel := filepath.Join("current", "hooks")
+	if _, err := os.Stat(hooksRootTarget); err != nil {
+		if _, err := os.Stat(hooksTemplatesTarget); err == nil {
+			hooksTargetRel = filepath.Join("current", "templates", "hooks")
+		}
 	}
+	replaceSymlink(hooksLink, hooksTargetRel)
 
 	// Claude commands symlink (absolute path required across directory boundaries).
+	// Detect payload layout:
+	//   nested (v0.4.x): current/commands/edikt/ is a directory → target it
+	//   flat   (v0.5.x): current/commands/*.md directly         → target current/commands
 	ediktCmds := filepath.Join(claudeRoot, "commands", "edikt")
-	ediktCmdsTarget := filepath.Join(ediktRoot, "current", "commands", "edikt")
+	nestedTarget := filepath.Join(ediktRoot, "current", "commands", "edikt")
+	flatTarget := filepath.Join(ediktRoot, "current", "commands")
+	ediktCmdsTarget := flatTarget
+	if info, err := os.Stat(nestedTarget); err == nil && info.IsDir() {
+		ediktCmdsTarget = nestedTarget
+	}
 	if err := os.MkdirAll(filepath.Join(claudeRoot, "commands"), 0o755); err == nil {
 		replaceSymlink(ediktCmds, ediktCmdsTarget)
 	}

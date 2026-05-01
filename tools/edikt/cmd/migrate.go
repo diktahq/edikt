@@ -1283,10 +1283,14 @@ func ensureExternalSymlinks(ediktRoot, claudeRoot string) error {
 		return fmt.Errorf("creating templates symlink: %w", err)
 	}
 
-	// commands.
+	// commands. v0.4.x payloads had commands in ~/.claude/commands/edikt/ rather
+	// than ~/.edikt/commands/, so the migrated current/ may have no commands at
+	// all. In that case leave the existing ~/.claude/commands/edikt directory
+	// untouched — a subsequent v0.5.x+ install will install commands and the
+	// post-install `use` step will create the symlink.
 	cmdsTarget, err := resolveCommandsTarget(ediktRoot)
 	if err != nil {
-		return err
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Join(claudeRoot, "commands"), 0o755); err != nil {
 		return err

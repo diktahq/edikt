@@ -29,6 +29,9 @@ func TestDoctorMinimalLayout(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "versions", "0.5.0", "commands"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(root, "versions", "0.5.0", "templates"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(
 		filepath.Join(root, "versions", "0.5.0", "commands"),
 		filepath.Join(claudeRoot, "commands", "edikt"),
@@ -39,6 +42,13 @@ func TestDoctorMinimalLayout(t *testing.T) {
 	if err := os.Symlink(
 		filepath.Join(root, "versions", "0.5.0"),
 		filepath.Join(root, "current"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	// templates symlink chain: $EDIKT_ROOT/templates → current/templates
+	if err := os.Symlink(
+		filepath.Join(root, "current", "templates"),
+		filepath.Join(root, "templates"),
 	); err != nil {
 		t.Fatal(err)
 	}

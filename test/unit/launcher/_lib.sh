@@ -7,16 +7,6 @@
 
 set -uo pipefail
 
-# v0.5.0 SKIP: these tests assume the legacy bash launcher contract.
-# ADR-022 deleted bin/edikt (bash) and replaced it with a Go binary that does
-# not yet implement `install`, `upgrade`, etc. with the same surface. Tests
-# will be re-enabled in v0.6.0 once `edikt install` and friends land in Go.
-# Override with EDIKT_RUN_LEGACY_LAUNCHER_TESTS=1 to run anyway (will fail).
-if [ "${EDIKT_RUN_LEGACY_LAUNCHER_TESTS:-0}" != "1" ]; then
-    echo "  SKIP: legacy bash-launcher tests pending v0.6.0 Go install (set EDIKT_RUN_LEGACY_LAUNCHER_TESTS=1 to run)"
-    exit 0
-fi
-
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 LAUNCHER="$PROJECT_ROOT/bin/edikt"
 

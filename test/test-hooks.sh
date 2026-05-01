@@ -731,8 +731,10 @@ assert_file_contains "$SPECART_CMD" "accepted" "sdlc/artifacts.md checks spec ac
 assert_file_contains "$SPECART_CMD" "reviewed_by" "sdlc/artifacts.md tracks reviewer in frontmatter"
 
 # Artifact status workflow — existing commands updated (namespaced paths)
-assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "type: prd" "sdlc/prd.md has type field in frontmatter template"
-assert_file_contains "$PROJECT_ROOT/commands/sdlc/prd.md" "created_at:" "sdlc/prd.md has created_at in frontmatter template"
+# PRD v2 (ADR-024, SPEC-007): split artifact — type/created_at live in the
+# sidecar YAML template, not the markdown command (which is a how-to guide).
+assert_file_contains "$PROJECT_ROOT/templates/prd.yaml.tmpl" "type: prd" "prd.yaml.tmpl has type field in frontmatter template"
+assert_file_contains "$PROJECT_ROOT/templates/prd.yaml.tmpl" "created_at:" "prd.yaml.tmpl has created_at in frontmatter template"
 assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "type: adr" "adr/new.md has type field in frontmatter template"
 assert_file_contains "$PROJECT_ROOT/commands/adr/new.md" "created_at:" "adr/new.md has created_at in frontmatter template"
 assert_file_contains "$PROJECT_ROOT/commands/invariant/new.md" "type: invariant" "invariant/new.md has type field in frontmatter template"
