@@ -79,7 +79,7 @@ echo -e "${BOLD}TEST 3: Preprocessing blocks are live (not static)${NC}"
 
 # Each command with a counter must have a !` preprocessing block
 for cmd in "commands/sdlc/prd.md" "commands/sdlc/spec.md" "commands/adr/new.md" "commands/invariant/new.md" "commands/sdlc/plan.md"; do
-    if grep -q '^!\`' "$PROJECT_ROOT/$cmd" 2>/dev/null; then
+    if grep -q '^!`' "$PROJECT_ROOT/$cmd" 2>/dev/null; then
         pass "$cmd has live preprocessing block"
     else
         fail "$cmd missing live preprocessing block (baked-in static output?)"

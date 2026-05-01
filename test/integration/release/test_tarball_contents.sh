@@ -12,6 +12,11 @@
 # Layer 3 — runs inside test/run.sh sandbox.
 
 set -uo pipefail
+# `tar -tzf … | grep -q …` is a SIGPIPE pattern: grep exits early on first
+# match, GNU tar then exits non-zero ("write error"). Under pipefail the
+# whole pipeline inherits that and the assertion fails on Linux even though
+# the match succeeded. Disable pipefail for these listing checks.
+set +o pipefail
 
 PROJECT_ROOT="${1:-$(cd "$(dirname "$0")/../../.." && pwd)}"
 . "$PROJECT_ROOT/test/helpers.sh"
