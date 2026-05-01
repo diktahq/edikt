@@ -32,6 +32,9 @@ tools/*/*.egg-info/
 
 # edikt ephemeral state
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+.edikt/state/
+tools/edikt/
 docs/STATUS.md
 
 # test run artifacts (not checked in)
