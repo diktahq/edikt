@@ -1,5 +1,36 @@
 # edikt changelog
 
+## v0.6.0-rc2 (2026-05-02)
+
+Stability remediation pass on top of rc1. Eight phases of
+PLAN-sidecar-review-fixes addressed all 12 critical and 20 warning
+findings from the 2026-05-02 review (49 findings total across security,
+api, architecture, performance), plus a follow-on review-fix pass on
+the rc2 candidate (14 findings: schema strictness, hook hardening,
+INV-001 .sh carve-out, fast bench timing, test sandboxing). All Go
+packages pass; integration suite green; bench numbers within
+ADR-020/ADR-028 budgets.
+
+Notable in rc2 vs rc1:
+
+- Sidecar architecture migration (Phase 8): partial-v0.5.x detection
+  covers source_hash-only sentinel blocks (the dogfood-corpus shape
+  and any v0.5.x project that never backfilled `topic:`). Migrate
+  detection broadened to also handle pre-hash topic+directives
+  sentinels via the mechanical lift path.
+- Performance instrumentation (Phase 7): Marshal cache pinned by
+  byte-equality test; buffered sidecar Load; opt-in incremental Phase
+  B reload (`EDIKT_PHASE_B_INCREMENTAL=1`); five Go benchmarks for
+  the documented hot paths; hook latency bench (p95 ≈ 41ms local).
+- Architecture cleanup (Phase 6): Phase B purity Go gate replaces
+  bash-only check; fingerprint round-trip test pins
+  writeAtomicIfChanged short-circuit; hardcoded migration skip-list
+  removed in favor of frontmatter / marker opt-in.
+- Security: AppleDouble + .DS_Store filter in extractTarGz closes
+  the macOS metadata leak that surfaced as phantom slash commands;
+  pre-tool-use scan capped at 2 MiB; stop-hook log path-anchored;
+  paths-config parser converged to the hardened stdlib path.
+
 ## v0.6.0 (2026-04-18 — development)
 
 > **MIGRATION REQUIRED**

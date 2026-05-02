@@ -20,7 +20,7 @@ type exitCodeError struct {
 func (e *exitCodeError) Error() string { return e.msg }
 
 // Version is set at build time via ldflags; falls back to the constant.
-const Version = "0.1.0"
+const Version = "0.6.0-rc2"
 
 var rootCmd = &cobra.Command{
 	Use:   "edikt",
