@@ -3,10 +3,11 @@ type: adr
 id: ADR-020
 title: Migrate /edikt:gov:compile to a tier-2 helper for deterministic transformations
 status: accepted
+amended_by: ADR-028
 decision-makers: [Daniel Gomes]
 created_at: 2026-04-17T00:00:00Z
 references:
-  adrs: [ADR-008, ADR-015]
+  adrs: [ADR-008, ADR-015, ADR-028]
   invariants: [INV-001]
   prds: []
   specs: []
@@ -14,7 +15,7 @@ references:
 
 # ADR-020: Migrate `/edikt:gov:compile` to a tier-2 helper for deterministic transformations
 
-**Status:** Accepted
+**Status:** Accepted (Amended by ADR-028)
 **Date:** 2026-04-17
 **Decision-makers:** Daniel Gomes
 

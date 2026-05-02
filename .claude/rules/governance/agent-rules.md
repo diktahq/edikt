@@ -23,7 +23,7 @@ compile_schema_version: 2
 <!-- topic: agent-rules -->
 <!-- sources: ADR-003, ADR-004, ADR-010, ADR-012, ADR-025 -->
 <!-- compiled_by: gov-compile v0.1.0 -->
-<!-- compiled_at: 2026-05-02T07:36:00Z -->
+<!-- compiled_at: 2026-05-02T07:41:18Z -->
 
 # Agent-Rules
 
