@@ -14,7 +14,7 @@ compile_schema_version: 2
 <!-- topic: tooling -->
 <!-- sources: ADR-020, ADR-021, ADR-022 -->
 <!-- compiled_by: gov-compile v0.1.0 -->
-<!-- compiled_at: 2026-05-02T07:41:18Z -->
+<!-- compiled_at: 2026-05-02T09:14:18Z -->
 
 # Tooling
 
