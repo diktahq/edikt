@@ -1,0 +1,11 @@
+# INVALID: required `topic` field is missing.
+schema_version: 1
+path: docs/architecture/decisions/ADR-XXX-missing-topic.md
+signals:
+  - example
+directives:
+  - text: "This sidecar omits the required topic field — should fail validation."
+    source_excerpt:
+      line_start: 10
+      line_end: 11
+      quote: "Example directive body line."

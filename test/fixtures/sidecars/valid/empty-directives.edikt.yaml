@@ -1,0 +1,6 @@
+schema_version: 1
+topic: roadmap
+path: docs/architecture/decisions/ADR-099-roadmap-only.md
+signals:
+  - roadmap
+directives: []

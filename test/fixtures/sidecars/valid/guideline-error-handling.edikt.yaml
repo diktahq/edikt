@@ -1,0 +1,29 @@
+schema_version: 1
+topic: error-handling
+path: docs/guidelines/error-handling.md
+signals:
+  - error handling
+  - panic
+  - recover
+  - error wrapping
+directives:
+  - text: "Wrap returned errors with context using fmt.Errorf with %w. Bare errors lose call-site provenance. (ref: guideline-error-handling)"
+    source_excerpt:
+      line_start: 10
+      line_end: 12
+      quote: "Always wrap errors with fmt.Errorf using %w when returning them up the call stack. Bare error returns strip context that is essential for triage."
+  - text: "NEVER use panic for expected error conditions. Reserve panic for invariant violations the program cannot recover from. (ref: guideline-error-handling)"
+    source_excerpt:
+      line_start: 18
+      line_end: 20
+      quote: "panic is reserved for invariant violations — programmer errors that signal a corrupt program state. Expected error conditions (network failures, validation, missing files) MUST return error values."
+  - text: "recover MUST only appear inside top-level deferred handlers in long-running goroutines (e.g., HTTP server middleware). NEVER use recover to swallow errors locally. (ref: guideline-error-handling)"
+    source_excerpt:
+      line_start: 27
+      line_end: 30
+      quote: "recover is only legitimate inside top-level deferred handlers in long-running goroutines (HTTP middleware, worker loops). Local recover is an anti-pattern: it hides bugs and produces undefined goroutine state."
+  - text: "Public API errors MUST use sentinel error values (var ErrFoo = errors.New) or typed errors implementing Unwrap(), so callers can errors.Is/As reliably. (ref: guideline-error-handling)"
+    source_excerpt:
+      line_start: 36
+      line_end: 39
+      quote: "Errors crossing a public API boundary MUST be either sentinel values (var ErrFoo = errors.New(...)) or typed errors that implement Unwrap(). Callers rely on errors.Is and errors.As — both require one of these shapes."

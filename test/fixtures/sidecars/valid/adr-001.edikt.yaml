@@ -1,0 +1,22 @@
+schema_version: 1
+topic: architecture
+path: docs/architecture/decisions/ADR-001-edikt-architecture.md
+signals:
+  - claude code
+  - rule tier
+directives:
+  - text: "Claude Code is the only supported platform. Do not write code or configuration targeting Cursor, Copilot, or other AI coding tools. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 47
+      line_end: 49
+      quote: "Build edikt as a lean context engine targeting Claude Code exclusively. Other tools lack path-conditional rules, hooks, slash commands, and the verification surface edikt depends on."
+  - text: "Use a three-tier rule system: base (language-agnostic), lang, framework. One .md file per topic per tier. NEVER merge tiers or create subtiers. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 62
+      line_end: 64
+      quote: "Three-tier rule system: base (language-agnostic), lang, framework. One markdown file per topic per tier. Tiers do not nest."
+  - text: "Plans are the persistent execution state. Track progress in the plan file's progress table — it survives context compaction. NEVER track plan state elsewhere. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 78
+      line_end: 80
+      quote: "Plan files are the persistent execution state. The progress table inside the plan survives context compaction; nothing else does."

@@ -1,0 +1,13 @@
+# INVALID: topic violates the kebab-case pattern (^[a-z][a-z0-9-]{0,39}$).
+# This one uses an uppercase letter and an underscore — both forbidden.
+schema_version: 1
+topic: Error_Handling
+path: docs/guidelines/error-handling.md
+signals:
+  - example
+directives:
+  - text: "Example directive."
+    source_excerpt:
+      line_start: 10
+      line_end: 11
+      quote: "Example directive body line."

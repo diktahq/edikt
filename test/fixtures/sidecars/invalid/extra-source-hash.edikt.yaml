@@ -1,0 +1,15 @@
+# INVALID: includes the forbidden `source_hash` field at the top level.
+# Per ADR-025 §"sidecar shape" — source_hash is recomputed on read at compile time
+# and MUST NOT be persisted in the sidecar. additionalProperties: false rejects it.
+schema_version: 1
+topic: example
+path: docs/architecture/decisions/ADR-XXX-extra-hash.md
+signals:
+  - example
+directives:
+  - text: "Example directive."
+    source_excerpt:
+      line_start: 10
+      line_end: 11
+      quote: "Example directive body line."
+source_hash: "deadbeefcafef00ddeadbeefcafef00ddeadbeefcafef00ddeadbeefcafef00d"

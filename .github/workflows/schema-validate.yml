@@ -1,0 +1,73 @@
+name: schema-validate
+
+on:
+  pull_request:
+    paths:
+      - templates/schemas/**
+      - test/fixtures/sidecars/**
+      - .github/workflows/schema-validate.yml
+  push:
+    branches:
+      - main
+      - 0.6.0-dev
+    paths:
+      - templates/schemas/**
+      - test/fixtures/sidecars/**
+      - .github/workflows/schema-validate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sidecar-schema:
+    name: Validate sidecar fixtures against schema
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli@5 ajv-formats@3
+
+      - name: Convert YAML fixtures to JSON
+        # ajv-cli ships with --data-format json by default; YAML fixtures need
+        # to be converted to JSON before validation. Use python's PyYAML, which
+        # is preinstalled on the GitHub-hosted ubuntu-latest runner.
+        run: |
+          mkdir -p .schema-validate-tmp/{valid,invalid}
+          for f in test/fixtures/sidecars/valid/*.yaml; do
+            base=$(basename "$f" .yaml)
+            python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open(sys.argv[1]).read()), indent=2))" "$f" \
+              > ".schema-validate-tmp/valid/${base}.json"
+          done
+          for f in test/fixtures/sidecars/invalid/*.yaml; do
+            base=$(basename "$f" .yaml)
+            python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open(sys.argv[1]).read()), indent=2))" "$f" \
+              > ".schema-validate-tmp/invalid/${base}.json"
+          done
+
+      - name: Valid fixtures must pass
+        run: |
+          fail=0
+          for f in .schema-validate-tmp/valid/*.json; do
+            if ! ajv validate -s templates/schemas/sidecar.schema.json -d "$f" --strict=true 2>&1; then
+              echo "::error file=$f::expected to pass schema validation but failed"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Invalid fixtures must fail
+        run: |
+          fail=0
+          for f in .schema-validate-tmp/invalid/*.json; do
+            if ajv validate -s templates/schemas/sidecar.schema.json -d "$f" --strict=true 2>/dev/null; then
+              echo "::error file=$f::expected to fail schema validation but passed"
+              fail=1
+            fi
+          done
+          exit $fail

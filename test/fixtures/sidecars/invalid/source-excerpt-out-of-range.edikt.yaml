@@ -1,0 +1,15 @@
+# INVALID: source_excerpt.line_start violates the schema's minimum (>= 1).
+# Line numbers are 1-indexed; 0 is out of range. (The semantic check that
+# line_end >= line_start AND line_end <= parent file length is enforced by
+# /edikt:doctor, not by JSON Schema — see the directives field description.)
+schema_version: 1
+topic: example
+path: docs/guidelines/example.md
+signals:
+  - example
+directives:
+  - text: "Example directive with out-of-range source line."
+    source_excerpt:
+      line_start: 0
+      line_end: 5
+      quote: "Example directive body line."

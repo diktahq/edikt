@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/sidecar/v1.json",
+  "title": "edikt artifact sidecar",
+  "description": "The <artifact>.edikt.yaml sidecar file co-located next to an ADR, invariant, or guideline. Replaces the in-body [edikt:directives:start]/[edikt:directives:end] sentinel block per ADR-025 (sidecar architecture, v0.6.0). Compile reads sidecars verbatim and never mutates the parent .md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "topic", "path", "signals", "directives"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Sidecar schema version. v0.6.0 ships with version 1. Bump only when the on-disk shape changes in a way that older readers cannot interpret."
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,39}$",
+      "description": "Kebab-case topic identifier used to group directives across artifacts during compile. 1–40 characters, must start with a lowercase letter, may contain lowercase letters, digits, and hyphens."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relative path (from the project root) to the parent .md artifact this sidecar describes. Validated by /edikt:doctor — a sidecar whose path doesn't resolve is reported as orphaned."
+    },
+    "signals": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9 _.-]*$",
+        "description": "Lowercase signal phrase. Used by the routing table in compiled governance to surface this directive set when a task matches the signal."
+      },
+      "description": "Lowercase, deduplicated keyword/phrase signals that route work to this artifact."
+    },
+    "directives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source_excerpt"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The directive sentence as it will appear in compiled governance, ≤ 200 characters. Includes its own ref tail (e.g., '(ref: ADR-018)')."
+          },
+          "source_excerpt": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["line_start", "line_end", "quote"],
+            "properties": {
+              "line_start": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-indexed line number in the parent .md where the directive's source text begins."
+              },
+              "line_end": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "1-indexed line number where the source text ends. Must be ≥ line_start. /edikt:doctor verifies this is within the parent file's line count."
+              },
+              "quote": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Verbatim text from the parent .md between line_start and line_end. Used by /edikt:doctor for drift detection (resync triggers when the live quote no longer matches the recorded quote)."
+              }
+            }
+          }
+        }
+      },
+      "description": "Directive list extracted from the parent .md. May be empty (an artifact with no enforceable directives is reported by /edikt:doctor as a warning, not an error). Note: line_end ≥ line_start and line_end ≤ parent_file_line_count are enforced by /edikt:doctor and the compile resync pass — JSON Schema 2020-12 has no standard cross-property comparator."
+    }
+  }
+}
