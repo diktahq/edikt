@@ -53,10 +53,56 @@ ls {base}/invariants/*.md {base}/architecture/invariants/*.md 2>/dev/null | wc -
 ```
 
 **Active plan:**
+
+The "active plan" is the most-recently-modified PLAN file that:
+- Is NOT a `*.SUPERSEDED*` file (those are deliberately retired drafts)
+- Has a progress table with at least one phase row whose status is NOT a completion marker (`done`, `pass`, `passed`, `complete`, `completed`, or `✅`). Plans where every phase row is complete are filtered out — they are finished work, not active.
+
+Plans with no progress table at all (rare — usually a half-written plan stub) are skipped.
+
+Use `python3` rather than `ls -t` for the mtime sort: in interactive shells `ls` is often aliased to `eza` or similar wrappers that ignore the `-t` flag and return alphabetic order, silently breaking the selection.
+
 ```bash
-ls -t {plans_dir}/PLAN-*.md 2>/dev/null | head -1
+ACTIVE_PLAN=$(python3 -c "
+import os, glob, re, sys
+plans_dir = sys.argv[1]
+COMPLETE_RE = re.compile(r'\b(done|pass(ed)?|complete(d)?)\b|✅', re.IGNORECASE)
+ROW_RE = re.compile(r'^\| *\d+[a-z]?\s*\|')
+PROGRESS_HEADING = re.compile(r'^##+ +Progress\b', re.IGNORECASE | re.MULTILINE)
+NEXT_HEADING = re.compile(r'^##+ +', re.MULTILINE)
+
+def progress_rows(body):
+    # Scope to the ## Progress section: false-positive rows from other tables
+    # in the plan body (cost estimates, phase prompts, dependency lists) must
+    # not be counted as progress rows.
+    m = PROGRESS_HEADING.search(body)
+    if not m:
+        return []
+    rest = body[m.end():]
+    nxt = NEXT_HEADING.search(rest)
+    section = rest[:nxt.start()] if nxt else rest
+    return [ln for ln in section.splitlines() if ROW_RE.match(ln)]
+
+files = sorted(
+    [f for f in glob.glob(os.path.join(plans_dir, 'PLAN-*.md')) if '.SUPERSEDED' not in f],
+    key=os.path.getmtime, reverse=True
+)
+for f in files:
+    with open(f, encoding='utf-8', errors='replace') as fh:
+        body = fh.read()
+    rows = progress_rows(body)
+    if not rows:
+        continue
+    # A plan is 'active' if at least one row is NOT a completion marker.
+    if any(not COMPLETE_RE.search(r) for r in rows):
+        print(f)
+        break
+" "{plans_dir}")
 ```
-Read the progress table to find the current in-progress phase.
+
+CRITICAL — use the detector's output verbatim. If `ACTIVE_PLAN` is empty, the dashboard MUST show "no active plan" — do NOT pick a fallback file from elsewhere, do NOT substitute the latest completed plan, do NOT use your own judgment about which plan looks "more relevant." If `ACTIVE_PLAN` is non-empty, the dashboard MUST report exactly that file as the active plan, regardless of how many phases it has done.
+
+To populate the `Plan:` line of the dashboard, read the progress table at `$ACTIVE_PLAN` and identify the in-progress phase: a row whose status is `in-progress` / `in_progress`, otherwise the lowest-numbered row whose status is `-` or empty.
 
 **Active spec:**
 ```bash
