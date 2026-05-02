@@ -1,3 +1,5 @@
+<!-- edikt:migration:skip reason="documents the v0.4.3 invariant-record convention; the bundled sentinel block predates the v0.5.x source_hash/topic/signals shape and is intentionally not lifted" -->
+
 # ADR-009: Invariant Record Terminology
 
 **Date:** 2026-04-09

@@ -1,3 +1,5 @@
+<!-- edikt:migration:skip reason="documents the legacy three-list directive schema; the example sentinel block in this ADR is illustrative and must not be lifted to a sidecar" -->
+
 # ADR-008: Deterministic Compile and Three-List Directive Schema
 
 **Date:** 2026-04-09
