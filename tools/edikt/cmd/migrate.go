@@ -22,7 +22,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
@@ -549,30 +548,16 @@ func migrateM4CompileSchema(ediktRoot, claudeRoot string, dryRun bool) (bool, er
 	}
 
 	if dryRun {
-		fmt.Fprintln(os.Stderr, "M4 (compile schema): would invoke 'claude -p /edikt:gov:compile' to migrate governance.md to schema v2")
+		fmt.Fprintln(os.Stderr, "M4 (compile schema): would write .m4-pending so the host agent's /edikt:gov:compile run upgrades governance.md to schema v2")
 		return true, nil
 	}
 
-	claudeBin, err := exec.LookPath("claude")
-	if err == nil {
-		fmt.Fprintln(os.Stderr, "M4 (compile schema): invoking 'claude -p /edikt:gov:compile' to upgrade governance.md to schema v2")
-		out, err2 := exec.Command(claudeBin, "-p", "/edikt:gov:compile").CombinedOutput()
-		_ = out
-		if err2 == nil {
-			// Check if schema v2 is now present.
-			updated, _ := os.ReadFile(gov)
-			if containsStr(string(updated), "compile_schema_version: 2") {
-				emitEvent(ediktRoot, "migration_step_completed", map[string]interface{}{
-					"step": "M4", "action": "compiled", "result": "schema_v2",
-				})
-				fmt.Fprintln(os.Stderr, "M4 (compile schema): governance.md upgraded to schema v2")
-				return true, nil
-			}
-		}
-		fmt.Fprintln(os.Stderr, "warn: M4: claude -p /edikt:gov:compile failed or produced no v2 sentinel — falling back to .m4-pending marker")
-	} else {
-		fmt.Fprintln(os.Stderr, "warn: M4: claude CLI not found — falling back to .m4-pending marker")
-	}
+	// Per ADR-030 the tier-2 binary does not invoke any LLM CLI. The
+	// compile schema upgrade is structurally deferred to the host
+	// agent's /edikt:gov:compile slash command, which fires naturally
+	// at the end of /edikt:upgrade. Write the pending marker so the
+	// tier-1 path knows there is work outstanding.
+	fmt.Fprintln(os.Stderr, "M4 (compile schema): writing .m4-pending marker — run /edikt:gov:compile (or /edikt:upgrade) under your host agent to complete the schema-v2 migration")
 
 	// Write .m4-pending marker.
 	f, err2 := os.OpenFile(pendingMarker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)

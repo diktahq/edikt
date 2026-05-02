@@ -43,8 +43,8 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 200,
-            "description": "The directive sentence as it will appear in compiled governance, ≤ 200 characters. Includes its own ref tail (e.g., '(ref: ADR-018)')."
+            "maxLength": 500,
+            "description": "The directive sentence as it will appear in compiled governance, ≤ 500 characters. Includes its own ref tail (e.g., '(ref: ADR-018)'). The previous 200-char ceiling proved too tight on real-world corpora — natural-language rules with multiple clauses (e.g. INV-003's hook protocol rule) routinely run 200–280 chars. 500 is comfortable headroom; rules that would exceed it should be split."
           },
           "source_excerpt": {
             "type": "object",

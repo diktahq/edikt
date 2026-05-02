@@ -26,7 +26,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -91,6 +90,21 @@ const (
 	schemaV043         // content_hash (v0.4.3 legacy)
 	schemaV05xPartial  // source_hash present but topic/signals missing (Phase 8 of PLAN-sidecar-review-fixes #8)
 )
+
+// schemaKindLabel renders a schemaKind for warn-line diagnostics so users
+// can map the migration verdict back to the detection branch.
+func schemaKindLabel(k schemaKind) string {
+	switch k {
+	case schemaV043:
+		return "v0.4.3 legacy"
+	case schemaV05x:
+		return "v0.5.x full"
+	case schemaV05xPartial:
+		return "v0.5.x partial"
+	default:
+		return "unknown"
+	}
+}
 
 // detectSchema inspects the raw inner YAML body of a sentinel block (the
 // bytes between the open and close markers, untrimmed). Returns the
@@ -558,46 +572,33 @@ func applyArtifact(c candidate, ediktRoot, projectRoot string) liftResult {
 		sc.Directives = append(sc.Directives, dir)
 	}
 
-	// Schema-detection branch: both v0.4.3 (content_hash) and partial v0.5.x
-	// (source_hash without topic/signals) need the locked extractor to fill
-	// in topic/signals. The schema kind was already resolved by planArtifact;
-	// reuse it. INV-006: gate the artifact id + type at the dispatch
-	// boundary using the canonical idvalidate package added in Phase 3.
+	// Schema-detection branch: v0.4.3 (content_hash) and partial v0.5.x
+	// (source_hash without topic/signals) cannot lift mechanically because
+	// topic/signals are missing. Per ADR-030, the tier-2 binary is
+	// LLM-agnostic — we write a partial sidecar with topic: needs-review
+	// and let the host-agent-driven tier-1 markdown
+	// (commands/upgrade.md → /edikt:<kind>:compile) dispatch the locked
+	// sidecar-extractor agent for resync. The previous in-Go
+	// `exec.Command(claude, -p, slash)` hard-coded a Claude CLI dependency
+	// that broke under Codex / Cursor / any non-Claude host agent.
 	kind := res.cache.schema
 	var legacyPartial bool
 	if kind == schemaV043 || kind == schemaV05xPartial {
-		gateOK := idvalidate.ArtifactID(c.artifactID) == nil &&
-			idvalidate.ArtifactType(c.kind) == nil
-		if gateOK {
-			if claudeBin, err := exec.LookPath("claude"); err == nil {
-				slash := fmt.Sprintf("/edikt:%s:compile %s", c.kind, c.artifactID)
-				out, runErr := exec.Command(claudeBin, "-p", slash).CombinedOutput()
-				_ = out
-				if runErr == nil {
-					// Extractor wrote the sidecar directly. Validate it exists.
-					if _, statErr := os.Stat(res.sidecarPath); statErr == nil {
-						// Now remove sentinel from md.
-						if err := removeSentinelFromMd(c.mdPath, bodyStr, sent); err != nil {
-							res.action = "failed"
-							res.err = err
-							return res
-						}
-						res.action = "wrote"
-						return res
-					}
-				}
-				res.warnLines = append(res.warnLines, fmt.Sprintf(
-					"migrate sidecars: %s: claude dispatch failed or produced no sidecar — writing partial mechanical sidecar with topic: needs-review",
-					c.mdPath))
-			} else {
-				res.warnLines = append(res.warnLines, fmt.Sprintf(
-					"migrate sidecars: %s: claude CLI not found — writing partial mechanical sidecar with topic: needs-review",
-					c.mdPath))
-			}
+		// INV-006: the artifact id + type are still validated even
+		// though we no longer dispatch — they end up in the sidecar's
+		// path: field, and a malformed id should never land on disk.
+		if err := idvalidate.ArtifactID(c.artifactID); err != nil {
+			res.warnLines = append(res.warnLines, fmt.Sprintf(
+				"migrate sidecars: %s: artifact id rejected by INV-006 gate (%v) — writing partial mechanical sidecar",
+				c.mdPath, err))
+		} else if err := idvalidate.ArtifactType(c.kind); err != nil {
+			res.warnLines = append(res.warnLines, fmt.Sprintf(
+				"migrate sidecars: %s: artifact type rejected by INV-006 gate (%v) — writing partial mechanical sidecar",
+				c.mdPath, err))
 		} else {
 			res.warnLines = append(res.warnLines, fmt.Sprintf(
-				"migrate sidecars: %s: artifact id/type rejected by INV-006 gate — refusing dispatch, writing partial mechanical sidecar",
-				c.mdPath))
+				"migrate sidecars: %s: %s schema needs LLM resync — writing partial mechanical sidecar with topic: needs-review. Run /edikt:upgrade or /edikt:%s:compile %s under your host agent (Claude / Codex / Cursor) to fill in topic + signals.",
+				c.mdPath, schemaKindLabel(kind), c.kind, c.artifactID))
 		}
 		legacyPartial = true
 		sc.Topic = "needs-review"

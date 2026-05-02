@@ -135,11 +135,16 @@ func TestPlanArtifact_PartialV05x(t *testing.T) {
 	}
 }
 
-// TestApplyArtifact_PartialV05x_Mock asserts apply dispatches through the
-// `claude -p` LLM path for partial-v0.5.x. We stage a stub `claude`
-// binary on PATH that writes a valid sidecar at the expected path; the
-// real claude CLI is not required.
-func TestApplyArtifact_PartialV05x_Mock(t *testing.T) {
+// TestApplyArtifact_PartialV05x_NoLLMInTier2 pins ADR-030: the tier-2
+// migrate command MUST NOT shell out to claude (or any LLM CLI). Even
+// when a stub `claude` is staged on PATH and would happily produce a
+// valid sidecar, applyArtifact MUST ignore it and write a partial
+// mechanical sidecar with topic: needs-review. The host-agent-driven
+// tier-1 markdown handles the LLM resync separately.
+//
+// Replaces the previous TestApplyArtifact_PartialV05x_Mock, which
+// asserted the in-Go dispatch path that ADR-030 retired.
+func TestApplyArtifact_PartialV05x_NoLLMInTier2(t *testing.T) {
 	body := "# ADR-100 — partial fixture\n\n" +
 		"## Decision\n\nA directive in the prose.\n\n" +
 		openMarker + "\n" +
@@ -156,13 +161,15 @@ func TestApplyArtifact_PartialV05x_Mock(t *testing.T) {
 	}
 	sidecarPath := filepath.Join(projectRoot, "ADR-100-partial.edikt.yaml")
 
-	// Stage a stub `claude` binary that, when invoked, writes a valid v1
-	// sidecar at $EDIKT_STUB_OUT (= sidecarPath). PATH is rewritten so
-	// only the stub is found.
+	// Stage a stub `claude` binary that would produce a valid sidecar
+	// IF apply ever called it. Then prefix it on PATH so any
+	// regression-introduced LookPath would find it. Asserting that the
+	// stub-OUTPUT is NOT what landed on disk is the test's load-bearing
+	// signal — it proves applyArtifact never invoked the stub.
 	stubDir := t.TempDir()
 	stubBody := "#!/usr/bin/env bash\nset -e\ncat > \"$EDIKT_STUB_OUT\" <<'YAML'\n" +
 		"schema_version: 1\n" +
-		"topic: bench-resync\n" +
+		"topic: stub-should-not-appear\n" +
 		"path: ADR-100-partial.md\n" +
 		"signals:\n  - resync\n" +
 		"directives:\n" +
@@ -176,33 +183,27 @@ func TestApplyArtifact_PartialV05x_Mock(t *testing.T) {
 	if err := os.WriteFile(stubPath, []byte(stubBody), 0o755); err != nil {
 		t.Fatal(err)
 	}
-
-	// Prefix the stub dir on PATH so `claude` resolves to our stub but
-	// the stub's `#!/usr/bin/env bash` shebang can still locate bash on
-	// the original PATH.
 	t.Setenv("PATH", stubDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("EDIKT_STUB_OUT", sidecarPath)
 
-	// Sanity probe: confirm LookPath finds the stub, not a real claude
-	// elsewhere on PATH. Without this, a stub-shadowing failure surfaces
-	// only as a wrote-partial fallback, which is hard to diagnose.
-	if probe, err := exec.LookPath("claude"); err != nil {
-		t.Fatalf("LookPath: %v (PATH=%s)", err, os.Getenv("PATH"))
-	} else if probe != stubPath {
-		t.Fatalf("LookPath resolved %s, want stub %s", probe, stubPath)
-	}
-
 	c := candidate{mdPath: mdPath, artifactID: "ADR-100", kind: "adr"}
 	res := applyArtifact(c, t.TempDir(), projectRoot)
-	if res.action != "wrote" {
-		t.Fatalf("want wrote (LLM dispatch path); got %q err=%v warn=%v", res.action, res.err, res.warnLines)
+	if res.action != "wrote-partial" {
+		t.Fatalf("want wrote-partial (mechanical fallback per ADR-030); got %q err=%v warn=%v",
+			res.action, res.err, res.warnLines)
 	}
 	loaded, err := sidecar.Load(sidecarPath)
 	if err != nil {
-		t.Fatalf("load extractor-produced sidecar: %v", err)
+		t.Fatalf("load fallback sidecar: %v", err)
 	}
-	if loaded.Topic != "bench-resync" {
-		t.Fatalf("topic: want bench-resync, got %q", loaded.Topic)
+	if loaded.Topic != "needs-review" {
+		t.Fatalf("topic: want needs-review (LLM not invoked); got %q — looks like the stub claude was called", loaded.Topic)
+	}
+	if loaded.Topic == "stub-should-not-appear" {
+		t.Fatal("ADR-030 violation: applyArtifact invoked the stub claude binary")
+	}
+	if !strings.Contains(strings.Join(res.warnLines, " "), "Run /edikt:upgrade") {
+		t.Errorf("expected warn line to direct user to /edikt:upgrade for resync; got %v", res.warnLines)
 	}
 	updated, _ := os.ReadFile(mdPath)
 	if strings.Contains(string(updated), openMarker) {

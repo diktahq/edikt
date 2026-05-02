@@ -94,15 +94,31 @@ func TestValidate_RejectsNonKebabTopic(t *testing.T) {
 	}
 }
 
-func TestValidate_RejectsDirectiveOver200Chars(t *testing.T) {
+func TestValidate_RejectsDirectiveOver500Chars(t *testing.T) {
+	// The original 200-char ceiling proved too tight on real-world ADRs
+	// (the ddd-workbench corpus had directives in the 209–236 range).
+	// Bumped to 500 — natural-language rules with multiple clauses fit
+	// comfortably; rules that would still exceed it should be split.
 	s := &Sidecar{
 		SchemaVersion: 1, Topic: "ok", Path: "x.md",
 		Directives: []Directive{
-			{Text: strings.Repeat("a", 201), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
+			{Text: strings.Repeat("a", 501), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
 		},
 	}
 	if err := s.Validate(); err == nil {
-		t.Fatal("expected length error")
+		t.Fatal("expected length error for 501-char directive")
+	}
+
+	// And the inverse — a 400-char directive (above the old 200 limit
+	// but below the new 500 ceiling) MUST validate cleanly.
+	ok := &Sidecar{
+		SchemaVersion: 1, Topic: "ok", Path: "x.md",
+		Directives: []Directive{
+			{Text: strings.Repeat("a", 400), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
+		},
+	}
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("400-char directive should validate; got %v", err)
 	}
 }
 

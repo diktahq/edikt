@@ -128,8 +128,8 @@ func (s *Sidecar) Validate() error {
 		if d.Text == "" {
 			return fmt.Errorf("directives[%d].text: required", i)
 		}
-		if len(d.Text) > 200 {
-			return fmt.Errorf("directives[%d].text: %d chars, max 200", i, len(d.Text))
+		if len(d.Text) > 500 {
+			return fmt.Errorf("directives[%d].text: %d chars, max 500", i, len(d.Text))
 		}
 		if d.SourceExcerpt.LineStart < 1 {
 			return fmt.Errorf("directives[%d].source_excerpt.line_start: %d, must be >= 1", i, d.SourceExcerpt.LineStart)
