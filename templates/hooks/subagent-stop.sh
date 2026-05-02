@@ -55,7 +55,8 @@ if [ -n "$EVAL_AGENT" ]; then
     done
 fi
 
-# 2. Payload fields (Claude Code canonical fields — NOT attacker-controlled)
+# 2. Canonical Claude Code payload fields (Agent tool sets these — NOT
+#    attacker-controlled by subagent content)
 if [ -z "$AGENT_NAME" ]; then
     PAYLOAD_AGENT=$(printf '%s' "$INPUT" | python3 -c 'import json,sys
 try:
@@ -71,52 +72,18 @@ except Exception:
         for _allowed in architect dba security api backend frontend qa sre platform docs pm ux data performance compliance mobile seo gtm; do
             if [ "$PAYLOAD_AGENT" = "$_allowed" ]; then
                 AGENT_NAME="$_allowed"
+                AGENT_IDENTITY_SOURCE="payload"
                 break
             fi
         done
     fi
 fi
 
-# 3. Content-grep fallback (legacy Claude Code — deprecated per ADR-023, removed v0.7.0)
-if [ -z "$AGENT_NAME" ]; then
-    AGENT_IDENTITY_SOURCE="grep-fallback"
-    INPUT_LOWER=$(echo "$INPUT" | tr '[:upper:]' '[:lower:]')
-
-    if echo "$INPUT_LOWER" | grep -qE "architect|architecture specialist"; then AGENT_NAME="architect"
-    elif echo "$INPUT_LOWER" | grep -qE "database|dba|schema|migration specialist"; then AGENT_NAME="dba"
-    elif echo "$INPUT_LOWER" | grep -qE "security specialist|security engineer|appsec"; then AGENT_NAME="security"
-    elif echo "$INPUT_LOWER" | grep -qE "api specialist|api engineer|api design"; then AGENT_NAME="api"
-    elif echo "$INPUT_LOWER" | grep -qE "backend specialist|backend engineer"; then AGENT_NAME="backend"
-    elif echo "$INPUT_LOWER" | grep -qE "frontend specialist|frontend engineer"; then AGENT_NAME="frontend"
-    elif echo "$INPUT_LOWER" | grep -qE "qa specialist|testing specialist|quality"; then AGENT_NAME="qa"
-    elif echo "$INPUT_LOWER" | grep -qE "sre specialist|reliability|observability"; then AGENT_NAME="sre"
-    elif echo "$INPUT_LOWER" | grep -qE "platform specialist|ci/cd|infrastructure"; then AGENT_NAME="platform"
-    elif echo "$INPUT_LOWER" | grep -qE "documentation specialist|docs specialist"; then AGENT_NAME="docs"
-    elif echo "$INPUT_LOWER" | grep -qE "product manager|product specialist|pm specialist"; then AGENT_NAME="pm"
-    elif echo "$INPUT_LOWER" | grep -qE "ux specialist|accessibility specialist"; then AGENT_NAME="ux"
-    elif echo "$INPUT_LOWER" | grep -qE "data specialist|data engineer|pipeline"; then AGENT_NAME="data"
-    elif echo "$INPUT_LOWER" | grep -qE "performance specialist|optimization"; then AGENT_NAME="performance"
-    elif echo "$INPUT_LOWER" | grep -qE "compliance specialist|regulatory"; then AGENT_NAME="compliance"
-    elif echo "$INPUT_LOWER" | grep -qE "mobile specialist|ios|android|flutter"; then AGENT_NAME="mobile"
-    elif echo "$INPUT_LOWER" | grep -qE "seo specialist|search engine"; then AGENT_NAME="seo"
-    elif echo "$INPUT_LOWER" | grep -qE "gtm specialist|analytics|tracking"; then AGENT_NAME="gtm"
-    fi
-
-    if [ -z "$AGENT_NAME" ]; then
-        for agent in architect dba security api backend frontend qa sre platform docs pm ux data performance compliance mobile seo gtm; do
-            if echo "$INPUT_LOWER" | grep -qF "$agent"; then
-                AGENT_NAME="$agent"
-                break
-            fi
-        done
-    fi
-
-    if [ -z "$AGENT_NAME" ]; then
-        AGENT_NAME=$(echo "$INPUT" | grep -oiE 'As (Staff |Senior |Principal )?[A-Za-z]+' | head -1 | awk '{print $NF}' | tr '[:upper:]' '[:lower:]')
-    fi
-fi
-
-# If still no agent name, exit silently
+# Per ADR-026 (v0.6.0): the legacy content-keyword fallback for agent identity
+# is removed entirely (was scheduled for v0.7.0 in ADR-023). Subagents that
+# yield no identity through the structured paths above are non-agent subagents
+# (e.g., forked slash commands). They exit clean — no severity detection,
+# no threshold lookup, no gate firing.
 if [ -z "$AGENT_NAME" ]; then
     printf '{"continue": true}'
     exit 0
@@ -192,19 +159,11 @@ fi
 # Read gate severity threshold (ADR-023 §4 resolution order):
 #   EDIKT_GATE_SEVERITY_THRESHOLD > config gates.<agent> > gates.default > "critical"
 #
-# When AGENT_IDENTITY_SOURCE=grep-fallback, the agent name was inferred from
-# free-text keyword matching, NOT from a structured agent payload. ADR-023
-# mandates: "When evaluator_output.agent is absent, fall back to gates.default."
-# Pass an empty agent name so the lookup skips gates.<keyword-detected-agent>
-# and resolves directly to gates.default. This prevents false-positive gate
-# fires on subagents (e.g., slash command dashboards) whose content happens
-# to mention an agent keyword.
+# Per ADR-026, AGENT_NAME at this point is always from a structured path
+# (evaluator_output.agent or canonical payload field). Non-agent subagents
+# exited above with `{"continue": true}` and never reach the threshold lookup.
 THRESHOLD="${EDIKT_GATE_SEVERITY_THRESHOLD:-}"
 if [ -z "$THRESHOLD" ]; then
-    THRESHOLD_AGENT="$AGENT_NAME"
-    if [ "$AGENT_IDENTITY_SOURCE" = "grep-fallback" ]; then
-        THRESHOLD_AGENT=""
-    fi
     THRESHOLD=$(python3 -c '
 import yaml,sys,os
 config_path = os.path.join(os.environ.get("EDIKT_PROJECT_ROOT","."),".edikt","config.yaml")
@@ -213,13 +172,10 @@ try:
         cfg = yaml.safe_load(f)
     agent = sys.argv[1]
     gates = (cfg or {}).get("gates",{})
-    if agent:
-        print(gates.get(agent, gates.get("default","critical")))
-    else:
-        print(gates.get("default","critical"))
+    print(gates.get(agent, gates.get("default","critical")))
 except Exception:
     print("critical")
-' "$THRESHOLD_AGENT" 2>/dev/null)
+' "$AGENT_NAME" 2>/dev/null)
 fi
 case "$THRESHOLD" in
     critical|warning|info) ;;

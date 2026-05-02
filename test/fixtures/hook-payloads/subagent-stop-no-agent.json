@@ -1,0 +1,6 @@
+{
+  "hook_event_name": "SubagentStop",
+  "verdict": "STATUS_DASHBOARD_RENDERED",
+  "transcript": "EDIKT STATUS — edikt\n═══════════════════\n\nGOVERNANCE HEALTH\n  Decisions:    26 ADRs, 8 invariants\n\nGATE ACTIVITY (this session)\n  ⛔ architect — critical (threshold=warning), 2 fires at 22:22:39Z\n\nWARNINGS\n  - 1 ADR/invariant lacks directive sentinels — run /edikt:gov:review",
+  "cwd": "${HOME}/projects/greenfield"
+}

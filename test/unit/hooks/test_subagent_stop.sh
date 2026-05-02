@@ -13,7 +13,7 @@ export PROJECT_ROOT
 
 HOOK="subagent-stop.sh"
 STAGED="$STAGED_PROJECTS/edikt-project"
-FIXTURES=(subagent-stop-critical subagent-stop-warning subagent-stop-ok)
+FIXTURES=(subagent-stop-critical subagent-stop-warning subagent-stop-ok subagent-stop-no-agent)
 
 if [ "${EDIKT_SKIP_HOOK_TESTS:-0}" = "1" ]; then
     echo "  SKIP: $HOOK — EDIKT_SKIP_HOOK_TESTS=1"
