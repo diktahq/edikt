@@ -6,11 +6,19 @@
 
 Every edikt-managed region in a user file has a cryptographic integrity mechanism that MUST be verified before the region is overwritten. Two variants exist:
 
-**(a) Markdown-hosted regions** (CLAUDE.md, ADRs, invariants, plans, rule files, guidelines) are delimited by `[edikt:NAME:start]: #` / `[edikt:NAME:end]: #` sentinel lines with an inline `[edikt:NAME:sha256]: # <64-hex>` hash anchor line placed inside the region. Edits are validated by **byte-range overlap** of the resolved file — never by regex over `old_string` or `new_string`.
+**(a) Markdown-hosted regions** are delimited by `[edikt:NAME:start]: #` / `[edikt:NAME:end]: #` sentinel lines with an inline `[edikt:NAME:sha256]: # <64-hex>` hash anchor line placed inside the region. Edits are validated by **byte-range overlap** of the resolved file — never by regex over `old_string` or `new_string`.
 
-**(b) JSON-hosted regions** (settings.json) cannot embed sentinels (JSON has no comment syntax). Their integrity is recorded **out-of-band** in a sidecar at `~/.edikt/state/settings-managed.json` with the shape `{settings_path, managed_keys, managed_hash, sentinel_version, installed_at}`. The install/upgrade writer verifies the live JSON's managed-key hash against the sidecar before overwriting managed keys.
+**Scope of (a) in v0.6.0+ (narrowed per ADR-027):** the only paths that carry markdown-hosted managed regions are `CLAUDE.md` (basename match, any directory) and any path under `$CLAUDE_HOME` or a `.claude/` ancestor that hosts a managed `settings.json` example. Governance artifacts (ADRs, invariants, plans, rule files, guidelines) are NOT managed regions in v0.6.0+ because edikt no longer writes to them — generated metadata lives in co-located `<artifact>.edikt.yaml` sidecars. During the v0.5.x→v0.6.0 migration window, governance `.md` files that still carry an unfenced legacy sentinel block are also in scope; they fall out of scope automatically once `edikt migrate sidecars` strips the block.
+
+**(b) JSON-hosted regions** (`settings.json` under `$CLAUDE_HOME` or `.claude/`) cannot embed sentinels (JSON has no comment syntax). Their integrity is recorded **out-of-band** in a sidecar at `~/.edikt/state/settings-managed.json` with the shape `{settings_path, managed_keys, managed_hash, sentinel_version, installed_at}`. The install/upgrade writer verifies the live JSON's managed-key hash against the sidecar before overwriting managed keys.
 
 In both variants, an edit whose resolved byte range (markdown) or managed-key hash (JSON) would mutate the region is blocked unless issued by an explicitly allowlisted edikt operation (compile, install, upgrade, migration). The specific signalling mechanism is an implementation detail — see Implementation below.
+
+## Related ADRs
+
+- ADR-027 — Sidecar architecture for governance metadata. Narrows variant (a) to `CLAUDE.md` and `settings.json`; supersedes the previous "all governance artifacts are managed regions" framing.
+- ADR-014 — Hook JSON-wrapping migration (the byte-range guard's enforcement surface).
+- ADR-019 — Security override of byte-for-byte hook preservation (per-hook security carve-out).
 
 ## Rationale
 

@@ -11,6 +11,8 @@ allowed-tools:
   - Bash
   - Agent
   - AskUserQuestion
+tier_2_dependency: edikt verify
+on_absent: skip-with-warning
 ---
 !`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && exit 0; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  plans:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/plans"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; PLAN=$(find "$DIR" -maxdepth 1 -type f -name "*.md" 2>/dev/null | while read f; do printf "%s\t%s\n" "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" "$f"; done | sort -rn | head -1 | cut -f2); if [ -z "$PLAN" ]; then PLAN=$(find "$PROOT/docs/product/plans" -maxdepth 1 -type f -name "*.md" 2>/dev/null | while read f; do printf "%s\t%s\n" "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" "$f"; done | sort -rn | head -1 | cut -f2); fi; if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -iE "\|.*in[_ -]progress" "$PLAN" 2>/dev/null | head -1 | tr -d "|" | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi'`
 
@@ -441,7 +443,34 @@ When a phase completes (generator outputs the completion promise):
       Set the phase status to `stuck` with the reason "evaluation failed in both modes" and wait for user input.
 
    **d. Process the verdict:** Wait for PASS / FAIL / BLOCKED verdict.
-   - If PASS: proceed to context reset guidance
+   - If PASS:
+     1. **Verify gate (Phase 12 of PLAN-sidecar-architecture; tier-2 orchestration per ADR-029).** Before flipping the phase row from in-progress to `done`, invoke the runner against the criteria sidecar.
+
+        **Step 1.1 — Absence detection (ADR-029 Rule 1).** Check for the binary on PATH before invocation:
+        ```bash
+        command -v edikt >/dev/null 2>&1 || command -v bin/edikt >/dev/null 2>&1
+        ```
+        If the check fails, this command's frontmatter declares `on_absent: skip-with-warning`. Emit exactly:
+        ```
+        ⚠ verify gate skipped: edikt binary not on PATH.
+          Install with: edikt install verify (or run install.sh to install the Go binary).
+          Phase {N} will be flipped without verification — the doctor check will record this as an override.
+        ```
+        Then continue to step 2 (flip the row), recording `done (overrides: gate-skipped)` in the `Updated` cell.
+
+        **Step 1.2 — Invocation.** When the binary is present:
+        ```bash
+        edikt verify {plan-id} --phase {N}
+        ```
+        Per ADR-029 Rule 2, this command consumes only the binary's exit code. Output is displayed to the user verbatim; never parsed.
+        - **Exit 0** — verifications passed; proceed to step 2.
+        - **Exit 1** — at least one criterion failed or timed out. Print the failed criteria and ask the user explicitly:
+          > Phase {N} has K verification failures. Mark as `done` anyway? [y/N]
+          Default `N`. On `y`, write the row but include an override marker in the `Updated` cell of the form `done (overrides: K)` so the doctor check (`edikt doctor` → "Plan Verification" group) can detect overrides on subsequent runs.
+        - **Exit 2** — sidecar missing or malformed. Surface the error verbatim and stop. Do not flip the row.
+        - **Exit 3** — invalid args (unknown plan-id, malformed phase). Surface the error and stop.
+        NEVER silently flip without either (a) the gate passing, (b) explicit user override, or (c) the documented absence-warning above.
+     2. Flip the phase row to `done` in the progress table and proceed to context reset guidance.
    - If FAIL: report failures, then:
 
      i. **Increment the Attempt column** in the progress table (e.g., `1/{max}` → `2/{max}`).

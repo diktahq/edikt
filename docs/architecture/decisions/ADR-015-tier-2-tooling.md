@@ -3,10 +3,11 @@ type: adr
 id: ADR-015
 title: Tier-2 optional tools may depend on packages; core stays markdown-only
 status: accepted
+amended_by: ADR-029
 decision-makers: [Daniel Gomes]
 created_at: 2026-04-17T00:00:00Z
 references:
-  adrs: [ADR-001, ADR-005, ADR-013]
+  adrs: [ADR-001, ADR-005, ADR-013, ADR-029]
   invariants: [INV-001]
   prds: [PRD-003]
   specs: [SPEC-005]
@@ -14,7 +15,7 @@ references:
 
 # ADR-015: Tier-2 optional tools may depend on packages; core stays markdown-only
 
-**Status:** accepted
+**Status:** Accepted (Amended by ADR-029)
 **Date:** 2026-04-17
 **Decision-makers:** Daniel Gomes
 

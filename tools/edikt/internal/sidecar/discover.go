@@ -70,9 +70,8 @@ func Discover(projectRoot string, dirs []string) ([]Pair, error) {
 }
 
 // HasAnySidecar returns true iff at least one .edikt.yaml exists under any
-// of the artifact dirs. Used by the cobra entry point to detect
-// sidecar-mode vs. legacy in-body-sentinel mode during the v0.6.0-dev
-// transition; Phase 6b replaces this with a hard refusal.
+// of the artifact dirs. Used by the cobra entry point to dispatch
+// two-phase compile vs. surfacing the pre-migration error per ADR-027 §5.
 func HasAnySidecar(projectRoot string, dirs []string) bool {
 	for _, dir := range dirs {
 		if dir == "" {
@@ -90,6 +89,41 @@ func HasAnySidecar(projectRoot string, dirs []string) bool {
 			if strings.HasSuffix(e.Name(), ".edikt.yaml") {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// HasAnyGovernanceMarkdown returns true iff at least one governance .md
+// (a non-sidecar .md whose basename does not start with "_") exists under
+// any of the artifact dirs. Distinguishes a pre-migration project (has
+// .md but no .edikt.yaml — must hard-fail per ADR-027 §5) from an empty
+// project (no .md at all — compile is a no-op).
+func HasAnyGovernanceMarkdown(projectRoot string, dirs []string) bool {
+	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
+		absDir := filepath.Join(projectRoot, dir)
+		entries, err := os.ReadDir(absDir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if strings.HasSuffix(name, ".edikt.yaml") {
+				continue
+			}
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			if strings.HasPrefix(name, "_") {
+				continue
+			}
+			return true
 		}
 	}
 	return false

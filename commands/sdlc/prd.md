@@ -336,7 +336,7 @@ Render `{prd_yaml}` from `templates/prd.yaml.tmpl` with the full structured cont
 
 **MANDATORY — read the template first, render it whole.** Use the Read tool on `templates/prd.yaml.tmpl` (resolve via `$EDIKT_HOME/current/templates/prd.yaml.tmpl` or `$HOME/.edikt/current/templates/prd.yaml.tmpl`). Replace `{{placeholder}}` tokens with values; preserve every other key verbatim. Do NOT compose the sidecar from memory or pattern-match from an existing PRD — the template is the contract.
 
-**Required top-level fields that MUST appear in every sidecar (per `templates/schemas/prd-sidecar.schema.json`):**
+**Required top-level fields that MUST appear in every sidecar (per `templates/schemas/prd-sidecar.v1.schema.json`):**
 
 | Field | Source |
 |---|---|
@@ -354,7 +354,7 @@ Render `{prd_yaml}` from `templates/prd.yaml.tmpl` with the full structured cont
 
 **Required nullable fields:** `supersedes`, `superseded_by`, `deprecated_at`, `deprecated_reason`, `cancelled_at`, `cancelled_reason` (set to `null` for a new PRD).
 
-**Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/prd-sidecar.schema.json`:
+**Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/prd-sidecar.v1.schema.json`:
 
 ```bash
 python3 <<'PYEOF' "$PRD_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
@@ -376,24 +376,24 @@ If validation fails: do NOT write the sidecar. Show the user which fields are mi
 
 If `jsonschema` is not installed (pip module missing), fall back to a structural check: assert all 9 required top-level fields are present in the rendered dict before writing.
 
-**Computing `{{schema_path}}`:** The template carries a `# yaml-language-server: $schema={{schema_path}}` header that enables IDE autocomplete. Compute the relative path from the PRD's parent directory to `.edikt/schemas/prd-sidecar.schema.json`:
+**Computing `{{schema_path}}`:** The template carries a `# yaml-language-server: $schema={{schema_path}}` header that enables IDE autocomplete. Compute the relative path from the PRD's parent directory to `.edikt/schemas/prd-sidecar.v1.schema.json`:
 
 ```bash
 # Use python3 with argv for safe relative-path computation (INV-003 compliant)
-SCHEMA_PATH=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.schema.json")
+SCHEMA_PATH=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json")
 ```
 
-For a PRD at `docs/product/prds/PRD-001-x.yaml` with default layout, `SCHEMA_PATH` resolves to `../../../.edikt/schemas/prd-sidecar.schema.json`.
+For a PRD at `docs/product/prds/PRD-001-x.yaml` with default layout, `SCHEMA_PATH` resolves to `../../../.edikt/schemas/prd-sidecar.v1.schema.json`.
 
-If `.edikt/schemas/prd-sidecar.schema.json` does NOT exist in the project, auto-install it as part of this step:
+If `.edikt/schemas/prd-sidecar.v1.schema.json` does NOT exist in the project, auto-install it as part of this step:
 
 ```bash
-test -f "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.schema.json" || {
+test -f "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json" || {
   mkdir -p "$PROJECT_ROOT/.edikt/schemas"
   # Source schema lives in the edikt payload — resolve via EDIKT_HOME
-  SOURCE_SCHEMA="$EDIKT_HOME/current/templates/schemas/prd-sidecar.schema.json"
-  [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$HOME/.edikt/current/templates/schemas/prd-sidecar.schema.json"
-  cp "$SOURCE_SCHEMA" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.schema.json"
+  SOURCE_SCHEMA="$EDIKT_HOME/current/templates/schemas/prd-sidecar.v1.schema.json"
+  [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$HOME/.edikt/current/templates/schemas/prd-sidecar.v1.schema.json"
+  cp "$SOURCE_SCHEMA" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json"
 }
 ```
 

@@ -16,7 +16,7 @@ allowed-tools:
 
 Regenerate the directive sidecar (`<slug>.edikt.yaml`) for one guideline — or for every guideline if no argument is given.
 
-Per [ADR-027](../../../docs/architecture/decisions/ADR-027-sidecar-architecture-for-governance-metadata.md) (sidecar architecture, supersedes ADR-008), directive metadata for every guideline lives in a co-located `<slug>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.json` (v1). This command never writes to the parent `.md`. It dispatches the locked `sidecar-extractor` agent which reads the parent body and writes the sidecar.
+Per [ADR-027](../../../docs/architecture/decisions/ADR-027-sidecar-architecture-for-governance-metadata.md) (sidecar architecture, supersedes ADR-008), directive metadata for every guideline lives in a co-located `<slug>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.v1.schema.json` (v1). This command never writes to the parent `.md`. It dispatches the locked `sidecar-extractor` agent which reads the parent body and writes the sidecar.
 
 ## Arguments
 

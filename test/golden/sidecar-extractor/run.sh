@@ -2,7 +2,7 @@
 # Golden tests for the sidecar-extractor agent.
 #
 # Phase 4 (current): validates that every fixture's expected.edikt.yaml conforms
-#   to templates/schemas/sidecar.schema.json. The actual byte-equal regeneration
+#   to templates/schemas/sidecar.v1.schema.json. The actual byte-equal regeneration
 #   check is gated on Phase 8 (canonical YAML serialization) — once that lands,
 #   this harness will dispatch the agent against source.md and diff the result
 #   against expected.edikt.yaml.
@@ -13,7 +13,7 @@
 set -euo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "$0")/../../.." && pwd)}"
-SCHEMA="$PROJECT_ROOT/templates/schemas/sidecar.schema.json"
+SCHEMA="$PROJECT_ROOT/templates/schemas/sidecar.v1.schema.json"
 FIXTURES_DIR="$PROJECT_ROOT/test/golden/sidecar-extractor"
 
 if [ ! -f "$SCHEMA" ]; then

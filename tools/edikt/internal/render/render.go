@@ -28,6 +28,7 @@ type TopicView struct {
 	Rules           []compile.Rule
 	CompiledAt      string // ISO 8601, may be a fixed sentinel when deterministic output is required
 	CompilerVersion string
+	Fingerprint     string // Phase 8: SHA-256 over (sidecar_path, sidecar_content_hash) tuples for the topic
 }
 
 // IndexView is the data passed to the governance.md index template.

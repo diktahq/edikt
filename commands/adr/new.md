@@ -441,7 +441,7 @@ Use the Agent tool:
 
 If the agent fails (rare — it has a single locked task), surface the error but do NOT roll back the ADR creation. The body is already written; the user can re-run sidecar generation via `/edikt:adr:compile ADR-{NNN}` (Phase 4b) once the issue is resolved.
 
-If the sidecar is produced, it conforms to `templates/schemas/sidecar.schema.json` (v1) and contains:
+If the sidecar is produced, it conforms to `templates/schemas/sidecar.v1.schema.json` (v1) and contains:
 - `topic` — kebab-case grouping identifier
 - `path` — relative path to this ADR's `.md`
 - `signals` — routing keywords extracted from the directive sentences

@@ -42,6 +42,24 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
    ```
    And stop.
 
+0a. **Pre-v0.6.0 sentinel gate (ADR-027).** Before any other work, refuse to run when legacy in-body sentinels remain in the project. v0.6.0 reads sidecars only — there is no double-parser fallback (per ADR-027).
+
+    Scan for the marker `[edikt:directives:start]: #` outside fenced regions and outside the documentation skip-list (`ADR-008-*`, `ADR-009-*`, `SPEC-*`). The `edikt` binary handles fence detection and skip-list correctly:
+
+    ```bash
+    edikt migrate sidecars --dry-run > /tmp/edikt-sidecar-precheck.out 2>&1
+    PRECHECK_EXIT=$?
+    ```
+
+    - If `PRECHECK_EXIT == 0` AND output contains `0 sidecars to create` — no migration pending, continue to Step 1.
+    - Otherwise — refuse with a single-line actionable error and exit 1:
+      ```
+      ✗ Migration required. Run /edikt:upgrade to migrate this project to v0.6.0 sidecar architecture (ADR-027).
+      ```
+      Do NOT print the dry-run plan here — `/edikt:upgrade` shows it. Keep this gate's output to one line so CI logs stay readable.
+
+    NEVER fall back to in-body sentinel parsing. The pre-flight gate is the only path for legacy projects.
+
 0b. If `--json` is in `$ARGUMENTS`, output only the JSON format at the end — no progress indicators, no emoji, no prose.
 
 1. Display progress: `Step 1/5: Reading source documents...`

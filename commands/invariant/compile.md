@@ -16,7 +16,7 @@ allowed-tools:
 
 Regenerate the directive sidecar (`<INV-NNN>.edikt.yaml`) for one Invariant Record — or for every active invariant if no argument is given.
 
-Per [ADR-027](../../../docs/architecture/decisions/ADR-027-sidecar-architecture-for-governance-metadata.md) (sidecar architecture, supersedes ADR-008), directive metadata for every active Invariant Record lives in a co-located `<INV-NNN>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.json` (v1). This command never writes to the parent `.md`. It dispatches the locked `sidecar-extractor` agent which reads the parent body and writes the sidecar.
+Per [ADR-027](../../../docs/architecture/decisions/ADR-027-sidecar-architecture-for-governance-metadata.md) (sidecar architecture, supersedes ADR-008), directive metadata for every active Invariant Record lives in a co-located `<INV-NNN>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.v1.schema.json` (v1). This command never writes to the parent `.md`. It dispatches the locked `sidecar-extractor` agent which reads the parent body and writes the sidecar.
 
 ## Arguments
 

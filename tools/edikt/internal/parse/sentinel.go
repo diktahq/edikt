@@ -134,9 +134,15 @@ func (d *Document) BodyExcludingSentinel() string {
 // column 0 (i.e. is either at the start of body or immediately after a '\n')
 // AND is not inside a fenced code block (``` or ~~~).
 // Returns the byte offset of the match, or -1 if not found.
+//
+// Fence-state tracking is CommonMark-conformant per Phase 3 §3.2:
+// the closing fence MUST use the same marker character as the opener
+// (``` cannot close a ~~~ block, and vice versa) AND its run length
+// MUST be ≥ the opener's run length. Mixed-marker close lines are
+// treated as ordinary content. This closes a parser-confusion bypass
+// where a `~~~` line inside a ``` block previously toggled `inFence`
+// off, mis-classifying a fenced sentinel as outside the fence.
 func findLineStart(body, needle string) int {
-	// Build a set of code-fence regions so we can skip matches inside them.
-	// A code fence is a line that starts with ``` or ~~~.
 	type region struct{ start, end int }
 	var fenced []region
 	{
@@ -144,12 +150,18 @@ func findLineStart(body, needle string) int {
 		pos := 0
 		inFence := false
 		fenceStart := 0
+		var openerChar byte // '`' or '~'
+		var openerLen int
 		for _, line := range lines {
 			trimmed := strings.TrimSpace(line)
-			if !inFence && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
+			fenceChar, fenceLen := fencePrefix(trimmed)
+			if !inFence && fenceLen >= 3 {
 				inFence = true
 				fenceStart = pos
-			} else if inFence && (strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")) {
+				openerChar = fenceChar
+				openerLen = fenceLen
+			} else if inFence && fenceLen >= openerLen && fenceChar == openerChar {
+				// CommonMark close: same marker char, length ≥ opener.
 				fenced = append(fenced, region{fenceStart, pos + len(line)})
 				inFence = false
 			}
@@ -183,6 +195,28 @@ func findLineStart(body, needle string) int {
 			return -1
 		}
 	}
+}
+
+// fencePrefix inspects a TRIMMED line and returns (marker char, run length).
+// If the line does not begin with a CommonMark fence marker run (3+ same
+// chars of '`' or '~'), returns (0, 0). The run terminates at the first
+// non-marker char; trailing info-string is permitted.
+func fencePrefix(trimmed string) (byte, int) {
+	if len(trimmed) == 0 {
+		return 0, 0
+	}
+	c := trimmed[0]
+	if c != '`' && c != '~' {
+		return 0, 0
+	}
+	n := 1
+	for n < len(trimmed) && trimmed[n] == c {
+		n++
+	}
+	if n < 3 {
+		return 0, 0
+	}
+	return c, n
 }
 
 // parseSentinelBlock parses the inner content of a sentinel block using a

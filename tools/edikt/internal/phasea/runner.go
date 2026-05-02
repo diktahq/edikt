@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/idvalidate"
 )
 
 // Runner regenerates the sidecar for one artifact. Implementations are
@@ -40,7 +42,19 @@ type ClaudeRunner struct {
 // Resync invokes `claude -p "/edikt:<type>:compile <id>"` and returns
 // non-nil on a non-zero exit. Captured combined output is folded into the
 // returned error so the dispatcher can log it.
+//
+// INV-006 belt-and-suspenders: ArtifactType and ArtifactID are re-validated
+// at the dispatcher boundary even though upstream callers (govrun.RunTwoPhase,
+// migrate sidecars) validate before constructing the Task. A defense-in-depth
+// check here means a future caller that forgets to validate cannot inject
+// shell-meta or instruction-injection text into the claude prompt.
 func (r *ClaudeRunner) Resync(ctx context.Context, t Task) error {
+	if err := idvalidate.ArtifactType(t.ArtifactType); err != nil {
+		return fmt.Errorf("phasea.Resync refused dispatch: %w", err)
+	}
+	if err := idvalidate.ArtifactID(t.ArtifactID); err != nil {
+		return fmt.Errorf("phasea.Resync refused dispatch: %w", err)
+	}
 	bin := r.Binary
 	if bin == "" {
 		bin = "claude"

@@ -22,14 +22,15 @@ import (
 	"github.com/diktahq/edikt/tools/edikt/internal/compile"
 	"github.com/diktahq/edikt/tools/edikt/internal/render"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
+	"gopkg.in/yaml.v3"
 )
 
 // Result describes what Phase B did.
 type Result struct {
-	TopicsRendered  []string
-	TopicsUnchanged []string
-	IndexWritten    bool
-	TotalDirectives int
+	TopicsRendered  []string `json:"topics_rendered"`
+	TopicsUnchanged []string `json:"topics_unchanged"`
+	IndexWritten    bool     `json:"index_written"`
+	TotalDirectives int      `json:"total_directives"`
 }
 
 // Options configures merge output.
@@ -77,6 +78,26 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 
 	for _, name := range topicNames {
 		g := groups[name]
+		fp := TopicFingerprint(g.Sidecars)
+		dest := filepath.Join(opts.OutDir, name+".md")
+
+		// Track directive bookkeeping regardless of cache outcome — index
+		// rendering needs full counts and the invariant restate list.
+		res.TotalDirectives += len(g.Directives)
+		for _, r := range g.Directives {
+			if strings.HasPrefix(r.Source, "INV-") {
+				invariantRules = append(invariantRules, r)
+			}
+		}
+
+		// Diff-only short-circuit: if the existing topic file declares the
+		// same fingerprint, every contributing sidecar is byte-equal to last
+		// run; skip the render to keep mtime stable and the file untouched.
+		if existingFP, ok := readTopicFingerprint(dest); ok && existingFP == fp {
+			res.TopicsUnchanged = append(res.TopicsUnchanged, name)
+			continue
+		}
+
 		body, err := render.RenderTopic(render.TopicView{
 			Name:            name,
 			Paths:           g.Paths,
@@ -84,11 +105,11 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 			Rules:           g.Directives,
 			CompiledAt:      opts.CompiledAt,
 			CompilerVersion: opts.CompilerVersion,
+			Fingerprint:     fp,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("render topic %s: %w", name, err)
 		}
-		dest := filepath.Join(opts.OutDir, name+".md")
 		changed, err := writeAtomicIfChanged(dest, body)
 		if err != nil {
 			return nil, fmt.Errorf("write %s: %w", name, err)
@@ -97,12 +118,6 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 			res.TopicsRendered = append(res.TopicsRendered, name)
 		} else {
 			res.TopicsUnchanged = append(res.TopicsUnchanged, name)
-		}
-		res.TotalDirectives += len(g.Directives)
-		for _, r := range g.Directives {
-			if strings.HasPrefix(r.Source, "INV-") {
-				invariantRules = append(invariantRules, r)
-			}
 		}
 	}
 
@@ -175,19 +190,27 @@ func routingRows(groups map[string]*topicGroup, topicNames []string) []render.Ro
 	return rows
 }
 
-// TopicFingerprint returns a stable hash over the (path, sidecar-bytes)
-// tuples contributing to a topic. Phase 8 will move the fingerprint into
-// topic-file frontmatter; Phase 5 just exposes the function so the merge
-// loop can later short-circuit a topic whose fingerprint hasn't changed.
+// TopicFingerprint returns a stable hash over the (path, sidecar_content_hash)
+// tuples contributing to a topic, per Phase 8 of PLAN-sidecar-architecture.
+//
+// The content hash is taken over the canonical-YAML serialization of the
+// in-memory sidecar (sidecar.Marshal), not the raw file bytes — that way the
+// fingerprint is invariant to harmless whitespace drift in pre-canonical
+// sidecars and matches the CI canonical-write gate.
 func TopicFingerprint(group []*sidecar.Sidecar) string {
 	tuples := make([]string, 0, len(group))
 	for _, s := range group {
-		data, err := os.ReadFile(s.SourcePath)
+		data, err := sidecar.Marshal(s)
 		if err != nil {
-			continue
+			// Fall back to on-disk bytes; preserves Phase 5's looser contract
+			// when canonical marshal fails (should be unreachable in practice).
+			data, err = os.ReadFile(s.SourcePath)
+			if err != nil {
+				continue
+			}
 		}
 		sum := sha256.Sum256(data)
-		tuples = append(tuples, s.SourcePath+":"+hex.EncodeToString(sum[:]))
+		tuples = append(tuples, s.Path+":"+hex.EncodeToString(sum[:]))
 	}
 	sort.Strings(tuples)
 	h := sha256.New()
@@ -196,6 +219,46 @@ func TopicFingerprint(group []*sidecar.Sidecar) string {
 		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// readTopicFingerprint extracts the `_fingerprint` field from an existing
+// topic file's YAML frontmatter. Returns ("", false) when the file is absent,
+// has no frontmatter, or the field is missing — every miss path forces a
+// full render so the cache is fail-safe.
+func readTopicFingerprint(path string) (string, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", false
+	}
+	front, ok := extractFrontmatter(data)
+	if !ok {
+		return "", false
+	}
+	var fm struct {
+		Fingerprint string `yaml:"_fingerprint"`
+	}
+	if err := yaml.Unmarshal(front, &fm); err != nil {
+		return "", false
+	}
+	if fm.Fingerprint == "" {
+		return "", false
+	}
+	return fm.Fingerprint, true
+}
+
+// extractFrontmatter returns the bytes between the first `---` and the next
+// `---` line. Mirrors the convention enforced by render/templates/topic.md.tmpl.
+func extractFrontmatter(data []byte) ([]byte, bool) {
+	s := string(data)
+	if !strings.HasPrefix(s, "---\n") {
+		return nil, false
+	}
+	rest := s[4:]
+	idx := strings.Index(rest, "\n---")
+	if idx < 0 {
+		return nil, false
+	}
+	return []byte(rest[:idx]), true
 }
 
 func writeAtomicIfChanged(path, content string) (bool, error) {

@@ -1103,6 +1103,35 @@ The version field records when the agent was installed, not when it was last tou
 - **Confident** (clear ADRs, Makefile commands, .cursorrules): act on them
 - **Uncertain** (ambiguous docs): skip with a hint showing the exact prompt to import later
 
+### 4b. Generate Sidecars for Seeded/Adopted Artifacts (v0.6.0+, ADR-027)
+
+After all artifacts are written or imported (steps 2a, 2a.2, and any bootstrap example artifacts seeded above), generate the co-located `<artifact>.edikt.yaml` sidecar for each artifact that does not already have one. v0.6.0 stores generated directive metadata in sidecars — `/edikt:gov:compile` refuses to run if any artifact lacks a sidecar (ADR-027).
+
+```bash
+SIDECAR_COUNT=0
+for f in {paths.decisions}/ADR-*.md {paths.invariants}/INV-*.md {paths.guidelines}/*.md; do
+  [ -f "$f" ] || continue
+  base="${f%.md}"
+  if [ -f "$base.edikt.yaml" ]; then continue; fi
+  # Dispatch the per-artifact :compile (which dispatches the locked sidecar-extractor agent).
+  case "$f" in
+    *decisions*)  /edikt:adr:compile "$(basename "$base")" ;;
+    *invariants*) /edikt:invariant:compile "$(basename "$base")" ;;
+    *guidelines*) /edikt:guideline:compile "$(basename "$base")" ;;
+  esac
+  [ -f "$base.edikt.yaml" ] && SIDECAR_COUNT=$((SIDECAR_COUNT + 1))
+done
+```
+
+If `SIDECAR_COUNT > 0`, print:
+```
+  ✓ Sidecars       Created {N} sidecars.
+```
+
+If `SIDECAR_COUNT == 0` (no artifacts present yet — common in greenfield), skip the line entirely. Sidecars will be generated when the user creates their first artifact via `/edikt:adr:new`, `/edikt:invariant:new`, or `/edikt:guideline:new` (each of which dispatches the sidecar-extractor agent on completion, per Phase 4).
+
+**Important:** never write sidecars for documentation-mention artifacts (skip-list: `ADR-008-*`, `ADR-009-*`, `SPEC-*`). The migration tool already encodes this rule; honor it here too.
+
 ### 5. Summary
 
 ```

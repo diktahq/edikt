@@ -1,7 +1,7 @@
 """SPEC-007 — PRD sidecar JSON Schema validation.
 
 Validates that:
-1. The schema at templates/schemas/prd-sidecar.schema.json is itself a valid
+1. The schema at templates/schemas/prd-sidecar.v1.schema.json is itself a valid
    JSON Schema (draft 2020-12).
 2. The template at templates/prd.yaml.tmpl, after placeholder substitution,
    produces a sidecar that validates against the schema.
@@ -25,7 +25,7 @@ import yaml
 from jsonschema import Draft202012Validator, ValidationError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = REPO_ROOT / "templates" / "schemas" / "prd-sidecar.schema.json"
+SCHEMA_PATH = REPO_ROOT / "templates" / "schemas" / "prd-sidecar.v1.schema.json"
 TEMPLATE_PATH = REPO_ROOT / "templates" / "prd.yaml.tmpl"
 
 
@@ -54,7 +54,7 @@ def _render_template(rigor: str = "solo") -> dict:
         "{{rigor}}": rigor,
         "{{author}}": "Test Author",
         "{{created_at}}": now,
-        "{{schema_path}}": "../../../.edikt/schemas/prd-sidecar.schema.json",
+        "{{schema_path}}": "../../../.edikt/schemas/prd-sidecar.v1.schema.json",
         "{{fr_001_text}}": "Send renewal reminder 7 days before due date",
         "{{given}}": "a user with an active subscription",
         "{{when}}": "their renewal date is 7 days away",

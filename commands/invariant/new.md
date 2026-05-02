@@ -302,7 +302,7 @@ Use the Agent tool:
 
 If the agent fails (rare — it has a single locked task), surface the error but do NOT roll back the Invariant Record creation. The body is already written; the user can re-run sidecar generation via `/edikt:invariant:compile INV-{NNN}` (Phase 4b) once the issue is resolved.
 
-If the sidecar is produced, it conforms to `templates/schemas/sidecar.schema.json` (v1) and contains topic, path, signals, and the directive list extracted from the `## Statement` and `## Enforcement` sections.
+If the sidecar is produced, it conforms to `templates/schemas/sidecar.v1.schema.json` (v1) and contains topic, path, signals, and the directive list extracted from the `## Statement` and `## Enforcement` sections.
 
 The legacy auto-chain to `/edikt:invariant:compile` (which used to write an in-body sentinel block per ADR-008) is removed in v0.6.0. Existing Invariant Records created before this change still have in-body sentinels until `edikt migrate sidecars` (Phase 6) lifts them out.
 

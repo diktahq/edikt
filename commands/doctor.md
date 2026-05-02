@@ -264,9 +264,9 @@ PROJECT_EDIKT_VERSION=$(grep '^edikt_version:' .edikt/config.yaml 2>/dev/null | 
 For each of the three templates (`.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, `.edikt/templates/guideline.md`):
 
 - **Template present** (`.edikt/templates/<artifact>.md` exists):
-  - Verify the file has the mandatory `[edikt:directives:start]: #` / `[edikt:directives:end]: #` sentinel block.
-  - If sentinel block is present: `[ok] Project {artifact} template: .edikt/templates/{artifact}.md ({kind})` where `{kind}` is derived from a marker comment in the template (`Adapted`, `Nygard-minimal`, `MADR-extended`, `Minimal`, `Full`, `Extended`, or `Custom` if no marker).
-  - If sentinel block is missing: `[!!] Project {artifact} template has no directives sentinel block — run /edikt:init --reset-templates to regenerate`
+  - Per ADR-027 (sidecar architecture, v0.6.0): templates MUST NOT contain an in-body `[edikt:directives:start]: #` / `[edikt:directives:end]: #` sentinel block. The block is replaced by the co-located `<artifact>.edikt.yaml` sidecar that `/edikt:<artifact>:new` generates atomically.
+  - If the template contains a sentinel block: `[!!] Project {artifact} template contains a legacy [edikt:directives:start] block — stale pre-v0.6.0 shape. Run /edikt:init --reset-templates to regenerate, or remove the block manually.`
+  - If no sentinel block: `[ok] Project {artifact} template: .edikt/templates/{artifact}.md ({kind})` where `{kind}` is derived from a marker comment in the template (`Adapted`, `Nygard-minimal`, `MADR-extended`, `Minimal`, `Full`, `Extended`, or `Custom` if no marker).
 - **Template absent AND project is v0.3.0+** (`edikt_version >= 0.3.0`):
   - `[!!] Project {artifact} template missing (.edikt/templates/{artifact}.md) — required for v0.3.0+. Run /edikt:init or /edikt:init --reset-templates to set up.`
 - **Template absent AND project is v0.2.x legacy** (`edikt_version < 0.3.0` or missing):
@@ -307,9 +307,37 @@ done
   - `[!!] governance/{topic}.md has no paths: frontmatter — run /edikt:gov:compile`
 - **Override detection:** For each rule pack in `.claude/rules/`, check if any of its rules conflict with compiled governance directives:
   - `[!!] Rule pack {name}.md may conflict with compiled governance: {brief description}`
-- **Sentinel coverage:** Count source documents (ADRs, invariants) with and without `[edikt:directives:start]` sentinel blocks:
-  - `[ok] Directive sentinels: {n}/{total} documents ({pct}%)`
-  - `[!!] {m} documents missing directive sentinels — run /edikt:review-governance`
+
+**Sidecar Health (v0.6.0):**
+
+For every governance `.md` (ADR, invariant, guideline), doctor verifies the co-located `<artifact>.edikt.yaml` sidecar per ADR-027. The five checks below mirror `tools/edikt/cmd/doctor_sidecar.go` and `website/commands/doctor.md`:
+
+| Check | Severity | What it catches |
+|---|---|---|
+| `ORPHAN` | Hard fail | A `.edikt.yaml` exists with no sibling `.md` |
+| `MISSING` | Hard fail | A governance `.md` has no co-located sidecar |
+| `PATH MISMATCH` | Hard fail | The sidecar's `path:` field doesn't resolve to the sibling `.md` |
+| Schema validation | Hard fail | Sidecar fails `templates/schemas/sidecar.v1.schema.json` |
+| `directives: []` | Soft warning | Sidecar exists but has no directives — sidecar may need regeneration |
+
+```text
+SIDECAR HEALTH
+  Orphans:           0
+  Missing sidecars:  0
+  Path mismatches:   0
+  Schema failures:   0
+  Empty directives:  1
+
+  ⚠ NEEDS REVIEW: ADR-007.md has no directives in its sidecar — confirm the
+    prose has no rules to extract, or run /edikt:adr:compile ADR-007.
+```
+
+Hard-fail checks (1–4) exit 1. The empty-directives check is soft — exit 0 with a warning summary. Resolution paths:
+
+- `MISSING` → run `/edikt:<type>:compile <id>` for the artifact
+- `ORPHAN` → delete the stale sidecar (no parent prose)
+- `PATH MISMATCH` → fix the `path:` field, then run `:compile` to regenerate canonically
+- `directives: []` → confirm the prose is intentionally rule-free, or re-run `:compile`
 
 **Linter sync:**
 ```bash
@@ -320,7 +348,9 @@ ls .claude/rules/linter-*.md 2>/dev/null
 - For each `.claude/rules/linter-*.md`: compare its mtime to source config mtime. If config is newer: `[!!] Linter config changed since last sync — run /edikt:sync`
 - If no linter configs found: skip silently
 
-**Directive sentinel schema (ADR-008):**
+**Directive sentinel schema (ADR-008, superseded by ADR-027):**
+
+> ADR-008 was superseded by ADR-027 (sidecar architecture). v0.6.0 governance artifacts no longer carry the in-body sentinel block — the schema lives in the co-located `<artifact>.edikt.yaml` sidecar (see SIDECAR HEALTH above). The legacy schema check below applies ONLY to projects running `gov:compile --legacy` against pre-v0.6.0 in-body sentinels, which is preserved through v0.7.0 for the transition window.
 
 For each compiled artifact (ADRs, invariants, guidelines) that has a `[edikt:directives:start]: #` block, check whether the block conforms to the v0.3.0 three-list schema from ADR-008. This is informational — the block is still processed correctly via the backward-compatibility path, but reporting which files are on which schema lets the user decide whether to run `<artifact>:compile --regenerate` to migrate.
 

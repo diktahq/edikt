@@ -165,6 +165,75 @@ If INSTALLED_VERSION != PROJECT_VERSION, always proceed with the upgrade — the
 
 If `edikt_version` is missing from `.edikt/config.yaml` (project predates versioning), always proceed — adding the version is itself an upgrade.
 
+### 1.5. Sidecar Migration Check (v0.6.0+, ADR-027)
+
+v0.6.0 replaces the in-body `[edikt:directives:start]: # ... [edikt:directives:end]: #` sentinel block with a co-located `<artifact>.edikt.yaml` sidecar (ADR-027). Projects upgrading from any earlier version must migrate their sentinel blocks before any other v0.6.0 command will work — `/edikt:gov:compile` refuses to run while legacy in-body sentinels remain (per ADR-027).
+
+This step runs the migration BEFORE Step 2 (detection) so the rest of the upgrade flow operates on a v0.6.0-shaped project.
+
+**Unconditional scan (Phase 11 — release engineering).** This dry-run fires on every `/edikt:upgrade` invocation regardless of the source version, even when the launcher just bootstrapped a clean install. The scan is harmless on fresh projects (no legacy sentinels → exit 0 with `0 sidecars to create` and one acknowledgement line). Cross-major upgrades (v0.5.x or earlier → v0.6.0+) take this path after the user re-runs `/edikt:upgrade` post-`install.sh`, and the scan guarantees the user is offered migration before any compile runs.
+
+#### 1.5a. Scan for legacy in-body sentinels
+
+Detect any artifact `.md` file under `paths.decisions`, `paths.invariants`, and `paths.guidelines` (resolved from `.edikt/config.yaml`) that still contains an in-body sentinel marker. Use the `edikt` binary's migration tool — it already handles fence detection and the documentation skip-list (ADR-008/ADR-009/SPEC files, blocks inside fenced regions):
+
+```bash
+edikt migrate sidecars --dry-run > /tmp/edikt-sidecar-plan.out 2>&1
+DRY_EXIT=$?
+```
+
+Three outcomes:
+
+- **Exit 0 AND output reports `0 sidecars to create`** — no legacy sentinels found. Print one line and continue to Step 2:
+  ```
+  ✅ Sidecar migration: nothing to migrate.
+  ```
+- **Exit 0 AND output reports `N sidecars to create`** with `N > 0` — legacy sentinels found, prompt the user (Step 1.5b).
+- **Non-zero exit** — print the captured output to the user and stop. Do NOT proceed to Step 2 until the dry-run is healthy.
+
+Print the dry-run plan verbatim before the prompt so the user can see exactly which artifacts will change.
+
+**The 24-hour dry-run gate.** `edikt migrate sidecars --dry-run` writes a gate file to `.edikt/state/migration-dry-run.json` recording the plan's timestamp and the artifacts inspected. `edikt migrate sidecars --apply` reads that file and **refuses to run if the timestamp is older than 24 hours**, returning:
+
+```text
+migrate sidecars: --dry-run required first (or pass --force).
+Run: edikt migrate sidecars --dry-run
+```
+
+The window exists because sidecar generation is destructive on the prose body (the in-body sentinel block is removed atomically with the sidecar write). The recommended workflow is: run `--dry-run`, review the plan, run `--apply` in the same session. If a CI flow has already validated the plan upstream and you cannot re-run the dry-run, pass `--force`.
+
+`/edikt:upgrade` always runs `--dry-run` immediately before prompting, so the gate is fresh when this command applies the migration. Direct `edikt migrate sidecars --apply` invocations outside the upgrade flow must respect the window.
+
+#### 1.5b. Prompt for migration
+
+Show the plan, then ask:
+
+```
+v0.6.0 requires migrating in-body sentinel blocks to co-located *.edikt.yaml
+sidecars (ADR-027). The dry-run above shows what will change.
+
+Apply the migration now? [y/N]
+```
+
+- **On `y` / `yes`** — run the apply and print the result:
+  ```bash
+  edikt migrate sidecars --apply
+  ```
+  - On exit 0: print
+    ```
+    ✅ Sidecar migration applied. Run /edikt:gov:compile to regenerate governance.
+    ```
+    Then continue to Step 2.
+  - On non-zero exit: print the migration tool's output verbatim and stop. The user resolves and re-runs `/edikt:upgrade`. Do NOT proceed to Step 2.
+- **On `N` / `no` / empty** — print:
+  ```
+  Migration deferred. Run /edikt:gov:compile to apply when ready.
+  Compile will refuse until migration is applied (ADR-027).
+  ```
+  Then continue to Step 2 — the rest of the upgrade still operates safely on the unmigrated project. The user can re-run `/edikt:upgrade` later or invoke `edikt migrate sidecars --dry-run` followed by `edikt migrate sidecars --apply` directly.
+
+**Headless mode.** If `EDIKT_HEADLESS=1` or `--yes` was passed to `/edikt:upgrade` (no future flag exists today, but reserve the convention) AND the dry-run reports a non-empty plan, fall through to deferred — never auto-apply without an interactive confirmation. Migration is destructive on the prose body (sentinel blocks are removed) and must not happen silently.
+
 ### 2. Detect What Needs Upgrading
 
 Run all checks in parallel and collect findings.

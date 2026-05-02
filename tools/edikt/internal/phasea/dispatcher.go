@@ -9,6 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/redact"
 )
 
 // Dispatcher fans Tasks out to a Runner with a concurrency cap, captures
@@ -107,8 +109,14 @@ func (d *Dispatcher) writeErrorLog(failures []Failure) {
 	defer f.Close()
 	ts := time.Now().UTC().Format(time.RFC3339)
 	for _, fail := range failures {
+		// INV-007 / Phase 3 §3.5: scrub credential-shaped substrings before
+		// writing to the long-lived error log. The Phase A subagent's
+		// captured output may contain attacker-influenceable content (the
+		// claude session might surface a token from an env var, a leaked
+		// API key, etc.); redact before persisting.
+		errMsg := redact.Scrub(oneLine(fail.Err.Error()))
 		fmt.Fprintf(f, "%s\t%s\t%s\t%s\t%s\n",
-			ts, fail.Task.ArtifactType, fail.Task.ArtifactID, fail.Task.SidecarPath, oneLine(fail.Err.Error()))
+			ts, fail.Task.ArtifactType, fail.Task.ArtifactID, fail.Task.SidecarPath, errMsg)
 	}
 }
 

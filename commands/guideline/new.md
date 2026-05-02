@@ -220,7 +220,7 @@ Use the Agent tool:
 
 If the agent fails, surface the error but do NOT roll back the guideline creation. The body is already written; the user can re-run sidecar generation via `/edikt:guideline:compile {slug}` (Phase 4b) once the issue is resolved.
 
-If the sidecar is produced, it conforms to `templates/schemas/sidecar.schema.json` (v1) and contains topic, path, signals, and the directive list extracted from the `## Rules` section. Soft-language bullets that don't use MUST / NEVER / ALWAYS / SHOULD are skipped — guidelines compile only enforceable rules into directives.
+If the sidecar is produced, it conforms to `templates/schemas/sidecar.v1.schema.json` (v1) and contains topic, path, signals, and the directive list extracted from the `## Rules` section. Soft-language bullets that don't use MUST / NEVER / ALWAYS / SHOULD are skipped — guidelines compile only enforceable rules into directives.
 
 The legacy auto-chain to `/edikt:guideline:compile` (which used to write an in-body sentinel block per ADR-008) is removed in v0.6.0. Existing guidelines created before this change still have in-body sentinels until `edikt migrate sidecars` (Phase 6) lifts them out.
 

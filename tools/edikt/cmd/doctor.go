@@ -167,6 +167,25 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 			fmt.Printf("  commands:    %s (ok)\n", ediktCmds)
 		}
 
+		// Sidecar Health (Phase 7 of PLAN-sidecar-architecture).
+		// Walks the project (cwd) for orphan / missing / path-mismatch /
+		// schema-invalid / empty-directives sidecars. Silent if cwd is not
+		// an edikt project (no artifact dirs visible).
+		if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+			scErr, scWarn, ran := runSidecarChecks(cwd, os.Stdout)
+			if ran {
+				errN += scErr
+				warnN += scWarn
+			}
+
+			// Plan Verification (Phase 12 of PLAN-sidecar-architecture).
+			// Soft check — never increments errN.
+			vWarn, vRan := runVerifyChecks(cwd, os.Stdout)
+			if vRan {
+				warnN += vWarn
+			}
+		}
+
 		// settings.json placeholder check — Claude Code does not expand env
 		// vars in `command:` strings, so an unsubstituted ${EDIKT_HOOK_DIR}
 		// or $HOME makes hooks fail with `/bin/sh: /<hook>.sh: No such file`.
