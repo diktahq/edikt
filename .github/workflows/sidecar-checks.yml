@@ -1,0 +1,162 @@
+name: sidecar-checks
+
+# Phase 9 of the sidecar architecture plan: a single workflow that gates the
+# sidecar invariants the rest of the test suite assumes hold.
+#
+# Four gates:
+#   1. Sidecar fixture corpus validates against templates/schemas/sidecar.v1.schema.json
+#      (delegated to the existing schema-validate workflow, included here as
+#      a pre-flight when sidecar code or fixtures change).
+#   2. INV-004 hook lint — no Claude-facing channel interpolates untrusted text.
+#   3. Phase B purity static check — tools/edikt/check/no-llm-in-merge.sh.
+#   4. Canonical YAML round-trip — Marshal(Load(fixture)) decodes identically.
+#
+# These run on every PR and on pushes to main / 0.6.0-dev, and are expected to
+# stay sub-minute. CI failures here block merge — they pin invariants that the
+# integration / E2E tests cannot detect on their own (purity violations would
+# show as latency regressions, not failures; INV-004 violations would show up
+# only when an attacker exploits them).
+
+on:
+  pull_request:
+    paths:
+      - templates/schemas/**
+      - test/fixtures/sidecars/**
+      - tools/edikt/internal/sidecar/**
+      - tools/edikt/internal/phaseb/**
+      - tools/edikt/check/no-llm-in-merge.sh
+      - templates/hooks/**
+      - .github/workflows/sidecar-checks.yml
+  push:
+    branches:
+      - main
+      - 0.6.0-dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sidecar-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Schema validation against the fixture corpus ───────────────────────────
+  schema-fixtures:
+    name: Sidecar fixtures validate against schema
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install ajv-cli
+        run: npm install -g ajv-cli@5 ajv-formats@3
+
+      - name: Convert YAML fixtures to JSON
+        run: |
+          mkdir -p .schema-validate-tmp/{valid,invalid}
+          for f in test/fixtures/sidecars/valid/*.yaml; do
+            base=$(basename "$f" .yaml)
+            python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open(sys.argv[1]).read()), indent=2))" "$f" \
+              > ".schema-validate-tmp/valid/${base}.json"
+          done
+          for f in test/fixtures/sidecars/invalid/*.yaml; do
+            base=$(basename "$f" .yaml)
+            python3 -c "import yaml,json,sys; print(json.dumps(yaml.safe_load(open(sys.argv[1]).read()), indent=2))" "$f" \
+              > ".schema-validate-tmp/invalid/${base}.json"
+          done
+
+      - name: Valid fixtures must pass
+        run: |
+          fail=0
+          for f in .schema-validate-tmp/valid/*.json; do
+            if ! ajv validate -s templates/schemas/sidecar.v1.schema.json -d "$f" --strict=true 2>&1; then
+              echo "::error file=$f::expected to pass schema validation but failed"
+              fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Invalid fixtures must fail
+        run: |
+          fail=0
+          for f in .schema-validate-tmp/invalid/*.json; do
+            if ajv validate -s templates/schemas/sidecar.v1.schema.json -d "$f" --strict=true 2>/dev/null; then
+              echo "::error file=$f::expected to fail schema validation but passed"
+              fail=1
+            fi
+          done
+          exit $fail
+
+  # ─── INV-004 hook lint ──────────────────────────────────────────────────────
+  inv004-hook-lint:
+    name: INV-004 — hooks must not interpolate untrusted text
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reject ${...} interpolation in systemMessage / additionalContext
+        run: |
+          # Match `(systemMessage|additionalContext)…${…}` on a single line —
+          # this catches shell variable interpolation directly inside hook
+          # protocol channel bodies. Scope: templates/hooks/*.sh.
+          # The grep regex mirrors the lint described in INV-004 and Phase 7b.
+          if grep -rEn '(systemMessage|additionalContext)[^}]*\$\{' templates/hooks/*.sh 2>/dev/null; then
+            echo "::error::INV-004 violation: hook interpolates untrusted text into a Claude-facing channel"
+            exit 1
+          fi
+          echo "OK: no ${...} interpolation in systemMessage / additionalContext"
+
+      - name: Reject double-quoted JSON heredocs in hooks (INV-003)
+        run: |
+          # Same lint the test workflow runs; included here so a hook-only PR
+          # that doesn't touch tools/edikt/ still trips this gate.
+          if grep -rE 'echo "\{|printf "\{' templates/hooks/*.sh install.sh 2>/dev/null; then
+            echo "::error::INV-003 violation: shell-interpolated JSON in hooks or install.sh"
+            exit 1
+          fi
+          echo "OK: no double-quoted shell-interpolated JSON in hooks"
+
+  # ─── Phase B purity (no LLM / subprocess / network in the merge path) ──────
+  no-llm-in-merge:
+    name: Phase B merge must not invoke an LLM
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Run no-llm-in-merge.sh static check
+        run: bash tools/edikt/check/no-llm-in-merge.sh
+
+  # ─── Canonical YAML round-trip ──────────────────────────────────────────────
+  canonical-yaml-roundtrip:
+    name: Sidecar canonical YAML round-trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Run sidecar canonical / hash / schema unit tests
+        # These tests cover the three properties the rest of the sidecar
+        # surface depends on: canonical Marshal is idempotent, hash sensitivity
+        # tracks content (not SourcePath), and the fixture corpus parses
+        # under the strict decoder.
+        run: |
+          cd tools/edikt
+          go test -count=1 \
+            -run 'TestYAMLCanonical|TestHash_|TestSchema_|TestMarshal_' \
+            ./internal/sidecar/...

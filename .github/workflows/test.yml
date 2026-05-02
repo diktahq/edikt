@@ -60,9 +60,10 @@ jobs:
       - name: INV-008 lint — no branch-tracking install URLs in user-facing docs
         run: |
           # Reject raw.githubusercontent.com/.*/main/ and releases/latest/download/
-          # in README and website/ (user-facing). node_modules excluded.
+          # in README, CLAUDE.md, and website/ (user-facing + dev-facing).
+          # node_modules excluded.
           if grep -rE "raw\.githubusercontent\.com/[^/]+/[^/]+/main/|releases/latest/download/" \
-               README.md website/ \
+               README.md CLAUDE.md website/ \
                --include="*.md" --include="*.yml" --include="*.yaml" \
                --exclude-dir=".vitepress" --exclude-dir="node_modules" 2>/dev/null; then
             echo "FAIL: branch-tracking install URL found in user-facing docs (INV-008)"

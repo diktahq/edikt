@@ -541,7 +541,7 @@ assert_file_contains "$PROJECT_ROOT/commands/gov/rules-update.md" "compiled gove
 # Doctor reports compiled governance status
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Compiled governance" "Doctor checks compiled governance"
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Routing Table" "Doctor checks for routing table"
-assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Sentinel coverage" "Doctor reports sentinel coverage"
+assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Sidecar Health" "Doctor reports v0.6.0 sidecar health (ADR-027 — replaces ADR-008 sentinel coverage)"
 assert_file_contains "$PROJECT_ROOT/commands/doctor.md" "Override detection" "Doctor detects rule pack vs governance conflicts"
 
 # Status shows compiled governance info

@@ -54,7 +54,7 @@ jobs:
         run: |
           fail=0
           for f in .schema-validate-tmp/valid/*.json; do
-            if ! ajv validate -s templates/schemas/sidecar.schema.json -d "$f" --strict=true 2>&1; then
+            if ! ajv validate -s templates/schemas/sidecar.v1.schema.json -d "$f" --strict=true 2>&1; then
               echo "::error file=$f::expected to pass schema validation but failed"
               fail=1
             fi
@@ -65,7 +65,7 @@ jobs:
         run: |
           fail=0
           for f in .schema-validate-tmp/invalid/*.json; do
-            if ajv validate -s templates/schemas/sidecar.schema.json -d "$f" --strict=true 2>/dev/null; then
+            if ajv validate -s templates/schemas/sidecar.v1.schema.json -d "$f" --strict=true 2>/dev/null; then
               echo "::error file=$f::expected to fail schema validation but passed"
               fail=1
             fi

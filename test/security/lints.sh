@@ -41,6 +41,17 @@ if [ -n "$hits" ]; then
     fail=1
 fi
 
+# ── INV-004: shell ${VAR} interpolation inside a systemMessage / additionalContext
+# value smuggles attacker-influenceable text into Claude-facing channels. Per
+# Phase 7b verification: this pattern MUST stay clean across all hook scripts.
+# Safe builders use python3 json.dumps with values passed as separate argv.
+hits=$(grep -nE '(systemMessage|additionalContext)[^}]*\$\{' templates/hooks/*.sh 2>/dev/null || true)
+if [ -n "$hits" ]; then
+    echo "[INV-004] shell \${VAR} interpolation inside systemMessage/additionalContext value:" >&2
+    echo "$hits" >&2
+    fail=1
+fi
+
 # ── INV-008: no branch-tracking install URLs in USER-FACING docs and CI.
 # Scope (the files a user reads or CI runs):
 #   - README.md
@@ -53,7 +64,7 @@ fi
 #     forbidden, spec prose describing prior design state. INV-008 protects
 #     what users COPY, not what we document about the past.
 #   - docs/internal/ — gitignored.
-_scope_dirs="README.md .github/workflows website docs/guides bin/edikt install.sh"
+_scope_dirs="README.md CLAUDE.md .github/workflows website docs/guides bin/edikt install.sh"
 hits=""
 for d in $_scope_dirs; do
     [ -e "$d" ] || continue
