@@ -31,6 +31,37 @@ Validate governance setup and report what's healthy, what's missing, and how to 
 | Linter sync | ✅ | Config newer than rules → suggest `/edikt:gov:sync` |
 | edikt version | ✅ match | Project version differs from installed → suggest `/edikt:upgrade` |
 
+### Sidecar Health (v0.6.0)
+
+For every ADR, invariant, and guideline `.md`, doctor verifies the co-located `<artifact>.edikt.yaml` sidecar:
+
+| Check | Severity | What it catches |
+|---|---|---|
+| `ORPHAN` | Hard fail | A `.edikt.yaml` exists with no sibling `.md` |
+| `MISSING` | Hard fail | A governance `.md` has no co-located sidecar |
+| `PATH MISMATCH` | Hard fail | The sidecar's `path:` field doesn't resolve to the sibling `.md` |
+| Schema validation | Hard fail | Sidecar fails `templates/schemas/sidecar.v1.schema.json` |
+| `directives: []` | Soft warning | Sidecar exists but has no directives — sidecar may need regeneration |
+
+```text
+SIDECAR HEALTH
+  Orphans:           0
+  Missing sidecars:  0
+  Path mismatches:   0
+  Schema failures:   0
+  Empty directives:  1
+
+  ⚠ NEEDS REVIEW: ADR-007.md has no directives in its sidecar — confirm the
+    prose has no rules to extract, or run /edikt:adr:compile ADR-007.
+```
+
+Hard-fail checks (1–4) exit 1. The empty-directives check is soft — exit 0 with a warning summary. Resolve via:
+
+- `MISSING` → run `/edikt:<type>:compile <id>` for the artifact
+- `ORPHAN` → delete the stale sidecar (no parent prose)
+- `PATH MISMATCH` → fix the `path:` field, then run `:compile` to regenerate canonically
+- `directives: []` → confirm the prose is intentionally rule-free, or re-run `:compile`
+
 ### PRD/SPEC artifact health (v0.6.0)
 
 Doctor runs four checks against every PRD sidecar and every SPEC sidecar:

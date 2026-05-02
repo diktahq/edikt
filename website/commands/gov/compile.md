@@ -4,19 +4,113 @@ Compile accepted ADRs, active invariants, and team guidelines into topic-grouped
 
 The output — `.claude/rules/governance.md` (index) and `.claude/rules/governance/*.md` (topic files) — is read by Claude automatically every session. Each topic file contains full-fidelity directives for a specific domain, loaded only when relevant files are being edited.
 
+In v0.6.0, compile runs in two phases per [ADR-028](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-028-two-phase-compile-resync-merge.md): **Phase A** (resync, conditional, LLM-backed) and **Phase B** (merge, always, deterministic). Phase B preserves [ADR-020](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-020-gov-compile-tier-2-migration.md)'s latency budget; Phase A has no SLO but emits mandatory progress UI.
+
 ## Usage
 
 ```bash
 /edikt:gov:compile
 /edikt:gov:compile --check
+/edikt:gov:compile --no-wait
 ```
 
 ## Arguments
 
 | Argument | Description |
 |----------|-------------|
-| (none) | Compile and write governance index + topic rule files |
-| `--check` | Validate only — report contradictions and conflicts without writing |
+| (none) | Run Phase A (if stale) + Phase B; write governance index + topic rule files |
+| `--check` | Phase B only; exit 1 with stale-sidecar list if any sidecar is stale |
+| `--no-wait` | Fail fast (exit 1) instead of waiting on the `.edikt/state/compile.lock` |
+
+## Two-phase architecture (v0.6.0)
+
+### Phase A — Resync (conditional)
+
+Runs only when one or more sidecars are stale. A sidecar is stale when the SHA-256 of its parent `.md`'s body no longer matches the body hash the sidecar was generated from (recomputed on read, never committed).
+
+For every stale sidecar, compile dispatches a goroutine that shells out to the per-artifact `:compile` command. Concurrency is capped at 8 via a semaphore. Failures log to `.edikt/state/compile-errors.log` and don't abort the run; remaining subagents continue.
+
+Progress UI on stderr is mandatory:
+
+```text
+Phase A — resyncing 3 stale sidecars
+  ✓ ADR-001-claude-code-only           (12.4s)
+  ✓ ADR-007-compile-schema-version     (18.1s)
+  ⏳ ADR-022-single-go-binary-replaces… [▓▓▓░░░] ETA 22s
+```
+
+If any sidecar fails, Phase B does not run. Compile prints the aggregated failure summary and exits 1.
+
+**Latency:** no SLO. Per-artifact resync is 30–60s p50.
+
+### Phase B — Merge (always)
+
+Reads every `<artifact>.edikt.yaml` under `docs/architecture/decisions/`, `docs/architecture/invariants/`, and `docs/guidelines/`. Validates against `templates/schemas/sidecar.v1.schema.json`. Groups by topic. Renders each topic file from the merged directive set with canonical serialization.
+
+Pure deterministic merge — no LLM, no `Task`/`Agent` dispatch, no shell-out. A static-analysis test (`tools/edikt/check/no-llm-in-merge.sh`) verifies that no LLM-dispatch symbol is reachable from the Phase B code path. The check runs in CI.
+
+**Latency budget** (preserved from ADR-020):
+
+| Mode | Budget |
+|---|---|
+| Full regenerate from cold cache (50 sidecars) | `<5s` |
+| No-op (all sidecars unchanged) | `<500ms` |
+| `--check` mode | `<2s` |
+
+**Diff-only rendering:** topic files carry a `_fingerprint:` field — a sorted SHA-256 of contributing sidecar paths and content hashes. If a fingerprint matches the existing file's, Phase B skips the rewrite. Modifying one sidecar therefore only rerenders its topic file.
+
+#### The `_fingerprint:` field — stability contract
+
+The `_fingerprint:` line in the YAML frontmatter of every `.claude/rules/governance/<topic>.md` is the short-circuit that gives Phase B its `<500ms` no-op budget. It is a sorted SHA-256 over the contributing sidecar paths and their canonical-marshaled content. Treat it as opaque, tool-owned bytes:
+
+- **Do not hand-edit or strip the line.** Doing so forces a full re-render of that topic file on the next compile (correctness preserved; performance degraded for one run).
+- **The field lives in the compiled topic file, not in the sidecar schema.** Sidecars carry source-of-truth content; the fingerprint is a derivation observable on the output side, which is where ADR-020's determinism guarantee binds.
+- **The hash is canonicalized over the marshaled sidecar bytes.** Re-running compile with byte-equal input produces a byte-equal fingerprint (ADR-020 / ADR-028).
+- **Why it's not in the sidecar:** the sidecar is human-reviewable structured data; embedding a hash of the rendered output in the input would couple the layers and break ADR-027's "edikt does not write to inputs" rule.
+
+If you see fingerprints differing across runs with no apparent input change, file an issue — that's a determinism break, which is a bug per ADR-020.
+
+### `--check` mode
+
+Skips Phase A entirely. If any sidecar is stale, exits 1 with:
+
+```text
+✗ Stale sidecars: ADR-001, ADR-007, ADR-022
+  Run /edikt:gov:compile to resync.
+```
+
+CI gates run `--check`. Because `--check` never dispatches a subagent, it is deterministic and fast.
+
+### Concurrent compile
+
+Compile takes an advisory file-lock at `.edikt/state/compile.lock`. A second invocation while one is running waits by default, or fails fast with `--no-wait`.
+
+### `--json` (two-phase mode)
+
+`gov compile --json` emits a single JSON document on stdout summarizing both phases. Prose progress lines are routed to stderr at low verbosity so machine-readable consumers see only the JSON object.
+
+Shape:
+
+```json
+{
+  "status": "ok",
+  "phase_a": {
+    "dispatched": 0,
+    "stale": 0,
+    "errors": []
+  },
+  "phase_b": {
+    "topics_rendered": [],
+    "topics_unchanged": ["governance/architecture.md", "governance/compile.md"],
+    "index_written": false,
+    "total_directives": 138
+  }
+}
+```
+
+`status` is `"ok"` on a successful run, `"error"` when compile exited non-zero (the run still completed enough to emit JSON; check `error` for the message). Phase A's `dispatched` and `stale` counts agree on a successful resync (every stale sidecar was dispatched). On Phase A failure, `phase_a.errors[]` lists each artifact that failed and `phase_b` is omitted (Phase B does not run when Phase A failed). Output shape is the contract per ADR-029 — exit codes carry status; output is for tier-2 → tier-2 piping or human consumption.
+
+`--dry-run` is an alias for `--check` (added for parity with `migrate sidecars` and `verify` flag conventions).
 
 ## How it works
 
@@ -186,13 +280,24 @@ The compile parser now reads two new optional fields from sentinel blocks:
 
 Missing fields are treated as `[]` / `{}` — fully backward-compatible.
 
+## Migration check (v0.6.0)
+
+At start, compile detects pre-v0.6.0 in-body `[edikt:directives:start]` blocks. If any are found in non-skip-list, non-fenced files, compile refuses with:
+
+```text
+✗ Migration required.
+  Run /edikt:upgrade to migrate this project to v0.6.0 sidecar architecture.
+```
+
+There is no fallback to in-body sentinel parsing. v0.6.0 reads sidecars only. See [Sidecar Migration](/guides/sidecar-migration) for the walkthrough.
+
 ## When to run
 
 Run after:
 - Capturing a new ADR with `/edikt:adr:new`
 - Adding an invariant with `/edikt:invariant:new`
 - Updating a guideline file
-- Running `/edikt:gov:review` to generate or update sentinels
+- Editing the prose body of an existing accepted ADR or active invariant (Phase A will auto-resync the sidecar)
 
 ## What's next
 

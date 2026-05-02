@@ -167,6 +167,33 @@ This is a launcher-level operation, not a command. See [Upgrade and rollback](..
 
 Upgrading from v0.4.x? See [Migrating from v0.4](../guides/migrating-from-v0.4.md).
 
+## v0.6.0 sidecar migration
+
+If your project still has v0.5.x or earlier in-body `[edikt:directives:start]` sentinel blocks, the upgrade detects them and prompts before applying:
+
+```text
+EDIKT UPGRADE — v0.6.0 sidecar migration
+─────────────────────────────────────────────────────
+Detected 14 artifacts with legacy [edikt:directives:start] blocks.
+
+Mechanical lifts: 11
+LLM resyncs:       3 (will dispatch sidecar-extractor agent per artifact)
+
+v0.6.0 requires migrating in-body sentinels to sidecars.
+Apply now? [y/N]
+```
+
+The detection scan respects the skip-list (ADR-008, ADR-009, SPEC-* files) and excludes sentinel blocks inside fenced code regions. The migration tool runs `--dry-run` first, prints the plan, and on `y` runs `--apply`. On `N`, the upgrade prints:
+
+```text
+Migration deferred. Run /edikt:gov:compile to apply when ready.
+Compile will refuse until migration is applied.
+```
+
+There is no double-parser window. `/edikt:gov:compile` exits 1 with an actionable error when in-body sentinels are still present in non-skip-list, non-fenced files.
+
+The full walkthrough is in [Sidecar Migration](/guides/sidecar-migration).
+
 ## Homebrew users
 
 `brew upgrade edikt` updates the launcher binary. `edikt upgrade` updates the payload. They're independent. See [Homebrew install](../guides/homebrew.md) for the full two-tier model.

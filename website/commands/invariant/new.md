@@ -76,14 +76,24 @@ The default template produces:
 
 The `## Statement` section is what compile reads. Write it with absolute language ("every", "all", "never") — these trigger the "No exceptions." reinforcement in compiled directives. See [Writing good invariants](/governance/writing-invariants) for the full guide.
 
-## Output
+## Output (v0.6.0)
 
 ```text
-docs/invariants/
-└── INV-001-no-floats-for-money.md
+docs/architecture/invariants/
+├── INV-001-no-floats-for-money.md           ← prose. you own it.
+└── INV-001-no-floats-for-money.edikt.yaml   ← sidecar. edikt writes it.
 ```
 
-After creating the invariant, edikt automatically runs `/edikt:invariant:compile` to generate the directive sentinel block with directives, reminders, and verification checklist items. Your new invariant is immediately ready for `/edikt:gov:compile`.
+After creating the prose `.md`, edikt dispatches the `sidecar-extractor` agent in a forked subagent (`context: fork`) with a locked extraction prompt. The agent reads the Statement and Enforcement sections, extracts MUST/NEVER directives, and writes the co-located `<INV>.edikt.yaml`. The pair is created atomically — if extraction fails, neither file remains.
+
+You'll see:
+
+```text
+✅ Created INV-001-no-floats-for-money.md
+✅ Generated INV-001-no-floats-for-money.edikt.yaml — review it before sharing.
+```
+
+Each invariant's sidecar is generated in its own fresh subagent context with the same locked prompt — there is no cross-artifact contamination. See [Sidecar Architecture](/governance/sidecar) for the data model.
 
 ## What's next
 

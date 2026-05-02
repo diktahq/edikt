@@ -31,6 +31,18 @@ Each invariant is evaluated on:
 | **Violation signal** | Describes what a violation looks like | No way to tell if violated |
 | **Testability** | Checkable by static analysis, grep, or test | Cannot be verified mechanically |
 
+## Sidecar Cross-Check (v0.6.0)
+
+After the prose-quality review, `:review` cross-checks the invariant's `<INV>.edikt.yaml` sidecar against the prose body for drift. The check is read-only — it never modifies files.
+
+For each directive in the sidecar:
+
+1. Read `<INV>.edikt.yaml`. If missing, warn: *"No sidecar found — run `/edikt:invariant:compile <INV>` to generate."*
+2. Locate `source_excerpt.quote` in the prose body. If the verbatim quote is not found, flag the directive as stale.
+3. Scan the prose body for imperative directives (MUST, MUST NOT, SHOULD, NEVER, ALWAYS) not represented in the sidecar. Flag any extras.
+
+Output is either `✓ Sidecar in sync` or a warning list with line numbers and a recovery command. `:review` never auto-regenerates — the user resolves drift via `:compile` or by editing the prose.
+
 ## When to run
 
 - After writing a new invariant, before it goes active

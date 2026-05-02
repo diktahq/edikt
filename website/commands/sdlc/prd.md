@@ -124,7 +124,7 @@ For routine changes, prefer continuation (`/edikt:sdlc:prd PRD-005`), shipping F
 
 ## JSON Schema autocomplete
 
-The sidecar template carries a `# yaml-language-server: $schema=...` header pointing at `templates/schemas/prd-sidecar.schema.json`. Open the `.yaml` in VS Code, JetBrains, or Neovim with the YAML extension installed — autocomplete, validation, and tooltips work without any per-project setup.
+The sidecar template carries a `# yaml-language-server: $schema=...` header pointing at `templates/schemas/prd-sidecar.v1.schema.json`. Open the `.yaml` in VS Code, JetBrains, or Neovim with the YAML extension installed — autocomplete, validation, and tooltips work without any per-project setup.
 
 The schema is auto-installed to `.edikt/schemas/` the first time you author a PRD.
 

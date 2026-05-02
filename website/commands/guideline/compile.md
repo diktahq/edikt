@@ -55,10 +55,25 @@ Guidelines that use hedging language are skipped:
   Guidelines should use MUST/NEVER. Either rewrite the rule or omit it.
 ```
 
+## v0.6.0 — sidecar mode
+
+In v0.6.0, `:compile` regenerates a single `<guideline>.edikt.yaml` sidecar in a fresh subagent context. The output is one of:
+
+```text
+Regenerated error-handling.edikt.yaml
+error-handling.edikt.yaml unchanged
+```
+
+Idempotent: running twice on an unchanged body produces a byte-equal sidecar (canonical YAML serialization). The agent prompt is locked; each artifact compiles in its own forked subagent (`context: fork`) so there is no cross-artifact contamination.
+
+You usually don't need to run this directly. `/edikt:gov:compile` Phase A auto-resyncs stale sidecars by calling this command per guideline.
+
+The legacy three-list schema (`directives`, `manual_directives`, `suppressed_directives`) collapses in v0.6.0 to a single `directives[]` array per sidecar. See [Sidecar Architecture](/governance/sidecar).
+
 ## Related commands
 
-- [`/edikt:guideline:new`](new) — create a new guideline
-- [`/edikt:guideline:review`](review) — review language quality + directive LLM compliance
-- [`/edikt:gov:compile`](/commands/gov/compile) — compile all sources into governance.md
+- [`/edikt:guideline:new`](new) — create a new guideline (creates the sidecar atomically)
+- [`/edikt:guideline:review`](review) — review language quality + cross-check sidecar drift
+- [`/edikt:gov:compile`](/commands/gov/compile) — full governance compile (Phase A resync + Phase B merge)
+- [Sidecar Architecture](/governance/sidecar) — what sidecars are and why
 - [Guidelines](/governance/guidelines) — what guidelines are and when to use them
-- [Sentinel Blocks](/governance/sentinels) — the technical format

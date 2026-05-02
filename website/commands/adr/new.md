@@ -83,14 +83,26 @@ The default template produces:
 
 The `## Decision` section is what the compile pipeline reads to generate directives. Write it with MUST/NEVER language and literal code tokens for effective compilation. See [Writing good ADRs](/governance/writing-adrs) for guidance.
 
-## Output
+## Output (v0.6.0)
 
 ```text
-docs/decisions/
-└── 003-use-postgres-for-persistence.md
+docs/architecture/decisions/
+├── ADR-003-use-postgres-for-persistence.md          ← prose. you own it.
+└── ADR-003-use-postgres-for-persistence.edikt.yaml  ← sidecar. edikt writes it.
 ```
 
-After creating the ADR, edikt automatically runs `/edikt:adr:compile` to generate the directive sentinel block. This auto-chain means your new ADR is immediately ready for `/edikt:gov:compile`.
+After creating the prose `.md`, edikt dispatches the `sidecar-extractor` agent in a forked subagent (`context: fork`) with a locked extraction prompt. The agent reads the Decision section, extracts MUST/NEVER directives, and writes the co-located `<ADR>.edikt.yaml`. The pair is created atomically — if extraction fails, neither file remains.
+
+The locked prompt + forked context prevents cross-artifact contamination: every ADR's sidecar is generated in its own fresh context with the same prompt, regardless of whether you're creating one ADR or batching ten. See [Sidecar Architecture](/governance/sidecar) for the data model.
+
+You'll see:
+
+```text
+✅ Created ADR-003-use-postgres-for-persistence.md
+✅ Generated ADR-003-use-postgres-for-persistence.edikt.yaml — review it before sharing.
+```
+
+If you create the ADR in `draft` status, the sidecar is generated anyway. Drafts are mutable; the sidecar regenerates whenever the prose changes (run `/edikt:adr:compile <id>` to refresh, or just run `/edikt:gov:compile` — Phase A auto-resyncs stale sidecars).
 
 ## ADRs are immutable once accepted
 

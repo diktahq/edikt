@@ -29,6 +29,18 @@ Each guideline directive is scored on four dimensions:
 | **Phrasing** | Active voice with clear scope | Passive or hedged language |
 | **Testability** | Verifiable by code review or tooling | Cannot be verified |
 
+## Sidecar Cross-Check (v0.6.0)
+
+After the prose-quality review, `:review` cross-checks the guideline's `<guideline>.edikt.yaml` sidecar against the prose body for drift. The check is read-only — it never modifies files.
+
+For each directive in the sidecar:
+
+1. Read `<guideline>.edikt.yaml`. If missing, warn: *"No sidecar found — run `/edikt:guideline:compile <slug>` to generate."*
+2. Locate `source_excerpt.quote` in the prose body. If the verbatim quote is not found, flag the directive as stale.
+3. Scan the prose body for MUST/NEVER bullets not represented in the sidecar. Flag any extras.
+
+Output is either `✓ Sidecar in sync` or a warning list with line numbers. `:review` never auto-regenerates — the user resolves drift via `:compile` or by editing the prose.
+
 ## When to run
 
 - After writing a new guideline, before it's compiled

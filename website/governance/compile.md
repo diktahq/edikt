@@ -6,16 +6,16 @@ edikt governance flows through a pipeline: you write decisions for humans, compi
 
 Every governance document has two audiences:
 
-| Section | Audience | Purpose |
+| Surface | Audience | Purpose |
 |---|---|---|
-| Statement, Rationale, Consequences, Implementation, Anti-patterns, Enforcement | **Humans** | Understand the decision, its context, why it exists, how to comply |
-| Directives sentinel block (`[edikt:directives:start/end]`) | **Claude** | Short, imperative rules Claude reads and follows literally |
+| The prose `.md` (Statement, Rationale, Consequences, Implementation, Anti-patterns, Enforcement) | **Humans** | Understand the decision, its context, why it exists, how to comply |
+| The co-located `.edikt.yaml` sidecar | **Claude** | Short, imperative directives Claude reads and follows literally |
 
-You write the human sections. The compile pipeline generates the Claude sections. Both live in the same file, clearly separated by sentinel markers.
+You write the prose `.md`. The compile pipeline generates the sidecar. **edikt only writes to sidecars and topic files — your prose `.md` is never modified by `gov:compile`.** That's the structural boundary introduced in v0.6.0 (ADR-027), replacing the v0.5.x in-body sentinel block. See [Sidecar Architecture](sidecar) for the full data model.
 
-## The sentinel block
+## The sentinel block (legacy, v0.5.x and earlier)
 
-Every ADR, Invariant Record, and guideline can contain a directive sentinel block:
+Before v0.6.0, every governance document carried an in-body directive sentinel block. It looked like this:
 
 ```markdown
 ## Enforcement
@@ -59,7 +59,11 @@ The block contains:
 
 The compile pipeline owns `directives:`, `reminders:`, and `verification:`. You own `manual_directives:` and `suppressed_directives:`. Compile never touches your lists; you never need to touch compile's.
 
+In v0.6.0, this in-body block is replaced by a co-located `<artifact>.edikt.yaml` sidecar. The schema collapses to a single `directives[]` array (per-directive `text` + `source_excerpt`); hashes are recomputed on read and never committed. See [Sidecar Architecture](sidecar). The migration tool lifts existing in-body blocks into sidecars — see [Sidecar Migration](/guides/sidecar-migration).
+
 ## How directives are generated
+
+Generation runs in a forked subagent (`context: fork`) with a locked extraction prompt and `Read + Write` tools. Each artifact compiles in its own fresh context — there is no cross-artifact contamination. The dispatching commands are `/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new`, the per-artifact `:compile` variants, and `/edikt:gov:compile` Phase A.
 
 ### From Invariant Records
 
@@ -104,20 +108,64 @@ Directive (Claude, 1 line):
 
 The `## Rules` section is the source. Guidelines already use MUST/NEVER language. Compile lifts each bullet into a directive. Soft language ("should", "prefer") is rejected with a warning.
 
-## The three-list merge
+## The three-list merge (legacy, v0.5.x)
 
-When `/edikt:gov:compile` assembles the final governance.md, it reads all three lists from every source and merges them:
+In v0.5.x and earlier, when `/edikt:gov:compile` assembled the final governance.md, it read three lists from every source and merged them:
 
 ```
 effective_rules = (directives - suppressed_directives) ∪ manual_directives
 ```
 
-This means:
-- Your `manual_directives:` always ship, even if compile doesn't generate them
-- Your `suppressed_directives:` always filter, even if compile keeps regenerating them
-- You have full control without editing compile's output
+In v0.6.0 this collapses to a single `directives[]` array per sidecar. To suppress a generated rule, remove the source language from the prose body and re-run compile (or, for non-mutable prose, edit the sidecar after compile — `:review` will flag the divergence as drift). To add a rule compile missed, add an entry to `directives[]` with a `source_excerpt` quoting the prose line that justifies it. See [Sidecar Architecture](sidecar) for the full editing surface. ADR-008 (the original three-list schema) is superseded by [ADR-027](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-027-sidecar-architecture-for-governance-metadata.md).
 
-See [ADR-008](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-008-deterministic-compile-and-three-list-schema.md) for the formal schema.
+## Two-phase compile (v0.6.0)
+
+`/edikt:gov:compile` runs in two phases. The contract is in [ADR-028](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-028-two-phase-compile-resync-merge.md), which amends [ADR-020](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-020-gov-compile-tier-2-migration.md)'s latency budget.
+
+### Phase A — Resync (conditional)
+
+**Trigger:** one or more sidecars are stale. A sidecar is stale when the SHA-256 of its parent `.md`'s body no longer matches the sidecar's expected body hash (recomputed on read, never committed).
+
+**Action:** dispatch parallel subagents to regenerate every stale sidecar. Concurrency 8 (semaphore-bound). Each subagent runs the same locked extraction prompt as `/edikt:<type>:compile`. Failures log to `.edikt/state/compile-errors.log` and don't abort the run; remaining subagents continue. After all subagents finish, an aggregated failure report is printed.
+
+**Latency:** no SLO. Per-subagent latency is 30–60s p50 — that cost is real. The compiler emits per-subagent progress on stderr (artifact name, completed/total, ETA from running p50). Silent multi-minute operation is forbidden.
+
+```text
+Phase A — resyncing 3 stale sidecars
+  ✓ ADR-001-claude-code-only           (12.4s)
+  ✓ ADR-007-compile-schema-version     (18.1s)
+  ⏳ ADR-022-single-go-binary-replaces… [▓▓▓░░░] ETA 22s
+```
+
+If any sidecar fails, Phase B does not run and compile exits 1 with the aggregated report.
+
+### Phase B — Merge (always)
+
+**Action:** read every sidecar, validate against the schema, group by topic, render `.claude/rules/governance/<topic>.md`. This phase is a pure deterministic merge. No LLM, no `Task`/`Agent` dispatch, no shell-out.
+
+**Static enforcement:** a static-analysis test (`tools/edikt/check/no-llm-in-merge.sh`) verifies that no `Agent` / `Task` / subprocess-spawning symbol is transitively reachable from the Phase B code path. The check is wired into CI so any drift fails the build.
+
+**Latency budget** (preserved from ADR-020):
+
+| Mode | Budget |
+|---|---|
+| Full regenerate from cold cache (50 sidecars) | `<5s` |
+| No-op (all sidecars unchanged) | `<500ms` |
+| `--check` mode | `<2s` |
+
+Phase B writes topic files atomically (tmp → rename). Topic files carry a `_fingerprint:` field — a sorted SHA-256 of contributing sidecar paths and content hashes. If a fingerprint matches the existing file's, Phase B skips the rewrite. Modifying one sidecar therefore only rerenders its topic file; every other topic file is byte-equal across compiles.
+
+### `--check` mode
+
+```bash
+/edikt:gov:compile --check
+```
+
+`--check` skips Phase A entirely. If any sidecar is stale, it exits 1 with a single-line actionable error directing the user to run `gov:compile`. CI gates run `--check`. Because it never dispatches a subagent, it is deterministic and fast.
+
+### Concurrent compile
+
+Compile takes an advisory file-lock at `.edikt/state/compile.lock`. A second invocation while one is running waits by default, or fails fast with `--no-wait`.
 
 ## What governance.md looks like
 
@@ -184,22 +232,27 @@ Use `/edikt:gov:score` to verify your governance follows these patterns.
 
 ## Hash-based caching
 
-Compile doesn't call Claude when nothing changed. Two hashes gate the decision:
+Phase A doesn't dispatch a subagent when a sidecar is fresh. The decision gate is recomputing the body hash and comparing it against the sidecar's expected body hash. If they match, the sidecar is fresh and Phase A skips it.
 
-- **`source_hash`** — SHA-256 of the human content. If unchanged since last compile → skip.
-- **`directives_hash`** — SHA-256 of the directives list. If it doesn't match after regeneration → you hand-edited. Compile runs an interactive interview to resolve.
+The hash is **never committed**. It's recomputed on every read. This means a sidecar's freshness is always evaluated against the current `.md`, not against a stale snapshot — which kills a class of bugs where a stale committed hash "agreed with itself."
 
-This means compile is fast (skips clean files) and safe (detects hand-edits before overwriting).
+## Migration from in-body sentinels
+
+If your project still has `[edikt:directives:start]` blocks inside `.md` files (v0.5.x or earlier), `/edikt:gov:compile` refuses to run until you migrate. Run `/edikt:upgrade` and accept the migration prompt; or run `edikt migrate sidecars --dry-run` followed by `--apply` directly. See [Sidecar Migration](/guides/sidecar-migration) for the walkthrough.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `/edikt:invariant:compile` | Generate sentinel blocks for invariants |
-| `/edikt:adr:compile` | Generate sentinel blocks for ADRs |
-| `/edikt:guideline:compile` | Generate sentinel blocks for guidelines |
-| `/edikt:gov:compile` | Assemble all sentinels into governance.md + topic files |
+| `/edikt:adr:new` | Create the `(ADR.md, ADR.edikt.yaml)` pair atomically |
+| `/edikt:invariant:new` | Create the `(INV.md, INV.edikt.yaml)` pair atomically |
+| `/edikt:guideline:new` | Create the `(guideline.md, guideline.edikt.yaml)` pair atomically |
+| `/edikt:adr:compile <id>` | Regenerate exactly one ADR sidecar |
+| `/edikt:invariant:compile <id>` | Regenerate exactly one invariant sidecar |
+| `/edikt:guideline:compile <id>` | Regenerate exactly one guideline sidecar |
+| `/edikt:gov:compile` | Phase A resync (conditional) + Phase B merge (deterministic) |
+| `/edikt:gov:compile --check` | Phase B only; exit 1 on stale sidecars |
 | `/edikt:gov:score` | Score the compiled output for LLM compliance |
 | `/edikt:gov:review` | Review for contradictions and language quality |
 
-The typical flow: write a decision → compile the artifact → compile governance → score quality.
+The typical flow: write a decision → `:new` creates the prose + sidecar → edit the prose → `:compile` regenerates the sidecar → `gov:compile` rebuilds topic files.

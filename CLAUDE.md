@@ -81,8 +81,9 @@ edikt is the governance layer for agentic engineering. It enforces coding standa
 # Test
 ./test/run.sh
 
-# Install (global)
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+# Install (global) — INV-008: tag-pinned URL only; never main/latest.
+# See README.md for the canonical install snippet that pins to the
+# current released tag.
 ```
 
 ### edikt Commands
@@ -120,6 +121,8 @@ Match the user's intent, not their exact words. These are representative example
 | Review invariant language | "review this invariant", "check INV-NNN quality" | `/edikt:invariant:review` |
 | End-of-session sweep | "wrap up this session", "end of session", "session summary" | `/edikt:session` |
 | Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
+| Migrate to sidecars (v0.6.0) | "migrate sidecars", "upgrade my sidecars", "convert legacy ADRs", "run the v0.6.0 migration" | `bin/edikt migrate sidecars --dry-run` then `--apply` |
+| Verify a plan phase | "verify phase N", "run the verify runner", "check phase N criteria", "did phase N actually pass" | `bin/edikt verify <plan-id> --phase N` |
 | List or manage agents | "what agents do we have", "list agents", "add the security agent" | `/edikt:agents` |
 | Set up integrations | "setup Linear", "connect Jira", "add MCP server" | `/edikt:mcp` |
 | Brainstorm / explore ideas | "let's brainstorm", "brainstorm this", "explore options for X", "I have an idea", "let's think through X" | `/edikt:brainstorm` |

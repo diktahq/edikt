@@ -22,7 +22,7 @@ As of v0.6.0, the SPEC accepts three source types. The sidecar carries exactly o
 
 PRD sources are the strongest path. Use brainstorm sources when you're prototyping ahead of a PRD. Use free text when the work is small enough that a PRD would be ceremony — the spec is still structured, still rubric-scored, but doesn't pretend to inherit from anything.
 
-The structural source-of-truth lives in `templates/schemas/spec-sidecar.schema.json` and provides JSON Schema autocomplete in editors that load `yaml-language-server`.
+The structural source-of-truth lives in `templates/schemas/spec-sidecar.v1.schema.json` and provides JSON Schema autocomplete in editors that load `yaml-language-server`.
 
 ## Gate (PRD source only)
 

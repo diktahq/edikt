@@ -63,6 +63,37 @@ Each directive in an ADR is scored on four dimensions:
 | **Phrasing** | NEVER/MUST with one-clause reason for hard constraints | Reads as a suggestion |
 | **Testability** | Verifiable by grep, test, or code review | Cannot be verified |
 
+## Sidecar Cross-Check (v0.6.0)
+
+After the prose-quality review, `:review` cross-checks the ADR's `<ADR>.edikt.yaml` sidecar against the prose body for drift. The check is read-only — it never modifies files.
+
+For each directive in the sidecar:
+
+1. Read `<ADR>.edikt.yaml`. If missing, warn: *"No sidecar found — run `/edikt:adr:compile <ADR>` to generate."*
+2. Locate `source_excerpt.quote` in the prose body. If the verbatim quote is not found, flag: *"Sidecar directive 'X' no longer matches body — sidecar may be stale."*
+3. Scan the prose body for imperative directives (MUST, MUST NOT, SHOULD, NEVER, ALWAYS) not represented in the sidecar. Flag any extras.
+
+The output is either:
+
+```text
+✓ Sidecar in sync (5 directives, all source_excerpts match)
+```
+
+or:
+
+```text
+⚠ Sidecar drift detected
+  ADR-003-use-postgres-for-persistence.edikt.yaml
+    drift: directive "Use connection pooling..." quote not found at lines 47-49
+    extra in body: line 78 — "MUST run migrations in a transaction" (no sidecar entry)
+
+  Resolve via:
+    - /edikt:adr:compile ADR-003   (regenerate from current prose)
+    - or edit the prose body to match the sidecar's source_excerpts
+```
+
+`:review` never auto-regenerates. The user resolves drift via `:compile` or by editing the prose. This keeps `:review` safe to run as a CI gate without touching files.
+
 ## When to run
 
 - After writing a new ADR, before accepting it

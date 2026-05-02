@@ -176,7 +176,7 @@ The governance chain connects edikt's two systems — architecture governance & 
 
 Two systems working together:
 
-**Architecture governance & compliance** — ADRs, invariants, and guidelines are your current engineering decisions. They compile into `governance.md` — directives Claude reads every session.
+**Architecture governance & compliance** — ADRs, invariants, and guidelines are your current engineering decisions. They compile into `governance.md` — directives Claude reads every session. In v0.6.0, edikt's writes are confined to co-located `<artifact>.edikt.yaml` sidecars and topic files under `.claude/rules/governance/`. The prose `.md` you author is never touched by `gov:compile` — the boundary between human-owned and tool-owned bytes is structural, not definitional. See [Sidecar Architecture](sidecar).
 
 **Agentic SDLC governance** — PRD → Spec → Artifacts → Plan → Execute → Drift. Each step feeds the next. Each is constrained by compiled decisions and produces new ones.
 

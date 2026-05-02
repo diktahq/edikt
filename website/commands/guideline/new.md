@@ -62,14 +62,24 @@ The default template produces:
 
 The `## Rules` section is what compile reads. Each bullet must use MUST or NEVER — soft language ("should", "prefer") is rejected by compile with a warning. See [Guidelines](/governance/guidelines) for details.
 
-## Output
+## Output (v0.6.0)
 
 ```text
 docs/guidelines/
-└── guideline-api-response-casing.md
+├── guideline-api-response-casing.md           ← prose. you own it.
+└── guideline-api-response-casing.edikt.yaml   ← sidecar. edikt writes it.
 ```
 
-After creating the guideline, edikt automatically runs `/edikt:guideline:compile` to generate the directive sentinel block. Your new guideline is immediately ready for `/edikt:gov:compile`.
+After creating the prose `.md`, edikt dispatches the `sidecar-extractor` agent in a forked subagent (`context: fork`) with a locked extraction prompt. The agent reads the Rules section, lifts each MUST/NEVER bullet into a directive, and writes the co-located `<guideline>.edikt.yaml`. The pair is created atomically — if extraction fails, neither file remains.
+
+You'll see:
+
+```text
+✅ Created guideline-api-response-casing.md
+✅ Generated guideline-api-response-casing.edikt.yaml — review it before sharing.
+```
+
+Each guideline's sidecar is generated in its own fresh subagent context with the same locked prompt. See [Sidecar Architecture](/governance/sidecar) for the data model.
 
 ## Natural language triggers
 

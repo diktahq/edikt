@@ -58,9 +58,11 @@ What else was evaluated and why it was rejected?
 
 Once accepted, an ADR is immutable. This is enforced by [INV-002](invariant-records). If a decision changes, you write a new ADR — the history stays intact.
 
-## How ADRs compile into governance
+## How ADRs compile into governance (v0.6.0)
 
-The `## Decision` section is what compile reads. `/edikt:adr:compile` extracts every enforceable statement and transforms it into a directive:
+Every ADR has a co-located `<ADR>.edikt.yaml` sidecar that holds compiled directives — edikt does not write to your prose `.md` (ADR-027 makes the boundary structural). `/edikt:adr:compile <id>` regenerates exactly that one sidecar in a fresh subagent context with a locked extraction prompt. `/edikt:gov:compile` Phase A auto-resyncs stale sidecars (parallel, concurrency 8); Phase B merges them into topic files deterministically (no LLM, no `Task` dispatch — see [ADR-028](https://github.com/diktahq/edikt/blob/main/docs/architecture/decisions/ADR-028-two-phase-compile-resync-merge.md)).
+
+The `## Decision` section is what the extractor reads. It pulls every enforceable statement and transforms it into a directive:
 
 ```
 Decision section (human, 150 lines):
@@ -119,9 +121,16 @@ See [Extensibility](extensibility) for the full extension surface.
 | `/edikt:adr:compile` | Generate directive sentinel blocks |
 | `/edikt:adr:review` | Review language quality + directive LLM compliance |
 
+## Recent ADRs
+
+- **ADR-027** — Sidecar architecture for governance metadata. Supersedes ADR-008. Generated directives live in co-located `<artifact>.edikt.yaml` sidecars; edikt no longer writes to ADR/INV/guideline `.md` files.
+- **ADR-028** — Two-phase compile (Phase A resync + Phase B merge). Amends ADR-020's latency budget — Phase B preserves it; Phase A is a new conditional resync phase with no SLO but mandatory progress UI.
+
 ## Next steps
 
-- [How Governance Compiles](compile) — the full compile pipeline
+- [Sidecar Architecture](sidecar) — what sidecars are and why (v0.6.0)
+- [How Governance Compiles](compile) — the full compile pipeline (Phase A + Phase B)
 - [Invariant Records](invariant-records) — hard constraints (the counterpart to ADRs)
 - [Extensibility](extensibility) — manual directives, suppressed directives, overrides
-- [Sentinel Blocks](sentinels) — the technical format
+- [Sentinel Blocks](sentinels) — the technical format (legacy v0.5.x)
+- [Sidecar Migration](/guides/sidecar-migration) — upgrading a v0.5.x or v0.4.3 project

@@ -2,7 +2,24 @@
 
 ## v0.6.0 (2026-04-18 — development)
 
-Two themes: **PRD redesign** (split markdown + YAML, stable IDs, full SDLC chain traceability) and **hook hardening** (structured evaluator gates, tier-2 Go install, pre-push invariant checks).
+> **MIGRATION REQUIRED**
+>
+> v0.6.0 introduces sidecar architecture. After installing the v0.6.0 launcher, run `/edikt:upgrade` (or `edikt migrate sidecars --apply` for headless flows) to migrate every existing ADR, Invariant Record, and guideline from in-body sentinels to co-located `<artifact>.edikt.yaml` sidecars. **`/edikt:gov:compile` refuses to run until the migration is applied.** Fresh projects (no legacy sentinels) get a no-op scan and continue normally.
+
+Three themes: **sidecar architecture** (governance directives move to co-located `<artifact>.edikt.yaml` sidecars; edikt no longer writes to ADR/INV/guideline `.md` files), **PRD redesign** (split markdown + YAML, stable IDs, full SDLC chain traceability), and **hook hardening** (structured evaluator gates, tier-2 Go install, pre-push invariant checks).
+
+### Sidecar architecture
+
+- **BREAKING:** Sidecar architecture replaces in-body sentinels (ADR-027, supersedes ADR-008). Every ADR, Invariant Record, and guideline `<name>.md` now has a co-located `<name>.edikt.yaml` sidecar. The `[edikt:directives:start]…[edikt:directives:end]` block is gone from the prose body. **Migration is required on first upgrade — `/edikt:gov:compile` refuses to run until applied.** The boundary between human-owned bytes (`.md`) and tool-owned bytes (`.edikt.yaml`, `.claude/rules/governance/*.md`) is now structural rather than definitional. INV-005 narrows to `CLAUDE.md` and `settings.json` only.
+- **NEW:** Two-phase compile (ADR-028, amends ADR-020). **Phase A** (resync, conditional, LLM-backed) parallel-dispatches `sidecar-extractor` subagents (concurrency 8, continue-on-error, mandatory progress UI) when sidecars are stale. **Phase B** (merge, always, deterministic) reads sidecars and renders topic files — pure, no LLM, no `Task` dispatch, enforced by a static-analysis test in CI. Phase B preserves ADR-020's latency budget (`<5s` cold, `<500ms` no-op, `<2s` --check); Phase A has no SLO. `--check` skips Phase A and exits 1 on stale sidecars (CI-safe).
+- **NEW:** `/edikt:adr:review`, `/edikt:invariant:review`, `/edikt:guideline:review` cross-check the sidecar against the prose body and warn on drift — extra rules in the sidecar that aren't in the prose, or rules in the prose that aren't in the sidecar. The check is read-only; the user resolves drift via `:compile` or by editing the prose.
+- **CHANGED:** `/edikt:gov:compile` auto-resyncs stale sidecars in Phase A — no separate resync command. Steady-state compile (no stale) skips Phase A entirely and runs sub-second.
+- **CHANGED:** `/edikt:upgrade` detects pre-v0.6.0 in-body sentinels and prompts for migration. The migration tool (`edikt migrate sidecars`) handles two lift paths: mechanical (v0.5.x/v0.6.0-rc1 schema) and LLM-backed re-extraction (v0.4.3 legacy `content_hash:` schema). `--dry-run` is mandatory before `--apply`; idempotent; fence-aware; respects a skip-list for ADR-008/ADR-009/SPEC-* doc-mention files.
+- **CHANGED:** `/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` now create the `(.md, .edikt.yaml)` pair atomically by dispatching the `sidecar-extractor` agent in a forked subagent (`context: fork`) with a locked extraction prompt. Each artifact compiles in its own fresh context — no cross-artifact contamination. Resolves the v0.6.0-rc1 regression where ADR-022's directive count dropped from 25 to 16.
+- **CHANGED:** `/edikt:doctor` adds five sidecar-health checks: `ORPHAN`, `MISSING`, `PATH MISMATCH`, schema validation, and an `directives: []` soft warning.
+- Topic files under `.claude/rules/governance/` carry a `_fingerprint:` field (sorted SHA-256 of contributing sidecar paths and content hashes). Phase B uses it to skip rewrites — modifying one sidecar regenerates only its topic file.
+
+
 
 ### Highlights
 
@@ -23,15 +40,45 @@ Two themes: **PRD redesign** (split markdown + YAML, stable IDs, full SDLC chain
 
 ### Breaking changes
 
-- **`commands/deprecated/` deleted.** External scripts sourcing from there will fail.
+- **Sidecar architecture replaces in-body sentinels.** ADR-008 superseded by ADR-027. Every governance `.md` now requires a co-located `<name>.edikt.yaml` sidecar; `/edikt:gov:compile` refuses to run until the migration is applied.
+- **INV-005 narrowed to `CLAUDE.md` and `settings.json` only.** Governance artifacts (`.md` files in `decisions/`, `invariants/`, `guidelines/`) are no longer managed regions because edikt does not write to them (ref: ADR-027).
+- **ADR-020 amended by ADR-028 (two-phase compile).** Phase A (resync, conditional, LLM-backed) and Phase B (merge, always, deterministic). Phase B preserves ADR-020's latency budget; Phase A has no SLO.
+- **PreToolUse hook scope narrowed.** The managed-region overlap guard now scans only `CLAUDE.md`, `settings.json`, and `.edikt/`. Edits to governance `.md` files no longer trip the hook — eliminates the false-positive class on documentation pages flagged in HOOK-FALSE-POSITIVE-ANALYSIS.md.
+- **`migrate sidecars` is mandatory on first upgrade.** `--apply` requires a prior `--dry-run` in the same directory within the last 24 hours, or `--force` to bypass. The gate file lives at `.edikt/state/migration-dry-run.json`.
+- **Deprecated stubs removed (`commands/deprecated/` deleted).** Old → new mapping:
+  - `/edikt:adr` → `/edikt:adr:new` (or `:compile` / `:review`)
+  - `/edikt:invariant` → `/edikt:invariant:new` (or `:compile` / `:review`)
+  - `/edikt:compile` → `/edikt:gov:compile`
+  - `/edikt:review-governance` → `/edikt:gov:review`
+  - `/edikt:rules-update` → `/edikt:gov:rules-update`
+  - `/edikt:sync` → `/edikt:gov:sync`
+  - `/edikt:prd` → `/edikt:sdlc:prd`
+  - `/edikt:spec` → `/edikt:sdlc:spec`
+  - `/edikt:spec-artifacts` → `/edikt:sdlc:artifacts`
+  - `/edikt:plan` → `/edikt:sdlc:plan`
+  - `/edikt:review` → `/edikt:sdlc:review`
+  - `/edikt:drift` → `/edikt:sdlc:drift`
+  - `/edikt:audit` → `/edikt:sdlc:audit`
+  - `/edikt:docs` → `/edikt:docs:review`
+  - `/edikt:intake` → `/edikt:docs:intake`
 - **Pre-push hook enforces INV-003.** Repos with `echo '{'` patterns in hook scripts must switch to `python3 json.dumps`.
 - **`gates:` section in `.edikt/config.yaml`.** New projects get the section automatically; `edikt upgrade` leaves existing configs alone (opt-in).
 - **PRD v2 template.** Old `templates/prd.md.tmpl` renamed to `prd-v1.md.tmpl`; new template is split-artifact. v1 PRDs still load — only re-running `/edikt:sdlc:prd` on them regenerates in v2 shape.
+
+### Added
+
+- **`edikt verify <plan-id>`** — tier-2 binary subcommand that runs the `verify:` shell commands declared in `PLAN-<id>-criteria.yaml` and writes a JSON+text report under `.edikt/state/verify/`. Exit codes: `0` all-pass, `1` failures or timeouts, `2` sidecar missing/malformed, `3` invalid args. `/edikt:sdlc:plan` invokes the runner before flipping a phase row to `done`. Flags: `--phase`, `--json`, `--allow-failures`.
+- **`edikt migrate sidecars`** — dual-schema lift covering v0.4.3 legacy (`content_hash:`), v0.5.x full (`source_hash` + `topic` + `signals`), and v0.5.x partial (`source_hash:` only) artifacts. `--dry-run` mandatory before `--apply`; idempotent; fence-aware; respects skip-list for documentation files (ADR-008/ADR-009/SPEC-*).
+- **Sidecar JSON schemas** — `templates/schemas/sidecar.schema.json`, `templates/schemas/prd-sidecar.schema.json`, `templates/schemas/spec-sidecar.schema.json`. Drives editor autocomplete via `yaml-language-server`.
+- **Five new doctor sidecar checks** — `ORPHAN`, `MISSING`, `PATH MISMATCH`, `SCHEMA INVALID`, `NEEDS REVIEW` (empty-directives soft warning). First four hard-fail; the last warns. See `/edikt:doctor` § SIDECAR HEALTH.
+- **`gov compile --legacy` flag** — transitional opt-in to the v0.5.x in-body parsing path. Slated for removal in v0.7.0.
 
 ### Reference
 
 - ADR-023 — SubagentStop structured evaluator-input contract
 - ADR-024 — PRD lifecycle asymmetry vs INV-002
+- ADR-027 — Sidecar architecture for governance metadata (supersedes ADR-008)
+- ADR-028 — Two-phase compile: Phase A resync + Phase B merge (amends ADR-020)
 - SPEC-006 — SDLC rework + tier-2 Go install
 - SPEC-007 — PRD redesign (split artifact, rigor, SDLC chain)
 - BRAIN-001 — PRD as context bundle (26 locked decisions, three shipped here as #27/#28/#29)

@@ -32,8 +32,9 @@ One page. Every edikt command. Match by meaning, not exact words — Claude Code
 | Capture an ADR | "save this decision", "write an ADR" | `/edikt:adr:new` |
 | Add an invariant | "that's a hard rule", "never do X" | `/edikt:invariant:new` |
 | Add a guideline | "add a guideline", "document this convention" | `/edikt:guideline:new` |
-| Compile a single ADR | "generate sentinels for ADR-NNN" | `/edikt:adr:compile` |
-| Compile a single invariant | "generate sentinels for INV-NNN" | `/edikt:invariant:compile` |
+| Compile a single ADR sidecar | "regenerate ADR-NNN sidecar" | `/edikt:adr:compile` |
+| Compile a single invariant sidecar | "regenerate INV-NNN sidecar" | `/edikt:invariant:compile` |
+| Compile a single guideline sidecar | "regenerate guideline sidecar" | `/edikt:guideline:compile` |
 | Review ADR language | "review this ADR", "check ADR quality" | `/edikt:adr:review` |
 | Review invariant language | "review this invariant" | `/edikt:invariant:review` |
 | Review guideline language | "review our guidelines" | `/edikt:guideline:review` |
@@ -83,12 +84,21 @@ One page. Every edikt command. Match by meaning, not exact words — Claude Code
 /edikt:sdlc:review      →  post-implementation review
 ```
 
-### Capture a decision mid-session
+### Capture a decision mid-session (v0.6.0 sidecar flow)
 
 ```
-/edikt:adr:new          →  write the ADR
-                        (auto-chains to /edikt:adr:compile)
-/edikt:gov:compile      →  refresh governance directives
+/edikt:adr:new          →  writes ADR-NNN.md + ADR-NNN.edikt.yaml atomically
+                        (forked subagent, locked extraction prompt)
+/edikt:gov:compile      →  Phase A skips (sidecar fresh) → Phase B merges
+                        topic files in <500ms
+```
+
+If you later edit the ADR's prose:
+
+```
+(edit ADR-NNN.md)
+/edikt:gov:compile      →  Phase A detects stale sidecar, resyncs it,
+                        then Phase B rerenders only the affected topic file
 ```
 
 ### PRD lifecycle

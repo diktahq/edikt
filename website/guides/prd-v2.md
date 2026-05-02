@@ -143,7 +143,7 @@ Drift is informational, not an error. The PRD is still valid; the sync record is
 The sidecar template carries this header:
 
 ```yaml
-# yaml-language-server: $schema=../../../.edikt/schemas/prd-sidecar.schema.json
+# yaml-language-server: $schema=../../../.edikt/schemas/prd-sidecar.v1.schema.json
 ```
 
 That comment is read by the `yaml-language-server` extension. Open the `.yaml` in any editor with the extension installed and you get autocomplete, validation, and tooltips:
@@ -155,7 +155,7 @@ That comment is read by the `yaml-language-server` extension. Open the `.yaml` i
 | Neovim | `yaml-language-server` via mason or LSP |
 | Vim | coc-yaml |
 
-The schema is auto-installed to `.edikt/schemas/prd-sidecar.schema.json` the first time you author a PRD in the project. No per-project setup.
+The schema is auto-installed to `.edikt/schemas/prd-sidecar.v1.schema.json` the first time you author a PRD in the project. No per-project setup.
 
 ## Example: a real PRD pair
 
@@ -198,7 +198,7 @@ P99 delivery latency — must not exceed 5s
 `PRD-005-webhook-delivery.yaml`:
 
 ```yaml
-# yaml-language-server: $schema=../../../.edikt/schemas/prd-sidecar.schema.json
+# yaml-language-server: $schema=../../../.edikt/schemas/prd-sidecar.v1.schema.json
 schema_version: "1.0"
 type: prd
 id: PRD-005
