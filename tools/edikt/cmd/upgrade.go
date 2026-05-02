@@ -537,6 +537,23 @@ func extractTarGz(src, destDir string) error {
 			return fmt.Errorf("tarball contains path traversal: %s", hdr.Name)
 		}
 
+		// Skip macOS metadata. AppleDouble (`._<name>`) and `.DS_Store`
+		// entries are not part of the canonical payload — they're added
+		// by macOS BSD tar when the source tree carries extended
+		// attributes. Letting them extract pollutes ~/.edikt/ with
+		// phantom files that Claude Code enumerates as broken slash
+		// commands. The filter is unconditional: legitimate edikt
+		// payloads never carry these names.
+		base := filepath.Base(cleaned)
+		if strings.HasPrefix(base, "._") || base == ".DS_Store" {
+			if hdr.Typeflag == tar.TypeReg {
+				if _, err := io.Copy(io.Discard, tr); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+
 		dest := filepath.Join(destDir, cleaned)
 
 		switch hdr.Typeflag {
