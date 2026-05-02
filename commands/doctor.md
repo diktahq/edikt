@@ -172,6 +172,19 @@ grep -q 'edikt:' CLAUDE.md 2>/dev/null
 - `[ok]` if CLAUDE.md contains a edikt reference
 - `[!!]` if missing — suggest `/edikt:init` to generate CLAUDE.md
 
+**Hooks placeholder check (settings.json template substitution):**
+
+Before parsing JSON, grep the raw file for the literal substring `${EDIKT_HOOK_DIR}`:
+
+```bash
+if grep -q '\${EDIKT_HOOK_DIR}' .claude/settings.json 2>/dev/null; then
+    n=$(grep -c '\${EDIKT_HOOK_DIR}' .claude/settings.json)
+    echo "[!!] settings.json contains $n unsubstituted \${EDIKT_HOOK_DIR} placeholders — every hook fires '/bin/sh: /<name>.sh: No such file or directory'. Run /edikt:upgrade to auto-repair (or substitute manually with the absolute path: \$HOME/.edikt/hooks for global mode, <project>/.edikt/hooks for project mode)."
+fi
+```
+
+The placeholder is meant to be resolved at install time per `commands/init.md:993`. If it survives into the runtime config, Claude Code's shell expansion at hook-fire time produces an empty string and the hook path becomes a literal `/<hook>.sh`. Critical signal — fire `[!!]` not `[!]`.
+
 **Hooks (PreToolUse + PreCompact):**
 ```bash
 python3 -c "

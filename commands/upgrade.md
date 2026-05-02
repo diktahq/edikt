@@ -260,6 +260,8 @@ Read `.claude/settings.json`. Read `~/.edikt/templates/settings.json.tmpl`.
 
 For each hook type, check two things: (1) is the content correct, and (2) is it using the modern `.sh` script reference format?
 
+**Pre-flight: unsubstituted `${EDIKT_HOOK_DIR}` placeholder.** If any hook `command` string in `.claude/settings.json` contains the literal substring `${EDIKT_HOOK_DIR}`, the file shipped with the template placeholder un-resolved and every hook fires the error `/bin/sh: /<hook>.sh: No such file or directory` (the shell expands the unset variable to empty). Auto-repair before continuing — substitute `${EDIKT_HOOK_DIR}` with the absolute path resolution rule from §`commands/init.md` (global mode → `$HOME/.edikt/hooks`; project mode → `<project_root>/.edikt/hooks`). Re-validate JSON after substitution. Log: `repaired settings.json: substituted N occurrences of ${EDIKT_HOOK_DIR}`. Do NOT prompt — this is a strictly mechanical fix and silent error in the user's session.
+
 **Migration check — inline bash vs. script references:**
 If any `type: command` hook has its logic inline (a long bash string) rather than referencing `$HOME/.edikt/hooks/*.sh`, it is outdated regardless of content. Note: "using inline bash — migrate to script reference".
 
