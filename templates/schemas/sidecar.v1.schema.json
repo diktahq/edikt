@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://edikt.dev/schemas/sidecar/v1.json",
   "title": "edikt artifact sidecar",
-  "description": "The <artifact>.edikt.yaml sidecar file co-located next to an ADR, invariant, or guideline. Replaces the in-body [edikt:directives:start]/[edikt:directives:end] sentinel block per ADR-025 (sidecar architecture, v0.6.0). Compile reads sidecars verbatim and never mutates the parent .md.",
+  "description": "The <artifact>.edikt.yaml sidecar file co-located next to an ADR, invariant, or guideline. Replaces the in-body [edikt:directives:start]/[edikt:directives:end] sentinel block per ADR-027 (sidecar architecture, v0.6.0). Compile reads sidecars verbatim and never mutates the parent .md.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "topic", "path", "signals", "directives"],
@@ -10,7 +10,7 @@
     "schema_version": {
       "type": "integer",
       "const": 1,
-      "description": "Sidecar schema version. v0.6.0 ships with version 1. Bump only when the on-disk shape changes in a way that older readers cannot interpret."
+      "description": "Sidecar schema version. The directive sidecar uses a discrete integer (1) because its on-disk shape is a v1-or-v2 contract, not a semver-versioned one — bump only when the on-disk shape changes in a way that older readers cannot interpret. PRD/SPEC sidecars (prd-sidecar.v1.schema.json, spec-sidecar.v1.schema.json) deliberately use a string semver (\"1.0\") for additive evolution within v1.x; the asymmetry is intentional. v0.6.0 ships with version 1."
     },
     "topic": {
       "type": "string",

@@ -11,6 +11,15 @@ set -uo pipefail
 if [ ! -f '.edikt/config.yaml' ]; then exit 0; fi
 if grep -q 'signal-detection: false' .edikt/config.yaml 2>/dev/null; then exit 0; fi
 
+# Anchor the project root to the realpath of cwd at script start, then
+# pass it to the Python heredocs as EDIKT_PROJECT_ROOT. The drift-detect
+# block writes .edikt/state/stale-sidecars.log; without an explicit anchor,
+# a relative path resolves against whatever cwd Claude Code reports at
+# the moment of the Stop event — which can drift mid-session if Claude
+# emits CwdChanged. Capturing once at script entry pins the path.
+EDIKT_PROJECT_ROOT="$(pwd -P)"
+export EDIKT_PROJECT_ROOT
+
 # Prevent infinite loops — stop_hook_active means we're already in a continuation
 INPUT=$(cat)
 STOP_HOOK_ACTIVE=$(echo "$INPUT" | python3 -c "
@@ -102,6 +111,238 @@ if [ ${#SIGNALS[@]} -gt 0 ]; then
         fi
     done
     SIGNALS=("${FILTERED[@]+"${FILTERED[@]}"}")
+fi
+
+# ─── Sidecar drift detection (Phase 7b — ADR-027/028) ─────────────────────────
+# Walks the configured artifact dirs, parses each <artifact>.edikt.yaml, and
+# checks whether every directive's source_excerpt.quote still appears at its
+# declared line range in the parent .md. If any quote is missing, the sidecar
+# is "stale" — Claude likely edited the prose without regenerating the sidecar.
+#
+# Output contract (INV-004):
+#   - The systemMessage we emit carries a FIXED template plus the cardinality
+#     of stale artifacts (an int — not attacker-influenceable text). Filenames
+#     and excerpts are NEVER interpolated into Claude-facing channels.
+#   - The full artifact-ID list is written to .edikt/state/stale-sidecars.log
+#     for /edikt:gov:compile to consume out-of-band.
+#
+# Soft-degrade: if PyYAML is unavailable, the drift check is skipped silently.
+# Existing signals still emit; we never block the stop event on this check.
+STALE_COUNT=$(python3 - <<'PYEOF'
+import json, os, sys
+from pathlib import Path
+
+# Stop-hook used to call yaml.safe_load with PyYAML for BOTH the paths
+# config AND the per-sidecar load. The paths config was a divergence from
+# pre-tool-use.sh's hardened stdlib parser (§3.3 path-traversal +
+# §3.4 YAML quirks safe-fail-closed). The two hooks share the same
+# `paths:` config and any shape one accepts but the other rejects is a
+# correctness bug (one blocks while the other reports clean). The paths
+# parser is now stdlib-only (mirrors pre-tool-use); PyYAML stays for the
+# per-sidecar load below, with the original soft-degrade on missing lib.
+try:
+    import yaml
+except ImportError:
+    print(0)
+    sys.exit(0)
+
+DEFAULTS = {
+    "decisions":  "docs/architecture/decisions",
+    "invariants": "docs/architecture/invariants",
+    "guidelines": "docs/guidelines",
+}
+
+
+def _governance_paths_dict() -> dict:
+    """Hardened stdlib parser mirroring pre-tool-use.sh:_governance_paths.
+
+    Returns a dict keyed by category. Falls back to DEFAULTS on any
+    quirk shape the hand-parser cannot safely interpret (multi-doc
+    separator, flow-style, quoted-with-colon) or any value that
+    fails §3.3 (traversal / absolute path / realpath-escape) checks.
+    Safe-fail-closed: a single bad entry poisons the whole config
+    rather than leaving a legitimate governance dir uncovered.
+    """
+    paths = dict(DEFAULTS)
+    try:
+        with open(".edikt/config.yaml", "r", encoding="utf-8") as fh:
+            text = fh.read()
+    except (OSError, FileNotFoundError):
+        return paths
+
+    # §3.4 — quirk shapes.
+    for line in text.splitlines():
+        stripped_line = line.strip()
+        if stripped_line == "---":
+            return dict(DEFAULTS)
+        if stripped_line.startswith("paths:") and (
+            "{" in stripped_line or "[" in stripped_line
+        ):
+            return dict(DEFAULTS)
+
+    parsed = {}
+    in_paths = False
+    for raw in text.splitlines():
+        line = raw.rstrip("\r")
+        if not in_paths:
+            if line.startswith("paths:"):
+                in_paths = True
+            continue
+        if line and not line.startswith((" ", "\t")):
+            break
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if ":" in stripped:
+            key_part, value = stripped.split(":", 1)
+            key = key_part.strip()
+            value = value.strip()
+            # §3.4 — reject quoted-with-colon.
+            if (value.startswith('"') and value.endswith('"')) or (
+                value.startswith("'") and value.endswith("'")
+            ):
+                inner = value[1:-1]
+                if ":" in inner:
+                    return dict(DEFAULTS)
+                value = inner
+            # §3.4 — flow-style value.
+            if value.startswith("{") or value.startswith("["):
+                return dict(DEFAULTS)
+            if not value:
+                continue
+            # §3.3 — traversal / absolute.
+            if ".." in value.split("/") or value.startswith("/"):
+                return dict(DEFAULTS)
+            if key in DEFAULTS:
+                parsed[key] = value
+
+    # §3.3 — realpath escape check on any candidate.
+    cwd_real = os.path.realpath(os.getcwd())
+    for k, v in parsed.items():
+        candidate = os.path.normpath(os.path.join(cwd_real, v))
+        try:
+            cand_real = os.path.realpath(candidate)
+        except OSError:
+            return dict(DEFAULTS)
+        if cand_real != cwd_real and not cand_real.startswith(cwd_real + os.sep):
+            return dict(DEFAULTS)
+        paths[k] = v
+    return paths
+
+
+paths = _governance_paths_dict()
+
+def is_stale(sidecar, body_lines):
+    directives = sidecar.get("directives") or []
+    if not isinstance(directives, list):
+        return False
+    for d in directives:
+        if not isinstance(d, dict):
+            continue
+        src = d.get("source_excerpt") or {}
+        if not isinstance(src, dict):
+            continue
+        ls = src.get("line_start", 0)
+        le = src.get("line_end", 0)
+        quote = src.get("quote", "")
+        if not isinstance(ls, int) or not isinstance(le, int):
+            continue
+        if not isinstance(quote, str):
+            continue
+        quote = quote.strip()
+        if not quote or ls < 1 or le < ls:
+            continue
+        if ls > len(body_lines) or le > len(body_lines):
+            return True
+        passage = "\n".join(body_lines[ls-1:le])
+        if quote not in passage:
+            return True
+    return False
+
+def artifact_id(name):
+    base = name[:-len(".edikt.yaml")]
+    if base.startswith(("ADR-", "INV-")):
+        end = 4
+        while end < len(base) and base[end].isdigit():
+            end += 1
+        return base[:end]
+    return base
+
+stale_ids = []
+seen = set()
+
+for d in paths.values():
+    if not os.path.isdir(d):
+        continue
+    try:
+        entries = sorted(os.listdir(d))
+    except OSError:
+        continue
+    for entry in entries:
+        if not entry.endswith(".edikt.yaml"):
+            continue
+        sidecar_path = os.path.join(d, entry)
+        md_path = os.path.join(d, entry[:-len(".edikt.yaml")] + ".md")
+        if not os.path.isfile(md_path):
+            continue
+        try:
+            with open(sidecar_path, "r", encoding="utf-8") as f:
+                sidecar = yaml.safe_load(f)
+        except Exception:
+            continue
+        if not isinstance(sidecar, dict):
+            continue
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                body_lines = f.read().split("\n")
+        except Exception:
+            continue
+        if is_stale(sidecar, body_lines):
+            aid = artifact_id(entry)
+            if aid not in seen:
+                seen.add(aid)
+                stale_ids.append(aid)
+
+# Anchor the log path to the project root captured by bash at script
+# entry. Defensive realpath check refuses to write outside the project
+# root in the unlikely event that EDIKT_PROJECT_ROOT was tampered with
+# (e.g. symlink swap mid-script).
+project_root = Path(os.environ.get("EDIKT_PROJECT_ROOT", "")).resolve() if os.environ.get("EDIKT_PROJECT_ROOT") else Path.cwd().resolve()
+log_path = project_root / ".edikt" / "state" / "stale-sidecars.log"
+try:
+    log_path.parent.resolve(strict=False).relative_to(project_root)
+except ValueError:
+    print(len(stale_ids))
+    sys.exit(0)
+
+if stale_ids:
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text("\n".join(stale_ids) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+else:
+    try:
+        log_path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
+        pass
+
+print(len(stale_ids))
+PYEOF
+)
+
+case "${STALE_COUNT:-0}" in
+    ''|*[!0-9]*) STALE_COUNT=0 ;;
+esac
+
+if [ "$STALE_COUNT" -gt 0 ]; then
+    # Build the warning via python: the count is an int rendered into a
+    # single static template. No shell interpolation reaches the JSON body
+    # (the INV-004 grep lint in test/security/lints.sh stays clean).
+    DRIFT_MSG=$(python3 -c 'import sys; n=int(sys.argv[1]); print("⚠ Some artifacts have stale sidecars. Run /edikt:gov:compile to resync. Affected: " + str(n))' "$STALE_COUNT")
+    SIGNALS+=("$DRIFT_MSG")
 fi
 
 # ─── Output ───────────────────────────────────────────────────────────────────

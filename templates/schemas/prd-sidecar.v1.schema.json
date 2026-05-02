@@ -1,15 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://edikt.dev/schemas/prd-sidecar-1.0.json",
+  "$id": "https://edikt.dev/schemas/prd-sidecar/v1.json",
   "title": "edikt PRD sidecar",
   "description": "Structured sidecar (.yaml) that accompanies every v2 PRD narrative (.md). Source of truth for requirements, ACs, status, and cross-references. Governed by ADR-024 (edit-in-place lifecycle).",
   "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
   "required": ["schema_version", "type", "id", "title", "status", "rigor", "author", "created_at"],
   "properties": {
     "schema_version": {
       "type": "string",
       "const": "1.0",
-      "description": "Sidecar schema version. Used by /edikt:doctor to flag stale sidecars."
+      "description": "Sidecar schema version. PRD/SPEC sidecars use a string semver (\"1.0\") because they expect minor/patch evolution within v1.x — additive field changes can ship as 1.1, 1.2, … without rewriting the consumer surface. The directive sidecar (sidecar.v1.schema.json) intentionally uses a discrete integer (1) because its on-disk shape is a v1-or-v2 contract, not a semver-versioned one. Used by /edikt:doctor to flag stale sidecars."
     },
     "type": {
       "type": "string",

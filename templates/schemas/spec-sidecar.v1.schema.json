@@ -1,14 +1,27 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://edikt.dev/schemas/spec-sidecar-1.0.json",
+  "$id": "https://edikt.dev/schemas/spec-sidecar/v1.json",
   "title": "edikt SPEC sidecar",
   "description": "Structured sidecar (.yaml) that accompanies a v2 SPEC. Source of truth for requirements, ACs, coverage, and cross-references. BRAIN-001 decision 28 adds source_prd/source_brainstorm/source_prompt fields to support SPECs with no upstream PRD.",
   "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
   "required": ["schema_version", "type", "id", "title", "status", "author", "created_at"],
+  "allOf": [
+    {
+      "description": "BRAIN-001 decision 28: exactly one of source_prd / source_brainstorm / source_prompt MUST be non-null. Encoded as oneOf so a sidecar with all three null OR more than one set fails validation.",
+      "oneOf": [
+        { "required": ["source_prd"], "properties": { "source_prd":        { "type": "string" } } },
+        { "required": ["source_brainstorm"], "properties": { "source_brainstorm": { "type": "string" } } },
+        { "required": ["source_prompt"], "properties": { "source_prompt":     { "type": "string" } } }
+      ]
+    }
+  ],
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0"
+      "const": "1.0",
+      "description": "Sidecar schema version. PRD/SPEC sidecars use a string semver (\"1.0\") so additive field changes can ship as 1.1, 1.2, … within v1.x. The directive sidecar (sidecar.v1.schema.json) intentionally uses a discrete integer (1) because its on-disk shape is a v1-or-v2 contract, not a semver-versioned one. Used by /edikt:doctor to flag stale sidecars."
     },
     "type": {
       "type": "string",

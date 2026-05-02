@@ -58,9 +58,13 @@ src_patterns=(
   '\bexec\.CommandContext\b'
 )
 
-src_files=$(find "$TOOLS_DIR/internal/phaseb" -name '*.go' -type f -not -name '*_test.go')
+PHASEB_DIR="$TOOLS_DIR/internal/phaseb"
 for pat in "${src_patterns[@]}"; do
-  hits=$(grep -REn "$pat" $src_files 2>/dev/null || true)
+  # Recursive grep over the package dir; --include filters to non-test
+  # source files. Quoting the dir keeps paths-with-spaces working
+  # (no risk in the current tree, but the script ships in tools/ and
+  # is callable from anywhere).
+  hits=$(grep -REn --include='*.go' --exclude='*_test.go' "$pat" "$PHASEB_DIR" 2>/dev/null || true)
   if [[ -n "$hits" ]]; then
     # Strip pure-comment lines before flagging.
     real_hits=$(awk -F: 'NF>=3 { line=$3; sub(/^[ \t]+/, "", line); if (substr(line,1,2) != "//") print }' <<<"$hits")

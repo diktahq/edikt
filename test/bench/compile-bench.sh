@@ -90,7 +90,24 @@ done
 
 echo "→ corpus prepared: $(ls "$PROJ/docs/architecture/decisions" | grep -c '\.edikt\.yaml$') ADR sidecars; $(ls "$PROJ/docs/architecture/invariants" | grep -c '\.edikt\.yaml$') INV sidecars; $(ls "$PROJ/docs/guidelines" | grep -c '\.edikt\.yaml$') guideline sidecars"
 
-ms_now () { python3 -c 'import time; print(int(time.time()*1000))'; }
+ms_now () {
+    # Each measurement boundary is on the bench critical path: the
+    # no-op budget is 500ms and the script makes 6 ms_now calls, so
+    # python3 startup (~30–80ms each, up to ~480ms total) would eat
+    # most of the budget as measurement noise. Prefer faster shells:
+    # bash 5+ EPOCHREALTIME (μs precision, zero subprocess), then
+    # perl Time::HiRes (~3ms startup), then python3 as last resort.
+    if [[ -n "${EPOCHREALTIME:-}" ]]; then
+        # EPOCHREALTIME is "1700000000.123456" — strip the dot, take 13
+        # digits (ms precision), drop the fractional remainder.
+        local er="${EPOCHREALTIME//./}"
+        echo "${er:0:13}"
+    elif command -v perl >/dev/null 2>&1; then
+        perl -MTime::HiRes -e 'printf "%d\n", Time::HiRes::time() * 1000'
+    else
+        python3 -c 'import time; print(int(time.time()*1000))'
+    fi
+}
 
 run_phase () {
   local label="$1" budget_ms="$2"; shift 2
@@ -114,4 +131,53 @@ run_phase cold  5000 || exit 1
 run_phase noop   500 || exit 1
 run_phase check 2000 --check || exit 1
 
-echo "✓ Phase B latency gates pass on 50-sidecar corpus (ADR-020 / ADR-028)"
+# ─── Phase 8: diff-only topic rendering ───────────────────────────────────
+# Mutate exactly ONE sidecar; assert exactly ONE topic file rerenders.
+# Every other topic must stay mtime-equal byte-equal to its prior compile.
+
+snap_dir="$PROJ/.edikt/topic-snap"
+mkdir -p "$snap_dir"
+gov_dir="$PROJ/.claude/rules/governance"
+# Guard: the cold/no-op runs above are supposed to have populated the
+# governance topic dir. If they didn't (compile failed silently, output
+# layout drifted, etc.), the diff-only assertion below would otherwise
+# operate on an empty snapshot and falsely report "0 changed" — which
+# masks the regression instead of surfacing it. Fail loudly here.
+if [[ ! -d "$gov_dir" ]] || ! compgen -G "$gov_dir/*.md" >/dev/null; then
+    echo "✗ diff-only render: $gov_dir is missing or empty after the cold compile — refusing to snapshot"
+    exit 1
+fi
+cp "$gov_dir/"*.md "$snap_dir/"
+
+target_sc="$PROJ/docs/architecture/decisions/ADR-01-bench.edikt.yaml"
+target_topic="bench-topic-1" # = ADR-01 → 01 % 5 == 1
+sed -i.bak 's/Use bench-topic-1 in this fixture for ADR-01\./& Sentinel rule MUST hold./g' "$target_sc"
+rm -f "$target_sc.bak"
+
+"$BIN" gov compile "$PROJ" >/dev/null 2>&1 || {
+    echo "✗ post-mutation compile failed"; exit 1
+}
+
+changed=0
+for f in "$PROJ/.claude/rules/governance/"*.md; do
+    base=$(basename "$f")
+    before="$snap_dir/$base"
+    if [[ ! -f "$before" ]]; then
+        # New topic file appeared; count it as changed.
+        changed=$((changed + 1))
+        continue
+    fi
+    if ! cmp -s "$f" "$before"; then
+        changed=$((changed + 1))
+        changed_topic="$base"
+    fi
+done
+
+if (( changed == 1 )) && [[ "${changed_topic:-}" == "${target_topic}.md" ]]; then
+    echo "✓ diff-only render: only ${target_topic}.md changed after one-sidecar mutation"
+else
+    echo "✗ diff-only render: expected exactly 1 changed topic (${target_topic}.md); got ${changed} change(s) (last: ${changed_topic:-<none>})"
+    exit 1
+fi
+
+echo "✓ Phase B latency + diff-only gates pass on 50-sidecar corpus (ADR-020 / ADR-028)"
