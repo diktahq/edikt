@@ -10,7 +10,7 @@ compile_schema_version: 2
 <!-- topic: release -->
 <!-- sources: ADR-016 -->
 <!-- compiled_by: gov-compile v0.1.0 -->
-<!-- compiled_at: 2026-05-02T09:14:18Z -->
+<!-- compiled_at: 2026-05-02T15:36:52Z -->
 
 # Release
 
