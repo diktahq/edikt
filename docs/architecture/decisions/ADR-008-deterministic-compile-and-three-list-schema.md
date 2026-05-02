@@ -1,9 +1,9 @@
 # ADR-008: Deterministic Compile and Three-List Directive Schema
 
 **Date:** 2026-04-09
-**Status:** Accepted
+**Status:** Superseded by ADR-027
 **Supersedes:** None
-**Superseded by:** None
+**Superseded by:** ADR-027
 
 ## Context
 
