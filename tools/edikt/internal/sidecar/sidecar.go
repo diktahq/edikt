@@ -1,9 +1,11 @@
 // Package sidecar loads, validates, and reasons about <artifact>.edikt.yaml
 // sidecar files per ADR-027 (sidecar architecture, supersedes ADR-008) and
-// templates/schemas/sidecar.schema.json (v1).
+// templates/schemas/sidecar.v1.schema.json (v1; the unversioned name was
+// renamed in v0.6.0 per Phase 5 of PLAN-sidecar-review-fixes #31).
 package sidecar
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"regexp"
@@ -31,6 +33,22 @@ type Sidecar struct {
 	Directives    []Directive `yaml:"directives"`
 
 	SourcePath string `yaml:"-"`
+
+	// cachedMarshal stores the canonical-form bytes computed once at
+	// Load time so TopicFingerprint can hash without re-marshaling. Phase 7
+	// of PLAN-sidecar-review-fixes #39 — Phase B's fingerprint loop runs
+	// Marshal on every contributing sidecar across every topic, and the
+	// canonical form is invariant to in-memory mutation patterns Phase B
+	// does not perform (Phase B is read-only). The cache is invalidated
+	// implicitly by being struct-local: a fresh Sidecar built outside Load
+	// (e.g. migrate's planArtifact) has an empty cache and Marshal
+	// computes fresh.
+	//
+	// Determinism contract: cachedMarshal MUST always equal a fresh
+	// Marshal(s) call for any caller that has not mutated s. The
+	// Marshal-cache test in marshal_test.go pins this byte-equality
+	// across the full valid-fixture corpus.
+	cachedMarshal []byte `yaml:"-"`
 }
 
 // Directive is one rule extracted from the parent .md.
@@ -47,6 +65,12 @@ type SourceExcerpt struct {
 }
 
 // Load reads sidecarPath, strictly decodes it, and runs the v1 validators.
+//
+// The reader is buffered (Phase 7 of PLAN-sidecar-review-fixes #40); this
+// is observable only as a small reduction in syscall count when Discover
+// loads dozens of sidecars in sequence — yaml.NewDecoder's read pattern is
+// otherwise reasonable on a raw *os.File but still benefits from the
+// 4 KiB bufio default on small files.
 func Load(sidecarPath string) (*Sidecar, error) {
 	f, err := os.Open(sidecarPath)
 	if err != nil {
@@ -54,7 +78,7 @@ func Load(sidecarPath string) (*Sidecar, error) {
 	}
 	defer f.Close()
 
-	dec := yaml.NewDecoder(f)
+	dec := yaml.NewDecoder(bufio.NewReader(f))
 	dec.KnownFields(true)
 
 	var s Sidecar
@@ -64,6 +88,14 @@ func Load(sidecarPath string) (*Sidecar, error) {
 	s.SourcePath = sidecarPath
 	if err := s.Validate(); err != nil {
 		return nil, fmt.Errorf("validate %s: %w", sidecarPath, err)
+	}
+	// Pre-compute the canonical-form bytes once. Marshal is a pure
+	// function of s, so capturing the result here lets TopicFingerprint
+	// short-circuit re-marshaling on every Phase B run. Use the
+	// uncached encoder path explicitly — Marshal would just return an
+	// empty cache and recurse here otherwise.
+	if data, err := marshalUncached(&s); err == nil {
+		s.cachedMarshal = data
 	}
 	return &s, nil
 }
