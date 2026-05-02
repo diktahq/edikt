@@ -146,7 +146,14 @@ except Exception:
     pass
 ' 2>/dev/null)
 else
-    # Legacy keyword path — log warning (deprecated; removed in v0.7.0).
+    # Legacy unstructured payload — no evaluator_output.severity available.
+    # Per ADR-023, severity MUST come from the structured field; keyword
+    # detection on free text was the legacy fallback. The keyword-grep path
+    # caused false-positive gate fires on subagents whose content happened
+    # to mention severity terms (e.g., a status dashboard reporting prior
+    # gate activity). Severity is left at the default "info"; threshold
+    # resolution below uses gates.default so unstructured payloads get a
+    # conservative non-blocking treatment unless explicitly configured.
     mkdir -p "$HOME/.edikt" 2>/dev/null || true
     python3 -c '
 import json,sys,os,datetime
@@ -157,16 +164,7 @@ try:
 except Exception:
     pass
 ' 2>/dev/null
-    echo "warn: legacy evaluator payload; falling back to keyword detection" >&2
-    if echo "$INPUT" | grep -qiE '🔴|critical|CRITICAL|must be addressed|security vulnerability|data loss'; then
-        SEVERITY="critical"
-        FINDING=$(echo "$INPUT" | grep -iE '🔴|critical|CRITICAL|must be addressed|security vulnerability|data loss' | head -1 | sed 's/^[[:space:]]*//' | cut -c1-120)
-    elif echo "$INPUT" | grep -qiE '🟡|warning|WARNING|should be addressed|missing index|no rollback'; then
-        SEVERITY="warning"
-        FINDING=$(echo "$INPUT" | grep -iE '🟡|warning|WARNING|should be addressed' | head -1 | sed 's/^[[:space:]]*//' | cut -c1-120)
-    elif echo "$INPUT" | grep -qiE '🟢|OK|looks (good|stable|healthy)'; then
-        SEVERITY="ok"
-    fi
+    echo "warn: legacy evaluator payload (no evaluator_output.severity); severity defaulted to info" >&2
 fi
 
 # Log to session signals
@@ -193,8 +191,20 @@ fi
 
 # Read gate severity threshold (ADR-023 §4 resolution order):
 #   EDIKT_GATE_SEVERITY_THRESHOLD > config gates.<agent> > gates.default > "critical"
+#
+# When AGENT_IDENTITY_SOURCE=grep-fallback, the agent name was inferred from
+# free-text keyword matching, NOT from a structured agent payload. ADR-023
+# mandates: "When evaluator_output.agent is absent, fall back to gates.default."
+# Pass an empty agent name so the lookup skips gates.<keyword-detected-agent>
+# and resolves directly to gates.default. This prevents false-positive gate
+# fires on subagents (e.g., slash command dashboards) whose content happens
+# to mention an agent keyword.
 THRESHOLD="${EDIKT_GATE_SEVERITY_THRESHOLD:-}"
 if [ -z "$THRESHOLD" ]; then
+    THRESHOLD_AGENT="$AGENT_NAME"
+    if [ "$AGENT_IDENTITY_SOURCE" = "grep-fallback" ]; then
+        THRESHOLD_AGENT=""
+    fi
     THRESHOLD=$(python3 -c '
 import yaml,sys,os
 config_path = os.path.join(os.environ.get("EDIKT_PROJECT_ROOT","."),".edikt","config.yaml")
@@ -203,10 +213,13 @@ try:
         cfg = yaml.safe_load(f)
     agent = sys.argv[1]
     gates = (cfg or {}).get("gates",{})
-    print(gates.get(agent, gates.get("default","critical")))
+    if agent:
+        print(gates.get(agent, gates.get("default","critical")))
+    else:
+        print(gates.get("default","critical"))
 except Exception:
     print("critical")
-' "$AGENT_NAME" 2>/dev/null)
+' "$THRESHOLD_AGENT" 2>/dev/null)
 fi
 case "$THRESHOLD" in
     critical|warning|info) ;;
