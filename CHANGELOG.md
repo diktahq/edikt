@@ -1,5 +1,40 @@
 # edikt changelog
 
+## v0.6.0-rc3 (2026-05-02)
+
+Architectural fix on top of rc2: the tier-2 Go binary is now
+LLM-agnostic per ADR-030. v0.7.0 will add Codex / Cursor host-agent
+support; rc3 is the structural prerequisite that lets the binary stay
+unchanged across host agents.
+
+Notable in rc3 vs rc2:
+
+- **ADR-030 — tier-2 binary stays LLM-agnostic.** New invariant: the
+  Go binary MUST NOT spawn any LLM CLI. Agent dispatch lives in tier-1
+  markdown, executed by whichever host agent the user runs.
+- **migrate sidecars rewritten.** The previous in-Go
+  `exec.Command("claude", "-p", "/edikt:<kind>:compile <ID>")` call is
+  gone. v0.4.3 / v0.5.x-partial artifacts now write a partial-
+  `needs-review` sidecar; `/edikt:upgrade` orchestrates the resync via
+  the host agent's subagent dispatch primitive.
+- **`cmd/migrate.go` schema-v2 upgrade** drops its `claude -p` shell-
+  out for the same reason — schema-v2 upgrade lands when the user
+  runs `/edikt:gov:compile` under their host agent.
+- **New CI gate** — `tools/edikt/check/no-llm-in-tier-2.sh` greps
+  every non-test `.go` file in `tools/edikt/` for `exec.Command(claude,
+  …)` / `exec.LookPath("claude")` / the literal string `"claude"`.
+  Wired into `.github/workflows/sidecar-checks.yml`. Phase A's
+  `internal/phasea/runner.go` is exempted via
+  `tools/edikt/check/no-llm-in-tier-2.exempt` until v0.7.0 ships its
+  refactor.
+- **Schema relaxation** carried over from the rc2 follow-up: directive
+  `text` ceiling raised from 200 → 500 chars after the ddd-workbench
+  corpus surfaced real-world directives in the 209–236 range.
+- **Diagnostic excerpt** carried over from the rc2 follow-up: when
+  the `claude -p` dispatch fails (still relevant for Phase A), warn
+  lines surface up to 300 chars of stderr/stdout instead of the
+  useless "failed or produced no sidecar".
+
 ## v0.6.0-rc2 (2026-05-02)
 
 Stability remediation pass on top of rc1. Eight phases of
