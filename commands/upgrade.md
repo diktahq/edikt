@@ -215,16 +215,32 @@ sidecars (ADR-027). The dry-run above shows what will change.
 Apply the migration now? [y/N]
 ```
 
-- **On `y` / `yes`** — run the apply and print the result:
+- **On `y` / `yes`** — run the apply, then complete the resync via the host agent's subagent dispatch:
+
   ```bash
   edikt migrate sidecars --apply
   ```
-  - On exit 0: print
+
+  Per ADR-030 the tier-2 binary is LLM-agnostic — apply produces partial-`needs-review` sidecars for any artifact whose source schema is v0.4.3 (`content_hash`) or v0.5.x partial (`source_hash` only). The actual `topic` + `signals` resync is YOUR responsibility (this slash command, executed by the host agent — Claude Code, Codex, Cursor, …):
+
+  1. Find every sidecar produced by apply that has `topic: needs-review`. Use:
+     ```bash
+     find docs -name "*.edikt.yaml" -exec grep -l '^topic: needs-review$' {} +
+     ```
+  2. For each match, dispatch the locked `sidecar-extractor` agent in a forked subagent context. Pass the parent `.md` body and the artifact ID. The agent's output is a complete v1 sidecar — write it back to the same `<name>.edikt.yaml` path, replacing the partial. Use whatever subagent / Task primitive your host agent supports; the dispatch contract is the locked extractor prompt at `templates/agents/sidecar-extractor.md`, not a specific agent CLI.
+  3. After every needs-review sidecar has been resynced, run `/edikt:gov:compile` to regenerate the topic files. Compile will refuse if any sidecar still carries `topic: needs-review`; that's the gate that ensures the resync completed.
+
+  - On exit 0 from `migrate sidecars --apply`: count how many partial-`needs-review` sidecars exist (the migration tool's stdout summary line — `N hand-reviews` — is the count, plus any `wrote-partial` actions in the per-row output). If `0`, print:
     ```
-    ✅ Sidecar migration applied. Run /edikt:gov:compile to regenerate governance.
+    ✅ Sidecar migration applied (mechanical lift only). Run /edikt:gov:compile to regenerate governance.
     ```
     Then continue to Step 2.
-  - On non-zero exit: print the migration tool's output verbatim and stop. The user resolves and re-runs `/edikt:upgrade`. Do NOT proceed to Step 2.
+  - If `N > 0`, run the resync loop above, then print:
+    ```
+    ✅ Sidecar migration applied. <N> partial sidecars resynced via host-agent dispatch. Run /edikt:gov:compile to regenerate governance.
+    ```
+    Then continue to Step 2.
+  - On non-zero exit from `migrate sidecars --apply`: print the migration tool's output verbatim and stop. The user resolves and re-runs `/edikt:upgrade`. Do NOT proceed to Step 2.
 - **On `N` / `no` / empty** — print:
   ```
   Migration deferred. Run /edikt:gov:compile to apply when ready.

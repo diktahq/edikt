@@ -137,6 +137,27 @@ jobs:
       - name: Run no-llm-in-merge.sh static check
         run: bash tools/edikt/check/no-llm-in-merge.sh
 
+  # ─── Tier-2 LLM-agnostic gate (ADR-030) ─────────────────────────────────────
+  no-llm-in-tier-2:
+    name: Tier-2 binary must not invoke an LLM CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Run no-llm-in-tier-2.sh static check
+        # ADR-030: tools/edikt/ MUST stay LLM-agnostic so v0.7.0 can
+        # ship Codex / Cursor / other host-agent support without
+        # re-releasing the Go binary. The exempt file lists paths
+        # carved out per the ADR (currently only Phase A's runner.go,
+        # slated for v0.7.0 removal).
+        run: bash tools/edikt/check/no-llm-in-tier-2.sh
+
   # ─── Canonical YAML round-trip ──────────────────────────────────────────────
   canonical-yaml-roundtrip:
     name: Sidecar canonical YAML round-trip
