@@ -1,0 +1,18 @@
+schema_version: 1
+topic: persistence
+path: test/fixtures/sidecar-drift/synced/source.md
+signals:
+  - postgres
+  - connection pool
+  - max_open
+directives:
+  - text: "All Postgres clients MUST use a connection pool with max_open set to 20. (ref: ADR-FIXTURE-S)"
+    source_excerpt:
+      line_start: 13
+      line_end: 13
+      quote: "All Postgres clients MUST use a connection pool with `max_open` set to 20. NEVER open a raw `database/sql.DB` per request — connection pools amortize handshake cost."
+  - text: "NEVER open a raw database/sql.DB per request. (ref: ADR-FIXTURE-S)"
+    source_excerpt:
+      line_start: 13
+      line_end: 13
+      quote: "All Postgres clients MUST use a connection pool with `max_open` set to 20. NEVER open a raw `database/sql.DB` per request — connection pools amortize handshake cost."

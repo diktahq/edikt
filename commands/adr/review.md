@@ -323,3 +323,40 @@ If the integrity check fails, report the mismatch and **do not write** (or roll 
 ---
 
 REMEMBER: This command reviews language quality in the ## Decision section only. Rationale, context, and alternatives sections are not reviewed — they are not compiled into governance. The question for every statement is: "If Claude reads this directive, will it know exactly what to do and be able to verify compliance?"
+
+---
+
+## Sidecar Cross-Check (ADR-027)
+
+After the language-quality review completes, run a sidecar cross-check on each ADR. The check is read-only and advisory — it surfaces drift between the prose body and the co-located sidecar but does NOT regenerate or modify either file. The user resolves drift by running `/edikt:adr:compile` (sidecar regeneration) or by editing the prose.
+
+For each reviewed ADR at `{decisions_dir}/ADR-NNN-{slug}.md`:
+
+1. **Sidecar presence.** Look for the co-located sidecar at `{decisions_dir}/ADR-NNN-{slug}.edikt.yaml`. If absent, surface:
+   ```
+   ⚠️  ADR-NNN: no sidecar found — run /edikt:adr:compile ADR-NNN to generate.
+   ```
+   Skip the remaining checks for that ADR; an absent sidecar is a single resolvable issue.
+
+2. **Quote drift (sidecar → prose).** For every entry in the sidecar's `directives[]`, locate the recorded `source_excerpt.quote` verbatim in the prose body between the recorded `line_start` and `line_end`. If the quote is not found verbatim:
+   ```
+   ⚠️  ADR-NNN: sidecar directive #{i} no longer matches body
+       Quote (recorded): "{first 80 chars of quote}…"
+       Recorded location: lines {line_start}–{line_end}
+       Hint: prose body has been edited; run /edikt:adr:compile ADR-NNN to resync.
+   ```
+
+3. **Missing directives (prose → sidecar).** Scan the ADR's `## Decision` section for imperative sentences (containing MUST, MUST NOT, SHOULD, NEVER, ALWAYS) that are not represented in the sidecar's `directives[].text`. For any not represented:
+   ```
+   ⚠️  ADR-NNN: prose body contains imperative directive not in sidecar
+       Sentence: "{first 80 chars}…" (line {n})
+       Hint: run /edikt:adr:compile ADR-NNN to refresh the sidecar.
+   ```
+   Use string containment as a coarse match (a sidecar directive whose `text` shares ≥60% of the prose sentence's tokens, or whose recorded `source_excerpt` overlaps the sentence's line range, is "represented"). Avoid exact-string equality — sidecar `text` fields include the parenthetical `(ref: ADR-NNN)` tail that the prose body does not.
+
+4. **In-sync confirmation.** If steps 1–3 surface no findings for an ADR:
+   ```
+   ✅ ADR-NNN: sidecar in sync
+   ```
+
+The cross-check runs after the language-quality review's existing output. It does NOT modify any file. The user resolves drift via `/edikt:adr:compile` or by editing the prose.

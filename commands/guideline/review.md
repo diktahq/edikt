@@ -140,3 +140,40 @@ Next: Run /edikt:gov:compile to recompile after updates.
 ---
 
 REMEMBER: Every finding must cite the specific rule text that fails the check and provide a concrete rewrite. Never flag a rule without showing how to fix it. The question is: "If Claude reads this rule, will it know exactly what to do?"
+
+---
+
+## Sidecar Cross-Check (ADR-027)
+
+After the language-quality review completes, run a sidecar cross-check on each guideline. The check is read-only and advisory — it surfaces drift between the prose body and the co-located sidecar but does NOT regenerate or modify either file. The user resolves drift by running `/edikt:guideline:compile` or by editing the prose.
+
+For each reviewed guideline at `{guidelines_dir}/{slug}.md`:
+
+1. **Sidecar presence.** Look for `{guidelines_dir}/{slug}.edikt.yaml`. If absent:
+   ```
+   ⚠️  {slug}: no sidecar found — run /edikt:guideline:compile {slug} to generate.
+   ```
+   Skip remaining checks for that guideline.
+
+2. **Quote drift (sidecar → prose).** For every entry in `directives[]`, locate `source_excerpt.quote` verbatim in the prose body between recorded `line_start` and `line_end`. If absent:
+   ```
+   ⚠️  {slug}: sidecar directive #{i} no longer matches body
+       Quote (recorded): "{first 80 chars}…"
+       Recorded location: lines {line_start}–{line_end}
+       Hint: prose body has been edited; run /edikt:guideline:compile {slug} to resync.
+   ```
+
+3. **Missing directives (prose → sidecar).** Scan the entire body for imperative sentences (MUST / MUST NOT / NEVER / ALWAYS / SHOULD) not represented in the sidecar's `directives[].text`. For any unrepresented:
+   ```
+   ⚠️  {slug}: prose body contains imperative directive not in sidecar
+       Sentence: "{first 80 chars}…" (line {n})
+       Hint: run /edikt:guideline:compile {slug} to refresh the sidecar.
+   ```
+   Soft-language bullets (no normative verb) are not directives — they are skipped both in extraction and in this check. Use coarse matching (≥60% token overlap or `source_excerpt` line-range overlap), not exact-string equality.
+
+4. **In-sync confirmation.** If steps 1–3 surface no findings:
+   ```
+   ✅ {slug}: sidecar in sync
+   ```
+
+The cross-check runs after the language-quality review's existing output. It does NOT modify any file.

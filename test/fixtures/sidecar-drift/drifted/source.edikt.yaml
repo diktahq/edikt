@@ -1,0 +1,18 @@
+schema_version: 1
+topic: cache
+path: test/fixtures/sidecar-drift/drifted/source.md
+signals:
+  - redis
+  - connection pool
+  - max_idle
+directives:
+  - text: "All Redis clients MUST use a connection pool with max_idle set to 100. (ref: ADR-FIXTURE-D)"
+    source_excerpt:
+      line_start: 13
+      line_end: 13
+      quote: "All Redis clients MUST use a connection pool with `max_idle` set to 100."
+  - text: "Cache reads MUST always come from a replica, NEVER the primary. (ref: ADR-FIXTURE-D)"
+    source_excerpt:
+      line_start: 99
+      line_end: 99
+      quote: "Cache reads MUST always come from a replica, NEVER the primary."
