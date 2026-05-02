@@ -1,0 +1,24 @@
+schema_version: 1
+topic: persistence
+path: test/golden/sidecar-extractor/adr-fixture/source.md
+signals:
+  - postgresql
+  - transactional persistence
+  - schema migration
+  - golang-migrate
+directives:
+  - text: "All transactional data MUST be stored in PostgreSQL 16 or later. (ref: ADR-FIXTURE-A)"
+    source_excerpt:
+      line_start: 21
+      line_end: 21
+      quote: "All transactional data MUST be stored in PostgreSQL 16 or later. NEVER write transactional data to MongoDB, DynamoDB, or any non-relational store. Schema migrations MUST run via `golang-migrate` with up and down SQL pairs committed to the repository."
+  - text: "NEVER write transactional data to MongoDB, DynamoDB, or any non-relational store. (ref: ADR-FIXTURE-A)"
+    source_excerpt:
+      line_start: 21
+      line_end: 21
+      quote: "All transactional data MUST be stored in PostgreSQL 16 or later. NEVER write transactional data to MongoDB, DynamoDB, or any non-relational store. Schema migrations MUST run via `golang-migrate` with up and down SQL pairs committed to the repository."
+  - text: "Schema migrations MUST run via `golang-migrate` with up and down SQL pairs committed to the repository. (ref: ADR-FIXTURE-A)"
+    source_excerpt:
+      line_start: 21
+      line_end: 21
+      quote: "All transactional data MUST be stored in PostgreSQL 16 or later. NEVER write transactional data to MongoDB, DynamoDB, or any non-relational store. Schema migrations MUST run via `golang-migrate` with up and down SQL pairs committed to the repository."

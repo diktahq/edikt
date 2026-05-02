@@ -1,0 +1,31 @@
+schema_version: 1
+topic: http-handlers
+path: test/golden/sidecar-extractor/guideline-fixture/source.md
+signals:
+  - http handler
+  - structured logging
+  - request id
+  - context deadline
+  - jwt validation
+  - 4xx response
+directives:
+  - text: "Every handler MUST emit a structured log entry on entry and on exit, including the request_id from the inbound header. (ref: guideline-http-handlers)"
+    source_excerpt:
+      line_start: 9
+      line_end: 9
+      quote: "- Every handler MUST emit a structured log entry on entry and on exit, including the `request_id` from the inbound header."
+  - text: "Handlers MUST NEVER block on unbounded I/O. Outbound HTTP calls MUST use a context with a 5-second deadline. (ref: guideline-http-handlers)"
+    source_excerpt:
+      line_start: 10
+      line_end: 10
+      quote: "- Handlers MUST NEVER block on unbounded I/O. Outbound HTTP calls MUST use a context with a 5-second deadline."
+  - text: "All 4xx responses MUST include a JSON body with error.code and error.message. NEVER return a 4xx with an empty body. (ref: guideline-http-handlers)"
+    source_excerpt:
+      line_start: 11
+      line_end: 11
+      quote: "- All 4xx responses MUST include a JSON body with `error.code` and `error.message`. NEVER return a 4xx with an empty body."
+  - text: "Authenticated endpoints MUST validate the JWT before any business logic runs. NEVER trust claims that haven't been verified. (ref: guideline-http-handlers)"
+    source_excerpt:
+      line_start: 12
+      line_end: 12
+      quote: "- Authenticated endpoints MUST validate the JWT before any business logic runs. NEVER trust claims that haven't been verified."

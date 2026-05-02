@@ -210,33 +210,33 @@ Derive a slug from the topic (lowercase, hyphens). Create `{guidelines_dir}/{slu
 *Created by edikt:guideline — {date}*
 ```
 
-### 6. Auto-chain to /edikt:guideline:compile (ADR-008)
+### 6. Generate the sidecar (ADR-027)
 
-Per ADR-008, this command auto-chains to `/edikt:guideline:compile {slug}` at the end of its workflow so the newly-created guideline has its directive sentinel block populated immediately. Fresh artifacts have nothing to preserve (no manual directives, no suppressed directives, no hand-edits), so the compile runs the slow path cleanly and the user never has to remember to compile after new.
+Per ADR-027 (sidecar architecture, supersedes ADR-008), the directive metadata for every guideline lives in a co-located `<slug>.edikt.yaml` sidecar — not in an in-body sentinel block. Dispatch the `sidecar-extractor` agent (`templates/agents/sidecar-extractor.md`) with the path of the guideline you just wrote. The agent runs in a forked subagent and writes `<slug>.edikt.yaml` next to the `.md`.
 
-Run `/edikt:guideline:compile {slug}` now. If it produces an error (e.g., headless mode with strategy flags), surface the error but do NOT roll back the guideline creation — the body is already written and the user can run compile manually later.
+Use the Agent tool:
+- `subagent_type: sidecar-extractor`
+- `prompt: "Extract sidecar from {ABS_PATH_TO_GUIDELINE}"`
 
-If the compile succeeds, the directive block is populated with:
-- `source_hash` — SHA-256 of the guideline body (excluding the block)
-- `directives_hash` — SHA-256 of the auto `directives:` list
-- `compiler_version` — current edikt version
-- `directives:` — auto-generated from the `## Rules` section (only MUST/NEVER bullets; soft-language bullets are skipped with a warning)
-- `manual_directives: []` — empty; user adds rules compile missed
-- `suppressed_directives: []` — empty; user adds rules compile got wrong
+If the agent fails, surface the error but do NOT roll back the guideline creation. The body is already written; the user can re-run sidecar generation via `/edikt:guideline:compile {slug}` (Phase 4b) once the issue is resolved.
+
+If the sidecar is produced, it conforms to `templates/schemas/sidecar.schema.json` (v1) and contains topic, path, signals, and the directive list extracted from the `## Rules` section. Soft-language bullets that don't use MUST / NEVER / ALWAYS / SHOULD are skipped — guidelines compile only enforceable rules into directives.
+
+The legacy auto-chain to `/edikt:guideline:compile` (which used to write an in-body sentinel block per ADR-008) is removed in v0.6.0. Existing guidelines created before this change still have in-body sentinels until `edikt migrate sidecars` (Phase 6) lifts them out.
 
 ### 7. Confirm
 
 ```
 ✅ Guideline created: {guidelines_dir}/{slug}.md
-✅ Directives compiled: {k} auto directives ({s} soft rules skipped)
+✅ Sidecar written: {guidelines_dir}/{slug}.edikt.yaml
 
   Topic: {Topic Title}
   Rules: {n}
 
   To refine the directives:
-  - Add rules compile missed → edit manual_directives: in the block
-  - Reject wrong auto rules → add to suppressed_directives: in the block
-  - Re-read ADR-008 for the three-list schema contract
+  - Edit the sidecar's directives[] directly to add, edit, or remove rules
+  - Re-run /edikt:guideline:compile {slug} to regenerate the sidecar from prose
+  - See ADR-027 for the sidecar architecture contract
 
   Next: Run /edikt:gov:compile to include this guideline in governance.
 ```

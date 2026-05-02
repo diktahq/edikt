@@ -1,0 +1,29 @@
+schema_version: 1
+topic: hermetic-tests
+path: test/golden/sidecar-extractor/inv-fixture/source.md
+signals:
+  - test sandbox
+  - host home directory
+  - sandbox isolation
+  - test harness
+directives:
+  - text: "Test sandboxes MUST NOT read from ~/.claude/, ~/.edikt/, ~/.aws/, or any other home-directory configuration on the host machine. (ref: INV-FIXTURE-A)"
+    source_excerpt:
+      line_start: 11
+      line_end: 11
+      quote: "Test sandboxes MUST NOT read from `~/.claude/`, `~/.edikt/`, `~/.aws/`, or any other home-directory configuration on the host machine. NEVER copy host secrets into a test sandbox under any circumstance."
+  - text: "NEVER copy host secrets into a test sandbox under any circumstance. (ref: INV-FIXTURE-A)"
+    source_excerpt:
+      line_start: 11
+      line_end: 11
+      quote: "Test sandboxes MUST NOT read from `~/.claude/`, `~/.edikt/`, `~/.aws/`, or any other home-directory configuration on the host machine. NEVER copy host secrets into a test sandbox under any circumstance."
+  - text: "The test harness MUST set HOME=$SANDBOX_DIR before invoking any subprocess. (ref: INV-FIXTURE-A)"
+    source_excerpt:
+      line_start: 19
+      line_end: 19
+      quote: "The test harness MUST set `HOME=$SANDBOX_DIR` before invoking any subprocess and MUST verify, via a CI lint, that no test source file references the literal path `~/.claude` or `~/.edikt`."
+  - text: "The test harness MUST verify, via a CI lint, that no test source file references the literal path ~/.claude or ~/.edikt. (ref: INV-FIXTURE-A)"
+    source_excerpt:
+      line_start: 19
+      line_end: 19
+      quote: "The test harness MUST set `HOME=$SANDBOX_DIR` before invoking any subprocess and MUST verify, via a CI lint, that no test source file references the literal path `~/.claude` or `~/.edikt`."

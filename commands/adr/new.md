@@ -431,25 +431,29 @@ An ADR should cover ONE decision, not a design document. If it exceeds 2 pages, 
 
 REMEMBER: An ADR captures a DECISION with trade-offs, not a preference. It must include a Confirmation section describing how to verify the decision is being followed. If it exceeds 2 pages, it's a spec, not an ADR.
 
-### 6. Auto-chain to /edikt:adr:compile (ADR-008)
+### 6. Generate the sidecar (ADR-027)
 
-Per ADR-008, this command auto-chains to `/edikt:adr:compile ADR-{NNN}` at the end of its workflow so the newly-created ADR has its directive sentinel block populated immediately. Fresh artifacts have nothing to preserve (no manual directives, no suppressed directives, no hand-edits), so the compile runs the slow path cleanly and the user never has to remember to compile after new.
+Per ADR-027 (sidecar architecture, supersedes ADR-008), the directive metadata for every accepted ADR lives in a co-located `<name>.edikt.yaml` sidecar — not in an in-body sentinel block. Dispatch the `sidecar-extractor` agent (`templates/agents/sidecar-extractor.md`) with the path of the ADR you just wrote. The agent runs in a forked subagent (per ADR-026's output protocol, its single-line `SIDECAR WRITTEN: …` final response is the deliverable) and writes the `<name>.edikt.yaml` next to the ADR.
 
-Run `/edikt:adr:compile ADR-{NNN}` now. If it produces an error (e.g., headless mode with strategy flags), surface the error but do NOT roll back the ADR creation — the body is already written and the user can run compile manually later.
+Use the Agent tool:
+- `subagent_type: sidecar-extractor`
+- `prompt: "Extract sidecar from {ABS_PATH_TO_ADR}"`
 
-If the compile succeeds, the directive block is populated with:
-- `source_hash` — SHA-256 of the ADR body (excluding the block)
-- `directives_hash` — SHA-256 of the auto `directives:` list
-- `compiler_version` — current edikt version
-- `directives:` — auto-generated from the `## Decision` section
-- `manual_directives: []` — empty; user adds rules compile missed
-- `suppressed_directives: []` — empty; user adds rules compile got wrong
+If the agent fails (rare — it has a single locked task), surface the error but do NOT roll back the ADR creation. The body is already written; the user can re-run sidecar generation via `/edikt:adr:compile ADR-{NNN}` (Phase 4b) once the issue is resolved.
+
+If the sidecar is produced, it conforms to `templates/schemas/sidecar.schema.json` (v1) and contains:
+- `topic` — kebab-case grouping identifier
+- `path` — relative path to this ADR's `.md`
+- `signals` — routing keywords extracted from the directive sentences
+- `directives[]` — each entry has `text`, `source_excerpt.line_start`/`line_end`/`quote`
+
+The legacy auto-chain to `/edikt:adr:compile` (which used to write an in-body sentinel block per ADR-008) is removed in v0.6.0. Existing ADRs created before this change still have in-body sentinels until `edikt migrate sidecars` (Phase 6) lifts them out.
 
 ### 7. Confirm
 
 ```
 ✅ ADR created: {BASE}/decisions/{NNN}-{slug}.md
-✅ Directives compiled: {k} auto directives
+✅ Sidecar written: {BASE}/decisions/{NNN}-{slug}.edikt.yaml
 
   ADR-{NNN}: {Title}
   Status: accepted
@@ -457,9 +461,9 @@ If the compile succeeds, the directive block is populated with:
   Review it and change status to "proposed" if it needs team sign-off first.
 
   To refine the directives:
-  - Add rules compile missed → edit manual_directives: in the block
-  - Reject wrong auto rules → add to suppressed_directives: in the block
-  - Re-read ADR-008 for the three-list schema contract
+  - Edit the sidecar's directives[] directly to add, edit, or remove rules
+  - Re-run /edikt:adr:compile ADR-{NNN} to regenerate the sidecar from prose
+  - See ADR-027 for the sidecar architecture contract
 
   Next: Run /edikt:gov:compile to update governance directives.
 
