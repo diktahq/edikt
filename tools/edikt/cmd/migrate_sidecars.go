@@ -252,12 +252,12 @@ func resolveArtifactDirs(projectRoot string) artifactDirs {
 		if inPaths {
 			if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 				ts := strings.TrimSpace(line)
-				if strings.HasPrefix(ts, "decisions:") {
-					d.decisions = filepath.Join(projectRoot, strings.TrimSpace(strings.TrimPrefix(ts, "decisions:")))
-				} else if strings.HasPrefix(ts, "invariants:") {
-					d.invariants = filepath.Join(projectRoot, strings.TrimSpace(strings.TrimPrefix(ts, "invariants:")))
-				} else if strings.HasPrefix(ts, "guidelines:") {
-					d.guidelines = filepath.Join(projectRoot, strings.TrimSpace(strings.TrimPrefix(ts, "guidelines:")))
+				if rest, ok := strings.CutPrefix(ts, "decisions:"); ok {
+					d.decisions = filepath.Join(projectRoot, strings.TrimSpace(rest))
+				} else if rest, ok := strings.CutPrefix(ts, "invariants:"); ok {
+					d.invariants = filepath.Join(projectRoot, strings.TrimSpace(rest))
+				} else if rest, ok := strings.CutPrefix(ts, "guidelines:"); ok {
+					d.guidelines = filepath.Join(projectRoot, strings.TrimSpace(rest))
 				}
 			} else if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
 				inPaths = false
@@ -957,7 +957,7 @@ func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jso
 			wrote, failed, skipped, alreadyMig)
 	}
 
-	emitEvent(ediktRoot, "sidecar_migration_complete", map[string]interface{}{
+	emitEvent(ediktRoot, "sidecar_migration_complete", map[string]any{
 		"mode":             modeOf(dryRun),
 		"to_create":        toCreate,
 		"wrote":            wrote,
