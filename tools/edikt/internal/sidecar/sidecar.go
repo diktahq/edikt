@@ -32,6 +32,19 @@ type Sidecar struct {
 	Signals       []string    `yaml:"signals"`
 	Directives    []Directive `yaml:"directives"`
 
+	// User-authored overrides preserved across sidecar regenerations.
+	// ManualDirectives are always included in the effective rule set.
+	// SuppressedDirectives are subtracted from Directives at gov:compile time.
+	// Populated by migrate_sidecars from the legacy sentinel block on upgrade.
+	ManualDirectives     []string `yaml:"manual_directives,omitempty"`
+	SuppressedDirectives []string `yaml:"suppressed_directives,omitempty"`
+
+	// Aggregated at gov:compile time into governance.md's ## Reminders and
+	// ## Verification Checklist sections. Populated by sidecar-extractor from
+	// ## Confirmation (ADRs) and ## Enforcement (INVs) sections.
+	Reminders    []string `yaml:"reminders,omitempty"`
+	Verification []string `yaml:"verification,omitempty"`
+
 	SourcePath string `yaml:"-"`
 
 	// cachedMarshal stores the canonical-form bytes computed once at

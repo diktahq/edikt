@@ -62,10 +62,37 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		opts.IndexPath = filepath.Join(projectRoot, ".claude", "rules", "governance.md")
 	}
 
+	// Collect global aggregates in artifact-ID order for determinism.
+	// INV directives go ONLY to governance.md constraints — never to topic
+	// files. Reminders and verification are aggregated across all artifacts.
+	sortedPairs := append([]sidecar.Pair(nil), pairs...)
+	sort.Slice(sortedPairs, func(i, j int) bool {
+		return sortedPairs[i].ArtifactID < sortedPairs[j].ArtifactID
+	})
+	var invariantRules []compile.Rule
+	var allReminders, allVerification []string
+	for _, p := range sortedPairs {
+		if p.Sidecar == nil {
+			continue
+		}
+		if strings.HasPrefix(p.ArtifactID, "INV-") {
+			for _, d := range p.Sidecar.Directives {
+				invariantRules = append(invariantRules, compile.Rule{Text: d.Text, Source: p.ArtifactID})
+			}
+		}
+		allReminders = append(allReminders, p.Sidecar.Reminders...)
+		allVerification = append(allVerification, p.Sidecar.Verification...)
+	}
+
 	groups := groupByTopic(pairs)
 	topicNames := make([]string, 0, len(groups))
 	for name := range groups {
-		topicNames = append(topicNames, name)
+		// Skip topics whose only directives came from INVs — groupByTopic
+		// excludes INV directives, so a topic with only INV sidecars produces
+		// an empty directive list. Don't write an empty topic file.
+		if len(groups[name].Directives) > 0 {
+			topicNames = append(topicNames, name)
+		}
 	}
 	sort.Strings(topicNames)
 
@@ -74,21 +101,15 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 	}
 
 	res := &Result{}
-	var invariantRules []compile.Rule
 
 	for _, name := range topicNames {
 		g := groups[name]
 		fp := TopicFingerprint(g.Sidecars)
 		dest := filepath.Join(opts.OutDir, name+".md")
 
-		// Track directive bookkeeping regardless of cache outcome — index
-		// rendering needs full counts and the invariant restate list.
+		// Track directive count for the header comment (topic-file directives only;
+		// invariant rules in governance.md are counted separately).
 		res.TotalDirectives += len(g.Directives)
-		for _, r := range g.Directives {
-			if strings.HasPrefix(r.Source, "INV-") {
-				invariantRules = append(invariantRules, r)
-			}
-		}
 
 		// Diff-only short-circuit: if the existing topic file declares the
 		// same fingerprint, every contributing sidecar is byte-equal to last
@@ -129,11 +150,13 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		INVCount:          countByPrefix(pairs, "INV-"),
 		INVActiveCount:    countByPrefix(pairs, "INV-"),
 		GuidelineCount:    countGuidelines(pairs),
-		DirectiveCount:    res.TotalDirectives,
+		DirectiveCount:    res.TotalDirectives + len(invariantRules),
 		TopicCount:        len(topicNames),
 		InvariantRules:    invariantRules,
 		InvariantRestated: append([]compile.Rule(nil), invariantRules...),
 		RoutingRows:       routingRows(groups, topicNames),
+		Reminders:         allReminders,
+		Verification:      allVerification,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("render index: %w", err)
@@ -164,8 +187,12 @@ func groupByTopic(pairs []sidecar.Pair) map[string]*topicGroup {
 		for _, s := range p.Sidecar.Signals {
 			t.Signals = appendUnique(t.Signals, s)
 		}
-		for _, d := range p.Sidecar.Directives {
-			t.Directives = append(t.Directives, compile.Rule{Text: d.Text, Source: p.ArtifactID})
+		// INV directives go only to governance.md constraints; topic files
+		// contain ADR and guideline directives only.
+		if !strings.HasPrefix(p.ArtifactID, "INV-") {
+			for _, d := range p.Sidecar.Directives {
+				t.Directives = append(t.Directives, compile.Rule{Text: d.Text, Source: p.ArtifactID})
+			}
 		}
 	}
 	for _, t := range g {

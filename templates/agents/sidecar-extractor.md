@@ -33,6 +33,22 @@ You receive a single input: an absolute path to a `<name>.md` file. The file is 
 
 You write a single output: `<name>.edikt.yaml` (same directory, same basename, `.edikt.yaml` suffix). The output MUST conform to `templates/schemas/sidecar.v1.schema.json` (JSON Schema 2020-12, v1).
 
+**Exact allowed top-level keys — no others.** The schema has `additionalProperties: false`. The Go loader uses `KnownFields(true)` and will reject any unknown field with a hard parse error. The only valid keys are:
+
+```
+schema_version   # integer 1 — not "1", not "v1", not version:
+topic            # kebab-case string
+path             # relative path string
+signals          # array of strings
+directives       # array of {text, source_excerpt: {line_start, line_end, quote}}
+manual_directives     # optional array of strings
+suppressed_directives # optional array of strings
+reminders        # optional array of strings
+verification     # optional array of strings
+```
+
+**The input file's frontmatter fields (`type:`, `id:`, `title:`, `status:`, `date:`, `deciders:`) are for reading only — NEVER copy them into the output sidecar.** The sidecar has no `type`, `id`, `title`, `status`, `version`, or `date` fields.
+
 You never:
 - Invent a directive that is not present in the prose.
 - Soften, paraphrase, generalize, or stylize any directive's text.
@@ -90,14 +106,48 @@ If you cannot make a candidate signal conform, omit it rather than emitting an i
 
 ### `directives`
 
-Walk the body and extract every imperative sentence — sentences containing `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, `NEVER`, `ALWAYS`, or equivalent normative phrasing. For each:
+**Which sections to read — source scope is strict.** Only extract directives from these sections:
 
-- **`text`**: the directive sentence as it should appear in compiled governance, ≤ 200 chars. Include a parenthetical reference tail naming the source artifact: `(ref: ADR-NNN)`, `(ref: INV-NNN)`, or `(ref: <guideline-slug>)`. NEVER soften the verb form — if the prose says MUST, the text says MUST. NEVER merge two prose sentences into one directive.
+- ADRs: `## Decision` and `## How to enforce` / `## Confirmation` (enforcement sub-sections only — not rationale paragraphs within them).
+- Invariants: `## Statement` / `## Rule` and `## Enforcement` / `## How to enforce`.
+- Guidelines: any section whose heading contains "rule", "must", "requirement", "convention", or "enforcement" — or the full body when no section headings exist.
+
+**NEVER extract from:** `## Context`, `## Why`, `## Rationale`, `## Considered Options`, `## Consequences` (Good / Bad / Neutral / Accepted trade-off), `## Decision Drivers`, `## Background`. These sections explain WHY a decision was made — they are not rules an LLM must follow. A sentence that would be a valid directive in `## Decision` is NOT a directive if it lives in `## Consequences`.
+
+**What to extract within allowed sections:** any sentence that encodes a constraint, prohibition, or requirement the codebase must satisfy. This includes:
+
+1. Sentences with explicit normative verbs: `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, `NEVER`, `ALWAYS`, `DO NOT`.
+2. Present-tense declaratives that describe a design decision with architectural force — these carry implicit MUST semantics and MUST be promoted (see verb normalization below).
+
+**Do NOT extract** sentences that merely describe context, list options, give examples, or state tradeoffs — even if they use present tense.
+
+For each extracted directive:
+
+- **`text`**: the directive sentence phrased for LLM enforcement in compiled governance, ≤ 500 chars. Include a parenthetical reference tail: `(ref: ADR-NNN)`, `(ref: INV-NNN)`, or `(ref: <slug>)`. Rules:
+  - **Verb normalization is required.** If the prose uses present-tense declarative without an explicit normative verb (e.g., "Processing runs in a background goroutine"), the `text` MUST use `MUST` (e.g., "Processing MUST run in a background goroutine"). The `source_excerpt.quote` stays verbatim — only `text` is normalized.
+  - **NEVER soften.** If the prose says `MUST NOT`, `text` says `MUST NOT`. If the prose says `NEVER`, `text` says `NEVER`. Softening is always wrong; strengthening present-tense declaratives to `MUST` is correct.
+  - **NEVER merge two prose sentences into one directive.** Each directive is exactly one source sentence. Split multi-sentence paragraphs into one directive each, each with its own `source_excerpt`.
+  - **NEVER paraphrase the substance.** Verb normalization is the only permitted rewrite. Do not rephrase, generalize, or add qualifications not present in the source.
 - **`source_excerpt.line_start`**: the 1-indexed line number in the parent `.md` where the directive's source sentence begins.
 - **`source_excerpt.line_end`**: the 1-indexed line number where the source sentence ends. Equals `line_start` for single-line directives.
 - **`source_excerpt.quote`**: the verbatim text from the parent file between `line_start` and `line_end`, byte-equal to the file's content (preserving inline backticks, em-dashes, smart quotes, and trailing punctuation). Used by `/edikt:doctor` for drift detection — when the live quote no longer matches the recorded quote, the sidecar is flagged as stale.
 
-If the artifact has zero imperative sentences (rare — usually a roadmap-only ADR), emit `directives: []`. The empty list is valid per the schema; downstream tooling reports it as a warning, not an error.
+**Verb normalization example:**
+
+Source line 20: `POST /sessions/:id/process returns 202 Accepted immediately.`
+
+Correct extraction:
+```yaml
+- text: "POST /sessions/:id/process MUST return 202 Accepted immediately. (ref: ADR-004)"
+  source_excerpt:
+    line_start: 20
+    line_end: 20
+    quote: "POST /sessions/:id/process returns 202 Accepted immediately."
+```
+
+**Section exclusion example:** "Provider pattern (internal/stt/provider.go) allows swapping STT providers without architectural changes" appears in `## Consequences → Good`. It is NOT a directive — it describes an outcome, not a requirement. Do not extract it.
+
+If the artifact has zero directives in the allowed sections (rare — usually a roadmap-only ADR), emit `directives: []`. The empty list is valid per the schema; downstream tooling reports it as a warning, not an error.
 
 **YAML quoting discipline — strict. `text:` and `quote:` strings MUST be double-quoted whenever the content contains ANY of these characters:**
 
@@ -124,9 +174,49 @@ Inside double quotes, escape `"` as `\"` and `\` as `\\`. Single-quoted YAML str
 
 **Line-number accuracy — count from 1, not 0.** The `line_start` and `line_end` are 1-indexed against the parent `.md` file as it exists at extraction time. If you cannot find the directive's source sentence at the recorded line, the sidecar is stale-by-construction and `/edikt:gov:compile` will reject it. Re-count from the file's first byte if uncertain — a five-line offset will fail downstream and the user sees a `directive[N]: quote not found at lines X-Y` error.
 
+### `reminders`
+
+Extract up to **3** pre-action reminders from `## Confirmation` (ADRs) or `## Enforcement` / `## How to enforce` (INVs). Reminders are aggregated into `governance.md § Reminders` by `gov:compile`.
+
+Format each as: `"Before {action} → {check} (ref: {ID})"`
+
+Rules:
+- One reminder per distinct action the decision governs (creating a file, modifying a handler, adding a dependency, etc.).
+- The check clause names the specific thing to verify before acting — file name, interface, endpoint path, test name. Generic checks ("verify it's correct") are useless — skip them.
+- Only emit when a `## Confirmation` or `## Enforcement` section with actionable verification text exists. If those sections are absent or contain only prose rationale, emit `reminders: []`.
+- Cap at 3. If more than 3 candidates exist, pick the three highest-risk actions.
+
+Example:
+```yaml
+reminders:
+  - "Before modifying the /api/v1/ai/ask handler → verify it receives only the AI client interface, not any repository (ref: ADR-012)"
+  - "Before adding any AI derivation → verify confidence is set to draft or ghost only (ref: INV-001)"
+```
+
+### `verification`
+
+Extract up to **5** verification checklist items from the same `## Confirmation` / `## Enforcement` sections as reminders, but focus on things that can be checked by grep, file inspection, or running an integration test.
+
+Format each as: `"[ ] {what to check} (ref: {ID})"`
+
+Rules:
+- Each item must be specific enough to act on: name the file, endpoint, test, or command.
+- Skip items that require reading logic or understanding intent — those belong in directives, not verification.
+- If the confirmation section already phrases items as checkboxes or bullet points with integration test descriptions, use those verbatim (reformatted).
+- Cap at 5.
+
+Example:
+```yaml
+verification:
+  - "[ ] /api/v1/ai/ask handler constructor accepts only the AI client interface — grep for repository imports (ref: ADR-012)"
+  - "[ ] Integration test confirms zero DB writes after calling POST /api/v1/ai/ask (ref: ADR-012)"
+```
+
 ## What NOT to extract
 
-- Rationale, motivation, context paragraphs — those describe WHY a directive exists, not what it requires.
+- **`## Consequences` / `## Good` / `## Bad` / `## Neutral` / `## Accepted trade-off`** — these describe outcomes, not rules. A sentence that would be a directive in `## Decision` is not a directive here. This is the most common extractor error: pulling outcome descriptions as directives.
+- **`## Context` / `## Why` / `## Rationale` / `## Decision Drivers` / `## Considered Options` / `## Background`** — these explain motivation, not requirements.
+- Rationale paragraphs embedded within allowed sections — if a sentence in `## Decision` explains why (not what), skip it.
 - Section headings — they organize the document but are not directives themselves.
 - Code blocks (```) — code samples illustrate behavior but the directive that constrains the code lives in the prose, not the snippet.
 - Frontmatter fields beyond `topic`/`path` resolution.

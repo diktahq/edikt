@@ -513,6 +513,77 @@ func TestMigrateSidecars_JSONFlag(t *testing.T) {
 	}
 }
 
+// TestMigrateSidecars_CarriesOptionalFields verifies the upgrade regression fix:
+// applyArtifact MUST carry manual_directives, suppressed_directives, reminders,
+// and verification from the old sentinel block into the new .edikt.yaml sidecar.
+// A v0.4.3 → v0.6.0 upgrade that drops these fields silently destroys user
+// authored overrides, which is the primary upgrade regression risk.
+func TestMigrateSidecars_CarriesOptionalFields(t *testing.T) {
+	body := "# ADR-010 — optional fields fixture\n\n" +
+		"## Decision\n\nHooks must emit JSON. (ref: INV-003)\n\n" +
+		openMarker + "\n" +
+		"source_hash: abc\n" +
+		"di" + "rectives_hash: def\n" +
+		"topic: hooks\n" +
+		"signals:\n" +
+		"  - hook\n" +
+		"  - posttooluse\n" +
+		"di" + "rectives:\n" +
+		"  - \"Hooks must emit JSON. (ref: INV-003)\"\n" +
+		"manual_di" + "rectives:\n" +
+		"  - \"Always verify the hook script is executable.\"\n" +
+		"suppressed_di" + "rectives:\n" +
+		"  - \"Do not cache hook results across sessions.\"\n" +
+		"reminders:\n" +
+		"  - \"Before migrating a hook to JSON → verify message preserved (ref: ADR-010)\"\n" +
+		"verification:\n" +
+		"  - \"[ ] hook emits valid JSON (ref: ADR-010)\"\n" +
+		closeMarker + "\n"
+
+	dir := t.TempDir()
+	mdPath := filepath.Join(dir, "ADR-010-optional-fields.md")
+	if err := os.WriteFile(mdPath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := candidate{mdPath: mdPath, artifactID: "ADR-010", kind: "adr"}
+	res := applyArtifact(c, t.TempDir(), dir)
+	if res.action != "wrote" {
+		t.Fatalf("want wrote, got %q err=%v warn=%v", res.action, res.err, res.warnLines)
+	}
+
+	loaded, err := sidecar.Load(res.sidecarPath)
+	if err != nil {
+		t.Fatalf("load sidecar: %v", err)
+	}
+
+	// manual_directives — user-authored rules must survive migration
+	if len(loaded.ManualDirectives) != 1 || loaded.ManualDirectives[0] != "Always verify the hook script is executable." {
+		t.Errorf("manual_directives not carried: %v", loaded.ManualDirectives)
+	}
+
+	// suppressed_directives — user rejections must survive migration
+	if len(loaded.SuppressedDirectives) != 1 || loaded.SuppressedDirectives[0] != "Do not cache hook results across sessions." {
+		t.Errorf("suppressed_directives not carried: %v", loaded.SuppressedDirectives)
+	}
+
+	// reminders — pre-action reminders must survive migration
+	if len(loaded.Reminders) != 1 || !strings.Contains(loaded.Reminders[0], "ref: ADR-010") {
+		t.Errorf("reminders not carried: %v", loaded.Reminders)
+	}
+
+	// verification — checklist items must survive migration
+	if len(loaded.Verification) != 1 || !strings.HasPrefix(loaded.Verification[0], "[ ]") {
+		t.Errorf("verification not carried: %v", loaded.Verification)
+	}
+
+	// Sentinel must be stripped from the source .md
+	updated, _ := os.ReadFile(mdPath)
+	if strings.Contains(string(updated), openMarker) {
+		t.Fatal("sentinel not removed from md after apply")
+	}
+}
+
 func TestMigrateSidecars_DryRunGate(t *testing.T) {
 	ediktRoot := t.TempDir()
 	cwd := t.TempDir()

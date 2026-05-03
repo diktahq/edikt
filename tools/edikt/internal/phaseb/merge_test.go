@@ -231,3 +231,161 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
+
+// mkINVPair builds a sidecar.Pair for an invariant artifact.
+func mkINVPair(t *testing.T, projectRoot, basename, topic string, directives []sidecar.Directive, reminders, verification []string) sidecar.Pair {
+	t.Helper()
+	dir := filepath.Join(projectRoot, "docs", "architecture", "invariants")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parentPath := filepath.Join(dir, basename+".md")
+	sidecarPath := filepath.Join(dir, basename+".edikt.yaml")
+	if err := os.WriteFile(parentPath, []byte("# placeholder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sc := &sidecar.Sidecar{
+		SchemaVersion: 1,
+		Topic:         topic,
+		Path:          "docs/architecture/invariants/" + basename + ".md",
+		Signals:       []string{"inv-signal"},
+		Directives:    directives,
+		Reminders:     reminders,
+		Verification:  verification,
+		SourcePath:    sidecarPath,
+	}
+	if err := os.WriteFile(sidecarPath, []byte("placeholder\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return sidecar.Pair{
+		ParentPath:  parentPath,
+		SidecarPath: sidecarPath,
+		ArtifactID:  basename[:7], // "INV-001"
+		Sidecar:     sc,
+	}
+}
+
+// TestMerge_INVDirectivesNotInTopicFiles pins the routing fix: INV directives
+// must appear in governance.md Non-Negotiable Constraints ONLY. They must
+// never appear in a topic file, even when the INV shares a topic with ADRs.
+func TestMerge_INVDirectivesNotInTopicFiles(t *testing.T) {
+	root := t.TempDir()
+	adrPair := mkPair(t, root, "ADR-001-test", "ai", []sidecar.Directive{
+		{Text: "ADR directive. (ref: ADR-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "x"}},
+	})
+	adrPair.ArtifactID = "ADR-001"
+
+	invPair := mkINVPair(t, root, "INV-001-test", "ai", []sidecar.Directive{
+		{Text: "INV directive. (ref: INV-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "y"}},
+	}, nil, nil)
+	invPair.ArtifactID = "INV-001"
+
+	_, err := Merge(root, []sidecar.Pair{adrPair, invPair}, Options{
+		CompiledAt: "2026-05-03T00:00:00Z", CompilerVersion: "0.6.0-test",
+	})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+
+	topicBody, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance", "ai.md"))
+	if err != nil {
+		t.Fatalf("read topic file: %v", err)
+	}
+	if contains(topicBody, "INV directive") {
+		t.Error("INV directive must NOT appear in topic file ai.md — it belongs in governance.md constraints only")
+	}
+	if !contains(topicBody, "ADR directive") {
+		t.Error("ADR directive must appear in topic file ai.md")
+	}
+
+	indexBody, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance.md"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	if !contains(indexBody, "INV directive") {
+		t.Error("INV directive must appear in governance.md Non-Negotiable Constraints")
+	}
+}
+
+// TestMerge_INVOnlyTopicNotWritten verifies that when a topic has ONLY INV
+// sidecars (no ADRs/guidelines), no topic file is written for it. An empty
+// topic file would be noise in the routing table.
+func TestMerge_INVOnlyTopicNotWritten(t *testing.T) {
+	root := t.TempDir()
+	invPair := mkINVPair(t, root, "INV-005-test", "frontend", []sidecar.Directive{
+		{Text: "UI invariant. (ref: INV-005)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "z"}},
+	}, nil, nil)
+	invPair.ArtifactID = "INV-005"
+
+	res, err := Merge(root, []sidecar.Pair{invPair}, Options{
+		CompiledAt: "2026-05-03T00:00:00Z", CompilerVersion: "0.6.0-test",
+	})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+	if len(res.TopicsRendered) != 0 {
+		t.Errorf("INV-only topic must not produce a topic file; got TopicsRendered=%v", res.TopicsRendered)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".claude", "rules", "governance", "frontend.md")); err == nil {
+		t.Error("frontend.md must not be written when all contributors are INVs")
+	}
+
+	// The INV directive must still appear in governance.md.
+	indexBody, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance.md"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+	if !contains(indexBody, "UI invariant") {
+		t.Error("INV-only topic directive must appear in governance.md Non-Negotiable Constraints")
+	}
+}
+
+// TestMerge_RemindersAndVerificationAggregated pins the reminders/verification
+// fix: items from all sidecars (ADRs and INVs) must appear in governance.md
+// and must be empty when no sidecars provide them.
+func TestMerge_RemindersAndVerificationAggregated(t *testing.T) {
+	root := t.TempDir()
+
+	adrPair := mkPair(t, root, "ADR-001-test", "ai", []sidecar.Directive{
+		{Text: "ADR directive. (ref: ADR-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "x"}},
+	})
+	adrPair.ArtifactID = "ADR-001"
+	adrPair.Sidecar.Reminders = []string{"Before acting on ADR-001 → check the constraint (ref: ADR-001)"}
+	adrPair.Sidecar.Verification = []string{"[ ] ADR-001 handler accepts only AI client (ref: ADR-001)"}
+
+	invPair := mkINVPair(t, root, "INV-001-test", "ai", []sidecar.Directive{
+		{Text: "INV directive. (ref: INV-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "y"}},
+	},
+		[]string{"Before AI derivation → verify confidence is draft or ghost (ref: INV-001)"},
+		[]string{"[ ] AI derivation sets confidence draft or ghost (ref: INV-001)"},
+	)
+	invPair.ArtifactID = "INV-001"
+
+	_, err := Merge(root, []sidecar.Pair{adrPair, invPair}, Options{
+		CompiledAt: "2026-05-03T00:00:00Z", CompilerVersion: "0.6.0-test",
+	})
+	if err != nil {
+		t.Fatalf("Merge: %v", err)
+	}
+
+	indexBody, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance.md"))
+	if err != nil {
+		t.Fatalf("read index: %v", err)
+	}
+
+	// Reminders from both ADR and INV must appear.
+	if !contains(indexBody, "Before acting on ADR-001") {
+		t.Error("ADR reminder not in governance.md")
+	}
+	if !contains(indexBody, "Before AI derivation") {
+		t.Error("INV reminder not in governance.md")
+	}
+
+	// Verification items from both must appear.
+	if !contains(indexBody, "[ ] ADR-001 handler accepts only AI client") {
+		t.Error("ADR verification item not in governance.md")
+	}
+	if !contains(indexBody, "[ ] AI derivation sets confidence draft or ghost") {
+		t.Error("INV verification item not in governance.md")
+	}
+}

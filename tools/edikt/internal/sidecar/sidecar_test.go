@@ -131,3 +131,71 @@ func TestValidate_RejectsDuplicateSignal(t *testing.T) {
 		t.Fatal("expected uniqueItems error")
 	}
 }
+
+// TestLoad_OptionalFields verifies that the four optional fields added in
+// v0.6.0 (manual_directives, suppressed_directives, reminders, verification)
+// are loaded and preserved correctly. These fields must survive a round-trip
+// through Load so that gov:compile can compute the effective rule set and
+// aggregate reminders/verification into governance.md.
+func TestLoad_OptionalFields(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "test", "fixtures", "sidecars", "valid", "adr-with-overrides.edikt.yaml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(s.ManualDirectives) != 1 {
+		t.Fatalf("manual_directives: want 1, got %d", len(s.ManualDirectives))
+	}
+	if s.ManualDirectives[0] != "Always verify the hook script is executable before running the test suite." {
+		t.Errorf("manual_directives[0]: unexpected value %q", s.ManualDirectives[0])
+	}
+
+	if len(s.SuppressedDirectives) != 1 {
+		t.Fatalf("suppressed_directives: want 1, got %d", len(s.SuppressedDirectives))
+	}
+	if s.SuppressedDirectives[0] != "Do not cache hook results across sessions." {
+		t.Errorf("suppressed_directives[0]: unexpected value %q", s.SuppressedDirectives[0])
+	}
+
+	if len(s.Reminders) != 1 {
+		t.Fatalf("reminders: want 1, got %d", len(s.Reminders))
+	}
+	if !strings.Contains(s.Reminders[0], "ref: ADR-003") {
+		t.Errorf("reminders[0] missing ref tail: %q", s.Reminders[0])
+	}
+
+	if len(s.Verification) != 2 {
+		t.Fatalf("verification: want 2, got %d", len(s.Verification))
+	}
+	for i, v := range s.Verification {
+		if !strings.HasPrefix(v, "[ ]") {
+			t.Errorf("verification[%d] does not start with '[ ]': %q", i, v)
+		}
+	}
+}
+
+// TestLoad_OptionalFields_Absent verifies that a sidecar with none of the
+// optional fields still loads cleanly and returns nil slices — not empty
+// slices — so callers can distinguish "not present" from "present but empty".
+func TestLoad_OptionalFields_Absent(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "test", "fixtures", "sidecars", "valid", "adr-001.edikt.yaml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.ManualDirectives != nil {
+		t.Errorf("manual_directives: want nil when absent, got %v", s.ManualDirectives)
+	}
+	if s.SuppressedDirectives != nil {
+		t.Errorf("suppressed_directives: want nil when absent, got %v", s.SuppressedDirectives)
+	}
+	if s.Reminders != nil {
+		t.Errorf("reminders: want nil when absent, got %v", s.Reminders)
+	}
+	if s.Verification != nil {
+		t.Errorf("verification: want nil when absent, got %v", s.Verification)
+	}
+}

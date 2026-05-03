@@ -1,0 +1,21 @@
+schema_version: 1
+topic: hooks
+path: docs/architecture/decisions/ADR-003-hook-protocol.md
+signals:
+  - hook protocol
+  - posttooluse
+directives:
+  - text: "Use PostToolUse hooks for auto-formatting after Write or Edit. (ref: ADR-003)"
+    source_excerpt:
+      line_start: 42
+      line_end: 42
+      quote: "Use PostToolUse hooks for auto-formatting after Write or Edit."
+manual_directives:
+  - "Always verify the hook script is executable before running the test suite."
+suppressed_directives:
+  - "Do not cache hook results across sessions."
+reminders:
+  - "Before migrating a hook to JSON → verify the user-visible message is preserved byte-for-byte (ref: ADR-003)"
+verification:
+  - "[ ] hook scripts in templates/hooks/ emit valid JSON parseable by json.loads (ref: ADR-003)"
+  - "[ ] hook unit tests pass without EDIKT_SKIP_HOOK_TESTS=1 (ref: ADR-003)"

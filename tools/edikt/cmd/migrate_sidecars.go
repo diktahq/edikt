@@ -554,9 +554,13 @@ func applyArtifact(c candidate, ediktRoot, projectRoot string) liftResult {
 	prose := bodyStr[:sent.StartByte] + bodyStr[sent.EndByte:]
 
 	sc := sidecar.Sidecar{
-		SchemaVersion: 1,
-		Path:          relPathOrBase(projectRoot, c.mdPath),
-		Signals:       dedupAndSort(sent.Signals),
+		SchemaVersion:        1,
+		Path:                 relPathOrBase(projectRoot, c.mdPath),
+		Signals:              dedupAndSort(sent.Signals),
+		ManualDirectives:     sent.ManualDirectives,
+		SuppressedDirectives: sent.SuppressedDirectives,
+		Reminders:            sent.Reminders,
+		Verification:         sent.Verification,
 	}
 	if sent.Topic != "" {
 		sc.Topic = sent.Topic

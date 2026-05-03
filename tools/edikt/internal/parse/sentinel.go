@@ -249,7 +249,7 @@ func parseSentinelBlock(inner string) (Sentinel, error) {
 		case "reminders":
 			s.Reminders = append(s.Reminders, item)
 		case "verification":
-			s.Verification = append(s.Verification, strings.TrimLeft(item, "- []"))
+			s.Verification = append(s.Verification, item)
 		case "canonical_phrases":
 			s.CanonicalPhrases = append(s.CanonicalPhrases, item)
 		}

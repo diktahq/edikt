@@ -33,6 +33,26 @@
       },
       "description": "Lowercase, deduplicated keyword/phrase signals that route work to this artifact."
     },
+    "manual_directives": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "User-authored rules preserved across sidecar regenerations. Always included in the effective rule set. Never overwritten by sidecar-extractor."
+    },
+    "suppressed_directives": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Auto-directives the user rejected. Subtracted from directives[] at gov:compile time. Never overwritten by sidecar-extractor."
+    },
+    "reminders": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Pre-action reminders aggregated into governance.md ## Reminders. Format: 'Before {action} → {check} (ref: ID)'. Extracted from ## Confirmation (ADRs) and ## Enforcement (INVs)."
+    },
+    "verification": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Verification checklist items aggregated into governance.md ## Verification Checklist. Format: '[ ] {what to check} (ref: ID)'. Extracted from ## Confirmation (ADRs) and ## Enforcement (INVs)."
+    },
     "directives": {
       "type": "array",
       "items": {
