@@ -90,6 +90,13 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 	var loadErrs []string
 
 	for _, p := range pairs {
+		if p.Skip {
+			// Superseded ADRs and migration:skip-marked artifacts opt out of
+			// sidecar coverage. INV-002-compliant: no body edit required to
+			// suppress them — the supersession status line was present at
+			// acceptance time. Skip silently from compile.
+			continue
+		}
 		if p.LoadErr != nil {
 			loadErrs = append(loadErrs, fmt.Sprintf("  %s: %v", p.SidecarPath, p.LoadErr))
 			continue

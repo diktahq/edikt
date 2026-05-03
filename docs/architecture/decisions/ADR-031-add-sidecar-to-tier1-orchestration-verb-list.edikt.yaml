@@ -1,0 +1,47 @@
+schema_version: 1
+topic: architecture
+path: docs/architecture/decisions/ADR-031-add-sidecar-to-tier1-orchestration-verb-list.md
+signals:
+  - orchestration verb
+  - tier-1 orchestration
+  - adr-029 rule 3
+  - bin.edikt sidecar
+  - add-manual-directive
+  - tier-1 markdown
+  - sidecar subcommand
+paths:
+  - bin/**/*
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "ADR-029 Rule 3 MUST include `bin/edikt sidecar <subcommand>` as a permitted orchestration verb group. (ref: ADR-031)"
+    source_excerpt:
+      line_start: 35
+      line_end: 35
+      quote: "**Amend ADR-029 Rule 3 to add `bin/edikt sidecar <subcommand>` as a permitted orchestration verb group.**"
+  - text: "All four ADR-029 rules MUST hold for every `sidecar` subcommand invocation. (ref: ADR-031)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "All four ADR-029 rules still hold for every `sidecar` subcommand invocation:"
+  - text: "Exit code only — Step 8 passes output verbatim and MUST NOT parse its shape. (ref: ADR-031)"
+    source_excerpt:
+      line_start: 54
+      line_end: 54
+      quote: "2. **Exit code only** — Step 8 passes output verbatim and never parses its shape."
+  - text: "`on_absent: refuse-and-direct-user` MUST be declared in `/edikt:adr:enrich`'s frontmatter. (ref: ADR-031)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "4. **Failure mode documented** — `on_absent: refuse-and-direct-user` is declared in `/edikt:adr:enrich`'s frontmatter."
+prohibitions: []
+reminders:
+  - "Before invoking a new `bin/edikt sidecar` subcommand from tier-1 markdown → verify `sidecar` is in ADR-029 Rule 3's permitted verb list (ref: ADR-031)"
+  - "Before adding a new `/edikt:adr:enrich` tier-2 dependency → verify frontmatter declares `tier_2_dependency: edikt` and `on_absent: refuse-and-direct-user` (ref: ADR-031)"
+verification:
+  - "[ ] `bin/edikt sidecar add-manual-directive --help` exits 0 (ref: ADR-031)"
+  - "[ ] `/edikt:adr:enrich` frontmatter declares `tier_2_dependency: edikt` and `on_absent: refuse-and-direct-user` (ref: ADR-031)"
+  - "[ ] `go vet ./cmd/...` clean (ref: ADR-031)"
+  - "[ ] All `TestAddManual_*` tests pass (ref: ADR-031)"
