@@ -1,5 +1,65 @@
 # edikt changelog
 
+## v0.6.0-rc4 (2026-05-03)
+
+Six dogfood findings from the rc3 test on a real v0.4.3-era project
+(ddd-workbench: 26 ADRs, 19 invariants, 5 guidelines). The
+`/edikt:upgrade` flow ran end-to-end successfully, but five quality
+issues surfaced in the resync output and one in the harness:
+
+- **Sidecar-extractor topic over-fragmentation.** Real-corpus
+  compile produced 50 unique topics for 50 artifacts (1:1 mapping)
+  because the locked extractor's prompt hardcoded edikt-codebase
+  topics that didn't fit the user's domain. Fix: project-agnostic
+  broad-category palette (`architecture`, `data-model`, `ai`,
+  `frontend`, `backend`, `auth`, `observability`, `testing`,
+  `release`, `tooling`, `hooks`, `compile`, `agent-rules`,
+  `infrastructure`, `collaboration`, `lifecycle`) plus an
+  anti-pattern check ("if your topic is just a kebab-rephrase of
+  the filename slug, broaden it"). EDIKT_TOPIC_VOCABULARY env-var
+  hook for the rc5 corpus-level pass.
+- **Invalid signal entries.** The extractor emitted `/`, `+`,
+  parentheses, version operators in `signals[]` — every match
+  failed the schema regex `^[a-z0-9][a-z0-9 _.-]*$` and rejected
+  the whole sidecar. Fix: explicit forbidden-character list with
+  before→after examples; tells the extractor to OMIT a non-
+  conforming candidate rather than emit it.
+- **YAML parser failures on `(ref: ADR-NNN)` content.** Every
+  unquoted `text:` field with a `:` in the value broke the YAML
+  parser (51 occurrences across 48 sidecars in the dogfood). Fix:
+  explicit quoting discipline section with the forbidden-character
+  list and a worked example showing the correct double-quoted
+  shape.
+- **Stale source-excerpt line numbers** from extracted directives
+  (ADR-019, ADR-025 in the dogfood). Fix: explicit
+  "1-indexed, count from first byte, re-count if uncertain"
+  guidance plus the compile-side error message form so the
+  extractor knows the failure mode.
+- **README files in artifact directories spuriously migrated.**
+  `docs/guidelines/README.md` was flagged as a migration target
+  and produced an empty stub. Fix: `isSkipListed` skips
+  `README.md` (case-insensitive) by name with an audit reason.
+- **Stop-hook noise during /edikt:upgrade.** Drift detector +
+  ADR-candidate signal fired on every Claude turn during
+  orchestration (~30× during the rc3 dogfood resync). Fix:
+  `.edikt/state/upgrade-in-progress` marker file; stop-hook
+  short-circuits to `{"continue": true}` when present;
+  `commands/upgrade.md` §0 creates and the cleanup contract
+  documents removal on every exit path.
+
+Plus four harness/test fixes:
+
+- `${EDIKT_HOOK_DIR}` placeholder auto-repair in
+  `commands/upgrade.md` §2a + `/edikt:doctor` placeholder check
+  (carried from the rc4 prep commit `a824f5f`).
+- `dev link` now refreshes `~/.claude/commands/edikt` symlink
+  AND swaps `~/.edikt/bin/edikt` to the dev source's binary.
+  `dev unlink` restores both. Pinned by
+  `TestDevLink_RefreshesLauncherBinary`.
+- INV-007 sandboxing for `TestRollbackToPrevious` and
+  `TestVersion` — same leak class as the rc2 `TestUseExistingVersion`
+  fix.
+
 ## v0.6.0-rc3 (2026-05-02)
 
 Architectural fix on top of rc2: the tier-2 Go binary is now
