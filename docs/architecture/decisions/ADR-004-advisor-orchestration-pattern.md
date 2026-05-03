@@ -82,22 +82,6 @@ Keep agents passive, require users to invoke them. Rejected: creates the same "y
 
 ## Directives
 
-[edikt:directives:start]: #
-topic: agent-rules
-paths:
-  - "templates/agents/**"
-  - "commands/review.md"
-  - "commands/plan.md"
-  - "commands/audit.md"
-scope:
-  - planning
-  - design
-  - review
-directives:
-  - Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)
-  - Agents run in forked subagents (`context: fork`). They do not coordinate parallel execution — that is Claude Code's responsibility. (ref: ADR-004)
-  - Domain signal detection is keyword-based. Over-routing is acceptable; under-routing is not. (ref: ADR-004)
-[edikt:directives:end]: #
 
 ## Related
 

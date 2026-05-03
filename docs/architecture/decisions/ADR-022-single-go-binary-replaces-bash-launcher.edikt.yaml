@@ -1,0 +1,39 @@
+schema_version: 1
+topic: tooling
+path: docs/architecture/decisions/ADR-022-single-go-binary-replaces-bash-launcher.md
+signals: []
+directives:
+  - text: 'The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or d
+  - text: 'Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)'
+  - text: 'Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)'
+  - text: 'When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)'
+  - text: 'Phase 1 release tarballs contain BOTH `bin/edikt` (Go) and `bin/edikt-shell` (bash). `install.sh` places both. (ref: ADR-022)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Phase 1 release tarballs contain BOTH `bin/edikt` (Go) and `bin/edikt-shell` (bash). `install.sh` places both. (ref: ADR-022)'
+paths:
+  - tools/edikt/**
+  - bin/edikt
+  - bin/edikt-shell
+  - install.sh
+scope:
+  - implementation
+  - design
+  - review

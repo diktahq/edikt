@@ -55,17 +55,3 @@ Operational rules:
 - **Create INV-NNN for PRD edit-in-place.** Rejected: the PRD model is not "never changes" but "always changes via structured mutations." That is a decision (ADR), not a rule (invariant).
 - **Mode-switch PRDs.** Rejected: letting projects opt into ADR-style immutability for PRDs creates two incompatible mental models. The v0.6.0 redesign picks one and commits.
 
-[edikt:directives:start]: #
-directives:
-  - PRDs and SPECs MUST evolve via in-place YAML sidecar mutations using per-entry status markers (proposed | accepted | shipped | deprecated). (ref: ADR-024)
-  - Supersede (create new PRD-NNN) is reserved for ≥50% scope rewrites or problem-framing shifts. Routine FR refinements MUST use transition commands instead. (ref: ADR-024)
-  - ADRs remain immutable per INV-002. The PRD edit-in-place model does NOT apply to ADRs. (ref: ADR-024, INV-002)
-  - Evaluator scoring MUST consider only FRs and ACs with status: shipped when validating implementation coverage. Proposed entries are not drift. (ref: ADR-024)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases: ["edit-in-place", "per-entry status", "supersede", "revision_history", "PRD lifecycle"]
-behavioral_signal:
-  cite: ["ADR-024", "INV-002"]
-paths: ["docs/product/prds/**", "docs/product/specs/**", "commands/sdlc/prd.md", "commands/sdlc/spec.md", "commands/sdlc/prd/**"]
-scope: [planning, design, review]
-[edikt:directives:end]: #

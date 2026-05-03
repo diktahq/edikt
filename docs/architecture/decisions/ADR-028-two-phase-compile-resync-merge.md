@@ -114,34 +114,6 @@ The right move is to amend ADR-020's contract so the latency budget binds the pa
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.6.0-dev"
-topic: compile
-paths:
-  - "tools/edikt/cmd/gov.go"
-  - "tools/edikt/internal/compile/**"
-  - "test/integration/governance/**"
-  - "test/perf/**"
-scope:
-  - design
-  - implementation
-  - review
-directives:
-  - `gov:compile` MUST run as two phases. Phase A (resync) is conditional on stale sidecars and may invoke subagents at concurrency 8. Phase B (merge) is unconditional and MUST be a pure deterministic merge with no LLM calls and no Task/Agent tool dispatch. (ref: ADR-028)
-  - `gov:compile --check` MUST exit 1 immediately when any sidecar is stale. `--check` MUST NOT dispatch any subagent. The actionable error MUST direct the user to `edikt gov compile` for resync. (ref: ADR-028)
-  - Phase B's latency budget is `<5s` full regenerate, `<500ms` no-op, `<2s` --check on the 50-sidecar baseline corpus. The budget binds Phase B exclusively; Phase A has no SLO. (ref: ADR-028, ADR-020)
-  - Phase B's purity MUST be enforced by a static-analysis test that verifies no `Agent` / `Task` / subprocess-spawning symbol is transitively reachable from the merge code path. (ref: ADR-028)
-  - Phase A MUST emit per-subagent progress on stderr (artifact name + completed/total + ETA from running p50). Silent multi-minute operation is forbidden. (ref: ADR-028)
-  - Phase A subagent failures MUST be logged to `.edikt/state/compile-errors.log` with continue-on-error. Topic files MUST NOT be updated if any subagent failed; compile exits 1 with an aggregated report. (ref: ADR-028)
-  - Concurrent compile invocations MUST serialize through a file lock at `.edikt/state/compile.lock`. `--no-wait` exits 1 instead of blocking. (ref: ADR-028)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases: ["two-phase compile", "Phase A resync", "Phase B merge", "Phase B is pure", "concurrency 8", "ADR-020 budget binds Phase B"]
-behavioral_signal:
-  cite: ["ADR-028", "ADR-020", "ADR-027"]
-[edikt:directives:end]: #
 
 ---
 

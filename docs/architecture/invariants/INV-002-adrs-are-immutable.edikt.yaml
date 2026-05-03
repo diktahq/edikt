@@ -1,0 +1,66 @@
+schema_version: 1
+topic: lifecycle
+path: docs/architecture/invariants/INV-002-adrs-are-immutable.md
+signals:
+  - adr immutability
+  - accepted adr
+  - superseded adr
+  - draft status
+  - architecture decision record
+paths: []
+scope:
+  - implementation
+  - review
+directives:
+  - text: "Architecture Decision Records MUST be immutable once accepted. (ref: INV-002)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Architecture Decision Records are immutable once accepted."
+  - text: "Once the status is changed to `accepted`, its content — context, decision, and consequences — MUST never be edited again. (ref: INV-002)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Once the status is changed to `accepted`, its content — context, decision, and consequences — must never be edited again."
+  - text: "The only permitted mutation after acceptance is updating the `Status:` field to `Superseded by ADR-NNN` or `Deprecated`. (ref: INV-002)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "The only permitted mutation after acceptance is updating the `Status:` field to `Superseded by ADR-NNN` or `Deprecated`."
+  - text: "When a decision changes, a new ADR MUST be written that supersedes the old one. (ref: INV-002)"
+    source_excerpt:
+      line_start: 9
+      line_end: 9
+      quote: "When a decision changes, a new ADR is written that supersedes the old one."
+  - text: "The old ADR MUST be updated to `Status: Superseded by ADR-NNN` and left otherwise intact. (ref: INV-002)"
+    source_excerpt:
+      line_start: 9
+      line_end: 9
+      quote: "The old ADR is updated to `Status: Superseded by ADR-NNN` and left otherwise intact."
+  - text: "When asked to update, fix, or improve an accepted ADR: stop and create a new ADR instead. (ref: INV-002)"
+    source_excerpt:
+      line_start: 20
+      line_end: 20
+      quote: "When asked to update, fix, or improve an accepted ADR: stop and create a new ADR instead"
+  - text: "The new ADR must reference the superseded one (`Supersedes: ADR-NNN`). (ref: INV-002)"
+    source_excerpt:
+      line_start: 21
+      line_end: 21
+      quote: "The new ADR must reference the superseded one (`Supersedes: ADR-NNN`)"
+  - text: "The old ADR status line must be updated to `Superseded by ADR-NNN`. (ref: INV-002)"
+    source_excerpt:
+      line_start: 22
+      line_end: 22
+      quote: "The old ADR status line must be updated to `Superseded by ADR-NNN`"
+  - text: "No other changes to the accepted ADR are permitted. (ref: INV-002)"
+    source_excerpt:
+      line_start: 23
+      line_end: 23
+      quote: "No other changes to the accepted ADR are permitted"
+reminders:
+  - "Before editing an accepted ADR → stop and create a new ADR that supersedes it instead (ref: INV-002)"
+  - "Before writing a superseding ADR → verify it references the old ADR with `Supersedes: ADR-NNN` and the old ADR's Status field is updated (ref: INV-002)"
+verification:
+  - "[ ] No accepted ADR has had its content edited — only Status field may read `Superseded by ADR-NNN` (ref: INV-002)"
+  - "[ ] Any new ADR that supersedes an older one includes `Supersedes: ADR-NNN` in its frontmatter or body (ref: INV-002)"
+  - "[ ] Superseded ADRs have Status updated to `Superseded by ADR-NNN` and no other content changes (ref: INV-002)"

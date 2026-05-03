@@ -70,19 +70,6 @@ Some commands (`edikt:context`, `edikt:init`) need to write to the session's wor
 
 ## Directives
 
-[edikt:directives:start]: #
-topic: [hooks, agent-rules]
-paths:
-  - "templates/hooks/**"
-  - "templates/settings.json.tmpl"
-  - "commands/**"
-scope:
-  - implementation
-directives:
-  - Use PostToolUse hooks for auto-formatting after Write or Edit. Fire only on known source file extensions. Respect `EDIKT_FORMAT_SKIP=1` and config disable. (ref: ADR-003)
-  - Use shell preprocessing in slash commands to inject live project state (next ADR/INV/PRD number, active plan phase). NEVER guess or hardcode sequential identifiers. (ref: ADR-003)
-  - Agents run in forked subagents (`context: fork`), invoked by edikt on domain signals. They do not coordinate parallel execution — that is Claude Code's responsibility. (ref: ADR-003)
-[edikt:directives:end]: #
 
 ## Related
 

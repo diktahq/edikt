@@ -158,23 +158,3 @@ same `os/exec`/`net/http`/no-LLM-import discipline, not just `phaseb`.
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.6.0-rc3"
-topic: tooling
-paths:
-  - "tools/edikt/**/*.go"
-  - "tools/edikt/check/no-llm-*.sh"
-scope:
-  - implementation
-  - design
-  - review
-directives:
-  - "Tier-2 Go binaries (tools/edikt/, tools/<name>/) MUST NOT spawn, invoke, or shell out to any LLM CLI. NEVER call exec.Command(\"claude\", ...) or exec.LookPath(\"claude\") in tier-2 source. (ref: ADR-030)"
-  - "Tier-2 paths needing an LLM round-trip MUST write partial sidecars with topic: needs-review for the structural fields, then exit. The host-agent-driven tier-1 markdown is responsible for the LLM resync via the agent's native subagent mechanism. (ref: ADR-030)"
-  - "CI MUST grep every non-test .go file under tools/edikt/ for exec.Command-claude, exec.LookPath-claude, and the literal string \"claude\" and fail on any unexempted match. (ref: ADR-030)"
-  - "Phase A's claude dispatch in internal/phasea/runner.go is exempt until v0.7.0; the exemption file MUST cite this ADR and a removal deadline. NEVER add new exemptions outside of phasea without amending this ADR. (ref: ADR-030)"
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #

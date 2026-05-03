@@ -1,0 +1,26 @@
+schema_version: 1
+topic: hooks
+path: docs/architecture/decisions/ADR-003-claude-code-feature-surface-adoption.md
+signals: []
+directives:
+  - text: 'Use PostToolUse hooks for auto-formatting after Write or Edit. Fire only on known source file extensions. Respect `EDIKT_FORMAT_SKIP=1` and config disable. (ref: ADR-003)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Use PostToolUse hooks for auto-formatting after Write or Edit. Fire only on known source file extensions. Respect `EDIKT_FORMAT_SKIP=1` and config disable. (ref: ADR-003)'
+  - text: 'Use shell preprocessing in slash commands to inject live project state (next ADR/INV/PRD number, active plan phase). NEVER guess or hardcode sequential identifiers. (ref: ADR-003)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Use shell preprocessing in slash commands to inject live project state (next ADR/INV/PRD number, active plan phase). NEVER guess or hardcode sequential identifiers. (ref: ADR-003)'
+  - text: 'Agents run in forked subagents (`context: fork`), invoked by edikt on domain signals. They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-003)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Agents run in forked subagents (`context: fork`), invoked by edikt on domain signals. They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-003)'
+paths:
+  - templates/hooks/**
+  - templates/settings.json.tmpl
+  - commands/**
+scope:
+  - implementation

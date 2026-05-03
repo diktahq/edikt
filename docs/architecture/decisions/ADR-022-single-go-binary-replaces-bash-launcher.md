@@ -148,29 +148,6 @@ Complex last: `install`, `migrate`, `dev`. Each migration shrinks `edikt-shell`.
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.4.3"
-topic: tooling
-paths:
-  - "tools/edikt/**"
-  - "bin/edikt"
-  - "bin/edikt-shell"
-  - "install.sh"
-scope:
-  - implementation
-  - design
-  - review
-directives:
-  - The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)
-  - Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)
-  - Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)
-  - When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)
-  - Phase 1 release tarballs contain BOTH `bin/edikt` (Go) and `bin/edikt-shell` (bash). `install.sh` places both. (ref: ADR-022)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

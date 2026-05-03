@@ -132,30 +132,6 @@ To verify this ADR is in effect:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.6.0-dev"
-topic: architecture
-paths:
-  - "commands/**/*.md"
-  - "tools/edikt/cmd/**"
-scope:
-  - design
-  - implementation
-  - review
-directives:
-  - Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, but only under the four rules of ADR-029. (ref: ADR-029)
-  - A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit an actionable error citing `edikt install <helper>` by name. (ref: ADR-029)
-  - Tier-1 markdown commands MUST NOT parse the output SHAPE of any tier-2 binary. The contract surface between tier-1 and tier-2 is the exit code only; output may be displayed verbatim but never read programmatically. (ref: ADR-029)
-  - Tier-1 markdown MAY invoke only the enumerated tier-2 orchestration verbs: `verify`, `doctor`, `migrate`, `gov compile`, `install`, `upgrade`, `use`, `rollback`. Other binary calls remain forbidden in tier-1; adding a verb to this list requires an ADR amending ADR-029. (ref: ADR-029)
-  - Tier-1 commands that invoke tier-2 binaries MUST declare `tier_2_dependency:` and `on_absent:` in command frontmatter. Valid `on_absent:` values are `skip-with-warning` and `refuse-and-direct-user`. Absent the field, the default is `refuse-and-direct-user`. (ref: ADR-029)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases: ["tier-1 orchestration of tier-2", "exit code is the only contract", "on_absent", "tier_2_dependency"]
-behavioral_signal:
-  cite: ["ADR-029", "ADR-015"]
-[edikt:directives:end]: #
 
 ---
 

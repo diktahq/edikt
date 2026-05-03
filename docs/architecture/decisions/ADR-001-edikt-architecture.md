@@ -164,18 +164,3 @@ Building for the lowest common denominator would mean losing everything that mak
 
 ## Directives
 
-[edikt:directives:start]: #
-topic: architecture
-paths:
-  - "**/*"
-scope:
-  - planning
-  - design
-  - review
-  - implementation
-directives:
-  - Claude Code is the only supported platform. Do not write code or configuration targeting Cursor, Copilot, or other AI coding tools. (ref: ADR-001)
-  - Use a three-tier rule system: base (language-agnostic), lang, framework. One `.md` file per topic per tier. NEVER merge tiers or create subtiers. (ref: ADR-001)
-  - Plans are the persistent execution state. Track progress in the plan file's progress table — it survives context compaction. NEVER track plan state elsewhere. (ref: ADR-001)
-  - Installation is copy files only — no npm, no package managers, no build step. (ref: ADR-001)
-[edikt:directives:end]: #

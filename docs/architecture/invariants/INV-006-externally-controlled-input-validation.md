@@ -65,30 +65,3 @@ if ext in FORBIDDEN_EXTS:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: 94cfc4d3c4eb907f3d2d1108680034002753c0361800980789bc9107c7e424bf
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - "templates/hooks/**"
-  - "install.sh"
-  - "bin/edikt"
-  - "commands/gov/benchmark.md"
-scope:
-  - implementation
-  - review
-directives:
-  - Externally-controlled inputs (filenames, config values, env vars, CLI flags, URL refs, hook payload fields) MUST be validated against an allowlist regex before interpolation into argv, URLs, prompt strings, or file paths. (ref: INV-006)
-  - Validators MUST normalize with NFKC + casefold + whitespace-strip so Unicode lookalikes and trailing whitespace cannot bypass allowlist comparisons. (ref: INV-006)
-  - Attacker-influenceable values MUST be passed as separate argv elements, NEVER interpolated into a quoted string that is later evaluated. (ref: INV-006)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "input validation"
-  - "allowlist regex"
-  - "NFKC casefold strip"
-  - "INV-006"
-behavioral_signal:
-  cite:
-    - "INV-006"
-[edikt:directives:end]: #

@@ -1,0 +1,49 @@
+schema_version: 1
+topic: security
+path: docs/architecture/invariants/INV-006-externally-controlled-input-validation.md
+signals:
+  - externally-controlled input
+  - input validation
+  - allowlist regex
+  - argv injection
+  - unicode normalization
+  - nfkc casefold
+  - hook payload fields
+  - cli flags validation
+  - url refs
+  - eval model
+  - plan filename
+  - prompt injection
+paths:
+  - templates/hooks/**/*.sh
+  - install.sh
+  - bin/edikt
+  - commands/gov/benchmark.md
+scope:
+  - implementation
+  - review
+prohibitions: []
+directives:
+  - text: "Any value that originates outside edikt's immediate control — filenames discovered via filesystem scan, configuration values read from `.edikt/config.yaml`, environment variables, CLI flags (`--ref`, `--model`, etc.), URL refs, and hook payload fields — MUST be validated against an allowlist regex before it is interpolated into a shell argv element, a URL, a prompt string, or a file path. (ref: INV-006)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Any value that originates outside edikt's immediate control — filenames discovered via filesystem scan, configuration values read from `.edikt/config.yaml`, environment variables, CLI flags (`--ref`, `--model`, etc.), URL refs, and hook payload fields — MUST be validated against an allowlist regex before it is interpolated into a shell argv element, a URL, a prompt string, or a file path. Validators MUST normalize with NFKC + casefold + whitespace-strip so that Unicode lookalikes and trailing whitespace cannot bypass allowlist comparisons."
+  - text: "Validators MUST normalize with NFKC + casefold + whitespace-strip so that Unicode lookalikes and trailing whitespace cannot bypass allowlist comparisons. (ref: INV-006)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Any value that originates outside edikt's immediate control — filenames discovered via filesystem scan, configuration values read from `.edikt/config.yaml`, environment variables, CLI flags (`--ref`, `--model`, etc.), URL refs, and hook payload fields — MUST be validated against an allowlist regex before it is interpolated into a shell argv element, a URL, a prompt string, or a file path. Validators MUST normalize with NFKC + casefold + whitespace-strip so that Unicode lookalikes and trailing whitespace cannot bypass allowlist comparisons."
+  - text: "Attacker-influenceable values that flow into argv MUST be passed as separate argv elements, never interpolated into a quoted string that is then evaluated. (ref: INV-006)"
+    source_excerpt:
+      line_start: 36
+      line_end: 36
+      quote: "Additionally, attacker-influenceable values that flow into argv MUST be passed as separate argv elements, never interpolated into a quoted string that is then evaluated."
+reminders:
+  - "Before adding any argv/URL/prompt interpolation → verify the input is validated against an allowlist regex and passed as a separate argv element, not concatenated into a string (ref: INV-006)"
+  - "Before modifying phase-end-detector.sh or any hook using EVAL_MODEL or PLAN_STEM → verify each value has a validation gate before it reaches claude -p (ref: INV-006)"
+  - "Before writing a benchmark scorer → verify file_path scoring uses NFKC + casefold + strip before extension extraction (ref: INV-006)"
+verification:
+  - "[ ] Unit tests under test/security/inputs/ cover every validator with positive, negative, Unicode-variant, trailing-whitespace, null-byte, and directory-traversal cases (ref: INV-006)"
+  - "[ ] CI lint flags any grep match of $(PLAN_STEM|EVAL_MODEL|REF_TAG|EDIKT_HOOK_DIR) in shell scripts not preceded by a validation gate (ref: INV-006)"
+  - "[ ] /edikt:sdlc:audit checks this invariant for any new argv/URL/prompt interpolation (ref: INV-006)"

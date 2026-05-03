@@ -1,0 +1,95 @@
+schema_version: 1
+topic: agent-rules
+path: docs/architecture/decisions/ADR-023-subagent-stop-structured-evaluator-input.md
+signals:
+  - subagent-stop
+  - subagent
+  - evaluator
+  - evaluator output
+  - evaluator_output.agent
+  - verdict schema
+  - gate severity threshold
+  - events.jsonl
+  - gates.default
+  - evaluator-verdict.schema.json
+paths:
+  - templates/agents/**/*.md
+  - templates/agents/evaluator-verdict.schema.json
+scope:
+  - design
+  - implementation
+  - review
+prohibitions: []
+directives:
+  - text: "`subagent-stop.sh` MUST read the SubagentStop hook input JSON from stdin and extract verdict data from the top-level `evaluator_output` field. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 34
+      line_end: 34
+      quote: "`subagent-stop.sh` MUST read the SubagentStop hook input JSON from stdin and extract verdict data from the top-level `evaluator_output` field. The required input shape is:"
+  - text: "`subagent-stop.sh` MUST read `evaluator_output.agent` from the structured payload to determine the gate severity threshold. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 59
+      line_end: 59
+      quote: "`subagent-stop.sh` MUST read `evaluator_output.agent` from the structured payload to determine the gate severity threshold. Content-based keyword detection over free text is the **legacy path** and is deprecated as of v0.6.0. It will be removed in v0.7.0."
+  - text: "Content-based keyword detection over free text MUST NOT be used as the primary domain resolution path — it is the deprecated legacy path as of v0.6.0. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 59
+      line_end: 59
+      quote: "`subagent-stop.sh` MUST read `evaluator_output.agent` from the structured payload to determine the gate severity threshold. Content-based keyword detection over free text is the **legacy path** and is deprecated as of v0.6.0. It will be removed in v0.7.0."
+  - text: "When `evaluator_output.agent` is absent (legacy unstructured payload), the hook MUST log a warning to `events.jsonl` and fall back to `gates.default`. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 61
+      line_end: 61
+      quote: "When `evaluator_output.agent` is absent (legacy unstructured payload), the hook MUST log a warning to `events.jsonl` and fall back to `gates.default`."
+  - text: "All evaluator agent templates (`templates/agents/evaluator-*.md`) MUST produce a JSON object conforming to the structured evaluator-output shape. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 65
+      line_end: 65
+      quote: "All evaluator agent templates (`templates/agents/evaluator-*.md`) MUST produce a JSON object conforming to the shape above. The `evaluator_output.agent` field MUST be set to the agent's domain identifier (e.g., `\"security\"`, `\"dba\"`, `\"sre\"`, `\"architect\"`, `\"performance\"`, `\"api\"`)."
+  - text: "The `evaluator_output.agent` field MUST be set to the agent's domain identifier (e.g., `\"security\"`, `\"dba\"`, `\"sre\"`, `\"architect\"`, `\"performance\"`, `\"api\"`). (ref: ADR-023)"
+    source_excerpt:
+      line_start: 65
+      line_end: 65
+      quote: "All evaluator agent templates (`templates/agents/evaluator-*.md`) MUST produce a JSON object conforming to the shape above. The `evaluator_output.agent` field MUST be set to the agent's domain identifier (e.g., `\"security\"`, `\"dba\"`, `\"sre\"`, `\"architect\"`, `\"performance\"`, `\"api\"`)."
+  - text: "Evaluator agents MUST NOT emit prose verdicts. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "Evaluator agents MUST NOT emit prose verdicts. ADR-018's schema (`templates/agents/evaluator-verdict.schema.json`) is the source of truth for the JSON structure; this ADR adds the `evaluator_output.agent` field requirement on top of it."
+  - text: "`templates/agents/evaluator-verdict.schema.json` MUST be the source of truth for the evaluator JSON structure; ADR-023 adds the `evaluator_output.agent` field requirement on top of it. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "Evaluator agents MUST NOT emit prose verdicts. ADR-018's schema (`templates/agents/evaluator-verdict.schema.json`) is the source of truth for the JSON structure; this ADR adds the `evaluator_output.agent` field requirement on top of it."
+  - text: "Severity ordering MUST be `critical(3) > warning(2) > info(1)`. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 78
+      line_end: 78
+      quote: "Severity ordering: `critical(3) > warning(2) > info(1)`. The gate fires when `finding.severity_level >= threshold_level`."
+  - text: "The gate MUST fire when `finding.severity_level >= threshold_level`. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 78
+      line_end: 78
+      quote: "Severity ordering: `critical(3) > warning(2) > info(1)`. The gate fires when `finding.severity_level >= threshold_level`."
+  - text: "When the gate fires, `subagent-stop.sh` MUST emit the structured BLOCKED message with agent name, severity, and threshold values. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 82
+      line_end: 82
+      quote: "When the gate fires, `subagent-stop.sh` MUST emit (ref: AC-030):"
+  - text: "The gate-fired message MUST be assembled inside the hook process using `python3 -c 'import json; print(json.dumps(...))'` with untrusted values as argv (INV-003, INV-004). (ref: ADR-023)"
+    source_excerpt:
+      line_start: 89
+      line_end: 89
+      quote: "The message MUST be assembled inside the hook process using `python3 -c 'import json; print(json.dumps(...))'` with untrusted values as argv (INV-003, INV-004)."
+  - text: "If the hook input does not contain the structured `evaluator_output` shape, the hook MAY log `{\"event\": \"legacy_payload\", \"hook\": \"subagent-stop\"}` to `events.jsonl`. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 95
+      line_end: 95
+      quote: "- Log `{\"event\": \"legacy_payload\", \"hook\": \"subagent-stop\"}` to `events.jsonl`"
+  - text: "If the hook input does not contain the structured `evaluator_output` shape, the hook MAY warn to stderr: `warn: legacy evaluator payload; falling back to keyword detection`. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 96
+      line_end: 96
+      quote: "- Warn to stderr: `warn: legacy evaluator payload; falling back to keyword detection`"
+reminders: []
+verification: []

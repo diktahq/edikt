@@ -113,38 +113,6 @@ To verify this ADR is in effect, check that:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: 6846bed4ed6ccdf818545a9c78ce5ab9f86c57c1d0bbebaa6968ff877f688bfd
-directives_hash: de2a16e7f0032d06217e3eb44b40f16daa55e8dfecb13264a71bda75ae124330
-compiler_version: "0.6.0"
-topic: architecture
-paths:
-  - "install.sh"
-  - "bin/edikt"
-  - "commands/**/*.md"
-  - "tools/**"
-scope:
-  - implementation
-  - design
-directives:
-  - Tier-2 optional tools MUST be installed via `edikt install <tool>` and MUST NOT be bundled in `install.sh`. (ref: ADR-015)
-  - Tier-1 command files MUST remain pure markdown with no compiled code, no build step, and no runtime dependency on tier-2 artifacts. INV-001 applies verbatim to tier-1. (ref: ADR-015)
-  - Tier-2 tools MUST NOT modify any tier-1 command file, config, or state at install or uninstall time. After `edikt uninstall <tool>`, tier-1 file checksums MUST be byte-equal to their pre-install state. (ref: ADR-015)
-  - A tool's tier MUST be declared in its command frontmatter as `tier: 1` or `tier: 2`. A tool's tier is frozen at install time; promoting or demoting a tool across tiers requires a major-version bump of edikt. (ref: ADR-015)
-  - Tier-2 install MUST verify any vendored package artifacts against the release checksum manifest from ADR-013 before executing the package install. Mismatch MUST abort with a clear message. (ref: ADR-015)
-  - Tier-2 install MUST pin exact versions (`==`) for package dependencies. Floating ranges (`>=`, `~=`, `*`) are forbidden in tier-2 manifests. (ref: ADR-015)
-  - Tier-2 package helpers MUST install into an isolated environment (`~/.edikt/venv/<tool>/` venv or `pipx`), NEVER into the ambient system Python. (ref: ADR-015)
-  - Tier-2 install MUST fail fast with an actionable error before touching the filesystem when prerequisites (Python version, venv creation, disk space) are unmet. Partial installs MUST roll back copied files on failure. (ref: ADR-015)
-  - `edikt uninstall <tool>` MUST be idempotent — repeated runs exit 0 and tolerate missing state (already-removed files, already-uninstalled helpers) without error. (ref: ADR-015)
-  - Parity between a tier-2 markdown command and its supporting code MUST be enforced by tests, not by shared modules crossing the tier-1/tier-2 boundary. (ref: ADR-015)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "tier-2"
-  - "edikt install"
-  - "isolated environment"
-behavioral_signal: {}
-[edikt:directives:end]: #
 
 ---
 

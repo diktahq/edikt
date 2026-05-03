@@ -1,0 +1,38 @@
+schema_version: 1
+topic: hooks
+path: docs/architecture/decisions/ADR-017-default-permissions-posture.md
+signals: []
+directives:
+  - text: '`templates/settings.json.tmpl` MUST include an explicit `permissions` block with populated `deny`, `allow`, and `defaultMode: askBeforeAllow` keys. (ref: ADR-017)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: '`templates/settings.json.tmpl` MUST include an explicit `permissions` block with populated `deny`, `allow`, and `defaultMode: askBeforeAllow` keys. (ref: ADR-017)'
+  - text: 'The `permissions.deny` list MUST include at minimum the destructive Bash patterns, destructive git patterns, plaintext HTTP fetch patterns, and sensitive file read patterns enumerated in ADR-017. (ref: ADR-017)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: The `permissions.deny` list MUST include at minimum the destructive Bash patterns, destructive git patterns, plaintext HTTP fetch patterns, and sensitive file read patterns enumerated in ADR-017. (ref
+  - text: 'The `permissions.allow` list MUST include edikt''s operational tools (git, gh, pytest, npm test, `./test/run.sh`, `./test/test-e2e.sh`, make test, uv, ruff, WebFetch(https://**), WebSearch). (ref: ADR-017)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'The `permissions.allow` list MUST include edikt''s operational tools (git, gh, pytest, npm test, `./test/run.sh`, `./test/test-e2e.sh`, make test, uv, ruff, WebFetch(https://**), WebSearch). (ref: ADR-'
+  - text: 'Managed-region integrity for `settings.json` MUST use the sidecar mechanism at `~/.edikt/state/settings-managed.json`. NEVER embed `_edikt` metadata inside the settings.json itself. (ref: ADR-017, INV-005)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Managed-region integrity for `settings.json` MUST use the sidecar mechanism at `~/.edikt/state/settings-managed.json`. NEVER embed `_edikt` metadata inside the settings.json itself. (ref: ADR-017, INV'
+  - text: 'On upgrade with a drifted `settings.json`, the writer MUST prompt the user before overwriting managed keys. User-added top-level keys outside the managed region MUST be preserved untouched. (ref: ADR-017)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'On upgrade with a drifted `settings.json`, the writer MUST prompt the user before overwriting managed keys. User-added top-level keys outside the managed region MUST be preserved untouched. (ref: ADR-'
+paths:
+  - templates/settings.json.tmpl
+  - install.sh
+  - bin/edikt
+  - docs/guides/permissions.md
+scope:
+  - implementation
+  - review

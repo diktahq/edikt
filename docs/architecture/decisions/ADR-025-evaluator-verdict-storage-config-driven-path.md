@@ -142,33 +142,6 @@ If an existing project still has verdicts under the legacy `docs/product/plans/v
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.6.0-dev"
-topic: agent-rules
-paths:
-  - "templates/agents/evaluator.md"
-  - "templates/agents/evaluator-headless.md"
-  - "templates/agents/evaluator-verdict.schema.json"
-  - "templates/hooks/phase-end-detector.sh"
-  - "commands/sdlc/plan.md"
-  - "tools/edikt/cmd/upgrade.go"
-scope:
-  - implementation
-  - review
-directives:
-  - Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-025)
-  - The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-025)
-  - Verdicts are persisted at `<paths.plans>/verdicts/<plan>/<phase>.json`, where `<paths.plans>` is resolved from `.edikt/config.yaml`. NEVER hardcode a literal verdicts path. (ref: ADR-025)
-  - Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true` under the resolved `<paths.plans>/verdicts/` path. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-025)
-  - `bin/edikt upgrade` MUST migrate any legacy `docs/product/plans/verdicts/` content to the resolved `<paths.plans>/verdicts/` location for projects whose `paths.plans` is no longer `docs/product/plans`. The migration MUST preserve filenames and contents byte-for-byte. (ref: ADR-025)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases: ["evaluator verdict", "evidence gate", "evidence_type", "grandfathered verdict", "paths.plans", "verdicts directory"]
-behavioral_signal:
-  cite: ["ADR-025", "ADR-018"]
-[edikt:directives:end]: #
 
 ---
 

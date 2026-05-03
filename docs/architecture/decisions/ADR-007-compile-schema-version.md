@@ -86,17 +86,3 @@ These are for humans opening the file to answer "when was this last compiled and
 
 ## Directives
 
-[edikt:directives:start]: #
-topic: compile
-paths:
-  - "commands/gov/compile.md"
-  - "commands/doctor.md"
-  - "commands/upgrade.md"
-scope:
-  - implementation
-directives:
-  - Generated governance.md MUST have `compile_schema_version` in YAML frontmatter, set to the integer constant declared in `commands/gov/compile.md`. NEVER stamp edikt marketing version into this field. (ref: ADR-007)
-  - `/edikt:doctor` MUST treat missing `compile_schema_version` as schema version 1 (legacy). If the file's schema version is less than the current constant, recommend `/edikt:gov:compile` to regenerate. (ref: ADR-007)
-  - Bump `COMPILE_SCHEMA_VERSION` in `commands/gov/compile.md` ONLY when the output structure changes in a way that older tooling cannot read. Bug fixes, prose changes, and directive updates do NOT bump the schema. (ref: ADR-007)
-  - `compiled_by` and `compiled_at` MUST remain in HTML comments (not YAML frontmatter). They are human diagnostics, not programmatic contracts. Never enforce equality on them in tests or in doctor/upgrade logic. (ref: ADR-007)
-[edikt:directives:end]: #

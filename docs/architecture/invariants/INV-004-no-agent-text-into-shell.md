@@ -53,26 +53,3 @@ python3 -c 'import json; print(json.dumps({"systemMessage":"Gate fired; see ~/.e
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: 941bea514deef016d6fbcf2018d573592262cf5e183457862614b2612610f3b5
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - "templates/hooks/**"
-scope:
-  - implementation
-  - review
-directives:
-  - Hooks MUST NOT emit Claude-facing channels (`systemMessage`, `additionalContext`, or equivalent) whose body interpolates subagent-derived, file-content-derived, or otherwise attacker-influenceable text. (ref: INV-004)
-  - Hooks that need to log state MUST write the log entry inside the hook process itself. NEVER instruct Claude to run the write. (ref: INV-004)
-  - CI MUST reject hook output containing `(systemMessage|additionalContext)[^}]*\$\{` or a bash code fence inside a hook-protocol field. (ref: INV-004)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "agent text into shell"
-  - "static systemMessage"
-  - "INV-004"
-behavioral_signal:
-  cite:
-    - "INV-004"
-[edikt:directives:end]: #

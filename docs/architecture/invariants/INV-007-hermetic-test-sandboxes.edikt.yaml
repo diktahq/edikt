@@ -1,0 +1,65 @@
+schema_version: 1
+topic: testing
+path: docs/architecture/invariants/INV-007-hermetic-test-sandboxes.md
+signals:
+  - hermetic sandbox
+  - test harness
+  - benchmark runner
+  - setting_sources
+  - settings.json
+  - hooks key
+  - subprocess claude invocation
+  - credential-pattern detection
+  - shutil.copytree
+  - security regression tests
+paths:
+  - test/**/*
+scope:
+  - implementation
+  - review
+directives:
+  - text: "Sandboxes created by the test harness or benchmark runner to execute Claude sessions MUST be hermetic. (ref: INV-007)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Sandboxes created by the test harness or benchmark runner to execute Claude sessions MUST be hermetic."
+  - text: "Test and benchmark sandboxes MUST NOT copy the host user's `~/.claude/settings.json`, user-global settings, hooks, shell rc files, SSH keys, or any other host credential or configuration into the sandbox. (ref: INV-007)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "They MUST NOT copy the host user's `~/.claude/settings.json`, user-global settings, hooks, shell rc files, SSH keys, or any other host credential or configuration into the sandbox."
+  - text: "The `setting_sources` list passed to subprocess Claude invocations in tests MUST be restricted to `[\"project\"]`; `\"user\"` is forbidden. (ref: INV-007)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "The `setting_sources` list passed to subprocess Claude invocations in tests is restricted to `[\"project\"]`; `\"user\"` is forbidden."
+  - text: "The sandbox MUST receive only a curated minimal `settings.json` written by the test harness. (ref: INV-007)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "The sandbox receives only a curated minimal `settings.json` written by the test harness."
+  - text: "Security regression tests under `test/security/sandbox/` MUST assert that, for a representative benchmark run, the sandbox `settings.json` contains no `hooks` key and no entries outside the curated allowlist. (ref: INV-007)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "- Security regression tests under `test/security/sandbox/` assert that, for a representative benchmark run, the sandbox `settings.json` contains no `hooks` key and no entries outside the curated allowlist."
+  - text: "CI grep: `grep -rn 'setting_sources=\\[.*user' test/` MUST return zero matches. (ref: INV-007)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "- CI grep: `grep -rn 'setting_sources=\\[.*user' test/` MUST return zero matches."
+  - text: "`test/integration/benchmarks/results/claude-*/` MUST be `.gitignore`d; committed result directories (summaries/baselines) MUST be grepped for credential patterns pre-merge. (ref: INV-007)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "- `test/integration/benchmarks/results/claude-*/` is `.gitignore`d; committed result directories (summaries/baselines) are grepped for credential patterns pre-merge."
+reminders:
+  - "Before running tests → verify sandbox settings.json contains no hooks key and setting_sources excludes user (ref: INV-007)"
+  - "Before merging benchmark result directories → grep for credential patterns as enforced by the runner (ref: INV-007)"
+  - "Before writing any subprocess Claude invocation in tests → confirm setting_sources=[\"project\"] only (ref: INV-007)"
+verification:
+  - "[ ] Security regression tests under test/security/sandbox/ pass and assert sandbox settings.json has no hooks key (ref: INV-007)"
+  - "[ ] CI grep: grep -rn 'setting_sources=\\[.*user' test/ returns zero matches (ref: INV-007)"
+  - "[ ] test/integration/benchmarks/results/claude-*/ is present in .gitignore (ref: INV-007)"
+  - "[ ] Benchmark run does not copy host ~/.claude/settings.json into sandbox (ref: INV-007)"
+  - "[ ] Result JSONL redacts tool_calls content and aborts on credential-pattern detection (ref: INV-007)"

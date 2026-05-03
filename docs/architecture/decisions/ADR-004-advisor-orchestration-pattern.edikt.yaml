@@ -1,0 +1,29 @@
+schema_version: 1
+topic: agent-rules
+path: docs/architecture/decisions/ADR-004-advisor-orchestration-pattern.md
+signals: []
+directives:
+  - text: 'Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)'
+  - text: 'Agents run in forked subagents (`context: fork`). They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-004)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Agents run in forked subagents (`context: fork`). They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-004)'
+  - text: 'Domain signal detection is keyword-based. Over-routing is acceptable; under-routing is not. (ref: ADR-004)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Domain signal detection is keyword-based. Over-routing is acceptable; under-routing is not. (ref: ADR-004)'
+paths:
+  - templates/agents/**
+  - commands/review.md
+  - commands/plan.md
+  - commands/audit.md
+scope:
+  - planning
+  - design
+  - review

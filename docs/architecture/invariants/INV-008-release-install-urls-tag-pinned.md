@@ -47,30 +47,3 @@ https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: f51819761a78eafa24f1edca9c6d16f69ecf51c9aaaac0870d4ca091d6a5a711
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - "README.md"
-  - "docs/**"
-  - ".github/workflows/**"
-  - "install.sh"
-  - "bin/edikt"
-scope:
-  - implementation
-  - review
-directives:
-  - User-facing install and upgrade URLs MUST resolve to a specific release tag. `raw.githubusercontent.com/.../main/`, `releases/latest/download/`, and any branch-tracking URL are forbidden. (ref: INV-008)
-  - Pre-release CI MUST grep-fail on any branch-tracking URL in README.md, docs/, or .github/workflows/. (ref: INV-008)
-  - `resolve_latest_tag` may perform a one-time resolution at install time; the RESULT must be recorded as a specific tag, never a floating ref. (ref: INV-008)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "tag-pinned install URL"
-  - "no branch tracking"
-  - "INV-008"
-behavioral_signal:
-  cite:
-    - "INV-008"
-[edikt:directives:end]: #

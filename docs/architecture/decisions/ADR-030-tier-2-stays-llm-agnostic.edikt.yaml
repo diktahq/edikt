@@ -1,0 +1,68 @@
+schema_version: 1
+topic: tooling
+path: docs/architecture/decisions/ADR-030-tier-2-stays-llm-agnostic.md
+signals:
+  - tier-2
+  - llm-agnostic
+  - agent dispatch
+  - sidecar-extractor
+  - exec.command
+  - exec.lookpath
+  - no-llm-in-tier-2
+  - phasea runner
+  - host agent
+  - edikt_llm_bin
+paths:
+  - tools/edikt/**/*.go
+  - tools/edikt/check/no-llm-*.sh
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Tier-2 Go binaries MUST NOT spawn, invoke, or shell out to any LLM CLI. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 60
+      line_end: 61
+      quote: "**Tier-2 Go binaries MUST NOT spawn, invoke, or shell out to any LLM\nCLI.**"
+  - text: "When a tier-2 path needs an LLM round-trip, the tier-2 binary MUST: (1) perform mechanical work unaided, (2) write a partial sidecar with topic: needs-review for unrecoverable fields, (3) emit a machine-readable manifest of artifacts needing LLM resync on stderr or via --json, (4) exit cleanly. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 65
+      line_end: 80
+      quote: "When a tier-2 path needs an LLM round-trip (resync a stale sidecar,\nextract topic/signals from prose, generate compiled rules from a body),\nthe tier-2 binary MUST instead:\n\n1. Perform the mechanical work it can do unaided (read the file, parse\n   the structured fields, validate the schema).\n2. For the parts it cannot do mechanically, write a partial sidecar\n   with `topic: needs-review` (and any other recoverable fields) so\n   the structural state is consistent on disk.\n3. Emit a machine-readable manifest of artifacts that need LLM resync,\n   on stderr or via a `--json` document on stdout.\n4. Exit cleanly. The user's subsequent `/edikt:upgrade` /\n   `/edikt:gov:compile` slash command (tier-1 markdown, executed by\n   the host agent) is responsible for reading the manifest and\n   dispatching the locked extractor agent via whatever subagent\n   mechanism the host agent natively supports."
+  - text: "The locked extractor agent MUST remain a single templates/agents/sidecar-extractor.md artifact dispatched by tier-1 markdown via the host agent's subagent primitive, NEVER by the Go binary via exec.Command. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 82
+      line_end: 86
+      quote: "The locked extractor agent itself stays as a single\n`templates/agents/sidecar-extractor.md` artifact. What changes is\n*who* dispatches it: previously the Go binary via `exec.Command(claude,\n-p, slash)`, going forward the tier-1 markdown via the host agent's\nsubagent primitive."
+  - text: "Every tier-2 source file MUST be held to the same os/exec, net/http, no-LLM-import discipline as Phase B — the no-LLM purity gate applies project-wide, not just to phaseb. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 88
+      line_end: 90
+      quote: "This ADR amends ADR-028's Phase A description. Phase B's purity gate\nextends to apply project-wide: every tier-2 source file is held to the\nsame `os/exec`/`net/http`/no-LLM-import discipline, not just `phaseb`."
+  - text: "CI MUST run tools/edikt/check/no-llm-in-tier-2.sh, which greps every non-test .go file under tools/edikt/ for exec.Command.*claude, exec.LookPath.*claude, and the literal string \"claude\", and fail on any unexempted match. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 104
+      line_end: 109
+      quote: "- A new static-analysis gate (`tools/edikt/check/no-llm-in-tier-2.sh`)\n  greps every non-test `.go` file under `tools/edikt/` for\n  `exec.Command.*claude`, `exec.LookPath.*claude`, and the literal\n  string `\"claude\"`. CI fails on any match. Phase A's exception is\n  carved out by an exemption file with an explicit v0.7.0 deadline;\n  the exemption is removed when Phase A is refactored."
+prohibitions:
+  - text: "MUST NOT make the LLM CLI configurable via EDIKT_LLM_BIN — this papers over the architectural smell and leaves the Go binary owning dispatch, a poor fit for IDE-native agents with no CLI surface. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 145
+      line_end: 148
+      quote: "- **Make the LLM CLI configurable via `EDIKT_LLM_BIN`.** Rejected:\n  papers over the architectural smell. Even with the config, the Go\n  binary still owns the dispatch — a poor fit for users running edikt\n  through Cursor's IDE-native agent (no CLI surface to configure)."
+    derived_from: "rejected_option_edikt-llm-bin"
+  - text: "MUST NOT add a generic agent-dispatch abstraction inside Go that pluggably calls Claude, Codex, or other LLMs — every additional agent integration would require a Go release. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 149
+      line_end: 152
+      quote: "- **Move to a generic \"agent dispatch\" abstraction inside Go that\n  pluggably calls Claude / Codex / etc.** Rejected: every additional\n  agent integration requires a Go release; tier-1 markdown evolves\n  faster and is the natural seam for agent-specific code paths."
+    derived_from: "rejected_option_generic-go-dispatch-abstraction"
+  - text: "MUST NOT keep LLM dispatch in Go with silent skip on missing-binary failure — silent degradation to topic: needs-review without user-facing remediation is the bug this ADR was created to eliminate. (ref: ADR-030)"
+    source_excerpt:
+      line_start: 153
+      line_end: 157
+      quote: "- **Keep the LLM dispatch in Go but skip on missing-binary failure.**\n  Rejected: silent degradation to \"topic: needs-review\" without\n  clear user-facing remediation is exactly the bug we hit on the\n  ddd-workbench corpus. Better to make the architectural separation\n  visible and have tier-1 own the dispatch by design."
+    derived_from: "rejected_option_skip-on-missing-binary"
+reminders: []
+verification: []

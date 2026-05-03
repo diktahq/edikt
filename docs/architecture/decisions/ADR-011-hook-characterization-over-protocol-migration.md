@@ -137,27 +137,6 @@ Specific consequences locked in by this decision:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: 98ae95c994d78bd66729026cf81dd0eaaf7ea4bcce5a9f9abc778e38c7ce02ca
-directives_hash: e007fa6fac5dd6ad482dd43cf43ff9ae29996594d06022849a2b01b90ee94b77
-compiler_version: "0.4.3"
-paths:
-  - "test/unit/hooks/**"
-  - "test/fixtures/hook-payloads/**"
-  - "test/expected/hook-outputs/**"
-  - "docs/product/specs/SPEC-004-v050-stability/fixtures.yaml"
-scope:
-  - implementation
-  - review
-directives:
-  - Hook fixture expected outputs MUST encode what hooks actually emit today, verified by running the hook against the payload. NEVER write expected outputs by hand against a desired future protocol. (ref: ADR-011)
-  - The hook test gate MUST be opt-out (`EDIKT_SKIP_HOOK_TESTS=1`), not opt-in. Hook tests run by default. (ref: ADR-011)
-  - `test/unit/hooks/_runner.sh` MUST NOT be modified to add CWD-staging or other hook-specific behavior. CWD-dependent extensions go in `_staged_runner.sh`. (ref: ADR-011)
-  - Fixture pairs that cannot be characterized deterministically MUST be removed with a `_note` explaining why and a `target_phase` identifying when they will return. NEVER weaken the runner diff to tolerate nondeterministic output. (ref: ADR-011)
-  - Hook protocol migration (rewriting hooks to emit structured JSON) is v0.6.0 scope. NEVER rewrite hook behavior in a stability release. (ref: ADR-011)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

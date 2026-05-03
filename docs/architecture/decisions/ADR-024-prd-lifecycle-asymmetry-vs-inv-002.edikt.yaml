@@ -1,0 +1,81 @@
+schema_version: 1
+topic: lifecycle
+path: docs/architecture/decisions/ADR-024-prd-lifecycle-asymmetry-vs-inv-002.md
+signals:
+  - prd lifecycle
+  - edit-in-place
+  - revision history
+  - per-entry status
+  - prd sidecar
+  - supersede
+  - transition commands
+  - evaluator scoring
+  - shipped entries
+  - inv-002
+paths: []
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "PRDs and SPECs MUST use edit-in-place evolution. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 33
+      line_end: 33
+      quote: "**PRDs and SPECs use edit-in-place evolution. ADRs remain governed by INV-002. The asymmetry is intentional.**"
+  - text: "ADRs MUST remain governed by INV-002. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 33
+      line_end: 33
+      quote: "**PRDs and SPECs use edit-in-place evolution. ADRs remain governed by INV-002. The asymmetry is intentional.**"
+  - text: "Each PRD/SPEC requirement, acceptance criterion, and protection MUST carry its own status field (proposed | accepted | shipped | deprecated). (ref: ADR-024)"
+    source_excerpt:
+      line_start: 37
+      line_end: 37
+      quote: "1. **Per-entry status markers.** Each requirement (`FR-NNN`), acceptance criterion (`AC-NNN-M`), and protection carries its own `status: proposed | accepted | shipped | deprecated` field. The top-level PRD `status:` reflects the aggregate state."
+  - text: "Every command-driven mutation to a PRD/SPEC sidecar MUST append a record to revision_history in the YAML sidecar. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 38
+      line_end: 38
+      quote: "2. **Revision history is structured.** Every command-driven mutation to a PRD/SPEC sidecar appends a record to `revision_history:` in the YAML sidecar. Git diff remains the deepest audit trail."
+  - text: "Adding, refining, shipping, or deprecating FRs MUST be done via transition commands (prd:ship, prd:deprecate, etc.), not via supersession. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 39
+      line_end: 39
+      quote: "3. **Edit-in-place is the default.** Adding/refining/shipping/deprecating FRs is done via transition commands (`prd:ship`, `prd:deprecate`, etc.), not via supersession."
+  - text: "Supersede MUST be reserved for PRDs where >=50% of the scope has changed or the problem framing has shifted. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 40
+      line_end: 40
+      quote: "4. **Supersede is reserved for >=50% rewrites.** `/edikt:sdlc:prd:supersede` creates a new `PRD-NNN` when the problem framing has changed or the scope shift is so large that the old document is misleading to read. The old PRD keeps `superseded_by:`; the new one keeps `supersedes:`."
+  - text: "INV-002 MUST remain in force for ADRs. This ADR does not weaken or scope INV-002. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 41
+      line_end: 41
+      quote: "5. **ADRs are unchanged.** INV-002 remains in force for ADRs. This ADR does not weaken or scope INV-002; it carves PRDs and SPECs out of the ADR immutability model."
+  - text: "The PRD/SPEC evaluator MUST score only shipped entries when validating implementation coverage. proposed entries MUST be ignored by drift checks. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 42
+      line_end: 42
+      quote: "6. **Evaluator semantics respect per-entry status.** When the PRD/SPEC evaluator validates implementation coverage, it scores only `shipped` entries. `proposed` entries are ignored by drift checks; they have not been built yet by design."
+prohibitions:
+  - text: "MUST NOT apply INV-002 immutability rules to PRDs — rejected: optimizes audit symmetry at the cost of LLM ergonomics and forces every FR refinement into a supersession chain. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 54
+      line_end: 54
+      quote: "- **Apply INV-002 to PRDs.** Rejected: optimizes audit symmetry at the cost of LLM ergonomics; forces every FR refinement into a supersession chain."
+    derived_from: rejected_option_apply-inv-002-to-prds
+  - text: "MUST NOT create an Invariant Record to govern the PRD edit-in-place model — the PRD model is a decision (ADR), not a constraint (invariant). (ref: ADR-024)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "- **Create INV-NNN for PRD edit-in-place.** Rejected: the PRD model is not \"never changes\" but \"always changes via structured mutations.\" That is a decision (ADR), not a rule (invariant)."
+    derived_from: rejected_option_create-inv-nnn-for-prd
+  - text: "MUST NOT implement opt-in ADR-style immutability for PRDs — rejected: creates two incompatible mental models. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "- **Mode-switch PRDs.** Rejected: letting projects opt into ADR-style immutability for PRDs creates two incompatible mental models. The v0.6.0 redesign picks one and commits."
+    derived_from: rejected_option_mode-switch-prds
+reminders: []
+verification: []

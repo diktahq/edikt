@@ -310,6 +310,23 @@ func TestMigrateSidecars_SkipList(t *testing.T) {
 			body:     "# ADR-008: Legacy schema\n\nplain body — no migration directive.\n",
 			wantSkip: false,
 		},
+		{
+			name:       "ADR Status: Superseded by ADR-NNN is skipped",
+			body:       "# ADR-002: Old approach\n\n**Date:** 2026-03-06\n**Status:** Superseded by ADR-006\n\n## Context\n\nOld content.\n",
+			wantSkip:   true,
+			wantReason: "ADR superseded — directives no longer authoritative",
+		},
+		{
+			name:       "Superseded recognition is case-insensitive",
+			body:       "# ADR-x\n\n**Status:** superseded BY ADR-007\n",
+			wantSkip:   true,
+			wantReason: "ADR superseded — directives no longer authoritative",
+		},
+		{
+			name:     "Status: Accepted is NOT skipped",
+			body:     "# ADR-100\n\n**Status:** Accepted\n\n## Decision\n\nrule.\n",
+			wantSkip: false,
+		},
 	}
 
 	for i, tc := range cases {

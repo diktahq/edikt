@@ -1,0 +1,37 @@
+schema_version: 1
+topic: hooks
+path: docs/architecture/decisions/ADR-026-subagent-stop-keyword-fallback-removal-v060.md
+signals: []
+directives:
+  - text: 'subagent-stop.sh MUST identify the agent only via `evaluator_output.agent` (ADR-023 primary) or canonical Claude Code payload fields (`subagent_type`, `agent_name`, `tool_name`, `agent`). NEVER use content keyword detection for agent identity. (ref: ADR-026)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: subagent-stop.sh MUST identify the agent only via `evaluator_output.agent` (ADR-023 primary) or canonical Claude Code payload fields (`subagent_type`, `agent_name`, `tool_name`, `agent`). NEVER use co
+  - text: 'subagent-stop.sh MUST identify severity only via `evaluator_output.severity`. When the field is absent, severity stays at default "info"; NEVER keyword-grep severity from subagent content. (ref: ADR-026)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'subagent-stop.sh MUST identify severity only via `evaluator_output.severity`. When the field is absent, severity stays at default "info"; NEVER keyword-grep severity from subagent content. (ref: ADR-0'
+  - text: 'When neither structured path yields a valid agent name, subagent-stop.sh MUST return `{"continue": true}` and exit. NEVER fire a gate against `gates.default` for non-agent subagents. (ref: ADR-026)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'When neither structured path yields a valid agent name, subagent-stop.sh MUST return `{"continue": true}` and exit. NEVER fire a gate against `gates.default` for non-agent subagents. (ref: ADR-026)'
+  - text: 'Specialist agent templates MUST emit `evaluator_output.agent` and `evaluator_output.severity` to be subject to gate firing. Pre-v0.5.0 unstructured templates MUST be updated to the ADR-018 schema. (ref: ADR-026, ADR-018)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Specialist agent templates MUST emit `evaluator_output.agent` and `evaluator_output.severity` to be subject to gate firing. Pre-v0.5.0 unstructured templates MUST be updated to the ADR-018 schema. (re
+  - text: 'The `AGENT_IDENTITY_SOURCE` variable in subagent-stop.sh MUST take exactly one of two values: `evaluator_output` or `payload`. The legacy value `grep-fallback` is forbidden. (ref: ADR-026)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'The `AGENT_IDENTITY_SOURCE` variable in subagent-stop.sh MUST take exactly one of two values: `evaluator_output` or `payload`. The legacy value `grep-fallback` is forbidden. (ref: ADR-026)'
+paths:
+  - templates/hooks/subagent-stop.sh
+  - test/fixtures/hook-payloads/subagent-stop-*.json
+  - test/unit/hooks/test_subagent_stop.sh
+scope:
+  - implementation
+  - review

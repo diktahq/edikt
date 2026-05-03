@@ -1,0 +1,74 @@
+schema_version: 1
+topic: testing
+path: docs/architecture/decisions/ADR-011-hook-characterization-over-protocol-migration.md
+signals:
+  - hook fixture
+  - characterization
+  - edikt_skip_hook_tests
+  - hook test gate
+  - runner.sh
+  - staged_runner.sh
+  - fixtures.yaml
+  - hook protocol migration
+  - fixture pairs
+paths:
+  - test/unit/hooks/**/*
+  - test/run.sh
+scope:
+  - design
+  - implementation
+  - review
+prohibitions:
+  - text: "MUST NOT rewrite hooks to emit structured JSON protocol during a stability release cycle — behavior risk is incompatible with a stability mandate. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 93
+      line_end: 94
+      quote: "v0.5.0 is a stability release — rewriting 9 hooks is a significant behavioral change scope. Each rewritten hook is a regression surface."
+    derived_from: "rejected_option_protocol-migration-in-v0.5.0"
+  - text: "MUST NOT silently migrate hooks that emit plaintext today to JSON without explicit user-visible behavior change notice. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 94
+      line_end: 95
+      quote: "Hooks that emit plaintext today (`pre-compact`, `session-start`) serve users who read that plaintext; silent migration to JSON changes observable behavior."
+    derived_from: "rejected_option_protocol-migration-in-v0.5.0"
+  - text: "MUST NOT delete the hook test suite — zero regression coverage on hook behavior leaves any future hook change silently breaking user-facing behavior. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 101
+      line_end: 103
+      quote: "Zero regression coverage on hook behavior. Any future hook change silently breaks\n  user-facing behavior with no safety net."
+    derived_from: "rejected_option_delete-the-test-suite"
+reminders:
+  - "Before modifying test/run.sh → verify EDIKT_SKIP_HOOK_TESTS is not set as a required env var (gate must remain opt-out) (ref: ADR-011)"
+  - "Before removing a fixture pair → verify a _note and target_phase are added to fixtures.yaml §9.1 (ref: ADR-011)"
+  - "Before modifying _runner.sh → verify run_staged_fixture is absent; it belongs only in _staged_runner.sh (ref: ADR-011)"
+verification:
+  - "[ ] EDIKT_SKIP_HOOK_TESTS does not appear as a required env var in test/run.sh (ref: ADR-011)"
+  - "[ ] All 9 hook test suites pass without EDIKT_SKIP_HOOK_TESTS=1 set: for t in test/unit/hooks/test_*.sh; do bash \"$t\"; done (ref: ADR-011)"
+  - "[ ] Every removed fixture pair has a _note and target_phase or target_contract in fixtures.yaml §9.1 (ref: ADR-011)"
+  - "[ ] _runner.sh does not contain run_staged_fixture — grep -q run_staged_fixture test/unit/hooks/_runner.sh should exit non-zero (ref: ADR-011)"
+directives:
+  - text: "Hook fixture expected outputs MUST encode what hooks actually emit today, verified by running the hook against the payload. NEVER write expected outputs by hand against a desired future protocol. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 65
+      line_end: 67
+      quote: "Hook fixture expected outputs encode what v0.5.0 hooks **actually emit**, verified by running\n`cat payload.json | bash hook.sh` and capturing output. The test suite is a characterization\nregression net — it catches behavior changes, not protocol non-compliance."
+  - text: "The hook test gate MUST be opt-out (`EDIKT_SKIP_HOOK_TESTS=1`), not opt-in. Hook tests run by default. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 75
+      line_end: 76
+      quote: "`EDIKT_ENABLE_HOOK_JSON_TESTS=1` opt-in gate replaced with `EDIKT_SKIP_HOOK_TESTS=1`\n  opt-out. Tests run by default; skipping is the exception."
+  - text: "`test/unit/hooks/_runner.sh` MUST NOT be modified to add CWD-staging or other hook-specific behavior. CWD-dependent extensions go in `_staged_runner.sh`. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 81
+      line_end: 83
+      quote: "`_runner.sh` is immutable. CWD-dependent hook staging is added via a separate\n  `_staged_runner.sh` extension file, keeping the base runner unmodified."
+  - text: "Fixture pairs that cannot be characterized deterministically MUST be removed with a `_note` explaining why and a `target_phase` identifying when they will return. NEVER weaken the runner diff to tolerate nondeterministic output. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 76
+      line_end: 79
+      quote: "3 fixture pairs removed rather than weakened: `pre-compact` (plaintext output), \n  `session-start-with-edikt` (plaintext output), `subagent-stop-critical` (embeds git\n  user identity and timestamps — nondeterministic by design). Each removal is documented in\n  `fixtures.yaml` §9.1 with a `target_phase` pointer."
+  - text: "Hook protocol migration (rewriting hooks to emit structured JSON) is v0.6.0 scope. NEVER rewrite hook behavior in a stability release. (ref: ADR-011)"
+    source_excerpt:
+      line_start: 68
+      line_end: 70
+      quote: "Hook protocol migration (rewriting hooks to emit structured JSON) is deferred to v0.6.0\n(Phase 2b.ii) as an independent, separately-scoped deliverable. The two concerns — \"do hooks\nemit what they used to emit\" and \"do hooks emit the desired protocol\" — are decoupled."

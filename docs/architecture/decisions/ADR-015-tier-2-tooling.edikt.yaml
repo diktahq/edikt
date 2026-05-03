@@ -1,0 +1,63 @@
+schema_version: 1
+topic: architecture
+path: docs/architecture/decisions/ADR-015-tier-2-tooling.md
+signals: []
+directives:
+  - text: 'Tier-2 optional tools MUST be installed via `edikt install <tool>` and MUST NOT be bundled in `install.sh`. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-2 optional tools MUST be installed via `edikt install <tool>` and MUST NOT be bundled in `install.sh`. (ref: ADR-015)'
+  - text: 'Tier-1 command files MUST remain pure markdown with no compiled code, no build step, and no runtime dependency on tier-2 artifacts. INV-001 applies verbatim to tier-1. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-1 command files MUST remain pure markdown with no compiled code, no build step, and no runtime dependency on tier-2 artifacts. INV-001 applies verbatim to tier-1. (ref: ADR-015)'
+  - text: 'Tier-2 tools MUST NOT modify any tier-1 command file, config, or state at install or uninstall time. After `edikt uninstall <tool>`, tier-1 file checksums MUST be byte-equal to their pre-install state. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Tier-2 tools MUST NOT modify any tier-1 command file, config, or state at install or uninstall time. After `edikt uninstall <tool>`, tier-1 file checksums MUST be byte-equal to their pre-install state
+  - text: 'A tool''s tier MUST be declared in its command frontmatter as `tier: 1` or `tier: 2`. A tool''s tier is frozen at install time; promoting or demoting a tool across tiers requires a major-version bump of edikt. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'A tool''s tier MUST be declared in its command frontmatter as `tier: 1` or `tier: 2`. A tool''s tier is frozen at install time; promoting or demoting a tool across tiers requires a major-version bump of'
+  - text: 'Tier-2 install MUST verify any vendored package artifacts against the release checksum manifest from ADR-013 before executing the package install. Mismatch MUST abort with a clear message. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-2 install MUST verify any vendored package artifacts against the release checksum manifest from ADR-013 before executing the package install. Mismatch MUST abort with a clear message. (ref: ADR-0'
+  - text: 'Tier-2 install MUST pin exact versions (`==`) for package dependencies. Floating ranges (`>=`, `~=`, `*`) are forbidden in tier-2 manifests. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-2 install MUST pin exact versions (`==`) for package dependencies. Floating ranges (`>=`, `~=`, `*`) are forbidden in tier-2 manifests. (ref: ADR-015)'
+  - text: 'Tier-2 package helpers MUST install into an isolated environment (`~/.edikt/venv/<tool>/` venv or `pipx`), NEVER into the ambient system Python. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-2 package helpers MUST install into an isolated environment (`~/.edikt/venv/<tool>/` venv or `pipx`), NEVER into the ambient system Python. (ref: ADR-015)'
+  - text: 'Tier-2 install MUST fail fast with an actionable error before touching the filesystem when prerequisites (Python version, venv creation, disk space) are unmet. Partial installs MUST roll back copied files on failure. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Tier-2 install MUST fail fast with an actionable error before touching the filesystem when prerequisites (Python version, venv creation, disk space) are unmet. Partial installs MUST roll back copied f
+  - text: '`edikt uninstall <tool>` MUST be idempotent — repeated runs exit 0 and tolerate missing state (already-removed files, already-uninstalled helpers) without error. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: '`edikt uninstall <tool>` MUST be idempotent — repeated runs exit 0 and tolerate missing state (already-removed files, already-uninstalled helpers) without error. (ref: ADR-015)'
+  - text: 'Parity between a tier-2 markdown command and its supporting code MUST be enforced by tests, not by shared modules crossing the tier-1/tier-2 boundary. (ref: ADR-015)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Parity between a tier-2 markdown command and its supporting code MUST be enforced by tests, not by shared modules crossing the tier-1/tier-2 boundary. (ref: ADR-015)'
+paths:
+  - install.sh
+  - bin/edikt
+  - commands/**/*.md
+  - tools/**
+scope:
+  - implementation
+  - design

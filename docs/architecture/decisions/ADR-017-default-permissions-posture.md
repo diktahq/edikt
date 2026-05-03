@@ -121,28 +121,6 @@ The `permissions` block is edikt-managed. Integrity is tracked via the sidecar m
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.4.3"
-topic: hooks
-paths:
-  - "templates/settings.json.tmpl"
-  - "install.sh"
-  - "bin/edikt"
-  - "docs/guides/permissions.md"
-scope:
-  - implementation
-  - review
-directives:
-  - `templates/settings.json.tmpl` MUST include an explicit `permissions` block with populated `deny`, `allow`, and `defaultMode: askBeforeAllow` keys. (ref: ADR-017)
-  - The `permissions.deny` list MUST include at minimum the destructive Bash patterns, destructive git patterns, plaintext HTTP fetch patterns, and sensitive file read patterns enumerated in ADR-017. (ref: ADR-017)
-  - The `permissions.allow` list MUST include edikt's operational tools (git, gh, pytest, npm test, `./test/run.sh`, `./test/test-e2e.sh`, make test, uv, ruff, WebFetch(https://**), WebSearch). (ref: ADR-017)
-  - Managed-region integrity for `settings.json` MUST use the sidecar mechanism at `~/.edikt/state/settings-managed.json`. NEVER embed `_edikt` metadata inside the settings.json itself. (ref: ADR-017, INV-005)
-  - On upgrade with a drifted `settings.json`, the writer MUST prompt the user before overwriting managed keys. User-added top-level keys outside the managed region MUST be preserved untouched. (ref: ADR-017)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

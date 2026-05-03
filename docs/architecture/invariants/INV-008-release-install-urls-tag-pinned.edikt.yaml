@@ -1,0 +1,55 @@
+schema_version: 1
+topic: release
+path: docs/architecture/invariants/INV-008-release-install-urls-tag-pinned.md
+signals:
+  - release tag
+  - install url
+  - upgrade url
+  - branch tracking
+  - resolve_latest_tag
+  - install.sh
+  - readme.md
+  - github workflows
+  - releases download
+paths:
+  - README.md
+  - docs/**/*
+  - .github/workflows/**/*
+  - test/security/release/**/*
+scope:
+  - implementation
+  - review
+directives:
+  - text: "Every user-facing install, upgrade, or documentation URL that resolves to a mutable source — raw.githubusercontent.com, releases/latest/download/, branch refs, or any path a repo owner can silently update — MUST NOT be used. (ref: INV-008)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Every user-facing install, upgrade, or documentation URL that resolves to a mutable source — `raw.githubusercontent.com/<org>/<repo>/main/...`, `releases/latest/download/...`, branch refs, or any path that a repo owner can silently update — is forbidden. All such URLs MUST pin to a specific release tag (`releases/download/vX.Y.Z/...` or an equivalent immutable ref). Applies to: README install commands, `bin/edikt install`/`upgrade` URL composition, `install.sh` resolve-latest flows, `.github/workflows/*.yml` user-facing references, `docs/**` snippets users are expected to copy, Homebrew formula URLs, and any MCP server configuration edikt documents."
+  - text: "All user-facing URLs MUST pin to a specific release tag (releases/download/vX.Y.Z/... or an equivalent immutable ref). (ref: INV-008)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Every user-facing install, upgrade, or documentation URL that resolves to a mutable source — `raw.githubusercontent.com/<org>/<repo>/main/...`, `releases/latest/download/...`, branch refs, or any path that a repo owner can silently update — is forbidden. All such URLs MUST pin to a specific release tag (`releases/download/vX.Y.Z/...` or an equivalent immutable ref). Applies to: README install commands, `bin/edikt install`/`upgrade` URL composition, `install.sh` resolve-latest flows, `.github/workflows/*.yml` user-facing references, `docs/**` snippets users are expected to copy, Homebrew formula URLs, and any MCP server configuration edikt documents."
+  - text: "Pre-release CI check MUST grep README.md docs/ .github/workflows/ and return zero matches for raw.githubusercontent.com/.+/main/ or releases/latest/download/ before a release tag is cut. (ref: INV-008)"
+    source_excerpt:
+      line_start: 44
+      line_end: 44
+      quote: "- Pre-release CI check: `grep -rnE '(raw\\.githubusercontent\\.com/.+/main/|releases/latest/download/)' README.md docs/ .github/workflows/` MUST return zero matches before a release tag is cut."
+  - text: "Security regression test under test/security/release/ MUST assert no branch-tracking URL is present in user-facing files. (ref: INV-008)"
+    source_excerpt:
+      line_start: 45
+      line_end: 45
+      quote: "- Security regression test under `test/security/release/` asserts no branch-tracking URL is present in user-facing files."
+  - text: "Release runbook MUST include a step to update the pinned version in README and re-run the grep. (ref: INV-008)"
+    source_excerpt:
+      line_start: 46
+      line_end: 46
+      quote: "- Release runbook includes a step to update the pinned version in README and re-run the grep."
+reminders:
+  - "Before updating the README install command → verify the URL pins to a specific tag, not main/ or releases/latest/download/ (ref: INV-008)"
+  - "Before cutting a release tag → verify pre-release CI grep returns zero branch-tracking URL matches in README.md, docs/, .github/workflows/ (ref: INV-008)"
+  - "Before composing install or upgrade URLs in bin/edikt → verify the tag is resolved and recorded as a specific tag, not a floating ref (ref: INV-008)"
+verification:
+  - "[ ] grep -rnE '(raw\\.githubusercontent\\.com/.+/main/|releases/latest/download/)' README.md docs/ .github/workflows/ returns zero matches (ref: INV-008)"
+  - "[ ] Security regression test under test/security/release/ passes with no branch-tracking URL detected in user-facing files (ref: INV-008)"
+  - "[ ] resolve_latest_tag result is recorded as a specific tag in installer receipt or ~/.edikt/state/version (ref: INV-008)"

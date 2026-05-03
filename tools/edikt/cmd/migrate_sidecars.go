@@ -273,6 +273,17 @@ func resolveArtifactDirs(projectRoot string) artifactDirs {
 // as "marker comment present".
 var migrationSkipMarkerRe = regexp.MustCompile(`<!--\s*edikt:migration:skip(?:\s+reason="([^"]*)")?\s*-->`)
 
+// supersededStatusRe matches the canonical ADR status line "**Status:**
+// Superseded by ADR-NNN". Superseded ADRs are historical references —
+// their directives are no longer authoritative (the superseding ADR
+// governs). They MUST NOT be required to carry a sidecar; doing so
+// would either pollute compile output with stale rules or force the
+// extractor to invent empty-stub sidecars. INV-002 forbids body edits
+// on accepted ADRs, so we cannot ask the user to add a migration:skip
+// frontmatter — supersession recognition is the only INV-002-compliant
+// path.
+var supersededStatusRe = regexp.MustCompile(`(?mi)^\*\*Status:\*\*\s+Superseded\s+by\s+\S+`)
+
 // isSkipListed inspects the .md at path and reports whether migration
 // should leave it alone. Two opt-in mechanisms (Phase 6 of
 // PLAN-sidecar-review-fixes #16) — the v0.5.x hardcoded prefix list
@@ -325,6 +336,9 @@ func isSkipListed(path string) (bool, string) {
 			reason = "marker comment present"
 		}
 		return true, reason
+	}
+	if supersededStatusRe.MatchString(text) {
+		return true, "ADR superseded — directives no longer authoritative"
 	}
 	return false, ""
 }

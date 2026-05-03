@@ -121,45 +121,6 @@ This is the same boundary the project always wanted; it was previously expressed
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.6.0-dev"
-topic: compile
-paths:
-  - "tools/edikt/cmd/gov.go"
-  - "tools/edikt/internal/compile/**"
-  - "templates/schemas/sidecar.schema.json"
-  - "commands/adr/new.md"
-  - "commands/adr/compile.md"
-  - "commands/adr/review.md"
-  - "commands/invariant/new.md"
-  - "commands/invariant/compile.md"
-  - "commands/invariant/review.md"
-  - "commands/guideline/new.md"
-  - "commands/guideline/compile.md"
-  - "commands/guideline/review.md"
-  - "commands/gov/compile.md"
-  - "docs/architecture/decisions/**/*.edikt.yaml"
-  - "docs/architecture/invariants/**/*.edikt.yaml"
-  - "docs/guidelines/**/*.edikt.yaml"
-scope:
-  - design
-  - implementation
-  - review
-directives:
-  - edikt MUST NOT write to any ADR, invariant, or guideline `.md` file. Generated directive metadata MUST live in a co-located `<name>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.json`. (ref: ADR-027)
-  - The sidecar schema MUST NOT persist `source_hash`, `agent_prompt_version`, or `directives_hash` at the root. Hashes are recomputed on read at compile time. (ref: ADR-027)
-  - `/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` MUST generate the `(parent.md, parent.edikt.yaml)` pair atomically by dispatching extraction to a forked subagent (`context: fork`) with a locked extraction prompt. (ref: ADR-027)
-  - Per-artifact `:compile` commands MUST regenerate the sidecar in a fresh subagent context per artifact. NEVER pipe multiple artifacts through one parent session. (ref: ADR-027)
-  - v0.6.0 `gov:compile` MUST read sidecars only. Pre-migration projects MUST exit non-zero with a single-line actionable error directing the user to `edikt migrate sidecars`. NEVER fall back to in-body sentinel parsing. (ref: ADR-027)
-  - INV-005's managed-region guard NARROWS in v0.6.0 to `CLAUDE.md` and `settings.json` only. Governance artifacts (`.md` files in decisions/, invariants/, guidelines/) are NEVER managed regions because edikt does not write to them. (ref: ADR-027, INV-005)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases: ["sidecar architecture", "co-located sidecar", "sidecar.edikt.yaml", "edikt does not write to ADRs", "structural boundary", "fresh subagent context"]
-behavioral_signal:
-  cite: ["ADR-027", "ADR-008", "INV-002"]
-[edikt:directives:end]: #
 
 ---
 

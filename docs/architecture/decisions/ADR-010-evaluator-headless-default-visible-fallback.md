@@ -92,30 +92,6 @@ How to verify this decision is being followed:
 
 ## Directives
 
-[edikt:directives:start]: #
-topic: agent-rules
-paths:
-  - templates/agents/evaluator.md
-  - templates/agents/evaluator-headless.md
-  - commands/sdlc/plan.md
-  - commands/doctor.md
-  - .edikt/config.yaml
-scope:
-  - implementation
-  - review
-  - planning
-directives:
-  - Evaluator default mode MUST be headless. `.edikt/config.yaml` ships with `evaluator.mode: headless`. (ref: ADR-010)
-  - Evaluator templates MUST declare BLOCKED as a valid per-criterion and overall verdict. (ref: ADR-010)
-  - Evaluator MUST NOT return PASS for criteria that require execution when execution was denied or unavailable. Return BLOCKED instead. (ref: ADR-010)
-  - `commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`, and fall back to subagent only on headless failure with a visible warning banner. (ref: ADR-010)
-  - Progress tables in plan files MUST support a `blocked` state in addition to `pass`/`fail`/`evaluating`. A phase with BLOCKED criteria is NOT verified. (ref: ADR-010)
-  - Subagent-mode evaluator MUST probe Bash availability before claiming verdicts on criteria that require execution. If Bash is denied, return BLOCKED with a recovery hint. (ref: ADR-010)
-  - `/edikt:doctor` MUST probe the evaluator path: `claude` on PATH, headless probe success, template presence, explicit mode config. (ref: ADR-010)
-  - Every evaluator failure mode MUST produce user-visible output with the reason and a one-line recovery command. Silent degradation is forbidden. (ref: ADR-010)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

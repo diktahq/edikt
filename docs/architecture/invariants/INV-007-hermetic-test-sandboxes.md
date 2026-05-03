@@ -58,29 +58,3 @@ claude_options = ClaudeAgentOptions(..., setting_sources=["project"])
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: f55b3d58ddf3f809b241756a10adb8e0caf76769dee3ec66ff4be4f04ef052cd
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - "test/integration/**"
-  - "test/unit/**"
-scope:
-  - implementation
-  - review
-directives:
-  - Test and benchmark sandboxes MUST NOT copy the host's `~/.claude/settings.json`, user-global settings, hooks, or secrets. (ref: INV-007)
-  - `setting_sources` for subprocess Claude invocations in tests is `["project"]`. `"user"` is forbidden. (ref: INV-007)
-  - Test harness writes a curated minimal `settings.json` into each sandbox; `hooks` key MUST be absent. (ref: INV-007)
-  - Repo content copies into sandboxes MUST use `shutil.copytree(..., symlinks=True)` and refuse source paths whose realpath escapes the source root. (ref: INV-007)
-  - Benchmark JSONL results MUST redact `tool_calls[*].tool_input.content`, length-cap `response`, and abort on credential-pattern detection. (ref: INV-007)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "hermetic sandbox"
-  - "setting_sources project only"
-  - "INV-007"
-behavioral_signal:
-  cite:
-    - "INV-007"
-[edikt:directives:end]: #

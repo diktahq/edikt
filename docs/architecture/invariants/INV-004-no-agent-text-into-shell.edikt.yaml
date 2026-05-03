@@ -1,0 +1,53 @@
+schema_version: 1
+topic: security
+path: docs/architecture/invariants/INV-004-no-agent-text-into-shell.md
+signals:
+  - hook
+  - systemmessage
+  - additionalcontext
+  - hook protocol
+  - shell injection
+  - subagent-derived
+  - claude-facing channel
+  - attacker-influenceable text
+  - ci lint
+  - hook security
+  - security regression tests
+paths:
+  - test/security/hooks/**/*
+scope:
+  - implementation
+  - review
+directives:
+  - text: "Hooks MUST NOT emit a `systemMessage`, `additionalContext`, or other Claude-facing channel whose body contains a shell command interpolating subagent-derived, file-content-derived, git-identity-derived, or otherwise attacker-influenceable text. (ref: INV-004)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "No hook may emit a `systemMessage`, `additionalContext`, or other Claude-facing channel whose body contains a shell command interpolating subagent-derived, file-content-derived, git-identity-derived, or otherwise attacker-influenceable text. Hooks that need to record state (event logs, gate firings, override decisions) MUST perform that recording themselves from within the hook process. Claude receives only static instructions plus structured data."
+  - text: "Hooks that need to record state (event logs, gate firings, override decisions) MUST perform that recording themselves from within the hook process. (ref: INV-004)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "No hook may emit a `systemMessage`, `additionalContext`, or other Claude-facing channel whose body contains a shell command interpolating subagent-derived, file-content-derived, git-identity-derived, or otherwise attacker-influenceable text. Hooks that need to record state (event logs, gate firings, override decisions) MUST perform that recording themselves from within the hook process. Claude receives only static instructions plus structured data."
+  - text: "Claude MUST receive only static instructions plus structured data. (ref: INV-004)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "No hook may emit a `systemMessage`, `additionalContext`, or other Claude-facing channel whose body contains a shell command interpolating subagent-derived, file-content-derived, git-identity-derived, or otherwise attacker-influenceable text. Hooks that need to record state (event logs, gate firings, override decisions) MUST perform that recording themselves from within the hook process. Claude receives only static instructions plus structured data."
+  - text: "CI lint MUST reject any hook whose output contains the regex `(systemMessage|additionalContext)[^}]*\\$\\{` OR whose output contains a markdown code fence labelled `bash` inside a hook-protocol field. (ref: INV-004)"
+    source_excerpt:
+      line_start: 50
+      line_end: 50
+      quote: "- CI lint MUST reject any hook whose output contains the regex `(systemMessage|additionalContext)[^}]*\\$\\{` OR whose output contains a markdown code fence labelled `bash` inside a hook-protocol field."
+  - text: "Security regression tests under `test/security/hooks/` MUST include at least one test per hook that attempts to inject `'; rm /tmp/sentinel; '` into an agent-derived field and asserts the file `/tmp/sentinel` is never removed. (ref: INV-004)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "- Security regression tests under `test/security/hooks/` MUST include at least one test per hook that attempts to inject `'; rm /tmp/sentinel; '` into an agent-derived field and asserts the file `/tmp/sentinel` is never removed."
+reminders:
+  - "Before modifying any hook → verify the hook does not embed subagent-derived or file-content-derived text in systemMessage or additionalContext (ref: INV-004)"
+  - "Before adding hook CI lint rules → verify the rule rejects both the regex `(systemMessage|additionalContext)[^}]*\\$\\{` and bash code fences inside hook-protocol fields (ref: INV-004)"
+verification:
+  - "[ ] CI lint rejects hooks whose output matches `(systemMessage|additionalContext)[^}]*\\$\\{` (ref: INV-004)"
+  - "[ ] CI lint rejects hooks whose output contains a markdown code fence labelled bash inside a hook-protocol field (ref: INV-004)"
+  - "[ ] Security regression test exists in test/security/hooks/ that injects `'; rm /tmp/sentinel; '` and asserts /tmp/sentinel is never removed (ref: INV-004)"

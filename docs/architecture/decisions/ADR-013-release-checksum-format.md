@@ -104,24 +104,6 @@ same way.
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - ".github/workflows/release.yml"
-  - "bin/edikt"
-scope:
-  - implementation
-  - review
-directives:
-  - The release workflow MUST generate a single SHA256SUMS file listing all release tarballs in sha256sum format — NEVER per-file .sha256 sidecars. (ref: ADR-013)
-  - SHA256SUMS MUST be uploaded as a GitHub Release asset alongside the launcher and payload tarballs. (ref: ADR-013)
-  - bin/edikt install MUST verify the payload tarball hash against SHA256SUMS before extracting — NEVER install without verification. (ref: ADR-013)
-  - Signing (GPG, Sigstore, cosign) MUST NOT be added in the same commit as the checksum format change — it belongs in a separate ADR. (ref: ADR-013)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

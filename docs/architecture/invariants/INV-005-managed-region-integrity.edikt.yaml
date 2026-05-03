@@ -1,0 +1,67 @@
+schema_version: 1
+topic: compile
+path: docs/architecture/invariants/INV-005-managed-region-integrity.md
+signals:
+  - managed region
+  - byte-range overlap
+  - sentinel region
+  - hash anchor
+  - settings-managed.json
+  - pre-tool-use hook
+  - integrity mechanism
+  - managed region integrity
+paths:
+  - test/security/sentinel/**/*
+scope:
+  - implementation
+  - review
+directives:
+  - text: "Every edikt-managed region in a user file has a cryptographic integrity mechanism that MUST be verified before the region is overwritten. (ref: INV-005)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Every edikt-managed region in a user file has a cryptographic integrity mechanism that MUST be verified before the region is overwritten. Two variants exist:"
+  - text: "Managed markdown regions MUST be validated by byte-range overlap of the resolved file — NEVER by regex over `old_string` or `new_string`. (ref: INV-005)"
+    source_excerpt:
+      line_start: 9
+      line_end: 9
+      quote: "Edits are validated by **byte-range overlap** of the resolved file — never by regex over `old_string` or `new_string`."
+  - text: "The install/upgrade writer MUST verify the live JSON's managed-key hash against the sidecar before overwriting managed keys. (ref: INV-005)"
+    source_excerpt:
+      line_start: 13
+      line_end: 13
+      quote: "The install/upgrade writer verifies the live JSON's managed-key hash against the sidecar before overwriting managed keys."
+  - text: "An edit whose resolved byte range (markdown) or managed-key hash (JSON) would mutate a managed region MUST be blocked unless issued by an explicitly allowlisted edikt operation (compile, install, upgrade, migration). (ref: INV-005)"
+    source_excerpt:
+      line_start: 15
+      line_end: 15
+      quote: "In both variants, an edit whose resolved byte range (markdown) or managed-key hash (JSON) would mutate the region is blocked unless issued by an explicitly allowlisted edikt operation (compile, install, upgrade, migration)."
+  - text: "The pre-tool-use hook MUST execute the byte-range guard on every Edit/Write under governance-watched paths. (ref: INV-005)"
+    source_excerpt:
+      line_start: 79
+      line_end: 79
+      quote: "- Pre-tool-use hook executes the byte-range guard on every Edit/Write under governance-watched paths."
+  - text: "Every managed sentinel region MUST carry a hash anchor after the first compile following v0.5.0 upgrade; missing anchor on an active block MUST be seeded by compile. (ref: INV-005)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "- Every managed sentinel region carries a hash anchor after the first compile following v0.5.0 upgrade. Missing anchor on an active block → compile seeds it."
+  - text: "Unit tests at `test/security/sentinel/` MUST cover the overlap matrix (adjacent, inside, outside, cross-boundary, CRLF, Unicode) plus the hash mismatch and bootstrap paths. (ref: INV-005)"
+    source_excerpt:
+      line_start: 81
+      line_end: 81
+      quote: "- Unit tests at `test/security/sentinel/` cover the overlap matrix (adjacent, inside, outside, cross-boundary, CRLF, Unicode) plus the hash mismatch and bootstrap paths."
+  - text: "`~/.edikt/state/settings-managed.json` is required for any edikt-managed `settings.json`; its absence MUST trigger the interactive permissions prompt on upgrade. (ref: INV-005)"
+    source_excerpt:
+      line_start: 82
+      line_end: 82
+      quote: "- `~/.edikt/state/settings-managed.json` is required for any edikt-managed `settings.json`; its absence triggers the interactive permissions prompt on upgrade."
+reminders:
+  - "Before editing any file under a governance-watched path → verify the edit does not overlap a sentinel-bounded managed region by byte-range check (ref: INV-005)"
+  - "Before writing to settings.json → verify ~/.edikt/state/settings-managed.json is present and its managed-key hash matches the live file (ref: INV-005)"
+  - "Before running gov:compile after a v0.5.0 upgrade → verify every sentinel region gains a hash anchor on the first compile run (ref: INV-005)"
+verification:
+  - "[ ] Pre-tool-use hook performs byte-range overlap check — not regex on old_string/new_string — for edits under governance-watched paths (ref: INV-005)"
+  - "[ ] ~/.edikt/state/settings-managed.json is present and records managed-key hash for any edikt-managed settings.json (ref: INV-005)"
+  - "[ ] test/security/sentinel/ tests cover adjacent, inside, outside, cross-boundary, CRLF, Unicode, hash mismatch, and bootstrap cases (ref: INV-005)"
+  - "[ ] Managed regions without a hash anchor are blocked by byte-range and seeded by compile, not skipped (ref: INV-005)"

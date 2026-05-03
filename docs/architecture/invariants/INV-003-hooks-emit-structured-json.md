@@ -52,27 +52,3 @@ python3 -c 'import json,sys; print(json.dumps({"systemMessage": f"File: {sys.arg
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: d85dbb0f0e29de22a287f929cb16453e14bf658016a74979cf5a9e9db4cdf7d6
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - "templates/hooks/**"
-  - "install.sh"
-scope:
-  - implementation
-  - review
-directives:
-  - Hook scripts MUST emit hook-protocol JSON via `python3 -c 'import json; print(json.dumps(...))'` with untrusted values passed as argv. NEVER concatenate JSON via shell (`echo "{\"k\":\"${VAR}\"}"`, `printf '{"k":"%s"}' "$VAR"`, heredocs with interpolation). (ref: INV-003)
-  - CI lint MUST reject any match of `echo ["']\{` or `printf ["']\{` in templates/hooks/*.sh and install.sh. (ref: INV-003)
-  - Hook unit tests MUST assert output is `json.loads`-parseable when inputs contain embedded `"`, `\`, and newline characters. (ref: INV-003)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "json.dumps"
-  - "hook JSON emission"
-  - "INV-003"
-behavioral_signal:
-  cite:
-    - "INV-003"
-[edikt:directives:end]: #

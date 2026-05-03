@@ -104,17 +104,3 @@ If the hook input does not contain the structured `evaluator_output` shape (lega
 - Evaluator agent templates require a one-time update to emit the `agent` field
 - Legacy unstructured payloads degrade gracefully until v0.7.0 removes the fallback
 
-[edikt:directives:start]: #
-directives:
-  - Subagent-stop.sh MUST read verdict and severity exclusively from the structured `evaluator_output` field in the hook payload — never from keyword matching over prose output. (ref: ADR-023)
-  - Evaluator agent templates MUST set `evaluator_output.agent` to the agent's domain identifier string. (ref: ADR-023)
-  - Agent domain for gate threshold resolution MUST come from `evaluator_output.agent`, not from content keyword detection. Content detection is the legacy fallback only. (ref: ADR-023)
-  - When `evaluator_output.agent` is absent, log a warning to events.jsonl and fall back to `gates.default`. NEVER silently skip the gate. (ref: ADR-023)
-  - Gate-fired messages MUST be JSON-assembled via `python3 -c 'import json; print(json.dumps(...))'` with severity and agent values as argv. (ref: ADR-023, INV-003)
-  - Legacy keyword detection for agent domain is deprecated as of v0.6.0 and MUST be removed in v0.7.0. Do not expand the keyword list. (ref: ADR-023)
-paths:
-  - "templates/hooks/subagent-stop.sh"
-  - "templates/agents/evaluator-*.md"
-  - ".edikt/config.yaml"
-scope: [implementation, review]
-[edikt:directives:end]: #

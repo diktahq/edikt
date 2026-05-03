@@ -83,31 +83,3 @@ for r in regions:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: 8c8148740609239cfb63802048453ffc4b60cf746894cc40194bef0a4729be06
-directives_hash: pending
-compiler_version: "0.4.3"
-paths:
-  - "templates/hooks/pre-tool-use.sh"
-  - "bin/edikt"
-  - "install.sh"
-  - "commands/gov/compile.md"
-scope:
-  - implementation
-  - review
-directives:
-  - Managed markdown regions MUST be guarded by byte-range overlap checks on the resolved file, NEVER by regex over `old_string` or `new_string`. (ref: INV-005)
-  - Managed markdown regions MUST carry an inline `[edikt:NAME:sha256]: # <hex>` anchor line inside the region. Compile MUST write this anchor line on the first run that encounters a region without one (bootstrap rule). (ref: INV-005)
-  - Managed JSON regions (settings.json) MUST have an out-of-band integrity record at `~/.edikt/state/settings-managed.json` recording the managed-key hash. (ref: INV-005)
-  - Edit that would overlap a managed region MUST be blocked unless an allowlisted bypass signal is set (currently `EDIKT_COMPILE_IN_PROGRESS=1` for compile, `EDIKT_MIGRATION_IN_PROGRESS=1` for upgrade/migration). (ref: INV-005)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases:
-  - "managed region"
-  - "sentinel hash anchor"
-  - "byte-range guard"
-  - "INV-005"
-behavioral_signal:
-  cite:
-    - "INV-005"
-[edikt:directives:end]: #

@@ -1,0 +1,37 @@
+schema_version: 1
+topic: architecture
+path: docs/architecture/decisions/ADR-029-tier-1-orchestration-of-tier-2-helpers.md
+signals: []
+directives:
+  - text: 'Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, but only under the four rules of ADR-029. (ref: ADR-029)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, but only under the four rules of ADR-029. (ref: ADR-029)'
+  - text: 'A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit an actionable error citing `edikt install <helper>` by name. (ref: ADR-029)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit an actionable error citing `edikt install <helper>` by name. (ref: '
+  - text: 'Tier-1 markdown commands MUST NOT parse the output SHAPE of any tier-2 binary. The contract surface between tier-1 and tier-2 is the exit code only; output may be displayed verbatim but never read programmatically. (ref: ADR-029)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Tier-1 markdown commands MUST NOT parse the output SHAPE of any tier-2 binary. The contract surface between tier-1 and tier-2 is the exit code only; output may be displayed verbatim but never read pro
+  - text: 'Tier-1 markdown MAY invoke only the enumerated tier-2 orchestration verbs: `verify`, `doctor`, `migrate`, `gov compile`, `install`, `upgrade`, `use`, `rollback`. Other binary calls remain forbidden in tier-1; adding a verb to this list requires an ADR amending ADR-029. (ref: ADR-029)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Tier-1 markdown MAY invoke only the enumerated tier-2 orchestration verbs: `verify`, `doctor`, `migrate`, `gov compile`, `install`, `upgrade`, `use`, `rollback`. Other binary calls remain forbidden in'
+  - text: 'Tier-1 commands that invoke tier-2 binaries MUST declare `tier_2_dependency:` and `on_absent:` in command frontmatter. Valid `on_absent:` values are `skip-with-warning` and `refuse-and-direct-user`. Absent the field, the default is `refuse-and-direct-user`. (ref: ADR-029)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Tier-1 commands that invoke tier-2 binaries MUST declare `tier_2_dependency:` and `on_absent:` in command frontmatter. Valid `on_absent:` values are `skip-with-warning` and `refuse-and-direct-user`. A
+paths:
+  - commands/**/*.md
+  - tools/edikt/cmd/**
+scope:
+  - design
+  - implementation
+  - review

@@ -131,29 +131,6 @@ On upgrade from edikt < 0.5.0 to 0.5.0:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.4.3"
-topic: agent-rules
-paths:
-  - "templates/agents/evaluator.md"
-  - "templates/agents/evaluator-headless.md"
-  - "templates/agents/evaluator-verdict.schema.json"
-  - "templates/hooks/phase-end-detector.sh"
-  - "commands/sdlc/plan.md"
-  - "docs/product/plans/verdicts/**"
-scope:
-  - implementation
-  - review
-directives:
-  - Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-018)
-  - The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-018)
-  - Verdicts are persisted at `docs/product/plans/verdicts/<plan>/<phase>.json`. This directory is runtime state, not governance, and is exempt from INV-001's markdown/yaml rule. (ref: ADR-018)
-  - Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true`. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-018)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

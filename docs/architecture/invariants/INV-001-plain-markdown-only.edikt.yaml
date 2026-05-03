@@ -1,0 +1,71 @@
+schema_version: 1
+topic: architecture
+path: docs/architecture/invariants/INV-001-plain-markdown-only.md
+signals:
+  - tier-1 commands
+  - plain markdown
+  - copy install
+  - markdown only
+  - templates hooks
+  - build step
+  - posix bash
+  - tier-2 binary
+  - go binary
+paths:
+  - commands/**/*.md
+  - templates/**/*
+  - tools/**/*
+scope:
+  - implementation
+  - review
+prohibitions: []
+directives:
+  - text: "Every edikt tier-1 command MUST be a `.md` file, and every tier-1 template MUST be `.md`, `.yaml`, or `.sh`. No TypeScript, no compiled binaries, no build step in tier-1. (ref: INV-001)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Every edikt **tier-1** command is a `.md` file, and every tier-1 template is `.md`, `.yaml`, or `.sh`. No TypeScript, no compiled binaries, no build step in tier-1."
+  - text: "The tier-1 system MUST work by copying files into `~/.claude/commands/`. (ref: INV-001)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "The tier-1 system must work by copying files into `~/.claude/commands/`."
+  - text: "`.sh` MUST only be used for hook templates under `templates/hooks/` — those scripts MUST be POSIX bash with stdlib-only Python heredocs (no third-party runtime deps). (ref: INV-001)"
+    source_excerpt:
+      line_start: 9
+      line_end: 9
+      quote: "`.sh` is included for hook templates under `templates/hooks/` only — those scripts run inside the Claude Code hook protocol and are written as POSIX bash with stdlib-only Python heredocs (no third-party runtime deps)."
+  - text: "Tier-1 files MUST NOT runtime-depend on tier-2 binaries. (ref: INV-001)"
+    source_excerpt:
+      line_start: 11
+      line_end: 11
+      quote: "Tier-1 files MUST NOT runtime-depend on tier-2 binaries — see ADR-015 for the boundary rules."
+  - text: "Tier-1 MUST NOT have a `package.json`, root-level `go.mod`, or build files at the tier-1 root. (ref: INV-001)"
+    source_excerpt:
+      line_start: 31
+      line_end: 31
+      quote: "No `package.json`, root-level `go.mod`, or build files at the **tier-1** root"
+  - text: "All tier-1 commands MUST live in `commands/` as `.md` files. (ref: INV-001)"
+    source_excerpt:
+      line_start: 32
+      line_end: 32
+      quote: "All tier-1 commands live in `commands/` as `.md` files"
+  - text: "Tier-1 templates MUST be plain `.md`, `.yaml`, or (under `templates/hooks/` only) `.sh` files in `templates/`. `.sh` hook templates MUST be POSIX bash and MUST NOT depend on third-party runtimes — embedded Python heredocs are stdlib-only. (ref: INV-001)"
+    source_excerpt:
+      line_start: 33
+      line_end: 34
+      quote: "Tier-1 templates are plain `.md`, `.yaml`, or (under `templates/hooks/` only) `.sh` files in `templates/`. `.sh` hook templates MUST be POSIX bash and MUST NOT depend on third-party runtimes — embedded Python heredocs are stdlib-only."
+  - text: "Tier-2 code MUST live under `tools/<name>/` with its own `go.mod`; tier-2 binaries MUST NOT be committed to the repo. (ref: INV-001)"
+    source_excerpt:
+      line_start: 35
+      line_end: 35
+      quote: "Tier-2 code lives under `tools/<name>/` with its own `go.mod`; tier-2 binaries MUST NOT be committed to the repo (ADR-022)"
+reminders:
+  - "Before adding a new command file → verify it lives in `commands/` as a `.md` file with no compiled code or build step (ref: INV-001)"
+  - "Before adding a hook script → verify it is under `templates/hooks/` only, is POSIX bash, and uses only stdlib Python (ref: INV-001)"
+  - "Before referencing a tier-2 binary from a tier-1 command → verify the command does not runtime-depend on the binary per ADR-015 (ref: INV-001)"
+verification:
+  - "[ ] No `package.json` or root-level `go.mod` exists at the tier-1 root — check repo root (ref: INV-001)"
+  - "[ ] All files in `commands/` have `.md` extension — grep for non-.md files (ref: INV-001)"
+  - "[ ] All `.sh` files in `templates/` are under `templates/hooks/` only — find templates/ -name '*.sh' -not -path '*/hooks/*' (ref: INV-001)"
+  - "[ ] No tier-2 binaries committed to repo — check `tools/` for compiled binaries (ref: INV-001)"

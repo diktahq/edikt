@@ -1,0 +1,21 @@
+schema_version: 1
+topic: hooks
+path: docs/architecture/decisions/ADR-006-claude-md-visible-sentinels.md
+signals: []
+directives:
+  - text: 'CLAUDE.md sentinels use visible markdown link reference definitions: `[edikt:start]: #` and `[edikt:end]: #`. NEVER use HTML comment sentinels. (ref: ADR-006)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'CLAUDE.md sentinels use visible markdown link reference definitions: `[edikt:start]: #` and `[edikt:end]: #`. NEVER use HTML comment sentinels. (ref: ADR-006)'
+  - text: 'Detect both formats (HTML comments and link references) for backward compatibility during init and upgrade. (ref: ADR-006)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Detect both formats (HTML comments and link references) for backward compatibility during init and upgrade. (ref: ADR-006)'
+paths:
+  - templates/CLAUDE.md.tmpl
+  - commands/init.md
+  - commands/upgrade.md
+scope:
+  - implementation

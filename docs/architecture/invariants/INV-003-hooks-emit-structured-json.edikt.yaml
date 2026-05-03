@@ -1,0 +1,54 @@
+schema_version: 1
+topic: hooks
+path: docs/architecture/invariants/INV-003-hooks-emit-structured-json.md
+signals:
+  - hook protocol
+  - json serializer
+  - shell concatenation
+  - python3 json.dumps
+  - hook emission
+  - structured json
+  - templates hooks
+  - install.sh
+  - json.loads parseable
+  - event log
+paths:
+  - templates/hooks/**/*.sh
+  - install.sh
+scope:
+  - implementation
+  - review
+prohibitions: []
+directives:
+  - text: "Every hook that emits JSON MUST construct that JSON via a structured serializer with untrusted values passed as data (not concatenated into a string). (ref: INV-003)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Every hook that emits JSON — to stdout (Claude Code hook protocol) or to a log file (e.g. `~/.edikt/events.jsonl`) — MUST construct that JSON via a structured serializer with untrusted values passed as data (not concatenated into a string). Building JSON by shell string concatenation is forbidden. The principle is serializer-only; concrete tooling (the specific `python3 -c` pattern used in bash hooks today) is implementation, documented below."
+  - text: "Building JSON by shell string concatenation is NEVER permitted in hooks. (ref: INV-003)"
+    source_excerpt:
+      line_start: 7
+      line_end: 7
+      quote: "Every hook that emits JSON — to stdout (Claude Code hook protocol) or to a log file (e.g. `~/.edikt/events.jsonl`) — MUST construct that JSON via a structured serializer with untrusted values passed as data (not concatenated into a string). Building JSON by shell string concatenation is forbidden. The principle is serializer-only; concrete tooling (the specific `python3 -c` pattern used in bash hooks today) is implementation, documented below."
+  - text: "Pre-merge CI lint MUST grep for echo or printf JSON shell-concatenation patterns in templates/hooks/*.sh and install.sh and MUST return zero matches. (ref: INV-003)"
+    source_excerpt:
+      line_start: 49
+      line_end: 49
+      quote: "- Pre-merge CI lint: `grep -nE 'echo [\"'\"'\"']\\{|printf [\"'\"'\"']\\{' templates/hooks/*.sh install.sh` MUST return zero matches."
+  - text: "Unit-test fixtures per hook MUST assert output is `json.loads`-parseable when inputs contain embedded `\"`, `\\`, and newline characters. (ref: INV-003)"
+    source_excerpt:
+      line_start: 50
+      line_end: 50
+      quote: "- Unit-test fixtures per hook (`test/unit/hooks/test_*.sh`) assert output is `json.loads`-parseable when inputs contain embedded `\"`, `\\`, and newline characters."
+  - text: "`/edikt:sdlc:audit` and `/edikt:sdlc:review` MUST read INV-003 before reviewing any change under `templates/hooks/`. (ref: INV-003)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "- `/edikt:sdlc:audit` and `/edikt:sdlc:review` read this invariant before reviewing any change under `templates/hooks/`."
+reminders:
+  - "Before writing a new hook script → verify JSON emission uses python3 -c 'import json,sys; print(json.dumps(...))' with untrusted values in sys.argv, never echo/printf string concatenation (ref: INV-003)"
+  - "Before merging changes to templates/hooks/*.sh or install.sh → verify CI lint grep returns zero matches for shell-concatenated JSON patterns (ref: INV-003)"
+verification:
+  - "[ ] grep for echo/printf JSON shell concatenation in templates/hooks/*.sh and install.sh returns zero matches (ref: INV-003)"
+  - "[ ] test/unit/hooks/test_*.sh all pass with inputs containing embedded quotes, backslashes, and newlines (ref: INV-003)"
+  - "[ ] No hook script uses heredoc or printf for JSON construction in templates/hooks/ (ref: INV-003)"

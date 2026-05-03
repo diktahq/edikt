@@ -105,28 +105,6 @@ We will adopt **Go** as the language for tier-2 deterministic helpers.
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.4.3"
-topic: tooling
-paths:
-  - "tools/**"
-  - ".github/workflows/release.yml"
-  - "bin/edikt"
-scope:
-  - implementation
-  - design
-  - review
-directives:
-  - Tier-2 deterministic helpers under `tools/<name>/` MUST be Go modules producing single static binaries. Python, Node, Ruby, or other runtime-dependent languages are forbidden for this class of helper. (ref: ADR-021)
-  - Tier-2 binaries MUST be cross-compiled in the release workflow for at least darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary's SHA-256 MUST appear in the cosign-signed `SHA256SUMS` per ADR-016. (ref: ADR-021, ADR-016)
-  - `bin/edikt install <helper>` MUST download the platform-matching binary, verify the SHA-256 against cosign-verified `SHA256SUMS`, chmod +x, and symlink into `$EDIKT_ROOT/tools/<helper>`. NEVER install via `pipx`, `npm`, or other package managers. (ref: ADR-021, ADR-015)
-  - The bootstrap installer `install.sh` and the launcher `bin/edikt` MUST remain POSIX shell. NEVER rewrite these in Go — install.sh runs before any binary exists and the launcher must work on any POSIX system without a build step. (ref: ADR-021, INV-001)
-  - Tier-2 Go dependencies MUST be pinned via `go.mod` and `go.sum` at build time. This satisfies ADR-015's "tier-2 deps pinned" contract via Go's native resolution, not via `==` at install time. (ref: ADR-021, ADR-015)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

@@ -112,30 +112,6 @@ Operational rules:
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.6.0-dev"
-topic: hooks
-paths:
-  - "templates/hooks/subagent-stop.sh"
-  - "test/fixtures/hook-payloads/subagent-stop-*.json"
-  - "test/unit/hooks/test_subagent_stop.sh"
-scope:
-  - implementation
-  - review
-directives:
-  - subagent-stop.sh MUST identify the agent only via `evaluator_output.agent` (ADR-023 primary) or canonical Claude Code payload fields (`subagent_type`, `agent_name`, `tool_name`, `agent`). NEVER use content keyword detection for agent identity. (ref: ADR-026)
-  - subagent-stop.sh MUST identify severity only via `evaluator_output.severity`. When the field is absent, severity stays at default "info"; NEVER keyword-grep severity from subagent content. (ref: ADR-026)
-  - When neither structured path yields a valid agent name, subagent-stop.sh MUST return `{"continue": true}` and exit. NEVER fire a gate against `gates.default` for non-agent subagents. (ref: ADR-026)
-  - Specialist agent templates MUST emit `evaluator_output.agent` and `evaluator_output.severity` to be subject to gate firing. Pre-v0.5.0 unstructured templates MUST be updated to the ADR-018 schema. (ref: ADR-026, ADR-018)
-  - The `AGENT_IDENTITY_SOURCE` variable in subagent-stop.sh MUST take exactly one of two values: `evaluator_output` or `payload`. The legacy value `grep-fallback` is forbidden. (ref: ADR-026)
-manual_directives: []
-suppressed_directives: []
-canonical_phrases: ["evaluator_output.agent", "evaluator_output.severity", "non-agent subagent", "structured path", "no identity → no gate"]
-behavioral_signal:
-  cite: ["ADR-026", "ADR-023"]
-[edikt:directives:end]: #
 
 ---
 

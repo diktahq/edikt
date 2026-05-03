@@ -1,0 +1,36 @@
+schema_version: 1
+topic: agent-rules
+path: docs/architecture/decisions/ADR-012-layer2-test-auth-claude-session-not-api-key.md
+signals: []
+directives:
+  - text: 'Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, not pytest_sessionstart — collection-time gating lets the scope of collected tests determine whether auth is needed. (ref: ADR-012)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, not pytest_sessionstart — collection-time gating lets the scope of collected tests determine whether auth is need
+  - text: 'The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)'
+  - text: 'Tests in test/integration/regression/ MUST run without any claude authentication — they are pure Python reference implementations. The gate MUST NOT fire when only regression tests are collected. (ref: ADR-012)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: Tests in test/integration/regression/ MUST run without any claude authentication — they are pure Python reference implementations. The gate MUST NOT fire when only regression tests are collected. (r
+  - text: 'The claude-agent-sdk spawns a subprocess claude CLI; ANTHROPIC_API_KEY is a CI/headless fallback, NOT the primary auth mechanism. Never document it as the only option. (ref: ADR-012)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'The claude-agent-sdk spawns a subprocess claude CLI; ANTHROPIC_API_KEY is a CI/headless fallback, NOT the primary auth mechanism. Never document it as the only option. (ref: ADR-012)'
+  - text: 'When the auth gate fires, the error message MUST list all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1. Silent exits are forbidden. (ref: ADR-012)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'When the auth gate fires, the error message MUST list all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1. Silent exits are forbidden. (ref: ADR-012)'
+paths:
+  - test/integration/**/*.py
+  - test/integration/conftest.py
+scope:
+  - implementation
+  - review

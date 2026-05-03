@@ -136,29 +136,6 @@ We will adopt **option 1** — a tier-2 helper that does 95% of the work determi
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: pending
-directives_hash: pending
-compiler_version: "0.4.3"
-topic: tooling
-paths:
-  - "commands/gov/compile.md"
-  - "tools/edikt/**"
-  - ".edikt/config.yaml"
-scope:
-  - implementation
-  - design
-  - review
-directives:
-  - Deterministic transformations in `/edikt:gov:compile` (YAML parse, sentinel extraction, hash computation, three-list merge, topic grouping, template rendering, orphan detection) MUST run in `tools/edikt/` (tier-2 Python helper per ADR-015). NEVER keep them as LLM round-trips in `commands/gov/compile.md`. (ref: ADR-020)
-  - LLM invocations from `/edikt:gov:compile` are restricted to: (a) generating sentinel blocks for new artifacts that lack one, (b) hand-edit conflict interviews (when `source_hash` matches but `directives_hash` does not), (c) composing contradiction-warning wording from a mechanically-detected contradiction list. No other LLM calls are permitted during compile. (ref: ADR-020)
-  - Compile output MUST be byte-equal across runs for byte-equal input. Non-determinism (LLM drift, unsorted iteration, timestamp embedding in hashed content) is forbidden. CI MUST include a diff-equality test. (ref: ADR-020)
-  - `/edikt:gov:compile --check` on 40 source documents MUST complete in under 2 seconds. Full regenerate on the same corpus MUST complete in under 5 seconds. No-op recompile (both hashes match) MUST exit in under 500 ms with zero LLM calls. (ref: ADR-020)
-  - Tier-2 `gov-compile` install is opt-in via `edikt install gov-compile`. Users without the helper installed MUST continue to get a functional (if slow) compile via the legacy LLM path. (ref: ADR-020, ADR-015)
-  - Sentinel blocks SHOULD carry a `topic:` field (optional in v0.6.0, required in v0.7.0). Missing `topic:` falls back to one-shot LLM grouping, which writes the resolved topic back into the sentinel so subsequent compiles are deterministic. (ref: ADR-020)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 

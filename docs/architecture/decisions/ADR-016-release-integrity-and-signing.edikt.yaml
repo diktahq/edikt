@@ -1,0 +1,38 @@
+schema_version: 1
+topic: release
+path: docs/architecture/decisions/ADR-016-release-integrity-and-signing.md
+signals: []
+directives:
+  - text: 'Release workflow MUST publish `edikt-payload-<tag>.tar.gz`, `SHA256SUMS`, and `SHA256SUMS.sig.bundle` as GitHub Release assets. NEVER use the auto-generated archive as the canonical artifact. (ref: ADR-016)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Release workflow MUST publish `edikt-payload-<tag>.tar.gz`, `SHA256SUMS`, and `SHA256SUMS.sig.bundle` as GitHub Release assets. NEVER use the auto-generated archive as the canonical artifact. (ref: AD'
+  - text: 'Release workflow MUST sign `SHA256SUMS` with Sigstore keyless (`cosign sign-blob --yes --bundle SHA256SUMS.sig.bundle SHA256SUMS`) using the workflow''s GitHub OIDC identity. NEVER publish a redundant `.pem` or detached `.sig` — the bundle is self-contained. (ref: ADR-016)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Release workflow MUST sign `SHA256SUMS` with Sigstore keyless (`cosign sign-blob --yes --bundle SHA256SUMS.sig.bundle SHA256SUMS`) using the workflow''s GitHub OIDC identity. NEVER publish a redundant '
+  - text: '`install.sh` and `bin/edikt install`/`upgrade` MUST verify `SHA256SUMS.sig.bundle` with `cosign verify-blob --bundle ... --certificate-identity-regexp ''^https://github\.com/diktahq/edikt/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'' --certificate-oidc-issuer ''https://token.actions.githubusercontent.com''` before extracting any artifact. (ref: ADR-016)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: '`install.sh` and `bin/edikt install`/`upgrade` MUST verify `SHA256SUMS.sig.bundle` with `cosign verify-blob --bundle ... --certificate-identity-regexp ''^https://github\.com/diktahq/edikt/\.github/work'
+  - text: 'If cosign is unavailable, the installer MUST abort with an actionable message unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, the post-install banner MUST include a loud warning. (ref: ADR-016)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'If cosign is unavailable, the installer MUST abort with an actionable message unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, the post-install banner MUST include a loud warning. (ref: ADR-016'
+  - text: 'Launcher URL composition MUST use `https://github.com/diktahq/edikt/releases/download/<tag>/edikt-payload-<tag>.tar.gz`. NEVER use `archive/refs/tags/<tag>.tar.gz`. (ref: ADR-016)'
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: 'Launcher URL composition MUST use `https://github.com/diktahq/edikt/releases/download/<tag>/edikt-payload-<tag>.tar.gz`. NEVER use `archive/refs/tags/<tag>.tar.gz`. (ref: ADR-016)'
+paths:
+  - .github/workflows/release.yml
+  - install.sh
+  - bin/edikt
+  - README.md
+scope:
+  - implementation
+  - review

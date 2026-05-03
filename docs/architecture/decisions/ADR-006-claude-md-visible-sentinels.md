@@ -40,15 +40,3 @@ Markdown link reference definitions (`[label]: url`) are:
 
 ## Directives
 
-[edikt:directives:start]: #
-topic: hooks
-paths:
-  - "templates/CLAUDE.md.tmpl"
-  - "commands/init.md"
-  - "commands/upgrade.md"
-scope:
-  - implementation
-directives:
-  - CLAUDE.md sentinels use visible markdown link reference definitions: `[edikt:start]: #` and `[edikt:end]: #`. NEVER use HTML comment sentinels. (ref: ADR-006)
-  - Detect both formats (HTML comments and link references) for backward compatibility during init and upgrade. (ref: ADR-006)
-[edikt:directives:end]: #

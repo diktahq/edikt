@@ -113,26 +113,6 @@ mechanism — it is an escape hatch for environments where interactive login is 
 
 ## Directives
 
-[edikt:directives:start]: #
-source_hash: ""
-directives_hash: ""
-compiler_version: "0.4.3"
-topic: agent-rules
-paths:
-  - "test/integration/**/*.py"
-  - "test/integration/conftest.py"
-scope:
-  - implementation
-  - review
-directives:
-  - Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, not pytest_sessionstart — collection-time gating lets the scope of collected tests determine whether auth is needed. (ref: ADR-012)
-  - The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)
-  - Tests in test/integration/regression/ MUST run without any claude authentication — they are pure Python reference implementations. The gate MUST NOT fire when only regression tests are collected. (ref: ADR-012)
-  - The claude-agent-sdk spawns a subprocess claude CLI; ANTHROPIC_API_KEY is a CI/headless fallback, NOT the primary auth mechanism. Never document it as the only option. (ref: ADR-012)
-  - When the auth gate fires, the error message MUST list all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1. Silent exits are forbidden. (ref: ADR-012)
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
 
 ---
 
