@@ -11,6 +11,21 @@ set -uo pipefail
 if [ ! -f '.edikt/config.yaml' ]; then exit 0; fi
 if grep -q 'signal-detection: false' .edikt/config.yaml 2>/dev/null; then exit 0; fi
 
+# Suppress stop-hook signals while /edikt:upgrade is mid-flight. The
+# slash command writes .edikt/state/upgrade-in-progress at the start
+# of its orchestration and removes it on exit (success or failure).
+# During upgrade the user is BY DEFINITION fixing the very drift the
+# hook reports — repeating "⚠ Some artifacts have stale sidecars" 30+
+# times during a 10-minute resync is noise, and the migration log's
+# "decision" / "ADR" wording also trips the ADR-candidate detector
+# into a stream of false positives. The marker-file gate
+# short-circuits both signal blocks below to a clean
+# {"continue": true}.
+if [ -f '.edikt/state/upgrade-in-progress' ]; then
+    printf '{"continue": true}'
+    exit 0
+fi
+
 # Anchor the project root to the realpath of cwd at script start, then
 # pass it to the Python heredocs as EDIKT_PROJECT_ROOT. The drift-detect
 # block writes .edikt/state/stale-sidecars.log; without an explicit anchor,

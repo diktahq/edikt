@@ -37,11 +37,33 @@ You never:
 
 ### `topic`
 
-Infer a single kebab-case topic identifier matching `^[a-z][a-z0-9-]{0,39}$`. Use these heuristics in order:
+Infer a single kebab-case topic identifier matching `^[a-z][a-z0-9-]{0,39}$`. Topics group RELATED artifacts during compile — `governance.md`'s routing table directs every signal to ONE topic file, and a topic file with one artifact in it is a useless 1:1 mapping. **The default behavior MUST be to pick a broad, repeatable topic that 5+ artifacts could plausibly share.** Use these heuristics in order:
 
-1. If the artifact's frontmatter has a `topic:` field, use it verbatim (after kebab-case normalization).
-2. Otherwise look at the artifact's primary subject as named in section headings or the first sentence of `## Decision` / `## Statement`. Common topics in this codebase: `architecture`, `hooks`, `compile`, `agent-rules`, `extensibility`, `release`, `tooling`, `error-handling`. Use one of those if it fits; otherwise propose a new kebab-case identifier.
-3. If you cannot decide between two candidate topics, pick the one that names a directory or component the artifact directly governs, not the one that names a workflow that uses it.
+1. **If the orchestrator passed an `EDIKT_TOPIC_VOCABULARY` env var** (newline-separated list of allowed topics), pick from that list. Choose the topic whose label most closely covers the artifact's primary subject. NEVER propose a new topic when a vocabulary is provided — fall back to the vocabulary's catch-all (typically `general` or `uncategorized`) if nothing fits cleanly.
+2. **If the artifact's frontmatter has a `topic:` field**, use it verbatim (after kebab-case normalization). The frontmatter overrides because the author was explicit.
+3. **Otherwise infer broadly.** Look at the artifact's primary subject as named in section headings or the first sentence of `## Decision` / `## Statement`. Map to ONE of the broad engineering categories below. **Strongly prefer broader over narrower** — the goal is corpus-level grouping, not artifact labelling.
+
+   Broad-category palette to draw from (extend only when none plausibly fit):
+   - `architecture` (system structure, layering, boundaries, tier separation)
+   - `data-model` (schemas, tables, persistence, event sourcing, traceability)
+   - `ai` (LLM extraction, prompt design, agent dispatch, model selection)
+   - `frontend` (UI, canvas, components, design tokens, interaction patterns)
+   - `backend` (services, APIs, request handling, middleware, transport)
+   - `auth` / `security` / `privacy` (identity, permissions, audit, threat surface)
+   - `observability` (logging, tracing, metrics, error reporting)
+   - `testing` (test strategy, fixtures, sandboxes, CI gates)
+   - `release` (build, sign, distribute, install, upgrade)
+   - `tooling` (CLI helpers, dev binaries, deterministic local helpers)
+   - `hooks` (event hooks, lifecycle integration, agent-protocol gates)
+   - `compile` (governance compile, sentinel parsing, deterministic merge)
+   - `agent-rules` (subagent dispatch, evaluator gates, verdict schema)
+   - `infrastructure` (deployment, runtime, environment, scaling)
+   - `collaboration` (multi-user state, sessions, real-time sync)
+   - `lifecycle` (artifact states, transitions, supersession, versioning)
+
+4. **Anti-pattern check before emitting.** If your candidate topic name is just a kebab-case rephrasing of the artifact's filename slug (e.g., the artifact is `ADR-014-collaboration-transport.md` and your candidate topic is `collaboration-transport`), STOP and broaden it (`collaboration`). The extractor produces ONE topic file per topic; if every artifact gets a unique topic, the corpus has 1:1 mapping and the routing-table compression is gone.
+
+5. If you cannot decide between two candidate topics, pick the one that names a directory or component the artifact directly governs, not the one that names a workflow that uses it. Default to the broader of the two.
 
 ### `path`
 
@@ -49,7 +71,15 @@ The relative path of the parent `.md` from the project root. Compute as: input p
 
 ### `signals`
 
-Lowercase noun phrases that route a task to this artifact during compile's routing-table render. Extract from named concepts that appear inside the directive sentences themselves: file paths (`templates/hooks/`), feature names (`hook protocol`, `managed region`, `subagent`), tool names (`PostToolUse`, `evaluator`, `cosign`). Avoid one-word generic signals like `code` or `file` — prefer multi-word phrases that uniquely identify the artifact's domain. Deduplicate (preserve first occurrence). All entries lowercase. Match the schema pattern `^[a-z0-9][a-z0-9 _.-]*$`.
+Lowercase noun phrases that route a task to this artifact during compile's routing-table render. Extract from named concepts that appear inside the directive sentences themselves: file paths (`templates/hooks/`), feature names (`hook protocol`, `managed region`, `subagent`), tool names (`PostToolUse`, `evaluator`, `cosign`). Avoid one-word generic signals like `code` or `file` — prefer multi-word phrases that uniquely identify the artifact's domain. Deduplicate (preserve first occurrence). All entries lowercase.
+
+**Schema pattern is HARD — `^[a-z0-9][a-z0-9 _.-]*$`. Forbidden characters: `/`, `+`, `<`, `>`, `(`, `)`, `=`, `[`, `]`, `:`, `;`, `,`, uppercase letters, accented characters, emoji.** Common violations to avoid:
+- A path like `commands/sdlc/plan.md` is NOT a valid signal — strip the `/` and emit it as the bare component or rephrase (`plan command`, `sdlc commands`).
+- A version range like `>=1.2.0` is NOT a valid signal — strip the operator (`version 1.2.0`).
+- A function signature like `compile(args)` is NOT a valid signal — strip the parens (`compile function`).
+- A label like `frontend+backend` is NOT a valid signal — split into two entries or rephrase (`full stack`).
+
+If you cannot make a candidate signal conform, omit it rather than emitting an invalid one. The compile downstream rejects the whole sidecar on a regex violation; one bad signal poisons the entire file.
 
 ### `directives`
 
@@ -61,6 +91,31 @@ Walk the body and extract every imperative sentence — sentences containing `MU
 - **`source_excerpt.quote`**: the verbatim text from the parent file between `line_start` and `line_end`, byte-equal to the file's content (preserving inline backticks, em-dashes, smart quotes, and trailing punctuation). Used by `/edikt:doctor` for drift detection — when the live quote no longer matches the recorded quote, the sidecar is flagged as stale.
 
 If the artifact has zero imperative sentences (rare — usually a roadmap-only ADR), emit `directives: []`. The empty list is valid per the schema; downstream tooling reports it as a warning, not an error.
+
+**YAML quoting discipline — strict. `text:` and `quote:` strings MUST be double-quoted whenever the content contains ANY of these characters:**
+
+- `:` followed by a space (the YAML key-value separator — `(ref: ADR-001)` is the textbook violation)
+- `#` (comment start — `MUST use #v2 cache key` would be parsed as a key)
+- `[`, `]`, `{`, `}` (flow-style sequence/mapping markers)
+- `*`, `&` (anchors / aliases)
+- `|`, `>` (block scalar indicators when at the start of the value)
+- a leading `-` followed by a space (looks like a list item)
+- a leading `?` or `!` (mapping-key / tag indicator)
+
+When in doubt, double-quote. A pattern that triggered every YAML parser failure in the v0.6.0-rc3 dogfood compile was emitting `text: A directive (ref: ADR-001).` UNQUOTED — the YAML parser saw `(ref:` and broke. Always wrap in double quotes:
+
+```yaml
+directives:
+  - text: "A directive (ref: ADR-001)."
+    source_excerpt:
+      line_start: 42
+      line_end: 42
+      quote: "Original prose: a directive (ref: ADR-001)."
+```
+
+Inside double quotes, escape `"` as `\"` and `\` as `\\`. Single-quoted YAML strings (where `'` escapes as `''`) are also acceptable but stick to double for consistency. NEVER mix.
+
+**Line-number accuracy — count from 1, not 0.** The `line_start` and `line_end` are 1-indexed against the parent `.md` file as it exists at extraction time. If you cannot find the directive's source sentence at the recorded line, the sidecar is stale-by-construction and `/edikt:gov:compile` will reject it. Re-count from the file's first byte if uncertain — a five-line offset will fail downstream and the user sees a `directive[N]: quote not found at lines X-Y` error.
 
 ## What NOT to extract
 

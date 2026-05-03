@@ -277,6 +277,17 @@ var migrationSkipMarkerRe = regexp.MustCompile(`<!--\s*edikt:migration:skip(?:\s
 // read still flows through the normal lift / failure path; isSkipListed
 // is a fast-path filter, not the place to surface I/O problems.
 func isSkipListed(path string) (bool, string) {
+	// README files in artifact directories are directory-level docs,
+	// not governance artifacts — they describe the directory's
+	// purpose to humans and have no directives to migrate. The
+	// v0.6.0-rc3 dogfood compile surfaced docs/guidelines/README.md
+	// as a spurious migration target that the user then had to write
+	// an empty stub sidecar for. Skip them by name (any case).
+	base := strings.ToLower(filepath.Base(path))
+	if base == "readme.md" {
+		return true, "README files in artifact directories are documentation, not governance"
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false, ""

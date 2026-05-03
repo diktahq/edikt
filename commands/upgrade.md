@@ -22,7 +22,25 @@ Upgrade edikt to the latest version and update this project's hooks, agents, and
 
 ## Instructions
 
-### 0. Check for Updates
+### 0. Mark upgrade as in-progress
+
+Create the marker file `.edikt/state/upgrade-in-progress` at the start of orchestration:
+
+```bash
+mkdir -p .edikt/state && touch .edikt/state/upgrade-in-progress
+```
+
+The stop-hook (`templates/hooks/stop-hook.sh`) short-circuits to `{"continue": true}` while this marker is present. Without the marker, the stop-hook's drift detector and ADR-candidate signal detector fire on every Claude turn during this command's orchestration — by definition the user is mid-fix, and seeing "⚠ Some artifacts have stale sidecars" 30+ times during the resync is noise.
+
+You MUST remove the marker on every exit path — success, user-cancel, error. The simplest discipline: trap-style cleanup. At the end of EVERY exit point in this command (final summary, cancellation prompt, error halt), run:
+
+```bash
+rm -f .edikt/state/upgrade-in-progress
+```
+
+If you forget, the user's stop-hook stays muted across future sessions. Use a final cleanup step in this command's flow to belt-and-suspenders the removal regardless of the path taken.
+
+### 0z. Check for Updates
 
 If `--offline` is in `$ARGUMENTS`, skip this step entirely and proceed to Step 1.
 
