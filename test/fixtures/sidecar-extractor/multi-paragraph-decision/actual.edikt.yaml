@@ -1,0 +1,36 @@
+schema_version: 1
+topic: backend
+path: test/fixtures/sidecar-extractor/multi-paragraph-decision/input.md
+signals:
+  - api versioning
+  - version prefix
+  - openapi schema
+  - deprecation header
+paths:
+  - docs/api/**/*.yaml
+directives:
+  - text: "All API routes MUST include a version prefix in the URL path (e.g., `/api/v1/`). (ref: ADR-099)"
+    source_excerpt:
+      line_start: 21
+      line_end: 21
+      quote: "All API routes MUST include a version prefix in the URL path (e.g., `/api/v1/`)."
+  - text: "Breaking changes MUST be introduced under a new version prefix; existing versions MUST remain functional for a minimum of six months after deprecation notice. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 23
+      line_end: 23
+      quote: "Breaking changes MUST be introduced under a new version prefix; existing versions MUST remain functional for a minimum of six months after deprecation notice."
+  - text: "Each version MUST have its own OpenAPI schema file at `docs/api/v<N>/openapi.yaml`. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 25
+      line_end: 25
+      quote: "Each version MUST have its own OpenAPI schema file at `docs/api/v<N>/openapi.yaml`."
+  - text: "Deprecated versions MUST return a `Deprecation` response header with the sunset date on every request. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 27
+      line_end: 27
+      quote: "Deprecated versions MUST return a `Deprecation` response header with the sunset date on every request."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

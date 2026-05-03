@@ -1,0 +1,25 @@
+schema_version: 1
+topic: frontend
+path: test/fixtures/sidecar-extractor/glob-character-classes/input.md
+signals:
+  - react components
+  - barrel exports
+  - component file organization
+paths:
+  - "src/components/**/*.{ts,tsx}"
+directives:
+  - text: "All React components MUST be colocated with their test files under `src/components/**/*.{ts,tsx}`. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 16
+      line_end: 16
+      quote: "All React components MUST be colocated with their test files under `src/components/**/*.{ts,tsx}`."
+  - text: "Component index files MUST use barrel exports following the `src/components/**/index.{ts,tsx}` pattern. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 17
+      line_end: 17
+      quote: "Component index files MUST use barrel exports following the `src/components/**/index.{ts,tsx}` pattern."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

@@ -1,0 +1,11 @@
+schema_version: 1
+topic: architecture
+path: test/fixtures/sidecar-extractor/empty-decision/input.md
+signals:
+  - placeholder decision
+directives: []
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

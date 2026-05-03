@@ -1,0 +1,23 @@
+schema_version: 1
+topic: hooks
+path: test/fixtures/sidecar-extractor/code-fence-pseudo-must/input.md
+signals:
+  - hook json emission
+  - json serializer
+  - string concatenation
+directives:
+  - text: "All hooks MUST emit structured JSON via `python3 -c 'import json,sys; print(json.dumps(...))'`. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 16
+      line_end: 16
+      quote: "All hooks MUST emit structured JSON via `python3 -c 'import json,sys; print(json.dumps(...))'`."
+  - text: "Hook scripts MUST NOT build JSON by string concatenation. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 17
+      line_end: 17
+      quote: "Hook scripts MUST NOT build JSON by string concatenation."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

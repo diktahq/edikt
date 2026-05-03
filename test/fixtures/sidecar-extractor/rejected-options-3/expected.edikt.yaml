@@ -1,0 +1,35 @@
+schema_version: 1
+topic: data-model
+path: test/fixtures/sidecar-extractor/rejected-options-3/input.md
+signals:
+  - sqlite persistence
+  - database transactions
+  - state persistence
+directives:
+  - text: "State MUST be persisted to SQLite using the standard library database/sql driver. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 34
+      line_end: 34
+      quote: "State MUST be persisted to SQLite using the standard library database/sql driver."
+  - text: "All writes MUST use transactions to ensure atomicity. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 35
+      line_end: 35
+      quote: "All writes MUST use transactions to ensure atomicity."
+prohibitions:
+  - text: "MUST NOT use Redis for state persistence — external dependency required; data loss on crash without AOF. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 24
+      line_end: 24
+      quote: "- Cons: external dependency required; data loss on crash without AOF"
+    derived_from: rejected_option_b
+  - text: "MUST NOT use an in-memory map for state persistence — all state lost on restart; not suitable for durable governance state. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 29
+      line_end: 29
+      quote: "- Cons: all state lost on restart; not suitable for durable governance state"
+    derived_from: rejected_option_c
+scope:
+  - design
+  - implementation
+  - review

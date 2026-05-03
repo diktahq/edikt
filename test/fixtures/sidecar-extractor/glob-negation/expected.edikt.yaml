@@ -1,0 +1,32 @@
+schema_version: 1
+topic: testing
+path: test/fixtures/sidecar-extractor/glob-negation/input.md
+signals:
+  - go test exclusions
+  - linter exclusions
+  - coverage threshold
+paths:
+  - internal/**/*.go
+  - "!**/_test.go"
+  - "!**/testdata/**"
+directives:
+  - text: "All production Go source files MUST reside under `internal/**/*.go`. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 16
+      line_end: 16
+      quote: "All production Go source files MUST reside under `internal/**/*.go`."
+  - text: "The linter MUST exclude generated test helpers matching `!**/_test.go` from static analysis passes. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 17
+      line_end: 17
+      quote: "The linter MUST exclude generated test helpers matching `!**/_test.go` from static analysis passes."
+  - text: "Coverage reports MUST exclude files matching `!**/testdata/**` from threshold calculations. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 18
+      line_end: 18
+      quote: "Coverage reports MUST exclude files matching `!**/testdata/**` from threshold calculations."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

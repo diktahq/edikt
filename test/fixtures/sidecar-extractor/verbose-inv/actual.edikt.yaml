@@ -1,0 +1,21 @@
+schema_version: 1
+topic: testing
+path: test/fixtures/sidecar-extractor/verbose-inv/input.md
+signals:
+  - hermetic sandbox
+  - setting_sources
+  - subprocess claude session
+  - test harness
+directives:
+  - text: "Test sandboxes MUST be hermetic and MUST NOT copy host credentials, shell rc files, or SSH keys into the sandbox environment. (ref: INV-099)"
+    source_excerpt:
+      line_start: 13
+      line_end: 13
+      quote: "Test sandboxes MUST be hermetic and MUST NOT copy host credentials, shell rc files, or SSH keys into the sandbox environment."
+scope:
+  - implementation
+  - review
+reminders:
+  - "Before running any test that spawns a subprocess Claude session → verify that `setting_sources` is restricted to `[\"project\"]` only (ref: INV-099)"
+verification:
+  - "[ ] CI grep: `grep -rn 'setting_sources=[.*user' test/` returns zero matches (ref: INV-099)"

@@ -1,0 +1,26 @@
+schema_version: 1
+topic: tooling
+path: test/fixtures/sidecar-extractor/guideline-no-modals/input.md
+signals:
+  - go error wrapping
+  - fmt.errorf
+  - error chain
+directives:
+  - text: "MUST use `fmt.Errorf` with `%w` to wrap errors when returning them from package-internal functions. (ref: guideline-099)"
+    source_excerpt:
+      line_start: 13
+      line_end: 13
+      quote: "Use `fmt.Errorf` with `%w` to wrap errors when returning them from package-internal functions."
+  - text: "MUST include the function name in the error message to aid debugging. (ref: guideline-099)"
+    source_excerpt:
+      line_start: 14
+      line_end: 14
+      quote: "Include the function name in the error message to aid debugging."
+  - text: "MUST return `nil` only when the operation succeeds completely with no partial state. (ref: guideline-099)"
+    source_excerpt:
+      line_start: 15
+      line_end: 15
+      quote: "Return `nil` only when the operation succeeds completely with no partial state."
+scope:
+  - implementation
+  - review

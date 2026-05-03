@@ -1,0 +1,28 @@
+schema_version: 1
+topic: backend
+path: test/fixtures/sidecar-extractor/modality-drift-fallback/input.md
+signals:
+  - background job processing
+  - worker goroutine pool
+  - jobs table
+directives:
+  - text: "Jobs MUST be processed in a dedicated worker goroutine pool. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 16
+      line_end: 16
+      quote: "Jobs MUST be processed in a dedicated worker goroutine pool."
+  - text: "Workers MUST persist job state to the jobs table before returning. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 17
+      line_end: 17
+      quote: "Workers MUST persist job state to the jobs table before returning."
+  - text: "Fallback: direct synchronous processing MAY be used when the worker pool is unavailable during startup. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 19
+      line_end: 19
+      quote: "Fallback: direct synchronous processing MAY be used when the worker pool is unavailable during startup."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

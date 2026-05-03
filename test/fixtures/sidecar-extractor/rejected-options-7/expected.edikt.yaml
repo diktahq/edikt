@@ -1,0 +1,59 @@
+schema_version: 1
+topic: observability
+path: test/fixtures/sidecar-extractor/rejected-options-7/input.md
+signals:
+  - zerolog
+  - structured logging
+  - log level field
+directives:
+  - text: "Structured logs MUST be emitted using zerolog. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "Structured logs MUST be emitted using zerolog."
+  - text: "All log entries MUST include a `level` field and a `ts` timestamp field. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "All log entries MUST include a `level` field and a `ts` timestamp field."
+prohibitions:
+  - text: "MUST NOT use logrus for logging — allocates on every log call; deprecated by maintainer. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 26
+      line_end: 26
+      quote: "- Cons: allocates on every log call; deprecated by maintainer"
+    derived_from: rejected_option_b
+  - text: "MUST NOT use zap for logging — complex API; requires sugar wrapper for ergonomics. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 31
+      line_end: 31
+      quote: "- Cons: complex API; requires sugar wrapper for ergonomics"
+    derived_from: rejected_option_c
+  - text: "MUST NOT use slog for logging — no JSON sink without adapter; slower than zerolog. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 36
+      line_end: 36
+      quote: "- Cons: no JSON sink without adapter; slower than zerolog"
+    derived_from: rejected_option_d
+  - text: "MUST NOT use log15 for logging — unmaintained since 2020; no active security patches. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 41
+      line_end: 41
+      quote: "- Cons: unmaintained since 2020; no active security patches"
+    derived_from: rejected_option_e
+  - text: "MUST NOT use apex/log for logging — no streaming JSON output; high memory overhead. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 46
+      line_end: 46
+      quote: "- Cons: no streaming JSON output; high memory overhead"
+    derived_from: rejected_option_f
+  - text: "MUST NOT use kit/log for logging — no level filtering built in; removed from active maintenance. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "- Cons: no level filtering built in; removed from active maintenance"
+    derived_from: rejected_option_g
+scope:
+  - design
+  - implementation
+  - review

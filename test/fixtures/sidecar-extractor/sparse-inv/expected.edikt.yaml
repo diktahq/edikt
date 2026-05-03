@@ -1,0 +1,15 @@
+schema_version: 1
+topic: observability
+path: test/fixtures/sidecar-extractor/sparse-inv/input.md
+signals:
+  - production logging level
+  - debug logging
+directives:
+  - text: "The production logger MUST be configured at `info` level or above; debug-level logging MUST NOT be enabled in production deployments. (ref: INV-099)"
+    source_excerpt:
+      line_start: 12
+      line_end: 12
+      quote: "The production logger MUST be configured at `info` level or above; debug-level logging MUST NOT be enabled in production deployments."
+scope:
+  - implementation
+  - review

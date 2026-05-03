@@ -181,16 +181,22 @@ jobs:
           fi
           echo "OK: no 'claude' invocation in migrate_sidecars / sidecardiff production source"
 
-      - name: Sidecar fixture comparator (Phase 6)
+      - name: Sidecar fixture comparator (all)
         # Run the deterministic structural-equivalence comparator against
-        # the committed adr-001 fixture. Uses actual.edikt.yaml as the
-        # candidate (initially seeded from expected.edikt.yaml — replaced
-        # with real extractor output via `make regen-fixtures` opt-in).
-        # Never invokes claude: pure Go YAML load + three-tier diff.
+        # all committed fixtures in test/fixtures/sidecar-extractor/.
+        # Uses actual.edikt.yaml as the candidate (initially seeded from
+        # expected.edikt.yaml — replaced with real extractor output via
+        # `make regen-fixtures` opt-in). A loop keeps the workflow
+        # maintainable as the corpus grows (Phase 9). Never invokes
+        # claude: pure Go YAML load + three-tier diff (ADR-030).
         run: |
           cd tools/edikt
           go build -o /tmp/edikt-bin .
-          /tmp/edikt-bin sidecar diff ../../test/fixtures/sidecar-extractor/adr-001
+          cd ../..
+          for fixture in test/fixtures/sidecar-extractor/*/; do
+            echo "→ $fixture"
+            /tmp/edikt-bin sidecar diff "$fixture" || exit 1
+          done
 
   # ─── Canonical YAML round-trip ──────────────────────────────────────────────
   canonical-yaml-roundtrip:

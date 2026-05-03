@@ -1,0 +1,17 @@
+schema_version: 1
+topic: backend
+path: test/fixtures/sidecar-extractor/single-line-directive/input.md
+signals:
+  - error response format
+  - api error envelope
+directives:
+  - text: "All API error responses MUST use the `{ \"error\": { \"code\": string, \"message\": string } }` envelope. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 18
+      line_end: 18
+      quote: "All API error responses MUST use the `{ \"error\": { \"code\": string, \"message\": string } }` envelope."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

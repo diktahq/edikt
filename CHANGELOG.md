@@ -158,6 +158,32 @@ phases land incrementally.
 - **First fixture**: `test/fixtures/sidecar-extractor/adr-001/` with `input.md` (the v0.4.3 voice-pipeline ADR), hand-curated `expected.edikt.yaml` covering Phase 2's Rules A–D (paths inference, scope defaults, prohibition synthesis from rejected `### A. Single-stage Gemini Live`, `Fallback: OpenAI` modality preservation as MAY), seeded `actual.edikt.yaml` (= expected initially), `fixture.yaml` (sha256 baseline pinned).
 - **CI gate extension** in `.github/workflows/sidecar-checks.yml`: the existing `claude` grep gate now covers `tools/edikt/cmd/sidecar.go` and `tools/edikt/internal/sidecardiff/` so the comparator stays LLM-free per ADR-030. New step runs `bin/edikt sidecar diff test/fixtures/sidecar-extractor/adr-001` on every PR.
 
+### Golden corpus (Phase 9)
+
+- **16 fixtures** in `test/fixtures/sidecar-extractor/` (1 existing `adr-001/` + 15 new). Every fixture is hand-authored (`input.md` + `expected.edikt.yaml`) with no LLM in the loop — deterministic specs for what the extractor SHOULD produce per Phase 2 Rules A–D and the v1 schema.
+- **Bug-taxonomy coverage**: each new fixture targets one specific failure mode so future extractor regressions are caught at the precise class that caused them.
+
+  | Fixture | Bug Class |
+  |---|---|
+  | `modality-drift-fallback/` | `Fallback:` prose must extract as `MAY`, never `MUST` (Rule D) |
+  | `modality-drift-alternatively/` | `Alternatively:` prose must extract as `MAY`, never `MUST` (Rule D) |
+  | `rejected-options-1/` | Single considered option (chosen only) → `prohibitions: []` |
+  | `rejected-options-3/` | 3 options (1 chosen, 2 rejected) → 2 prohibitions with distinct `derived_from` |
+  | `rejected-options-7/` | 7 options (1 chosen, 6 rejected) → 6 prohibitions |
+  | `glob-character-classes/` | `**/*.{ts,tsx}` globs preserved verbatim in `paths[]` |
+  | `glob-negation/` | `!**/_test.go` exclusion globs preserved verbatim in `paths[]` |
+  | `empty-decision/` | Empty `## Decision` section → `directives: []` |
+  | `code-fence-pseudo-must/` | `MUST NOT` inside fenced code block is NOT extracted |
+  | `unicode-lookalikes/` | Cyrillic lookalike in prose → `text` uses NFKC-normalized Latin form (INV-006) |
+  | `multi-paragraph-decision/` | 4 decision paragraphs → 4 distinct directives with separate `source_excerpt` entries |
+  | `single-line-directive/` | One-sentence Decision → exactly 1 directive |
+  | `sparse-inv/` | Minimal INV (Statement only) → 1 directive, empty `reminders`/`verification` |
+  | `verbose-inv/` | Full INV with all sections → Statement directives + Enforcement reminders/verification; Rationale and Anti-patterns NOT extracted |
+  | `guideline-no-modals/` | Guideline with imperative prose (no modals) → directives use `MUST` via verb-normalization |
+
+- **CI loop**: `.github/workflows/sidecar-checks.yml` `Sidecar fixture comparator` step replaced with a loop over all fixtures in `test/fixtures/sidecar-extractor/*/` — no matrix, corpus-growth is zero-config.
+- **`test/fixtures/sidecar-extractor/README.md`**: documents the bug taxonomy table, fixture structure, comparator invocation, and the contributor workflow for adding a fixture when a new failure mode surfaces in the field.
+
 ### Verify (Phase 12, folded from PLAN-sidecar-architecture)
 
 - **`bin/edikt verify <plan-id> [--phase N]`**: walks a plan's

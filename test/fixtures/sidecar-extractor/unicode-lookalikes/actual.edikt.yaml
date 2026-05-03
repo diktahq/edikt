@@ -1,0 +1,24 @@
+schema_version: 1
+topic: security
+path: test/fixtures/sidecar-extractor/unicode-lookalikes/input.md
+signals:
+  - nfkc normalization
+  - input validation
+  - unicode lookalike
+  - allowlist comparisons
+directives:
+  - text: "All validators MUST normalize input with NFKC before applying allowlist comparisons. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 28
+      line_end: 28
+      quote: "All validators MUST normalize input with NFKC before applying аllowlist comparisons."
+  - text: "Attacker-influenceable values MUST be passed as separate argv elements, never concatenated. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 29
+      line_end: 29
+      quote: "Attacker-influenceable values MUST be passed as separate argv elements, never concatenated."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

@@ -1,0 +1,7 @@
+model: claude-sonnet-4-6
+temperature: 0
+seed: 42
+thresholds:
+  levenshtein_max: 0.05
+  jaccard_min: 0.7
+hash_baseline: c8f1b5653024ecb1c2600a774f4b414769005d7b1bad16fb085966e25ca7b257

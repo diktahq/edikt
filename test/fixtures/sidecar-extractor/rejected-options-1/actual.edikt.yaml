@@ -1,0 +1,23 @@
+schema_version: 1
+topic: data-model
+path: test/fixtures/sidecar-extractor/rejected-options-1/input.md
+signals:
+  - event serialization
+  - json events
+  - schema_version field
+directives:
+  - text: "Events MUST be serialized as JSON. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 23
+      line_end: 23
+      quote: "Events MUST be serialized as JSON."
+  - text: "All event payloads MUST include a `schema_version` field. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 24
+      line_end: 24
+      quote: "All event payloads MUST include a `schema_version` field."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review

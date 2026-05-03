@@ -1,0 +1,29 @@
+schema_version: 1
+topic: architecture
+path: test/fixtures/sidecar-extractor/modality-drift-alternatively/input.md
+signals:
+  - config.yaml
+  - configuration loading
+  - allowlist regex
+  - environment variables
+directives:
+  - text: "Configuration MUST be loaded from `.edikt/config.yaml` at startup. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 17
+      line_end: 17
+      quote: "Configuration MUST be loaded from `.edikt/config.yaml` at startup."
+  - text: "The loader MUST validate all values against an allowlist regex before use. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 18
+      line_end: 18
+      quote: "The loader MUST validate all values against an allowlist regex before use."
+  - text: "Alternatively: environment variables MAY be used when a config file is absent. (ref: ADR-099)"
+    source_excerpt:
+      line_start: 20
+      line_end: 20
+      quote: "Alternatively: environment variables MAY be used when a config file is absent."
+prohibitions: []
+scope:
+  - design
+  - implementation
+  - review
