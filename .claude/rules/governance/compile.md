@@ -13,7 +13,7 @@ compile_schema_version: 2
 <!-- topic: compile -->
 <!-- sources: ADR-009 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T16:18:32Z -->
+<!-- compiled_at: 2026-05-03T17:07:01Z -->
 
 # Compile
 

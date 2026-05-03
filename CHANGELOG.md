@@ -107,6 +107,13 @@ phases land incrementally.
   round-trips verbatim, idempotent re-apply on already-migrated
   artifacts.
 
+### Sidecar (Phase 7)
+
+- **`bin/edikt sidecar add-manual-directive --path <sidecar-path> --text "<text>"`**: appends a user-authored entry to `manual_directives[]` in an existing `<artifact>.edikt.yaml` without editing the parent `.md` (INV-002). Accepts both `.edikt.yaml` and `.md` paths (resolves to sibling sidecar). Auto-appends `(ref: ADR-NNN + manual)` when the text has no `(ref:` parenthetical. Rejects duplicates with exit 3. Runs `Sidecar.Validate()` post-append. Exit codes: 0 success, 1 validation error, 2 sidecar missing, 3 duplicate.
+- **`/edikt:adr:enrich`** (tier-1): interactive slash command for the above. Resolves the target sidecar by ID or path, displays current `manual_directives`, validates that the text contains a modal verb (`MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, `MAY`, `NEVER`, `ALWAYS`), auto-suggests the ref tag, and delegates the write to `bin/edikt sidecar add-manual-directive`. Declares `tier_2_dependency: edikt`, `on_absent: refuse-and-direct-user`.
+- Resolves the dead remediation hint in Phase 4 doctor WARN: `bin/edikt sidecar add-manual-directive` is now live.
+- **ADR-031**: amends ADR-029 to add `bin/edikt sidecar <subcommand>` to the tier-1 orchestration verb list, covering both `add-manual-directive` (Phase 7) and the planned `diff` subcommand (Phase 6).
+
 ### Verify (Phase 12, folded from PLAN-sidecar-architecture)
 
 - **`bin/edikt verify <plan-id> [--phase N]`**: walks a plan's
