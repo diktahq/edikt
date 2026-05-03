@@ -6,6 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "topic", "path", "signals", "directives"],
+  "$comment": "v1.1 (additive) — paths, scope, prohibitions are optional. KnownFields(true) in the Go decoder makes the v1.1 fields forward-only: a v1.0 reader cannot parse a sidecar that uses them. edikt distributes as a single binary; upgrade as a unit. The schema version stays at 1 because the on-disk shape only widens.",
   "properties": {
     "schema_version": {
       "type": "integer",
@@ -32,6 +33,51 @@
         "description": "Lowercase signal phrase. Used by the routing table in compiled governance to surface this directive set when a task matches the signal."
       },
       "description": "Lowercase, deduplicated keyword/phrase signals that route work to this artifact."
+    },
+    "paths": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "v1.1 (optional). File-glob patterns scoping where this artifact's directives apply (e.g. 'tools/edikt/**/*.go', 'templates/hooks/**/*.sh'). Glob syntax is doublestar/v4 compatible. Validated as non-empty strings at parse time; full glob-syntax validation deferred to gov:compile."
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["planning", "design", "implementation", "review"]
+      },
+      "uniqueItems": true,
+      "description": "v1.1 (optional). Lifecycle phases during which this artifact's directives are surfaced. Closed enum: planning | design | implementation | review. ADR Decision blocks default to [design, implementation, review]; INV Statements default to [implementation, review]; ADR architectural prohibitions default to [planning, design, review]."
+    },
+    "prohibitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["text", "source_excerpt"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "MUST NOT directive synthesised from a rejected option. Same shape as directives[].text."
+          },
+          "source_excerpt": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["line_start", "line_end", "quote"],
+            "properties": {
+              "line_start": { "type": "integer", "minimum": 1 },
+              "line_end": { "type": "integer", "minimum": 1 },
+              "quote": { "type": "string", "minLength": 1 }
+            }
+          },
+          "derived_from": {
+            "type": "string",
+            "description": "Provenance hint for the prohibition (e.g., 'rejected_option_b'). Optional; auditability only — not used by compile."
+          }
+        }
+      },
+      "description": "v1.1 (optional). MUST NOT directives synthesised from rejected '## Considered Options' (ADRs only). Each entry MUST have a verifiable source_excerpt pointing to a Cons: bullet or rejected-option body in the parent .md. Extractor never invents a prohibition that is not literally present in rejected-option text (see Phase 2 Rule C in templates/agents/sidecar-extractor.md)."
     },
     "manual_directives": {
       "type": "array",
