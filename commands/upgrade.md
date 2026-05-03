@@ -280,6 +280,8 @@ For each hook type, check two things: (1) is the content correct, and (2) is it 
 
 **Pre-flight: unsubstituted `${EDIKT_HOOK_DIR}` placeholder.** If any hook `command` string in `.claude/settings.json` contains the literal substring `${EDIKT_HOOK_DIR}`, the file shipped with the template placeholder un-resolved and every hook fires the error `/bin/sh: /<hook>.sh: No such file or directory` (the shell expands the unset variable to empty). Auto-repair before continuing — substitute `${EDIKT_HOOK_DIR}` with the absolute path resolution rule from §`commands/init.md` (global mode → `$HOME/.edikt/hooks`; project mode → `<project_root>/.edikt/hooks`). Re-validate JSON after substitution. Log: `repaired settings.json: substituted N occurrences of ${EDIKT_HOOK_DIR}`. Do NOT prompt — this is a strictly mechanical fix and silent error in the user's session.
 
+**Pre-flight: missing `statusLine.type` field.** If `.claude/settings.json` has a `statusLine` object that lacks a `type` key, Claude Code refuses to load the entire settings file with the error `statusLine › type: Invalid value. Expected one of: "command"`. Settings written before Claude Code 2.x added the requirement (or shipped from a stale template) hit this. Auto-repair: insert `"type": "command"` as the first key inside the `statusLine` object. Re-validate JSON. Log: `repaired settings.json: added statusLine.type`. Do NOT prompt — same rationale as the placeholder repair above.
+
 **Migration check — inline bash vs. script references:**
 If any `type: command` hook has its logic inline (a long bash string) rather than referencing `$HOME/.edikt/hooks/*.sh`, it is outdated regardless of content. Note: "using inline bash — migrate to script reference".
 

@@ -183,6 +183,23 @@ if grep -q '\${EDIKT_HOOK_DIR}' .claude/settings.json 2>/dev/null; then
 fi
 ```
 
+**StatusLine type field check:**
+
+```bash
+python3 -c "
+import json
+try:
+    s = json.load(open('.claude/settings.json'))
+    sl = s.get('statusLine')
+    if isinstance(sl, dict) and 'type' not in sl:
+        print('[!!] settings.json statusLine block missing the required type field — Claude Code refuses to load the entire settings file (statusLine › type: Invalid value). Run /edikt:upgrade to auto-repair, or add \"type\": \"command\" manually as the first key inside the statusLine object.')
+except Exception:
+    pass
+" 2>/dev/null
+```
+
+Critical signal — fire `[!!]` because a missing `type` field invalidates the WHOLE settings.json from Claude Code's perspective; every hook stops firing too.
+
 The placeholder is meant to be resolved at install time per `commands/init.md:993`. If it survives into the runtime config, Claude Code's shell expansion at hook-fire time produces an empty string and the hook path becomes a literal `/<hook>.sh`. Critical signal — fire `[!!]` not `[!]`.
 
 **Hooks (PreToolUse + PreCompact):**
