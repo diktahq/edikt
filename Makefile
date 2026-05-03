@@ -167,6 +167,21 @@ test-sdk:
 test-all:
 	bash test/run.sh
 
+## regen-fixtures: live-regenerate every sidecar golden fixture (Phase 6, opt-in)
+##                 — gated behind EDIKT_REGEN_FIXTURES=1 (INV-007 sandbox rule).
+##                 — invokes /edikt:test:golden-sidecar per fixture; CI never runs this.
+regen-fixtures:
+	@if [ "$${EDIKT_REGEN_FIXTURES:-0}" != "1" ]; then \
+	  echo "Live regeneration skipped (set EDIKT_REGEN_FIXTURES=1 to run)."; \
+	  exit 0; \
+	fi
+	@for d in test/fixtures/sidecar-extractor/*/; do \
+	  if [ -f "$$d/input.md" ] && [ -f "$$d/expected.edikt.yaml" ] && [ -f "$$d/fixture.yaml" ]; then \
+	    echo "regenerating $$d ..."; \
+	    claude /edikt:test:golden-sidecar "$$d" || exit 1; \
+	  fi; \
+	done
+
 # ─── Global install (touches your real ~/.edikt/) ─────────────────────────────
 
 .PHONY: install-global install-local dev-global dev-global-off

@@ -114,6 +114,15 @@ phases land incrementally.
 - Resolves the dead remediation hint in Phase 4 doctor WARN: `bin/edikt sidecar add-manual-directive` is now live.
 - **ADR-031**: amends ADR-029 to add `bin/edikt sidecar <subcommand>` to the tier-1 orchestration verb list, covering both `add-manual-directive` (Phase 7) and the planned `diff` subcommand (Phase 6).
 
+### Sidecar diff (Phase 6)
+
+- **`bin/edikt sidecar diff <fixture-dir>`**: pure-Go, no-LLM, three-tier structural-equivalence comparator for golden fixtures. Tier 1 strict-equality on hard fields (`topic`, sorted `signals`/`paths`/`scope`, directive count + ref-ID set, prohibition count). Tier 2 normalised Levenshtein ratio on directive bodies (default ≤ 0.05, configurable per fixture). Tier 3 Jaccard similarity on greppable verification tokens (default ≥ 0.7). Exit codes: 0 equivalent, 1 divergent with structured diff on stdout, 2 missing fixture file, 3 argv error.
+- **`tools/edikt/internal/sidecardiff/`** (new package): rolls own Levenshtein implementation (≤ 50 LOC, no third-party dep). Strict KnownFields decode on `fixture.yaml`. INV-006 path validation: resolves fixture dir to absolute, refuses traversal escapes, refuses sidecar files that escape the fixture dir via symlink.
+- **`commands/test/golden-sidecar.md`** (tier-1, opt-in via `EDIKT_REGEN_FIXTURES=1`): live regenerator. Reads `<fixture-dir>/fixture.yaml` for model/temperature/seed, dispatches the locked `sidecar-extractor` agent via Task tool on `<fixture-dir>/input.md`, writes output to `actual.edikt.yaml`, runs the deterministic comparator. CI never invokes this — only the comparator.
+- **`Makefile` target `regen-fixtures`**: walks `test/fixtures/sidecar-extractor/` and invokes the runner per fixture. Same `EDIKT_REGEN_FIXTURES=1` gate.
+- **First fixture**: `test/fixtures/sidecar-extractor/adr-001/` with `input.md` (the v0.4.3 voice-pipeline ADR), hand-curated `expected.edikt.yaml` covering Phase 2's Rules A–D (paths inference, scope defaults, prohibition synthesis from rejected `### A. Single-stage Gemini Live`, `Fallback: OpenAI` modality preservation as MAY), seeded `actual.edikt.yaml` (= expected initially), `fixture.yaml` (sha256 baseline pinned).
+- **CI gate extension** in `.github/workflows/sidecar-checks.yml`: the existing `claude` grep gate now covers `tools/edikt/cmd/sidecar.go` and `tools/edikt/internal/sidecardiff/` so the comparator stays LLM-free per ADR-030. New step runs `bin/edikt sidecar diff test/fixtures/sidecar-extractor/adr-001` on every PR.
+
 ### Verify (Phase 12, folded from PLAN-sidecar-architecture)
 
 - **`bin/edikt verify <plan-id> [--phase N]`**: walks a plan's

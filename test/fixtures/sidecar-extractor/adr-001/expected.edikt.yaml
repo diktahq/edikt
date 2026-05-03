@@ -1,0 +1,52 @@
+schema_version: 1
+topic: ai
+path: docs/architecture/decisions/ADR-001-two-stage-voice-pipeline.md
+signals:
+  - voice pipeline
+  - deepgram
+  - claude extraction
+  - speaker diarization
+  - two-stage pipeline
+directives:
+  - text: "MUST use a two-stage pipeline: Deepgram Nova-3 for transcription + diarization, Claude for DDD extraction. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 45
+      line_end: 45
+      quote: "**Two-stage pipeline: Deepgram Nova-3 for transcription + diarization, Claude for DDD extraction.**"
+  - text: "MUST configure Deepgram with custom vocabulary from existing glossary terms for Stage 1 transcription. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "Stage 1 (Deepgram): WebSocket streaming → diarized transcript segments with speaker labels, timestamps. Custom vocabulary from existing glossary terms."
+  - text: "MUST process diarized transcript chunks through Claude every 20-30s using the output_format parameter with DDD artifact schema. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 49
+      line_end: 49
+      quote: "Stage 2 (Claude): takes diarized transcript chunks every 20-30s → structured JSON output via `output_format` with DDD artifact schema. Prompt caching for cost reduction."
+  - text: "Fallback: MAY use OpenAI gpt-4o-transcribe-diarize for transcription (batch mode), any capable LLM for extraction. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "Fallback: OpenAI gpt-4o-transcribe-diarize for transcription (batch mode), any capable LLM for extraction."
+prohibitions:
+  - text: "MUST NOT use a single-stage pipeline that lacks native speaker diarization (ref: ADR-001)"
+    source_excerpt:
+      line_start: 25
+      line_end: 25
+      quote: "- Cons: **no reliable speaker diarization** (prompt-based, not native), 15-minute session limit, preview-only (not GA)"
+    derived_from: rejected_option_a
+paths:
+  - internal/stt/**/*.go
+  - internal/ai/**/*.go
+  - internal/voice/**/*.go
+scope:
+  - design
+  - implementation
+  - review
+reminders:
+  - "Before adding a new STT provider → verify it implements internal/stt/provider.go interface (ref: ADR-001)"
+  - "Before changing voice pipeline stages → confirm native speaker diarization is preserved (ref: ADR-001)"
+verification:
+  - "[ ] STT provider is accessed only through internal/stt/provider.go interface (ref: ADR-001)"
+  - "[ ] Deepgram is configured with custom vocabulary from glossary terms (ref: ADR-001)"
+  - "[ ] Claude extraction uses output_format with DDD artifact schema and 20-30s chunking (ref: ADR-001)"

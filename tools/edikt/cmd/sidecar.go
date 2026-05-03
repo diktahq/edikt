@@ -2,11 +2,8 @@ package cmd
 
 // sidecar.go — `edikt sidecar` subcommand group.
 //
-// Phase 7 of PLAN-v060-governance-accuracy.
-//
-// Registers the `sidecar` parent cobra command at root, plus the
-// `add-manual-directive` subcommand. Designed so `diff` (Phase 6)
-// can be added later without restructuring.
+// Phase 7 of PLAN-v060-governance-accuracy: add-manual-directive.
+// Phase 6 of PLAN-v060-governance-accuracy: diff.
 
 import (
 	"bufio"
@@ -18,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
+	"github.com/diktahq/edikt/tools/edikt/internal/sidecardiff"
 	"github.com/spf13/cobra"
 	"golang.org/x/text/unicode/norm"
 	"gopkg.in/yaml.v3"
@@ -30,8 +28,9 @@ var sidecarCmd = &cobra.Command{
 
 Currently available:
   add-manual-directive   Append a user-authored directive to an existing sidecar
+  diff                   Structural-equivalence comparator for golden fixtures
 `,
-	Args:    cobra.NoArgs,
+	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return cmd.Help()
 	},
@@ -62,6 +61,29 @@ Exit codes:
 	RunE: runAddManualDirective,
 }
 
+// diffCmd — `edikt sidecar diff <fixture-dir>`
+//
+// Phase 6 of PLAN-v060-governance-accuracy. Pure Go, no LLM (ADR-030).
+// Exit codes:
+//   0 — equivalent
+//   1 — divergent
+//   2 — missing fixture file
+//   3 — flag/arg error
+var diffCmd = &cobra.Command{
+	Use:   "diff <fixture-dir>",
+	Short: "Structural-equivalence comparator for golden fixtures",
+	Long: `Compares expected.edikt.yaml and actual.edikt.yaml in <fixture-dir> using
+a three-tier structural-equivalence comparator. No LLM invocation (ADR-030).
+
+Exit codes:
+  0 — equivalent
+  1 — divergent with structured diagnostic on stdout
+  2 — missing fixture file (expected.edikt.yaml, actual.edikt.yaml, or fixture.yaml)
+  3 — wrong number of arguments`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSidecarDiff,
+}
+
 func init() {
 	addManualDirectiveCmd.Flags().StringVar(&addManualPath, "path", "", "path to <artifact>.edikt.yaml or <artifact>.md (required)")
 	addManualDirectiveCmd.Flags().StringVar(&addManualText, "text", "", "directive text to append (required, ≤500 chars, no leading/trailing whitespace)")
@@ -69,6 +91,7 @@ func init() {
 	_ = addManualDirectiveCmd.MarkFlagRequired("text")
 
 	sidecarCmd.AddCommand(addManualDirectiveCmd)
+	sidecarCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(sidecarCmd)
 }
 
@@ -245,4 +268,63 @@ func loadForMutation(path string) (*sidecar.Sidecar, error) {
 		return nil, fmt.Errorf("validate %s: %w", path, err)
 	}
 	return &sc, nil
+}
+
+// runSidecarDiff implements `edikt sidecar diff <fixture-dir>`.
+//
+// INV-006: resolves fixture-dir to absolute, refuses traversal, refuses
+// paths outside test/fixtures/. Validates that sidecar files inside the dir
+// don't escape via symlinks (filepath.EvalSymlinks re-checked for prefix).
+func runSidecarDiff(cmd *cobra.Command, args []string) error {
+	rawDir := args[0]
+
+	// ── INV-006: resolve and validate fixture-dir ─────────────────────────────
+	absDir, err := filepath.Abs(rawDir)
+	if err != nil {
+		return &exitCodeError{code: 3, msg: fmt.Sprintf("error: cannot resolve fixture dir: %v", err)}
+	}
+	cleanDir := filepath.Clean(absDir)
+	if strings.Contains(cleanDir, "..") {
+		return &exitCodeError{code: 3, msg: "error: path traversal not allowed"}
+	}
+
+	// Resolve symlinks on the dir itself.
+	realDir, err := filepath.EvalSymlinks(cleanDir)
+	if err != nil {
+		return &exitCodeError{code: 2, msg: fmt.Sprintf("error: fixture dir not found: %s", cleanDir)}
+	}
+
+	// Enforce that fixture files inside the dir don't escape via symlinks.
+	for _, name := range []string{"expected.edikt.yaml", "actual.edikt.yaml", "fixture.yaml"} {
+		fpath := filepath.Join(realDir, name)
+		if _, statErr := os.Lstat(fpath); os.IsNotExist(statErr) {
+			return &exitCodeError{code: 2, msg: fmt.Sprintf("error: missing fixture file: %s", fpath)}
+		}
+		realF, evalErr := filepath.EvalSymlinks(fpath)
+		if evalErr != nil {
+			return &exitCodeError{code: 2, msg: fmt.Sprintf("error: cannot resolve %s: %v", name, evalErr)}
+		}
+		if !strings.HasPrefix(realF, realDir) {
+			return &exitCodeError{code: 3, msg: fmt.Sprintf("error: %s escapes fixture dir via symlink", name)}
+		}
+	}
+
+	// ── Load fixture.yaml ─────────────────────────────────────────────────────
+	cfg, err := sidecardiff.LoadFixtureConfig(realDir)
+	if err != nil {
+		return &exitCodeError{code: 2, msg: fmt.Sprintf("error: load fixture.yaml: %v", err)}
+	}
+
+	// ── Run comparator ────────────────────────────────────────────────────────
+	result, err := sidecardiff.Diff(realDir, cfg)
+	if err != nil {
+		return &exitCodeError{code: 2, msg: fmt.Sprintf("error: diff: %v", err)}
+	}
+
+	fmt.Fprint(os.Stdout, sidecardiff.FormatResult(result))
+
+	if !result.Pass {
+		return &exitCodeError{code: 1, msg: ""}
+	}
+	return nil
 }

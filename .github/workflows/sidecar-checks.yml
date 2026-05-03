@@ -163,19 +163,34 @@ jobs:
         # must remain LLM-free. Checks non-comment non-test source lines only.
         # Test files may reference 'claude' as fixture strings when asserting
         # ADR-030 compliance — those are filtered by no-llm-in-tier-2.sh already.
+        # Phase 6 extends the same gate to sidecardiff and the diff portion of
+        # cmd/sidecar.go — comparator stays pure-Go per ADR-030.
         run: |
           hits=$(grep -rn 'claude' \
                    tools/edikt/cmd/migrate_sidecars.go \
                    tools/edikt/cmd/migrate_sidecars_strict.go \
+                   tools/edikt/cmd/sidecar.go \
+                   tools/edikt/internal/sidecardiff/ \
                    2>/dev/null \
                  | awk -F: 'NF>=3 { line=$3; for(i=4;i<=NF;i++) line=line":"$i; gsub(/^[ \t]+/,"",line); if (substr(line,1,2)!="//") print }' \
                  || true)
           if [ -n "$hits" ]; then
-            echo "::error::migrate_sidecars production source contains 'claude' reference — violates ADR-030"
+            echo "::error::migrate_sidecars / sidecardiff production source contains 'claude' reference — violates ADR-030"
             echo "$hits"
             exit 1
           fi
-          echo "OK: no 'claude' invocation in migrate_sidecars production source"
+          echo "OK: no 'claude' invocation in migrate_sidecars / sidecardiff production source"
+
+      - name: Sidecar fixture comparator (Phase 6)
+        # Run the deterministic structural-equivalence comparator against
+        # the committed adr-001 fixture. Uses actual.edikt.yaml as the
+        # candidate (initially seeded from expected.edikt.yaml — replaced
+        # with real extractor output via `make regen-fixtures` opt-in).
+        # Never invokes claude: pure Go YAML load + three-tier diff.
+        run: |
+          cd tools/edikt
+          go build -o /tmp/edikt-bin .
+          /tmp/edikt-bin sidecar diff ../../test/fixtures/sidecar-extractor/adr-001
 
   # ─── Canonical YAML round-trip ──────────────────────────────────────────────
   canonical-yaml-roundtrip:
