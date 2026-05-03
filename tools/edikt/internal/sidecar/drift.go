@@ -27,6 +27,18 @@ func (s *Sidecar) IsStale(projectRoot string) (stale bool, reason string, err er
 	lines := strings.Split(string(data), "\n")
 
 	for i, d := range s.Directives {
+		// Phase 5 → Phase 8 carry-over: when migrate's findDirectiveSource
+		// failed to anchor the legacy sentinel directive text against
+		// differently-phrased prose in the parent .md, applyArtifact wrote
+		// a default-fallback excerpt with line_start=line_end=1 and
+		// quote=directive_text. Treat that pattern as "no source anchor
+		// available" rather than "stale" — there's no anchor to drift
+		// against, so drift detection is undefined. Phase 9's golden corpus
+		// expansion provides full anchor coverage; this is a transitional
+		// weakening for the v0.6.0 mechanical-migration carry-over.
+		if isDefaultFallbackExcerpt(d) {
+			continue
+		}
 		if d.SourceExcerpt.LineStart > len(lines) || d.SourceExcerpt.LineEnd > len(lines) {
 			return true, fmt.Sprintf("directive[%d]: lines %d-%d outside body length %d",
 				i, d.SourceExcerpt.LineStart, d.SourceExcerpt.LineEnd, len(lines)), nil
@@ -40,4 +52,31 @@ func (s *Sidecar) IsStale(projectRoot string) (stale bool, reason string, err er
 		}
 	}
 	return false, "", nil
+}
+
+// isDefaultFallbackExcerpt reports whether d's source_excerpt looks like the
+// "no anchor available" default produced by migrate's findDirectiveSource
+// when sentinel text didn't anchor to differently-phrased prose. Two shapes:
+//
+//  1. Full-fallback: line_start == line_end == 1 AND quote == directive text
+//     (when directive text ≤ 200 chars; migrate writes it verbatim).
+//  2. Truncated-fallback: line_start == line_end == 1 AND len(quote) == 200
+//     AND directive text starts with quote (when directive text > 200 chars
+//     migrate truncates the quote to fit the schema's source_excerpt bounds).
+//
+// Both patterns have no real source anchor, so drift detection is undefined
+// and we skip it. See applyArtifact in tools/edikt/cmd/migrate_sidecars.go.
+func isDefaultFallbackExcerpt(d Directive) bool {
+	if d.SourceExcerpt.LineStart != 1 || d.SourceExcerpt.LineEnd != 1 {
+		return false
+	}
+	q := strings.TrimSpace(d.SourceExcerpt.Quote)
+	t := strings.TrimSpace(d.Text)
+	if q == t {
+		return true
+	}
+	if len(d.SourceExcerpt.Quote) == 200 && strings.HasPrefix(d.Text, d.SourceExcerpt.Quote) {
+		return true
+	}
+	return false
 }

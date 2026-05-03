@@ -50,17 +50,17 @@ func TestCompileGolden(t *testing.T) {
 	copyDir(t, filepath.Join(repoRoot, ".edikt"), filepath.Join(outDir, ".edikt"))
 	copyDir(t, filepath.Join(repoRoot, "docs/architecture"), filepath.Join(outDir, "docs/architecture"))
 
-	// Run compile against the scratch project. --legacy is required while
-	// the dogfood project is pre-migration (Phase 1 / Phase 8 of
-	// PLAN-sidecar-review-fixes); drop the flag once `migrate sidecars
-	// --apply` runs on the dogfood and the golden output is regenerated
-	// from the two-phase path.
-	buf, err := runGovCmd(t, "gov", "compile", "--legacy", outDir)
+	// Run compile against the scratch project. The dogfood project has been
+	// migrated to sidecars (PLAN-v060-governance-accuracy phase 5 Half B), so
+	// the two-phase sidecar-aware path is the right one. --legacy was retired
+	// in favour of two-phase compile + supersession recognition + IsStale
+	// default-fallback skip (drift.go).
+	buf, err := runGovCmd(t, "gov", "compile", outDir)
 	if err != nil {
 		if isExitCode(err, 1) {
-			t.Fatalf("gov compile --legacy returned errors:\n%s", buf)
+			t.Fatalf("gov compile returned errors:\n%s", buf)
 		}
-		t.Fatalf("gov compile --legacy failed: %v\n%s", err, buf)
+		t.Fatalf("gov compile failed: %v\n%s", err, buf)
 	}
 
 	// The Go binary writes to <outDir>/.claude/rules/. Compare to repo golden.

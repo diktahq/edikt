@@ -80,3 +80,43 @@ func TestIsStale_LineRangeOutOfBoundsReturnsTrue(t *testing.T) {
 		t.Fatal("expected stale when line range exceeds body length")
 	}
 }
+
+// TestSidecar_IsStale_DefaultFallbackSkipped pins Phase 8 strategy A:
+// when migrate's findDirectiveSource defaults to line_start=line_end=1
+// with quote=directive_text (no source anchor), IsStale must NOT flag it.
+func TestSidecar_IsStale_DefaultFallbackSkipped(t *testing.T) {
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "docs", "architecture", "decisions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	parentPath := filepath.Join(dir, "ADR-099-test.md")
+	// Parent body has totally different prose — the default-fallback
+	// quote would NOT match. Without the skip, this test would hit the
+	// "quote not found" branch.
+	if err := os.WriteFile(parentPath, []byte("# Title\n\nUnrelated parent prose.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sc := &Sidecar{
+		SchemaVersion: 1,
+		Topic:         "test",
+		Path:          "docs/architecture/decisions/ADR-099-test.md",
+		Directives: []Directive{
+			{
+				Text: "Some legacy sentinel directive text.",
+				SourceExcerpt: SourceExcerpt{
+					LineStart: 1,
+					LineEnd:   1,
+					Quote:     "Some legacy sentinel directive text.",
+				},
+			},
+		},
+	}
+	stale, reason, err := sc.IsStale(tmp)
+	if err != nil {
+		t.Fatalf("IsStale: %v", err)
+	}
+	if stale {
+		t.Fatalf("expected default-fallback excerpt to be skipped, got stale: %s", reason)
+	}
+}
