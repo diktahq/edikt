@@ -165,21 +165,24 @@ jobs:
         # ADR-030 compliance — those are filtered by no-llm-in-tier-2.sh already.
         # Phase 6 extends the same gate to sidecardiff and the diff portion of
         # cmd/sidecar.go — comparator stays pure-Go per ADR-030.
+        # Phase 10 extends the same gate to the benchmark package.
         run: |
           hits=$(grep -rn 'claude' \
                    tools/edikt/cmd/migrate_sidecars.go \
                    tools/edikt/cmd/migrate_sidecars_strict.go \
                    tools/edikt/cmd/sidecar.go \
                    tools/edikt/internal/sidecardiff/ \
+                   tools/edikt/internal/benchmark/ \
                    2>/dev/null \
                  | awk -F: 'NF>=3 { line=$3; for(i=4;i<=NF;i++) line=line":"$i; gsub(/^[ \t]+/,"",line); if (substr(line,1,2)!="//") print }' \
+                 | grep -v '_test\.go:' \
                  || true)
           if [ -n "$hits" ]; then
-            echo "::error::migrate_sidecars / sidecardiff production source contains 'claude' reference — violates ADR-030"
+            echo "::error::migrate_sidecars / sidecardiff / benchmark production source contains 'claude' reference — violates ADR-030"
             echo "$hits"
             exit 1
           fi
-          echo "OK: no 'claude' invocation in migrate_sidecars / sidecardiff production source"
+          echo "OK: no 'claude' invocation in migrate_sidecars / sidecardiff / benchmark production source"
 
       - name: Sidecar fixture comparator (all)
         # Run the deterministic structural-equivalence comparator against
@@ -221,3 +224,56 @@ jobs:
           go test -count=1 \
             -run 'TestYAMLCanonical|TestHash_|TestSchema_|TestMarshal_' \
             ./internal/sidecar/...
+
+  # ─── Benchmark pure-Go unit tests (Phase 10) ─────────────────────────────
+  benchmark-unit:
+    name: Benchmark package unit tests (pure-Go, no LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Run benchmark package unit tests
+        # Pure-Go deterministic tests: subset selection, attack generation,
+        # verdict aggregation, redaction. No LLM involved (ADR-030).
+        run: |
+          cd tools/edikt
+          go test -count=1 \
+            -run 'TestBenchmark|TestParseOptions|TestCorpusPassRate' \
+            ./internal/benchmark/...
+
+  # ─── Adversarial benchmark subset (Phase 10, opt-in) ────────────────────
+  adversarial-benchmark-subset:
+    name: Adversarial benchmark subset (~$0.50/PR, opt-in)
+    # Cost: ~$0.50 per PR (5 attacks × 3 reps × ~$0.03/call).
+    # This job is gated behind the ANTHROPIC_API_KEY_BENCHMARK secret.
+    # If the secret is absent the step exits 0 with a warning — the
+    # release workflow (benchmark-full.yml) is the hard gate.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install claude CLI
+        run: |
+          if command -v claude &>/dev/null; then
+            echo "claude already installed: $(claude --version 2>/dev/null || true)"
+          else
+            curl -fsSL https://claude.ai/install.sh | bash
+          fi
+
+      - name: Adversarial benchmark subset
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_BENCHMARK }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY_BENCHMARK secret not set; skipping benchmark subset (release workflow is the gate)"
+            exit 0
+          fi
+          claude /edikt:gov:benchmark --mode rejected-options --subset 5 --fixture test/fixtures/sidecar-extractor/adr-001 || exit 1

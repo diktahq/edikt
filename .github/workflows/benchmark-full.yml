@@ -1,0 +1,69 @@
+name: Benchmark Full Corpus
+
+# Phase 10 of PLAN-v060-governance-accuracy: adversarial benchmark against
+# the full rejected-options corpus, triggered on every release tag and on
+# manual workflow_dispatch.
+#
+# Cost: ~$36 per release (≈24 ADRs × 5 rejected options × 3 reps × $0.10/call).
+#
+# Pass threshold: ≥90% of attacks must return a verdict in {BLOCKED, REVISE}
+# at ≥2/3 reps. Below 90% → benchmark exits non-zero, blocking the release.
+#
+# The ANTHROPIC_API_KEY_BENCHMARK secret must be set in the repo's Settings →
+# Secrets → Actions for this workflow to do anything. Without it, the
+# benchmark step exits 0 with a warning (safe-skip).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-full-${{ github.ref }}
+  cancel-in-progress: false   # Never cancel a running benchmark mid-release.
+
+jobs:
+  benchmark:
+    name: Full corpus adversarial benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_BENCHMARK }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Build edikt binary
+        run: |
+          cd tools/edikt
+          go build -o /usr/local/bin/edikt .
+          edikt version || true
+
+      - name: Install claude CLI
+        run: |
+          if command -v claude &>/dev/null; then
+            echo "claude already installed: $(claude --version 2>/dev/null || true)"
+          else
+            curl -fsSL https://claude.ai/install.sh | bash
+          fi
+
+      - name: Run full benchmark
+        # Cost: ~$36 per release.
+        # Exit 1 if corpus pass rate < 90% — blocks the release workflow
+        # from proceeding to tap bump and auto-merge.
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::warning::ANTHROPIC_API_KEY_BENCHMARK secret not set; skipping full benchmark"
+            exit 0
+          fi
+          claude /edikt:gov:benchmark --mode rejected-options --corpus full || exit 1
