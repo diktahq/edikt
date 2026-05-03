@@ -1,0 +1,91 @@
+schema_version: 1
+topic: compile
+path: docs/architecture/decisions/ADR-032-prohibitions-schema-lock.md
+signals:
+  - prohibitions array
+  - sidecar schema
+  - additionalproperties false
+  - knownfields
+  - schema position
+  - managed region
+  - phase 6 comparator
+  - phase 8 render
+  - phase 10 benchmark
+  - sidecar.go
+  - sidecar diff
+  - edikt.prohibitions
+paths:
+  - templates/schemas/**/*.json
+  - tools/edikt/internal/sidecar/**/*.go
+  - tools/edikt/internal/sidecardiff/**/*.go
+  - tools/edikt/internal/phaseb/**/*.go
+  - tools/edikt/internal/benchmark/**/*.go
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "`prohibitions[]` MUST remain a separate top-level field in the v1.x sidecar schema. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 33
+      line_end: 33
+      quote: "`prohibitions[]` MUST remain a separate top-level field in the v1.x sidecar schema. The schema position MUST NOT change before a v2.0 schema version bump."
+  - text: "The schema position MUST NOT change before a v2.0 schema version bump. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 33
+      line_end: 33
+      quote: "`prohibitions[]` MUST remain a separate top-level field in the v1.x sidecar schema. The schema position MUST NOT change before a v2.0 schema version bump."
+  - text: "The v0.7.0 release MAY reconsider this decision in a new ADR amending ADR-032, BUT only with explicit evidence: either (a) compile UX feedback indicating the separation hurts authorial flow, or (b) adversarial benchmark drift data showing folded-in prohibitions perform measurably better at the harness layer. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 35
+      line_end: 35
+      quote: "The v0.7.0 release MAY reconsider this decision in a new ADR amending ADR-032, BUT only with explicit evidence: either (a) compile UX feedback indicating the separation hurts authorial flow, or (b) adversarial benchmark drift data showing folded-in prohibitions perform measurably better at the harness layer."
+  - text: "`prohibitions[]` MUST stay at the top level of the sidecar schema. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 91
+      line_end: 91
+      quote: "`prohibitions[]` MUST stay at the top level of the sidecar schema. NEVER fold it into `directives[]`, attach it as a child of a directive, or move it to a free-form annotation field through any v1.x release. Schema position changes require a new ADR amending ADR-032."
+  - text: "NEVER fold `prohibitions[]` into `directives[]`, attach it as a child of a directive, or move it to a free-form annotation field through any v1.x release. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 91
+      line_end: 91
+      quote: "`prohibitions[]` MUST stay at the top level of the sidecar schema. NEVER fold it into `directives[]`, attach it as a child of a directive, or move it to a free-form annotation field through any v1.x release. Schema position changes require a new ADR amending ADR-032."
+  - text: "Schema position changes MUST require a new ADR amending ADR-032. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 91
+      line_end: 91
+      quote: "`prohibitions[]` MUST stay at the top level of the sidecar schema. NEVER fold it into `directives[]`, attach it as a child of a directive, or move it to a free-form annotation field through any v1.x release. Schema position changes require a new ADR amending ADR-032."
+  - text: "NEVER amend ADR-032 without compile UX feedback or benchmark drift data as evidence. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 95
+      line_end: 95
+      quote: "The v0.7.0 reconsideration path requires evidence: compile UX feedback OR benchmark drift data. NEVER amend ADR-032 without one of those two evidence types."
+prohibitions:
+  - text: "MUST NOT fold prohibitions into `directives[]` with a `kind` discriminator — `len()` no longer answers 'how many prohibitions' and the INV-005 byte-range guard cannot cleanly carve three managed regions without ad-hoc per-entry markers. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 65
+      line_end: 65
+      quote: "- Cons: every consumer (comparator, render, benchmark, doctor) needs filter logic instead of direct field access; `len()` no longer answers \"how many prohibitions\"; INV-005 byte-range guard cannot cleanly carve the rendered output into three managed regions without ad-hoc per-entry markers; mechanical regression detection becomes a per-tuple analysis instead of a count comparison."
+    derived_from: rejected_option_b
+  - text: "MUST NOT attach prohibitions as a child `prohibits[]` array on a parent directive — prohibitions are synthesised from rejected `## Considered Options`, not from chosen directives, so there is no parent directive to attach them to. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 72
+      line_end: 72
+      quote: "- Cons: prohibitions in v0.6.0 are synthesised from rejected `## Considered Options`, not from chosen directives — there's no parent directive to attach them to. The shape would require inventing a synthetic parent or duplicating provenance metadata."
+    derived_from: rejected_option_c
+  - text: "MUST NOT place prohibitions in a free-form annotation field — doing so defeats `additionalProperties: false` strictness, `KnownFields(true)` decoder safety, and every mechanical check. (ref: ADR-032)"
+    source_excerpt:
+      line_start: 79
+      line_end: 79
+      quote: "- Cons: defeats `additionalProperties: false` strictness; defeats `KnownFields(true)` decoder safety; defeats every mechanical check."
+    derived_from: rejected_option_d
+reminders:
+  - "Before modifying the sidecar schema → verify `prohibitions[]` remains a separate top-level array in `templates/schemas/sidecar.v1.schema.json` (ref: ADR-032)"
+  - "Before amending ADR-032 → verify compile UX feedback or benchmark drift data exists as explicit evidence (ref: ADR-032)"
+  - "Before moving prohibitions inside `directives[]` → stop and create a new ADR amending ADR-032 instead (ref: ADR-032)"
+verification:
+  - "[ ] `templates/schemas/sidecar.v1.schema.json` declares `prohibitions[]` as an optional top-level array of objects (ref: ADR-032)"
+  - "[ ] `tools/edikt/internal/sidecar/sidecar.go` exposes `Prohibitions []Prohibition` as a top-level struct field (ref: ADR-032)"
+  - "[ ] `tools/edikt/internal/sidecardiff/sidecardiff.go` references `sc.Prohibitions` directly without filter logic (ref: ADR-032)"
+  - "[ ] `tools/edikt/internal/phaseb/merge.go` emits a separate `[edikt:prohibitions:start/end]` managed region (ref: ADR-032)"
+  - "[ ] `tools/edikt/internal/benchmark/benchmark.go` walks `sc.Prohibitions` to generate per-rejection attack entries (ref: ADR-032)"

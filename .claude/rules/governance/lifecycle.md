@@ -9,7 +9,7 @@ _fingerprint: "911baaaeef9904115d537983038dd36abc645e8996c6b423ec717efaa0abf9ac"
 <!-- topic: lifecycle -->
 <!-- sources: ADR-024, INV-002 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Lifecycle
 

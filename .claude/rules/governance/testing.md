@@ -9,7 +9,7 @@ _fingerprint: "48e4fc73edb55f607ce3ecd01d339922ae8952723cb5964f4f2e0bb77771d222"
 <!-- topic: testing -->
 <!-- sources: ADR-011, INV-007 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Testing
 

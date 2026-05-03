@@ -8,7 +8,7 @@ _fingerprint: "81f1e5fb8492192b9dc8a60abac3dc3873e8c4598145aebf34cbd07495acbdd0"
 <!-- topic: extensibility -->
 <!-- sources: ADR-005 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Extensibility
 

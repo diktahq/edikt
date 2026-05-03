@@ -14,7 +14,7 @@ _fingerprint: "e94dfc1f7ff2463eaf8c51560e6b6a85554618f4111031def4328f0e3c696be9"
 <!-- topic: hooks -->
 <!-- sources: ADR-003, ADR-006, ADR-014, ADR-017, ADR-019, ADR-026, INV-003 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Hooks
 

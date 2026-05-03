@@ -6,6 +6,41 @@ Eliminates the v0.4.3 → v0.6.0 governance extraction regressions before
 shipping v0.6.0 final. Phase 1 ships the schema groundwork; remaining
 phases land incrementally.
 
+### Quality lock (Phase 11)
+
+- **`bin/edikt gov lossless-check`** — new tier-2 cobra subcommand. Walks
+  `paths.decisions` + `paths.invariants`, loads each sidecar, finds the
+  matching `.md` snapshot under `test/fixtures/sidecar-baseline-v043/`,
+  and asserts that every (modality, ref_id, normalised noun-phrase)
+  tuple from the legacy sentinel block is covered by the sidecar's
+  `directives[]` + `prohibitions[]` + `manual_directives`. Pure Go, no
+  LLM (ADR-030). Exit codes: 0 clean, 1 any loss, 2 missing baseline,
+  3 argv error. Writes JSON report to `.edikt/state/lossless-report.json`.
+- **`tools/edikt/internal/lossless/`** — new package implementing
+  `CheckLossless(legacyMarkdown, sidecar) []Loss`. Levenshtein-based
+  noun-phrase comparator (ratio ≤ 0.10), modality-class folding (MUST NOT
+  / NEVER / DO NOT collapse to PROHIBITION; MUST / ALWAYS to MANDATE),
+  ref-id case-insensitive equality. NFKC + article-strip normalisation
+  for v0.4.3 → v0.6.0 phrasing tolerance. 10 unit tests.
+- **`docs/internal/v060-quality-report.md`** — Phase 11 quality bar
+  output: per-artifact lossless pass/fail table (16 ADR pass, 8 INV
+  fail with documented intentional drifts from Phase 2 Rule B verb-
+  normalisation), directive count vs v0.4.3 (+128), prohibition count,
+  path coverage, modality drift count, adversarial benchmark
+  cadence/cost notes, v0.7.0 follow-up candidates.
+- **ADR-032** at `docs/architecture/decisions/ADR-032-prohibitions-
+  schema-lock.md` (status Accepted) — locks `prohibitions[]` as a
+  separate top-level sidecar field through v1.x. The plan spec named
+  the schema-lock ADR as ADR-031, but Phase 7 already shipped ADR-031
+  (the verb-list amendment), so the schema lock takes the next number.
+  Rationale covers the three subsystems that depend on the placement
+  (Phase 6 comparator, Phase 8 render, Phase 10 benchmark). v0.7.0
+  reconsideration path requires explicit evidence (compile UX feedback
+  OR benchmark drift data).
+- **CI grep gate extended** in `.github/workflows/sidecar-checks.yml`
+  to cover `tools/edikt/internal/lossless/` — comparator stays LLM-free
+  per ADR-030.
+
 ### Schema (Phase 1)
 
 - **sidecar v1.1**: optional `paths` (file-glob array), `scope`

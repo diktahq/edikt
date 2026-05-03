@@ -12,7 +12,7 @@ _fingerprint: "6f1fbb5a71548b02d16e5c1767735b698ab9506d09ac9e2588944c6a4ea2e9e0"
 <!-- topic: architecture -->
 <!-- sources: ADR-001, ADR-015, ADR-029, ADR-031, INV-001 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Architecture
 

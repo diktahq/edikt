@@ -13,7 +13,7 @@ _fingerprint: "a1f1615eb02bb1e70bba2e383fea5d425865b6a9b6118b9191dd65f862e90bb8"
 <!-- topic: agent-rules -->
 <!-- sources: ADR-004, ADR-010, ADR-012, ADR-018, ADR-023, ADR-025 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Agent-Rules
 

@@ -173,6 +173,8 @@ jobs:
                    tools/edikt/cmd/sidecar.go \
                    tools/edikt/internal/sidecardiff/ \
                    tools/edikt/internal/benchmark/ \
+                   tools/edikt/internal/lossless/ \
+                   tools/edikt/cmd/gov/losslesscheck.go \
                    2>/dev/null \
                  | awk -F: 'NF>=3 { line=$3; for(i=4;i<=NF;i++) line=line":"$i; gsub(/^[ \t]+/,"",line); if (substr(line,1,2)!="//") print }' \
                  | grep -v '_test\.go:' \

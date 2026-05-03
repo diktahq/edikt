@@ -10,7 +10,7 @@ _fingerprint: "f9ff10ce5fd1244042c4afa392b216b5a93f54a9b415d1aab1bf13bab6f11fd3"
 <!-- topic: release -->
 <!-- sources: ADR-013, ADR-016, INV-008 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:41:13Z -->
+<!-- compiled_at: 2026-05-03T21:59:19Z -->
 
 # Release
 
