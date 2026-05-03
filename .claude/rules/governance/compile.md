@@ -11,24 +11,36 @@ _fingerprint: "f1b9f0ec6147132161e861526da5c3fa18eb0bec422554591120a0dcc70577cd"
 <!-- topic: compile -->
 <!-- sources: ADR-007, ADR-027, ADR-028, INV-005 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Compile
 
+[edikt:directives:start]: #
+- Bump `COMPILE_SCHEMA_VERSION` in `commands/gov/compile.md` ONLY when the output structure changes in a way that older tooling cannot read. Bug fixes, prose changes, and directive updates do NOT bump the schema. (ref: ADR-007)
 - Generated governance.md MUST have `compile_schema_version` in YAML frontmatter, set to the integer constant declared in `commands/gov/compile.md`. NEVER stamp edikt marketing version into this field. (ref: ADR-007)
 - `/edikt:doctor` MUST treat missing `compile_schema_version` as schema version 1 (legacy). If the file's schema version is less than the current constant, recommend `/edikt:gov:compile` to regenerate. (ref: ADR-007)
-- Bump `COMPILE_SCHEMA_VERSION` in `commands/gov/compile.md` ONLY when the output structure changes in a way that older tooling cannot read. Bug fixes, prose changes, and directive updates do NOT bump the schema. (ref: ADR-007)
 - `compiled_by` and `compiled_at` MUST remain in HTML comments (not YAML frontmatter). They are human diagnostics, not programmatic contracts. Never enforce equality on them in tests or in doctor/upgrade logic. (ref: ADR-007)
-- edikt MUST NOT write to any ADR, invariant, or guideline `.md` file. Generated directive metadata MUST live in a co-located `<name>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.json`. (ref: ADR-027)
+- INV-005's managed-region guard NARROWS in v0.6.0 to `CLAUDE.md` and `settings.json` only. Governance artifacts (`.md` files in decisions/, invariants/, guidelines/) are NEVER managed regions because edikt does not write to them. (ref: ADR-027, INV-005)
+- Per-artifact `:compile` commands MUST regenerate the sidecar in a fresh subagent context per artifact. NEVER pipe multiple artifacts through one parent session. (ref: ADR-027)
 - The sidecar schema MUST NOT persist `source_hash`, `agent_prompt_version`, or `directives_hash` at the root. Hashes are recomputed on read at compile time. (ref: ADR-027)
 - `/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` MUST generate the `(parent.md, parent.edikt.yaml)` pair atomically by dispatching extraction to a forked subagent (`context: fork`) with a locked extraction prompt. (ref: ADR-027)
-- Per-artifact `:compile` commands MUST regenerate the sidecar in a fresh subagent context per artifact. NEVER pipe multiple artifacts through one parent session. (ref: ADR-027)
+- edikt MUST NOT write to any ADR, invariant, or guideline `.md` file. Generated directive metadata MUST live in a co-located `<name>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.json`. (ref: ADR-027)
 - v0.6.0 `gov:compile` MUST read sidecars only. Pre-migration projects MUST exit non-zero with a single-line actionable error directing the user to `edikt migrate sidecars`. NEVER fall back to in-body sentinel parsing. (ref: ADR-027)
-- INV-005's managed-region guard NARROWS in v0.6.0 to `CLAUDE.md` and `settings.json` only. Governance artifacts (`.md` files in decisions/, invariants/, guidelines/) are NEVER managed regions because edikt does not write to them. (ref: ADR-027, INV-005)
-- `gov:compile` MUST run as two phases. Phase A (resync) is conditional on stale sidecars and may invoke subagents at concurrency 8. Phase B (merge) is unconditional and MUST be a pure deterministic merge with no LLM calls and no Task/Agent tool dispatch. (ref: ADR-028)
-- `gov:compile --check` MUST exit 1 immediately when any sidecar is stale. `--check` MUST NOT dispatch any subagent. The actionable error MUST direct the user to `edikt gov compile` for resync. (ref: ADR-028)
-- Phase B's latency budget is `<5s` full regenerate, `<500ms` no-op, `<2s` --check on the 50-sidecar baseline corpus. The budget binds Phase B exclusively; Phase A has no SLO. (ref: ADR-028, ADR-020)
-- Phase B's purity MUST be enforced by a static-analysis test that verifies no `Agent` / `Task` / subprocess-spawning symbol is transitively reachable from the merge code path. (ref: ADR-028)
+- Concurrent compile invocations MUST serialize through a file lock at `.edikt/state/compile.lock`. `--no-wait` exits 1 instead of blocking. (ref: ADR-028)
 - Phase A MUST emit per-subagent progress on stderr (artifact name + completed/total + ETA from running p50). Silent multi-minute operation is forbidden. (ref: ADR-028)
 - Phase A subagent failures MUST be logged to `.edikt/state/compile-errors.log` with continue-on-error. Topic files MUST NOT be updated if any subagent failed; compile exits 1 with an aggregated report. (ref: ADR-028)
-- Concurrent compile invocations MUST serialize through a file lock at `.edikt/state/compile.lock`. `--no-wait` exits 1 instead of blocking. (ref: ADR-028)
+- Phase B's latency budget is `<5s` full regenerate, `<500ms` no-op, `<2s` --check on the 50-sidecar baseline corpus. The budget binds Phase B exclusively; Phase A has no SLO. (ref: ADR-028, ADR-020)
+- Phase B's purity MUST be enforced by a static-analysis test that verifies no `Agent` / `Task` / subprocess-spawning symbol is transitively reachable from the merge code path. (ref: ADR-028)
+- `gov:compile --check` MUST exit 1 immediately when any sidecar is stale. `--check` MUST NOT dispatch any subagent. The actionable error MUST direct the user to `edikt gov compile` for resync. (ref: ADR-028)
+- `gov:compile` MUST run as two phases. Phase A (resync) is conditional on stale sidecars and may invoke subagents at concurrency 8. Phase B (merge) is unconditional and MUST be a pure deterministic merge with no LLM calls and no Task/Agent tool dispatch. (ref: ADR-028)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # eb8adfa32afb7c035c87d9ad2b727db590eb55405582fa07ce5be9b4e50e17ed
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # d1674c1aa2f4ae7fc34cf204ceb23231e28fd1079e0e67b5feb3c15769f40b24
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

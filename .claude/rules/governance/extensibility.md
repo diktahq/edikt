@@ -8,10 +8,22 @@ _fingerprint: "81f1e5fb8492192b9dc8a60abac3dc3873e8c4598145aebf34cbd07495acbdd0"
 <!-- topic: extensibility -->
 <!-- sources: ADR-005 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Extensibility
 
-- Project templates in `.edikt/templates/` take precedence over edikt defaults. Lookup order: project override → edikt default. Report overrides in `/edikt:doctor`. (ref: ADR-005)
+[edikt:directives:start]: #
 - Agent customization: mark with `<!-- edikt:custom -->` or list in `agents.custom` in config. Upgrade MUST skip customized agents without prompting. (ref: ADR-005)
+- Project templates in `.edikt/templates/` take precedence over edikt defaults. Lookup order: project override → edikt default. Report overrides in `/edikt:doctor`. (ref: ADR-005)
 - Rule packs: override by placing a file at `.edikt/rules/{name}.md` without the `edikt:generated` marker, or extend via config. Upgrade MUST skip files without the marker. (ref: ADR-005)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # 1b026806a5a802789c11615e16bf2f57b0f671663ec4cd9f8aed32ddbc974f26
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # d1674c1aa2f4ae7fc34cf204ceb23231e28fd1079e0e67b5feb3c15769f40b24
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

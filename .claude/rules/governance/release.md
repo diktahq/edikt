@@ -10,15 +10,29 @@ _fingerprint: "f9ff10ce5fd1244042c4afa392b216b5a93f54a9b415d1aab1bf13bab6f11fd3"
 <!-- topic: release -->
 <!-- sources: ADR-013, ADR-016, INV-008 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Release
 
+[edikt:directives:start]: #
 - A single SHA256SUMS file MUST be shipped as a GitHub Release asset containing one line per tarball in the standard sha256sum format. (ref: ADR-013)
-- `bin/edikt install` MUST fetch `SHA256SUMS` alongside the payload tarball and verify the launcher tarball's hash before extracting. (ref: ADR-013)
 - Signing (GPG / Sigstore / cosign) MUST be deferred to a future ADR and MUST NOT be bundled with the checksum format release. (ref: ADR-013)
+- `bin/edikt install` MUST fetch `SHA256SUMS` alongside the payload tarball and verify the launcher tarball's hash before extracting. (ref: ADR-013)
+- If cosign is unavailable, the installer MUST abort with an actionable message unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, the post-install banner MUST include a loud warning. (ref: ADR-016)
+- Launcher URL composition MUST use `https://github.com/diktahq/edikt/releases/download/<tag>/edikt-payload-<tag>.tar.gz`. NEVER use `archive/refs/tags/<tag>.tar.gz`. (ref: ADR-016)
 - Release workflow MUST publish `edikt-payload-<tag>.tar.gz`, `SHA256SUMS`, and `SHA256SUMS.sig.bundle` as GitHub Release assets. NEVER use the auto-generated archive as the canonical artifact. (ref: ADR-016)
 - Release workflow MUST sign `SHA256SUMS` with Sigstore keyless (`cosign sign-blob --yes --bundle SHA256SUMS.sig.bundle SHA256SUMS`) using the workflow's GitHub OIDC identity. NEVER publish a redundant `.pem` or detached `.sig` — the bundle is self-contained. (ref: ADR-016)
 - `install.sh` and `bin/edikt install`/`upgrade` MUST verify `SHA256SUMS.sig.bundle` with `cosign verify-blob --bundle ... --certificate-identity-regexp '^https://github\.com/diktahq/edikt/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'` before extracting any artifact. (ref: ADR-016)
-- If cosign is unavailable, the installer MUST abort with an actionable message unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, the post-install banner MUST include a loud warning. (ref: ADR-016)
-- Launcher URL composition MUST use `https://github.com/diktahq/edikt/releases/download/<tag>/edikt-payload-<tag>.tar.gz`. NEVER use `archive/refs/tags/<tag>.tar.gz`. (ref: ADR-016)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # 0b5c68c7a5ba82afb1096684b4e5e414f9017896c2ac9539e06e77637af66356
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+- MUST NOT embed checksums inline in the GitHub Release body — not machine-readable and not suitable for automated pipeline consumption. (ref: ADR-013)
+- MUST NOT use per-file .sha256 sidecars (e.g. edikt-v<ver>.tar.gz.sha256) — verify_against_sidecar() would need to know the sidecar filename and release asset count grows linearly with artifact count. (ref: ADR-013)
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # 530c2479c8002f435155bdeadb38619a7a32492311066177b273459e6c76f86c
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

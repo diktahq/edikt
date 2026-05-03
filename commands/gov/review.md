@@ -55,6 +55,14 @@ CRITICAL: Every finding must cite the specific text that fails the check and pro
 
 5. Score each directive against the Quality Criteria in the Reference section. A directive can have multiple findings.
 
+5a. **Manual-directive provenance (Phase 8).** For each `manual_directives:` entry in every sidecar in scope, emit:
+
+```
+⚠ Manual directive (no source_excerpt anchor — verify still accurate): "{text}" (sidecar: {path})
+```
+
+Manual directives have no `source_excerpt` line range — they were authored directly via `bin/edikt sidecar add-manual-directive` and cannot be drift-checked against parent prose. Surface every entry once so the reviewer eyeballs each for staleness.
+
 5b. **Directive-quality sub-procedure (shared with `/edikt:gov:compile`).** For each document in scope, run the inline Python script from `commands/gov/_shared-directive-checks.md §Inline Script` once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
 
 ```json

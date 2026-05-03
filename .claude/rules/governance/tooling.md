@@ -11,28 +11,43 @@ _fingerprint: "1fef8c7235d48ce13ea61794fe3480938ba1aeaa18fd20e9f4bfa5b216f3785d"
 <!-- topic: tooling -->
 <!-- sources: ADR-020, ADR-021, ADR-022, ADR-030 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Tooling
 
+[edikt:directives:start]: #
+- Compile output MUST be byte-equal across runs for byte-equal input. Non-determinism (LLM drift, unsorted iteration, timestamp embedding in hashed content) is forbidden. CI MUST include a diff-equality test. (ref: ADR-020)
 - Deterministic transformations in `/edikt:gov:compile` (YAML parse, sentinel extraction, hash computation, three-list merge, topic grouping, template rendering, orphan detection) MUST run in `tools/edikt/` (tier-2 Python helper per ADR-015). NEVER keep them as LLM round-trips in `commands/gov/compile.md`. (ref: ADR-020)
 - LLM invocations from `/edikt:gov:compile` are restricted to: (a) generating sentinel blocks for new artifacts that lack one, (b) hand-edit conflict interviews (when `source_hash` matches but `directives_hash` does not), (c) composing contradiction-warning wording from a mechanically-detected contradiction list. No other LLM calls are permitted during compile. (ref: ADR-020)
-- Compile output MUST be byte-equal across runs for byte-equal input. Non-determinism (LLM drift, unsorted iteration, timestamp embedding in hashed content) is forbidden. CI MUST include a diff-equality test. (ref: ADR-020)
-- `/edikt:gov:compile --check` on 40 source documents MUST complete in under 2 seconds. Full regenerate on the same corpus MUST complete in under 5 seconds. No-op recompile (both hashes match) MUST exit in under 500 ms with zero LLM calls. (ref: ADR-020)
-- Tier-2 `gov-compile` install is opt-in via `edikt install gov-compile`. Users without the helper installed MUST continue to get a functional (if slow) compile via the legacy LLM path. (ref: ADR-020, ADR-015)
 - Sentinel blocks SHOULD carry a `topic:` field (optional in v0.6.0, required in v0.7.0). Missing `topic:` falls back to one-shot LLM grouping, which writes the resolved topic back into the sentinel so subsequent compiles are deterministic. (ref: ADR-020)
-- Tier-2 deterministic helpers under `tools/<name>/` MUST be Go modules producing single static binaries. Python, Node, Ruby, or other runtime-dependent languages are forbidden for this class of helper. (ref: ADR-021)
-- Tier-2 binaries MUST be cross-compiled in the release workflow for at least darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary's SHA-256 MUST appear in the cosign-signed `SHA256SUMS` per ADR-016. (ref: ADR-021, ADR-016)
-- `bin/edikt install <helper>` MUST download the platform-matching binary, verify the SHA-256 against cosign-verified `SHA256SUMS`, chmod +x, and symlink into `$EDIKT_ROOT/tools/<helper>`. NEVER install via `pipx`, `npm`, or other package managers. (ref: ADR-021, ADR-015)
+- Tier-2 `gov-compile` install is opt-in via `edikt install gov-compile`. Users without the helper installed MUST continue to get a functional (if slow) compile via the legacy LLM path. (ref: ADR-020, ADR-015)
+- `/edikt:gov:compile --check` on 40 source documents MUST complete in under 2 seconds. Full regenerate on the same corpus MUST complete in under 5 seconds. No-op recompile (both hashes match) MUST exit in under 500 ms with zero LLM calls. (ref: ADR-020)
 - The bootstrap installer `install.sh` and the launcher `bin/edikt` MUST remain POSIX shell. NEVER rewrite these in Go — install.sh runs before any binary exists and the launcher must work on any POSIX system without a build step. (ref: ADR-021, INV-001)
 - Tier-2 Go dependencies MUST be pinned via `go.mod` and `go.sum` at build time. This satisfies ADR-015's "tier-2 deps pinned" contract via Go's native resolution, not via `==` at install time. (ref: ADR-021, ADR-015)
-- The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)
-- Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)
+- Tier-2 binaries MUST be cross-compiled in the release workflow for at least darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary's SHA-256 MUST appear in the cosign-signed `SHA256SUMS` per ADR-016. (ref: ADR-021, ADR-016)
+- Tier-2 deterministic helpers under `tools/<name>/` MUST be Go modules producing single static binaries. Python, Node, Ruby, or other runtime-dependent languages are forbidden for this class of helper. (ref: ADR-021)
+- `bin/edikt install <helper>` MUST download the platform-matching binary, verify the SHA-256 against cosign-verified `SHA256SUMS`, chmod +x, and symlink into `$EDIKT_ROOT/tools/<helper>`. NEVER install via `pipx`, `npm`, or other package managers. (ref: ADR-021, ADR-015)
 - Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)
-- When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)
 - Phase 1 release tarballs contain BOTH `bin/edikt` (Go) and `bin/edikt-shell` (bash). `install.sh` places both. (ref: ADR-022)
+- Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)
+- The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)
+- When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)
+- CI MUST run tools/edikt/check/no-llm-in-tier-2.sh, which greps every non-test .go file under tools/edikt/ for exec.Command.*claude, exec.LookPath.*claude, and the literal string "claude", and fail on any unexempted match. (ref: ADR-030)
+- Every tier-2 source file MUST be held to the same os/exec, net/http, no-LLM-import discipline as Phase B — the no-LLM purity gate applies project-wide, not just to phaseb. (ref: ADR-030)
+- The locked extractor agent MUST remain a single templates/agents/sidecar-extractor.md artifact dispatched by tier-1 markdown via the host agent's subagent primitive, NEVER by the Go binary via exec.Command. (ref: ADR-030)
 - Tier-2 Go binaries MUST NOT spawn, invoke, or shell out to any LLM CLI. (ref: ADR-030)
 - When a tier-2 path needs an LLM round-trip, the tier-2 binary MUST: (1) perform mechanical work unaided, (2) write a partial sidecar with topic: needs-review for unrecoverable fields, (3) emit a machine-readable manifest of artifacts needing LLM resync on stderr or via --json, (4) exit cleanly. (ref: ADR-030)
-- The locked extractor agent MUST remain a single templates/agents/sidecar-extractor.md artifact dispatched by tier-1 markdown via the host agent's subagent primitive, NEVER by the Go binary via exec.Command. (ref: ADR-030)
-- Every tier-2 source file MUST be held to the same os/exec, net/http, no-LLM-import discipline as Phase B — the no-LLM purity gate applies project-wide, not just to phaseb. (ref: ADR-030)
-- CI MUST run tools/edikt/check/no-llm-in-tier-2.sh, which greps every non-test .go file under tools/edikt/ for exec.Command.*claude, exec.LookPath.*claude, and the literal string "claude", and fail on any unexempted match. (ref: ADR-030)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # 914f603e91399900a660711a4127bd6bdfeee40508f555d081d07d88c2004609
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+- MUST NOT add a generic agent-dispatch abstraction inside Go that pluggably calls Claude, Codex, or other LLMs — every additional agent integration would require a Go release. (ref: ADR-030)
+- MUST NOT keep LLM dispatch in Go with silent skip on missing-binary failure — silent degradation to topic: needs-review without user-facing remediation is the bug this ADR was created to eliminate. (ref: ADR-030)
+- MUST NOT make the LLM CLI configurable via EDIKT_LLM_BIN — this papers over the architectural smell and leaves the Go binary owning dispatch, a poor fit for IDE-native agents with no CLI surface. (ref: ADR-030)
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # cdf3e8ecf6c087d941cf72b88589f7b051ff84c3d1c8bb9b67767bf410333ddc
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

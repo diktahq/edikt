@@ -13,46 +13,58 @@ _fingerprint: "a1f1615eb02bb1e70bba2e383fea5d425865b6a9b6118b9191dd65f862e90bb8"
 <!-- topic: agent-rules -->
 <!-- sources: ADR-004, ADR-010, ADR-012, ADR-018, ADR-023, ADR-025 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Agent-Rules
 
-- Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)
+[edikt:directives:start]: #
 - Agents run in forked subagents (`context: fork`). They do not coordinate parallel execution — that is Claude Code's responsibility. (ref: ADR-004)
 - Domain signal detection is keyword-based. Over-routing is acceptable; under-routing is not. (ref: ADR-004)
+- Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)
+- Evaluator MUST NOT return PASS for criteria that require execution when execution was denied or unavailable. Return BLOCKED instead. (ref: ADR-010)
 - Evaluator default mode MUST be headless. `.edikt/config.yaml` ships with `evaluator.mode: headless`. (ref: ADR-010)
 - Evaluator templates MUST declare BLOCKED as a valid per-criterion and overall verdict. (ref: ADR-010)
-- Evaluator MUST NOT return PASS for criteria that require execution when execution was denied or unavailable. Return BLOCKED instead. (ref: ADR-010)
-- `commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`, and fall back to subagent only on headless failure with a visible warning banner. (ref: ADR-010)
+- Every evaluator failure mode MUST produce user-visible output with the reason and a one-line recovery command. Silent degradation is forbidden. (ref: ADR-010)
 - Progress tables in plan files MUST support a `blocked` state in addition to `pass`/`fail`/`evaluating`. A phase with BLOCKED criteria is NOT verified. (ref: ADR-010)
 - Subagent-mode evaluator MUST probe Bash availability before claiming verdicts on criteria that require execution. If Bash is denied, return BLOCKED with a recovery hint. (ref: ADR-010)
 - `/edikt:doctor` MUST probe the evaluator path: `claude` on PATH, headless probe success, template presence, explicit mode config. (ref: ADR-010)
-- Every evaluator failure mode MUST produce user-visible output with the reason and a one-line recovery command. Silent degradation is forbidden. (ref: ADR-010)
+- `commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`, and fall back to subagent only on headless failure with a visible warning banner. (ref: ADR-010)
 - Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, not pytest_sessionstart — collection-time gating lets the scope of collected tests determine whether auth is needed. (ref: ADR-012)
-- The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)
 - Tests in test/integration/regression/ MUST run without any claude authentication — they are pure Python reference implementations. The gate MUST NOT fire when only regression tests are collected. (ref: ADR-012)
+- The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)
 - The claude-agent-sdk spawns a subprocess claude CLI; ANTHROPIC_API_KEY is a CI/headless fallback, NOT the primary auth mechanism. Never document it as the only option. (ref: ADR-012)
 - When the auth gate fires, the error message MUST list all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1. Silent exits are forbidden. (ref: ADR-012)
 - Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-018)
 - The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-018)
-- Verdicts are persisted at `docs/product/plans/verdicts/<plan>/<phase>.json`. This directory is runtime state, not governance, and is exempt from INV-001's markdown/yaml rule. (ref: ADR-018)
 - Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true`. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-018)
-- `subagent-stop.sh` MUST read the SubagentStop hook input JSON from stdin and extract verdict data from the top-level `evaluator_output` field. (ref: ADR-023)
-- `subagent-stop.sh` MUST read `evaluator_output.agent` from the structured payload to determine the gate severity threshold. (ref: ADR-023)
-- Content-based keyword detection over free text MUST NOT be used as the primary domain resolution path — it is the deprecated legacy path as of v0.6.0. (ref: ADR-023)
-- When `evaluator_output.agent` is absent (legacy unstructured payload), the hook MUST log a warning to `events.jsonl` and fall back to `gates.default`. (ref: ADR-023)
+- Verdicts are persisted at `docs/product/plans/verdicts/<plan>/<phase>.json`. This directory is runtime state, not governance, and is exempt from INV-001's markdown/yaml rule. (ref: ADR-018)
 - All evaluator agent templates (`templates/agents/evaluator-*.md`) MUST produce a JSON object conforming to the structured evaluator-output shape. (ref: ADR-023)
-- The `evaluator_output.agent` field MUST be set to the agent's domain identifier (e.g., `"security"`, `"dba"`, `"sre"`, `"architect"`, `"performance"`, `"api"`). (ref: ADR-023)
+- Content-based keyword detection over free text MUST NOT be used as the primary domain resolution path — it is the deprecated legacy path as of v0.6.0. (ref: ADR-023)
 - Evaluator agents MUST NOT emit prose verdicts. (ref: ADR-023)
-- `templates/agents/evaluator-verdict.schema.json` MUST be the source of truth for the evaluator JSON structure; ADR-023 adds the `evaluator_output.agent` field requirement on top of it. (ref: ADR-023)
-- Severity ordering MUST be `critical(3) > warning(2) > info(1)`. (ref: ADR-023)
-- The gate MUST fire when `finding.severity_level >= threshold_level`. (ref: ADR-023)
-- When the gate fires, `subagent-stop.sh` MUST emit the structured BLOCKED message with agent name, severity, and threshold values. (ref: ADR-023)
-- The gate-fired message MUST be assembled inside the hook process using `python3 -c 'import json; print(json.dumps(...))'` with untrusted values as argv (INV-003, INV-004). (ref: ADR-023)
 - If the hook input does not contain the structured `evaluator_output` shape, the hook MAY log `{"event": "legacy_payload", "hook": "subagent-stop"}` to `events.jsonl`. (ref: ADR-023)
 - If the hook input does not contain the structured `evaluator_output` shape, the hook MAY warn to stderr: `warn: legacy evaluator payload; falling back to keyword detection`. (ref: ADR-023)
+- Severity ordering MUST be `critical(3) > warning(2) > info(1)`. (ref: ADR-023)
+- The `evaluator_output.agent` field MUST be set to the agent's domain identifier (e.g., `"security"`, `"dba"`, `"sre"`, `"architect"`, `"performance"`, `"api"`). (ref: ADR-023)
+- The gate MUST fire when `finding.severity_level >= threshold_level`. (ref: ADR-023)
+- The gate-fired message MUST be assembled inside the hook process using `python3 -c 'import json; print(json.dumps(...))'` with untrusted values as argv (INV-003, INV-004). (ref: ADR-023)
+- When `evaluator_output.agent` is absent (legacy unstructured payload), the hook MUST log a warning to `events.jsonl` and fall back to `gates.default`. (ref: ADR-023)
+- When the gate fires, `subagent-stop.sh` MUST emit the structured BLOCKED message with agent name, severity, and threshold values. (ref: ADR-023)
+- `subagent-stop.sh` MUST read `evaluator_output.agent` from the structured payload to determine the gate severity threshold. (ref: ADR-023)
+- `subagent-stop.sh` MUST read the SubagentStop hook input JSON from stdin and extract verdict data from the top-level `evaluator_output` field. (ref: ADR-023)
+- `templates/agents/evaluator-verdict.schema.json` MUST be the source of truth for the evaluator JSON structure; ADR-023 adds the `evaluator_output.agent` field requirement on top of it. (ref: ADR-023)
 - Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-025)
 - The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-025)
-- Verdicts are persisted at `<paths.plans>/verdicts/<plan>/<phase>.json`, where `<paths.plans>` is resolved from `.edikt/config.yaml`. NEVER hardcode a literal verdicts path. (ref: ADR-025)
 - Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true` under the resolved `<paths.plans>/verdicts/` path. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-025)
+- Verdicts are persisted at `<paths.plans>/verdicts/<plan>/<phase>.json`, where `<paths.plans>` is resolved from `.edikt/config.yaml`. NEVER hardcode a literal verdicts path. (ref: ADR-025)
 - `bin/edikt upgrade` MUST migrate any legacy `docs/product/plans/verdicts/` content to the resolved `<paths.plans>/verdicts/` location for projects whose `paths.plans` is no longer `docs/product/plans`. The migration MUST preserve filenames and contents byte-for-byte. (ref: ADR-025)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # b8ba23f12892e8ce417a81b0019dc5e2a598bff04f73396453854250c42da59c
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # d1674c1aa2f4ae7fc34cf204ceb23231e28fd1079e0e67b5feb3c15769f40b24
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

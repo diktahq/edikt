@@ -107,6 +107,41 @@ phases land incrementally.
   round-trips verbatim, idempotent re-apply on already-migrated
   artifacts.
 
+### Compile pipeline (Phase 8)
+
+- **Three managed regions per topic file**: every `.claude/rules/governance/<topic>.md` now carries
+  `[edikt:directives:start/end]`, `[edikt:prohibitions:start/end]`, and `[edikt:manual:start/end]`
+  sentinel blocks, each with a `[edikt:NAME:sha256]: # <hex>` anchor over the rendered region body.
+  Distinct anchor names per kind keep INV-005 byte-range overlap checks unambiguous when two regions
+  cohabit one file.
+- **`manual_directives` are first-class**: render interleaves them with extracted directives in the
+  `[edikt:directives:…]` region (sorted by ref tag, extracted before manual on equal tag, then text)
+  with an inline `*(manual)*` marker — no separate "Author overrides" subsection that would visually
+  demote them. Manual entries also appear verbatim inside the dedicated `[edikt:manual:…]` region so
+  downstream tooling can key on the manual surface independently. ADR-027 preservation contract
+  honoured: phase B reads `ManualDirectives` and never writes back to sidecars.
+- **`prohibitions[]` get their own region**: rendered as bullets under a `## Prohibitions` heading
+  inside the prohibitions sentinel block. The harness can elevate their priority without competing
+  with extracted directives. Phase 2's Rule C output now reaches the LLM surface end-to-end.
+- **INV-005 byte-range overlap guard**: the merge step refuses to write any topic body in which the
+  three managed regions overlap, contain duplicate start sentinels, or leave an unclosed region.
+  Failures emit `INV-005 violation: regions {A} and {B} overlap in {file}` and abort the compile.
+- **Bootstrap-write on first post-upgrade compile**: an existing topic file lacking one of the new
+  regions busts the fingerprint cache so Phase B re-renders with all three anchors seeded — empty
+  regions carry `sha256("")` so the bootstrap is deterministic.
+- **Determinism contract pinned**: byte-equal input produces byte-equal output across consecutive
+  Merge runs (`TestCompile_Determinism`, `TestCompile_DeterminismExtended`) — the cross-sidecar
+  comparator is permutation-stable.
+- **`gov:score` updated**: counts `manual_directives` in the directive total, applies a quality
+  penalty when an entry lacks a `(ref:)` tag, and reports a new "Prohibition Coverage" sub-score
+  (% of ADRs with ≥2 considered options that have ≥1 prohibition or MUST NOT manual entry).
+- **`gov:review` surfaces manual provenance**: emits `⚠ Manual directive (no source_excerpt anchor —
+  verify still accurate): "{text}"` per entry so reviewers eyeball each for staleness.
+- **`doctor` orphan-ref check**: every `manual_directives` entry parses for `(ref: ADR-NNN)`; the
+  resolved ADR file under `paths.decisions` is checked for existence. Failures emit
+  `ORPHAN: manual directive in {sidecar} cites ADR-NNN which does not exist.` Wired next to
+  `runRejectedOptionsCheck`. INV-006: `idvalidate.ArtifactID` runs before any filesystem lookup.
+
 ### Sidecar (Phase 7)
 
 - **`bin/edikt sidecar add-manual-directive --path <sidecar-path> --text "<text>"`**: appends a user-authored entry to `manual_directives[]` in an existing `<artifact>.edikt.yaml` without editing the parent `.md` (INV-002). Accepts both `.edikt.yaml` and `.md` paths (resolves to sibling sidecar). Auto-appends `(ref: ADR-NNN + manual)` when the text has no `(ref:` parenthetical. Rejects duplicates with exit 3. Runs `Sidecar.Validate()` post-append. Exit codes: 0 success, 1 validation error, 2 sidecar missing, 3 duplicate.

@@ -9,12 +9,27 @@ _fingerprint: "48e4fc73edb55f607ce3ecd01d339922ae8952723cb5964f4f2e0bb77771d222"
 <!-- topic: testing -->
 <!-- sources: ADR-011, INV-007 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Testing
 
+[edikt:directives:start]: #
+- Fixture pairs that cannot be characterized deterministically MUST be removed with a `_note` explaining why and a `target_phase` identifying when they will return. NEVER weaken the runner diff to tolerate nondeterministic output. (ref: ADR-011)
 - Hook fixture expected outputs MUST encode what hooks actually emit today, verified by running the hook against the payload. NEVER write expected outputs by hand against a desired future protocol. (ref: ADR-011)
+- Hook protocol migration (rewriting hooks to emit structured JSON) is v0.6.0 scope. NEVER rewrite hook behavior in a stability release. (ref: ADR-011)
 - The hook test gate MUST be opt-out (`EDIKT_SKIP_HOOK_TESTS=1`), not opt-in. Hook tests run by default. (ref: ADR-011)
 - `test/unit/hooks/_runner.sh` MUST NOT be modified to add CWD-staging or other hook-specific behavior. CWD-dependent extensions go in `_staged_runner.sh`. (ref: ADR-011)
-- Fixture pairs that cannot be characterized deterministically MUST be removed with a `_note` explaining why and a `target_phase` identifying when they will return. NEVER weaken the runner diff to tolerate nondeterministic output. (ref: ADR-011)
-- Hook protocol migration (rewriting hooks to emit structured JSON) is v0.6.0 scope. NEVER rewrite hook behavior in a stability release. (ref: ADR-011)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # 7eee552e97261d010b66fb8c2cbe1f29a5cf416e0ac5a82d20495a74d6e3849d
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+- MUST NOT delete the hook test suite — zero regression coverage on hook behavior leaves any future hook change silently breaking user-facing behavior. (ref: ADR-011)
+- MUST NOT rewrite hooks to emit structured JSON protocol during a stability release cycle — behavior risk is incompatible with a stability mandate. (ref: ADR-011)
+- MUST NOT silently migrate hooks that emit plaintext today to JSON without explicit user-visible behavior change notice. (ref: ADR-011)
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # f0197c2597f6a7eda4ed27300eff2ff9258648490f3bed8097ef7830ecaf1e60
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855

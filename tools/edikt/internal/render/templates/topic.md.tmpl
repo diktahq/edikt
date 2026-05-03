@@ -16,5 +16,21 @@ _fingerprint: "{{ .Fingerprint }}"
 
 # {{ title .Name }}
 
-{{ range .Rules }}- {{ .Text }}
-{{ end }}
+[edikt:directives:start]: #
+{{ range .DirectiveLines }}- {{ . }}
+{{ end -}}
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # {{ .DirectivesSHA }}
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+{{ range .ProhibitionLines }}- {{ . }}
+{{ end -}}
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # {{ .ProhibitionsSHA }}
+
+[edikt:manual:start]: #
+{{ range .ManualLines }}- {{ . }}
+{{ end -}}
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # {{ .ManualSHA }}

@@ -4,7 +4,9 @@ package render
 
 import (
 	"bytes"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -13,6 +15,25 @@ import (
 
 	"github.com/diktahq/edikt/tools/edikt/internal/compile"
 )
+
+// EmptySHA is sha256("") in lower-case hex; the anchor for any
+// freshly-bootstrapped empty managed region defaults to this so the
+// bootstrap-write step emits a deterministic value rather than a literal
+// empty string.
+var EmptySHA = func() string {
+	h := sha256.Sum256(nil)
+	return hex.EncodeToString(h[:])
+}()
+
+// RegionSHA computes the sha256 of a region's rendered body. The body is
+// the concatenation of each bullet line followed by '\n'. For an empty
+// region the result is sha256("") (==EmptySHA). Used by phase B to anchor
+// each managed region inside a topic file per Phase 8 of
+// PLAN-v060-governance-accuracy.
+func RegionSHA(body string) string {
+	h := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(h[:])
+}
 
 //go:embed templates/topic.md.tmpl
 var topicTmplSrc string
@@ -29,6 +50,19 @@ type TopicView struct {
 	CompiledAt      string // ISO 8601, may be a fixed sentinel when deterministic output is required
 	CompilerVersion string
 	Fingerprint     string // Phase 8: SHA-256 over (sidecar_path, sidecar_content_hash) tuples for the topic
+
+	// Phase 8 (PLAN-v060-governance-accuracy) — three managed regions per
+	// topic file. DirectiveLines is the interleaved auto+manual list with
+	// the *(manual)* marker on author-overrides. ProhibitionLines is the
+	// MUST NOT bullets. ManualLines is the manual-only faithful copy. The
+	// SHA fields are sha256 over the rendered content of each region
+	// (excluding marker lines and the anchor line itself).
+	DirectiveLines   []string
+	ProhibitionLines []string
+	ManualLines      []string
+	DirectivesSHA    string
+	ProhibitionsSHA  string
+	ManualSHA        string
 }
 
 // IndexView is the data passed to the governance.md index template.
@@ -70,6 +104,18 @@ func RenderTopic(v TopicView) (string, error) {
 	// must not depend on insertion order.
 	sort.Strings(v.Paths)
 	sort.Strings(v.Sources)
+	// Default SHA fields to the empty-region hash when caller did not set
+	// them. Empty-region anchor is sha256("") — keeps the bootstrap path
+	// from emitting a literal empty hex.
+	if v.DirectivesSHA == "" {
+		v.DirectivesSHA = EmptySHA
+	}
+	if v.ProhibitionsSHA == "" {
+		v.ProhibitionsSHA = EmptySHA
+	}
+	if v.ManualSHA == "" {
+		v.ManualSHA = EmptySHA
+	}
 
 	tmpl, err := template.New("topic").Funcs(tmplFuncs).Parse(topicTmplSrc)
 	if err != nil {

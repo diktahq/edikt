@@ -46,9 +46,10 @@ From governance.md and each topic file, extract every directive line (lines star
 
 Classify each as:
 - **Invariant directive** — appears in `## Non-Negotiable Constraints` section
-- **ADR directive** — appears in topic files with `(ref: ADR-NNN)`
+- **ADR directive** — appears in a topic file's `[edikt:directives:start]…[edikt:directives:end]` region with `(ref: ADR-NNN)` and no `*(manual)*` marker
 - **Guideline directive** — appears in topic files with other refs
-- **Manual directive** — identified by `(manual)` tag or presence in a `manual_directives:` block in the source
+- **Manual directive** — flagged by the inline `*(manual)*` marker in the directives region, or by presence in the `[edikt:manual:start]…[edikt:manual:end]` region (Phase 8). Manual directives MUST be counted in the directive total — they are first-class.
+- **Prohibition** — appears in a topic file's `[edikt:prohibitions:start]…[edikt:prohibitions:end]` region (Phase 8). Counted in the rubric as a separate metric (see step 4b).
 
 ### 3. Score Each Directive
 
@@ -77,6 +78,23 @@ Count total tokens in governance.md + all topic files. Use approximate word-to-t
 | 1000-2000 | OK |
 | 2000-4000 | Heavy — consider tightening |
 | >4000 | Warning — governance competing with task context |
+
+### 4b. Prohibition Coverage (Phase 8)
+
+For every ADR with ≥2 ## Considered Options, check whether its sidecar declares ≥1 entry in either `prohibitions[]` or in `manual_directives` containing `MUST NOT` / `NEVER`. The coverage ratio is:
+
+```
+prohibition_coverage = ADRs_with_options_AND_prohibition / ADRs_with_options_total
+```
+
+Apply a quality penalty for any manual_directive that lacks a `(ref: …)` tag — it cannot be traced back to its rationale. Penalised manual entries count against `manual_health.passing`.
+
+| Coverage | Rating |
+|---|---|
+| 100 % | Strong |
+| 75-99 % | OK |
+| 50-74 % | Weak |
+| <50 % | Warning — re-propose risk |
 
 ### 5. Check Reminders and Checklist
 
@@ -110,7 +128,12 @@ Checklist: {n} items
 Manual Directive Health:
   Total:              {n}
   Passing quality:    {p}/{n}
+  Missing (ref:):     {m}/{n}   (penalty applied)
   Needs rewrite:      {r}/{n}
+
+Prohibition Coverage:
+  ADRs with options:  {n}
+  Covered (≥1 MUST NOT or prohibition): {c}/{n} ({pct}%)
 
 {If any directives score <5}:
 Weakest directives (score <5):
@@ -139,7 +162,8 @@ Overall: {x}/10
   },
   "reminders": 6,
   "checklist": 8,
-  "manual_health": {"total": 3, "passing": 1, "needs_rewrite": 2},
+  "manual_health": {"total": 3, "passing": 1, "missing_ref_tag": 1, "needs_rewrite": 2},
+  "prohibition_coverage": {"adrs_with_options": 4, "covered": 3, "pct": 75, "rating": "OK"},
   "weakest": [
     {"directive": "...", "score": 3, "reason": "no code tokens, soft language"}
   ],

@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -46,9 +47,22 @@ type topicGroup struct {
 	Name       string
 	Sidecars   []*sidecar.Sidecar
 	Directives []compile.Rule
-	Paths      []string
-	Sources    []string
-	Signals    []string
+	// Phase 8: manual_directives and prohibitions are first-class regions.
+	// Manual entries flow through with their owning ADR ID so the
+	// interleaved sort by ref tag stays deterministic.
+	Manual       []manualEntry
+	Prohibitions []compile.Rule
+	Paths        []string
+	Sources      []string
+	Signals      []string
+}
+
+// manualEntry pairs a manual_directive's text with the artifact ID of the
+// sidecar that authored it, so render can sort by that ref tag for
+// determinism even when the entry's text does not embed `(ref: …)`.
+type manualEntry struct {
+	Text   string
+	Source string
 }
 
 // Merge runs the deterministic Phase B over a discovered sidecar set.
@@ -89,8 +103,12 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 	for name := range groups {
 		// Skip topics whose only directives came from INVs — groupByTopic
 		// excludes INV directives, so a topic with only INV sidecars produces
-		// an empty directive list. Don't write an empty topic file.
-		if len(groups[name].Directives) > 0 {
+		// an empty directive list. Don't write an empty topic file. A topic
+		// with no directives but author-authored manual_directives or
+		// prohibitions still warrants a file: the user explicitly added
+		// content for it.
+		g := groups[name]
+		if len(g.Directives) > 0 || len(g.Manual) > 0 || len(g.Prohibitions) > 0 {
 			topicNames = append(topicNames, name)
 		}
 	}
@@ -114,22 +132,36 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		// Diff-only short-circuit: if the existing topic file declares the
 		// same fingerprint, every contributing sidecar is byte-equal to last
 		// run; skip the render to keep mtime stable and the file untouched.
-		if existingFP, ok := readTopicFingerprint(dest); ok && existingFP == fp {
+		// Bust the cache when the on-disk file lacks one of the three
+		// Phase 8 managed regions (bootstrap-write semantics: a v0.6.0-rc4
+		// shaped file gets the new prohibitions/manual anchors on first
+		// post-upgrade compile).
+		if existingFP, ok := readTopicFingerprint(dest); ok && existingFP == fp && hasAllRegions(dest) {
 			res.TopicsUnchanged = append(res.TopicsUnchanged, name)
 			continue
 		}
 
+		dirLines, prohLines, manLines := buildRegionLines(g)
 		body, err := render.RenderTopic(render.TopicView{
-			Name:            name,
-			Paths:           g.Paths,
-			Sources:         g.Sources,
-			Rules:           g.Directives,
-			CompiledAt:      opts.CompiledAt,
-			CompilerVersion: opts.CompilerVersion,
-			Fingerprint:     fp,
+			Name:             name,
+			Paths:            g.Paths,
+			Sources:          g.Sources,
+			Rules:            g.Directives,
+			CompiledAt:       opts.CompiledAt,
+			CompilerVersion:  opts.CompilerVersion,
+			Fingerprint:      fp,
+			DirectiveLines:   dirLines,
+			ProhibitionLines: prohLines,
+			ManualLines:      manLines,
+			DirectivesSHA:    regionSHA(dirLines, false),
+			ProhibitionsSHA:  regionSHA(prohLines, true),
+			ManualSHA:        regionSHA(manLines, false),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("render topic %s: %w", name, err)
+		}
+		if err := assertNoRegionOverlap(name, body); err != nil {
+			return nil, err
 		}
 		changed, err := writeAtomicIfChanged(dest, body)
 		if err != nil {
@@ -192,6 +224,12 @@ func groupByTopic(pairs []sidecar.Pair) map[string]*topicGroup {
 		if !strings.HasPrefix(p.ArtifactID, "INV-") {
 			for _, d := range p.Sidecar.Directives {
 				t.Directives = append(t.Directives, compile.Rule{Text: d.Text, Source: p.ArtifactID})
+			}
+			for _, m := range p.Sidecar.ManualDirectives {
+				t.Manual = append(t.Manual, manualEntry{Text: m, Source: p.ArtifactID})
+			}
+			for _, pr := range p.Sidecar.Prohibitions {
+				t.Prohibitions = append(t.Prohibitions, compile.Rule{Text: pr.Text, Source: p.ArtifactID})
 			}
 		}
 	}
@@ -335,4 +373,170 @@ func countGuidelines(pairs []sidecar.Pair) int {
 		}
 	}
 	return n
+}
+
+// refTagRe extracts the ADR/INV/guideline ID from a directive's `(ref: …)`
+// suffix. The first capture is the artifact ID. Falls back to the empty
+// string when no tag is present so manual_directives without a ref tag
+// still sort deterministically (alphabetical by text).
+var refTagRe = regexp.MustCompile(`\(ref:\s*([A-Za-z0-9_-]+)`)
+
+// extractRefTag returns the first artifact-ID found in a directive's
+// `(ref: …)` clause, or "" when the directive has no tag.
+func extractRefTag(text string) string {
+	if m := refTagRe.FindStringSubmatch(text); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// buildRegionLines constructs the bullet bodies for the directives,
+// prohibitions, and manual managed regions. Determinism contract:
+//
+//   - Directives: extracted directives interleaved with manual_directives,
+//     sorted by ref-tag (asc), then manual-flag (extracted before manual on
+//     equal ref tag), then text. Manual entries get the
+//     ` (ref: <ID> + manual) *(manual)*` annotation; an entry whose own
+//     text already carries `(ref:` keeps the verbatim text and just gets the
+//     `*(manual)*` marker appended.
+//   - Prohibitions: text-only bullets sorted by text asc.
+//   - Manual: text-only bullets sorted by text asc — a faithful copy that
+//     downstream tooling can key on independently of the directives region.
+func buildRegionLines(g *topicGroup) (directives, prohibitions, manual []string) {
+	type entry struct {
+		text   string
+		ref    string
+		manual bool
+	}
+	all := make([]entry, 0, len(g.Directives)+len(g.Manual))
+	for _, d := range g.Directives {
+		all = append(all, entry{text: d.Text, ref: extractRefTag(d.Text), manual: false})
+	}
+	for _, m := range g.Manual {
+		txt := m.Text
+		if extractRefTag(txt) == "" {
+			txt = strings.TrimRight(txt, " ") + " (ref: " + m.Source + " + manual)"
+		}
+		// Append the inline marker once; if a caller pre-annotated, leave
+		// alone to keep the rendered line stable across regenerations.
+		if !strings.Contains(txt, "*(manual)*") {
+			txt = txt + " *(manual)*"
+		}
+		all = append(all, entry{text: txt, ref: m.Source, manual: true})
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].ref != all[j].ref {
+			return all[i].ref < all[j].ref
+		}
+		if all[i].manual != all[j].manual {
+			// extracted (false) before manual (true) on equal ref tag
+			return !all[i].manual && all[j].manual
+		}
+		return all[i].text < all[j].text
+	})
+	directives = make([]string, len(all))
+	for i, e := range all {
+		directives[i] = e.text
+	}
+
+	prohibitions = make([]string, 0, len(g.Prohibitions))
+	for _, p := range g.Prohibitions {
+		prohibitions = append(prohibitions, p.Text)
+	}
+	sort.Strings(prohibitions)
+
+	manual = make([]string, 0, len(g.Manual))
+	for _, m := range g.Manual {
+		manual = append(manual, m.Text)
+	}
+	sort.Strings(manual)
+	return directives, prohibitions, manual
+}
+
+// regionSHA returns the sha256 of the rendered body of a managed region.
+// The body is the concatenation of each bullet line (`- ` + text + `\n`).
+// withProhibitionsHeading prepends `## Prohibitions\n` so the SHA covers
+// the heading line embedded in the prohibitions region.
+func regionSHA(lines []string, withProhibitionsHeading bool) string {
+	var b strings.Builder
+	if withProhibitionsHeading {
+		b.WriteString("## Prohibitions\n")
+	}
+	for _, l := range lines {
+		b.WriteString("- ")
+		b.WriteString(l)
+		b.WriteByte('\n')
+	}
+	return render.RegionSHA(b.String())
+}
+
+// hasAllRegions reports whether the file at path already declares all
+// three Phase 8 managed regions. Missing-region paths force a fresh render
+// even when the fingerprint cache would otherwise short-circuit, ensuring
+// a v0.6.0-rc4-shaped governance file gets the new anchors on first
+// post-upgrade compile (bootstrap-write semantics, AC #5).
+func hasAllRegions(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	s := string(data)
+	for _, kind := range []string{"directives", "prohibitions", "manual"} {
+		if !strings.Contains(s, "[edikt:"+kind+":start]: #") {
+			return false
+		}
+		if !strings.Contains(s, "[edikt:"+kind+":end]: #") {
+			return false
+		}
+	}
+	return true
+}
+
+// regionMarker matches the start/end sentinels of one Phase 8 managed
+// region. Captures (kind, position): kind ∈ {directives, prohibitions,
+// manual}, position ∈ {start, end}.
+var regionMarker = regexp.MustCompile(`(?m)^\[edikt:(directives|prohibitions|manual):(start|end)\]: #$`)
+
+// assertNoRegionOverlap enforces INV-005 byte-range integrity: the three
+// managed regions in a topic file MUST NOT overlap, and each must close
+// before the next opens. Returns a typed error citing the offending pair
+// when an overlap or interleave is detected.
+func assertNoRegionOverlap(topicName, body string) error {
+	type span struct {
+		kind  string
+		start int
+		end   int
+	}
+	matches := regionMarker.FindAllStringSubmatchIndex(body, -1)
+	open := map[string]int{}
+	var spans []span
+	for _, m := range matches {
+		// m[2:4]=kind, m[4:6]=position. Whole match offsets are m[0]:m[1].
+		kind := body[m[2]:m[3]]
+		pos := body[m[4]:m[5]]
+		if pos == "start" {
+			if _, dup := open[kind]; dup {
+				return fmt.Errorf("INV-005 violation: duplicate %q start sentinel in %s", kind, topicName)
+			}
+			open[kind] = m[0]
+		} else {
+			startOff, ok := open[kind]
+			if !ok {
+				return fmt.Errorf("INV-005 violation: orphan %q end sentinel in %s", kind, topicName)
+			}
+			delete(open, kind)
+			spans = append(spans, span{kind: kind, start: startOff, end: m[1]})
+		}
+	}
+	for k := range open {
+		return fmt.Errorf("INV-005 violation: unclosed %q region in %s", k, topicName)
+	}
+	for i := 0; i < len(spans); i++ {
+		for j := i + 1; j < len(spans); j++ {
+			if spans[i].start < spans[j].end && spans[j].start < spans[i].end {
+				return fmt.Errorf("INV-005 violation: regions %s and %s overlap in %s", spans[i].kind, spans[j].kind, topicName)
+			}
+		}
+	}
+	return nil
 }

@@ -193,6 +193,15 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 			if roRan {
 				warnN += roWarn
 			}
+
+			// Orphan Manual Refs (Phase 8 of PLAN-v060-governance-accuracy).
+			// Manual directives that cite a non-existent ADR file are
+			// surfaced as ORPHAN findings. INV-006: ArtifactID is
+			// validated before the filesystem lookup.
+			omWarn, omRan := runOrphanManualRefCheck(cwd, os.Stdout)
+			if omRan {
+				warnN += omWarn
+			}
 		}
 
 		// settings.json placeholder check — Claude Code does not expand env

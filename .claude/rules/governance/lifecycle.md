@@ -9,15 +9,30 @@ _fingerprint: "911baaaeef9904115d537983038dd36abc645e8996c6b423ec717efaa0abf9ac"
 <!-- topic: lifecycle -->
 <!-- sources: ADR-024, INV-002 -->
 <!-- compiled_by: gov-compile v0.6.0-rc4 -->
-<!-- compiled_at: 2026-05-03T19:25:38Z -->
+<!-- compiled_at: 2026-05-03T19:41:13Z -->
 
 # Lifecycle
 
-- PRDs and SPECs MUST use edit-in-place evolution. (ref: ADR-024)
+[edikt:directives:start]: #
 - ADRs MUST remain governed by INV-002. (ref: ADR-024)
+- Adding, refining, shipping, or deprecating FRs MUST be done via transition commands (prd:ship, prd:deprecate, etc.), not via supersession. (ref: ADR-024)
 - Each PRD/SPEC requirement, acceptance criterion, and protection MUST carry its own status field (proposed | accepted | shipped | deprecated). (ref: ADR-024)
 - Every command-driven mutation to a PRD/SPEC sidecar MUST append a record to revision_history in the YAML sidecar. (ref: ADR-024)
-- Adding, refining, shipping, or deprecating FRs MUST be done via transition commands (prd:ship, prd:deprecate, etc.), not via supersession. (ref: ADR-024)
-- Supersede MUST be reserved for PRDs where ≥50% of the scope has changed or the problem framing has shifted. (ref: ADR-024)
 - INV-002 MUST remain in force for ADRs. This ADR does not weaken or scope INV-002. (ref: ADR-024)
+- PRDs and SPECs MUST use edit-in-place evolution. (ref: ADR-024)
+- Supersede MUST be reserved for PRDs where ≥50% of the scope has changed or the problem framing has shifted. (ref: ADR-024)
 - The PRD/SPEC evaluator MUST score only shipped entries when validating implementation coverage. proposed entries MUST be ignored by drift checks. (ref: ADR-024)
+[edikt:directives:end]: #
+[edikt:directives:sha256]: # 82303932bde774a04e91c71704aa462587180a1e34d824e61d5796d2a81e7c5b
+
+[edikt:prohibitions:start]: #
+## Prohibitions
+- MUST NOT apply INV-002 immutability rules to PRDs — rejected: optimizes audit symmetry at the cost of LLM ergonomics and forces every FR refinement into a supersession chain. (ref: ADR-024)
+- MUST NOT create an Invariant Record to govern the PRD edit-in-place model — the PRD model is a decision (ADR), not a constraint (invariant). (ref: ADR-024)
+- MUST NOT implement opt-in ADR-style immutability for PRDs — rejected: creates two incompatible mental models. (ref: ADR-024)
+[edikt:prohibitions:end]: #
+[edikt:prohibitions:sha256]: # 255d0a308e00df8619e8bfd9381e331fb664253f60717b9ff5c0e7046351e269
+
+[edikt:manual:start]: #
+[edikt:manual:end]: #
+[edikt:manual:sha256]: # e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
