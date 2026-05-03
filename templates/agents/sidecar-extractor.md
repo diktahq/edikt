@@ -104,6 +104,38 @@ Lowercase noun phrases that route a task to this artifact during compile's routi
 
 If you cannot make a candidate signal conform, omit it rather than emitting an invalid one. The compile downstream rejects the whole sidecar on a regex violation; one bad signal poisons the entire file.
 
+### `paths` (v1.1, optional) — Rule A: paths inference
+
+Emit a `paths` array of doublestar-compatible globs that scope where the artifact's directives apply. Inference rules:
+
+1. **Identify file/path tokens that appear in the directive sentences themselves.** Examples: `tools/edikt/cmd/migrate_sidecars.go`, `internal/stt/provider.go`, `templates/hooks/`, `.github/workflows/`.
+2. **Generalise each token to its enclosing directory glob.** A specific file (`tools/edikt/cmd/verify.go`) becomes its directory + `**/*.<ext>` (`tools/edikt/cmd/**/*.go`). A directory (`templates/hooks/`) becomes `<dir>/**/*` or, when an extension is named in the directive, `<dir>/**/*.<ext>`.
+3. **Deduplicate by prefix.** If `tools/edikt/cmd/**/*.go` and `tools/edikt/**/*.go` both match, keep only the broader one.
+4. **Refuse invention.** If no file/path token appears in the directives, emit `paths: []`. NEVER guess at a glob from artifact title or topic alone — paths must trace to literal directive content.
+5. **Forbidden patterns.** Absolute paths, `~`, `*` at the root (`*.go` matches everywhere — too broad). Always anchor at a project-relative directory.
+
+Output example for an ADR whose directives reference `tools/edikt/cmd/migrate_sidecars.go` and `.github/workflows/sidecar-checks.yml`:
+
+```yaml
+paths:
+  - tools/edikt/cmd/**/*.go
+  - .github/workflows/sidecar-checks.yml
+```
+
+### `scope` (v1.1, optional) — Rule B: scope defaults by artifact type
+
+Emit a `scope` array from the closed enum `[planning, design, implementation, review]`. Defaults:
+
+| Artifact type | Section read from | Default scope |
+|---|---|---|
+| ADR `## Decision` directive | non-prohibition decision content | `[design, implementation, review]` |
+| ADR architectural prohibition (rejected option) | derived prohibition entry | `[planning, design, review]` |
+| INV `## Statement` directive | core invariant prose | `[implementation, review]` |
+| INV `## Enforcement`-only directive (review/CI gate) | enforcement section | `[review]` |
+| Guideline directive | rule-style heading | `[implementation, review]` |
+
+Override only when the directive's source text explicitly names a non-default lifecycle phase. NEVER emit `scope: [planning, design, implementation, review]` (everything) — that's the same as omitting it. Empty scope means "no lifecycle filter applied" and is valid.
+
 ### `directives`
 
 **Which sections to read — source scope is strict.** Only extract directives from these sections:
@@ -113,6 +145,8 @@ If you cannot make a candidate signal conform, omit it rather than emitting an i
 - Guidelines: any section whose heading contains "rule", "must", "requirement", "convention", or "enforcement" — or the full body when no section headings exist.
 
 **NEVER extract from:** `## Context`, `## Why`, `## Rationale`, `## Considered Options`, `## Consequences` (Good / Bad / Neutral / Accepted trade-off), `## Decision Drivers`, `## Background`. These sections explain WHY a decision was made — they are not rules an LLM must follow. A sentence that would be a valid directive in `## Decision` is NOT a directive if it lives in `## Consequences`.
+
+> Exception scope: this rule governs `directives[]` only. The `prohibitions[]` array (Rule C below) DOES read `## Considered Options` for the narrow purpose of synthesising MUST NOT directives from rejected options' `Cons:` bullets. See `### prohibitions` below.
 
 **What to extract within allowed sections:** any sentence that encodes a constraint, prohibition, or requirement the codebase must satisfy. This includes:
 
@@ -128,6 +162,7 @@ For each extracted directive:
   - **NEVER soften.** If the prose says `MUST NOT`, `text` says `MUST NOT`. If the prose says `NEVER`, `text` says `NEVER`. Softening is always wrong; strengthening present-tense declaratives to `MUST` is correct.
   - **NEVER merge two prose sentences into one directive.** Each directive is exactly one source sentence. Split multi-sentence paragraphs into one directive each, each with its own `source_excerpt`.
   - **NEVER paraphrase the substance.** Verb normalization is the only permitted rewrite. Do not rephrase, generalize, or add qualifications not present in the source.
+  - **Rule D — modality preservation EXCEPTION.** Sentences whose source begins with a contingency prefix are EXEMPT from MUST promotion. The five recognised prefixes are: `Fallback:`, `Alternatively:`, `Optionally:`, `If <condition>` (the `If` followed by a clause that introduces a condition), and `As a fallback,`. For these, `text` uses `MAY` (or `SHOULD` only when the source explicitly says SHOULD). Example: source `Fallback: legacy emit MAY be used when migration is incomplete.` extracts as `Fallback: legacy emit MAY be used when migration is incomplete. (ref: ADR-NNN)` — never promoted to MUST. The verb-normalization rule above DOES NOT apply to contingency-prefixed sentences. This is the most-violated rule in the v0.5/v0.6 corpus; promoting a fallback sentence to MUST is a factual misread.
 - **`source_excerpt.line_start`**: the 1-indexed line number in the parent `.md` where the directive's source sentence begins.
 - **`source_excerpt.line_end`**: the 1-indexed line number where the source sentence ends. Equals `line_start` for single-line directives.
 - **`source_excerpt.quote`**: the verbatim text from the parent file between `line_start` and `line_end`, byte-equal to the file's content (preserving inline backticks, em-dashes, smart quotes, and trailing punctuation). Used by `/edikt:doctor` for drift detection — when the live quote no longer matches the recorded quote, the sidecar is flagged as stale.
@@ -173,6 +208,41 @@ directives:
 Inside double quotes, escape `"` as `\"` and `\` as `\\`. Single-quoted YAML strings (where `'` escapes as `''`) are also acceptable but stick to double for consistency. NEVER mix.
 
 **Line-number accuracy — count from 1, not 0.** The `line_start` and `line_end` are 1-indexed against the parent `.md` file as it exists at extraction time. If you cannot find the directive's source sentence at the recorded line, the sidecar is stale-by-construction and `/edikt:gov:compile` will reject it. Re-count from the file's first byte if uncertain — a five-line offset will fail downstream and the user sees a `directive[N]: quote not found at lines X-Y` error.
+
+### `prohibitions` (v1.1, ADRs only) — Rule C: prohibition synthesis from rejected options
+
+ADRs uniquely capture rejected alternatives in `## Considered Options`. The chosen option is governed by `## Decision`'s `directives[]`; the rejected options' content carries an implicit `MUST NOT` — without an explicit prohibition, an LLM may re-propose the rejected design.
+
+This is the ONE CASE where `## Considered Options` IS read by the extractor. (The "NEVER extract from `## Considered Options`" rule above governs the `directives[]` array — it does NOT apply to `prohibitions[]`.)
+
+**Synthesis rules:**
+
+1. **Trigger condition.** The ADR has `## Considered Options` with ≥2 options AND a `## Decision` section that names a chosen option. If only one option is described, or no decision is recorded, emit `prohibitions: []`.
+2. **Source scope is strict.** For each rejected option, read ONLY its `Cons:` bullets (or equivalent rejection-reason bullets — `Drawbacks:`, `Why not:`). NEVER synthesise prohibitions from `Pros:` of the chosen option, the option's narrative paragraph, or invented constraints not literally present in the bullets.
+3. **One prohibition per Cons bullet** that names a concrete pattern, dependency, or design choice. Skip narrative-only bullets ("Adds complexity", "Hard to maintain") — those don't translate to mechanically-checkable rules.
+4. **Phrasing.** `text` MUST start with `MUST NOT` and use the alternative's name from the option heading. Append the standard ref tail. Example: `MUST NOT use a unified override model — superseded by ADR-005. (ref: ADR-005)`.
+5. **`source_excerpt`** points to the Cons bullet's line range, with `quote` byte-equal to the bullet text.
+6. **`derived_from`** is optional but recommended for auditability — emit `derived_from: rejected_option_<X>` where `<X>` is the option's letter or position (`a`, `b`, `c`, …) or the kebab-case slug of its title.
+
+**Example.** ADR with two options, "Unified override model" (rejected) and "Per-concern mechanisms (chosen)":
+
+```markdown
+### Unified override model
+- Pros: simple to understand
+- Cons: rules need extension (add to defaults), not just override; agents need per-file control
+```
+
+```yaml
+prohibitions:
+  - text: "MUST NOT use a unified override model — superseded by ADR-005. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 35
+      line_end: 35
+      quote: "Cons: rules need extension (add to defaults), not just override; agents need per-file control"
+    derived_from: "rejected_option_unified-override-model"
+```
+
+**Forbidden inventions.** Do not synthesise a prohibition that does not literally appear as a Cons-style bullet on a rejected option. INVs and guidelines have no `## Considered Options` — emit `prohibitions: []` for them.
 
 ### `reminders`
 
