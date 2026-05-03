@@ -3,7 +3,14 @@ name: sidecar-extractor
 description: "Extracts directive sidecars from a single ADR / invariant / guideline body. Locked prompt — no invention, no paraphrase, no cross-artifact context. Input: one .md path; output: one .edikt.yaml file next to it conforming to templates/schemas/sidecar.v1.schema.json."
 model: sonnet
 effort: high
-maxTurns: 1
+# 3 turns: Read parent .md → (optional) Read schema for reference → Write
+# the sidecar. Previously set to 1, which prevented the agent from
+# completing the Read→Write sequence and forced upgrade.md to fall back
+# to a single general-purpose agent serially iterating every partial
+# (8m 31s for 48 artifacts vs ~2-3min for batched parallel Task calls).
+# The agent's locked behavior is enforced by the prompt + disallowedTools
+# (Edit, Bash, Agent, Task forbidden), not by turn limits.
+maxTurns: 3
 tools:
   - Read
   - Write
