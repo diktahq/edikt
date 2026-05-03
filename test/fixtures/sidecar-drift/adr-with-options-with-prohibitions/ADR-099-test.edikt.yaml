@@ -1,0 +1,19 @@
+schema_version: 1
+topic: auth
+path: test/fixtures/sidecar-drift/adr-with-options-with-prohibitions/ADR-099-test.md
+signals:
+  - session token
+  - redis
+directives:
+  - text: "Session tokens MUST be stored in Redis. (ref: ADR-099-test)"
+    source_excerpt:
+      line_start: 34
+      line_end: 34
+      quote: "We chose Redis (Option B)."
+prohibitions:
+  - text: "MUST NOT store session tokens in process memory (in-memory store) — superseded by ADR-099-test."
+    source_excerpt:
+      line_start: 16
+      line_end: 17
+      quote: "Cons: Tokens lost on restart."
+    derived_from: "rejected_option_a"

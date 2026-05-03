@@ -1,5 +1,137 @@
 # edikt changelog
 
+## v0.6.0 (in progress — PLAN-v060-governance-accuracy)
+
+Eliminates the v0.4.3 → v0.6.0 governance extraction regressions before
+shipping v0.6.0 final. Phase 1 ships the schema groundwork; remaining
+phases land incrementally.
+
+### Schema (Phase 1)
+
+- **sidecar v1.1**: optional `paths` (file-glob array), `scope`
+  (lifecycle phase enum: planning | design | implementation | review),
+  and `prohibitions[]` (MUST NOT directives synthesized from rejected
+  `## Considered Options` per the upcoming sidecar-extractor Rule C).
+  All three fields are additive — existing v1.0 sidecars (rc1–rc4)
+  parse unchanged. Regression-tested via `TestForwardCompat_Rc4Parse`.
+
+- **Hash stability for rc1–rc4**: every existing fixture's canonical
+  Marshal sha256 is pinned in `v11_test.go:rc4HashBaseline`. The v1.1
+  field additions DO NOT alter the marshal output for sidecars that
+  don't use them, so rc-era users won't see spurious "hand-edit
+  conflict" interviews on their first compile post-upgrade.
+
+- **Forward-only compatibility contract**: `KnownFields(true)` makes
+  v1.1 sidecars unreadable by older `bin/edikt` binaries — unknown
+  fields raise a parse error. edikt distributes as a single Go binary;
+  upgrade as a unit. If you need mixed-version reads, bump
+  `SchemaVersion` to 2 and add an explicit downgrade path; no such
+  path exists at v0.6.0. Documented on the `Sidecar` struct godoc.
+
+### Extractor (Phase 2)
+
+- **Rule A — paths inference**: extractor populates `paths[]` when
+  directives reference Go packages, file paths, or directory roots
+  (e.g., `internal/stt/provider.go` → `internal/stt/**/*.go`).
+- **Rule B — scope defaults by artifact type**: ADR Decision →
+  `[design, implementation, review]`; ADR architectural prohibitions →
+  `[planning, design, review]`; INV Statement → `[implementation,
+  review]`; INV Enforcement-only → `[review]`.
+- **Rule C — prohibition synthesis from rejected options**: when an ADR
+  has `## Considered Options` with 2+ options and `## Decision` selects
+  one, extractor emits one `prohibitions[]` entry per rejected option,
+  bounded to literal `Cons:` bullets (no invention). Each prohibition
+  carries `derived_from: rejected_option_<X>` for auditability.
+- **Rule D — modality preservation**: sentences prefixed with
+  `Fallback:`, `Alternatively:`, `Optionally:`, `If <cond>:`, or
+  `As a fallback,` are EXEMPT from MUST promotion. Their directive
+  text uses `MAY` (or `SHOULD` when explicit). Fixes the v0.5/v0.6
+  factual-misread regression class where contingency prose was promoted
+  to mandate.
+- **Verb-normalization exception**: explicit Rule D EXCEPTION line in
+  the prompt prevents the contingency-to-MUST promotion at extraction
+  time.
+- **`## Considered Options` opened for Rule C only**: the section
+  remains forbidden for directive extraction but is now read for
+  prohibition synthesis. Opens the only known mechanism for capturing
+  rejected-option `MUST NOT` rules.
+
+### Migrate `--strict` (Phase 3)
+
+- **`bin/edikt migrate sidecars --strict --report-json <path>`**: tier-2,
+  no-LLM regression report comparing legacy sentinel content against the
+  newly-generated sidecar. Categorises losses as `LOST` (extractor missed
+  legacy content), `FACTUAL` (modality drift on `Fallback:` /
+  `Alternatively:` / etc. — MUST promoted from MAY/SHOULD), or
+  `DEGRADED` (verification became abstract, lost greppable file/function/
+  endpoint anchors). Manifest is deterministic (sorted, byte-equal across
+  runs).
+- **Exit codes**: 0 = clean, 1 = LOST or FACTUAL present, 2 = DEGRADED
+  only, 3 = system error.
+- **CI gate**: `.github/workflows/sidecar-checks.yml` greps
+  `migrate_sidecars*.go` for any `claude` reference and fails the build
+  on hit (ADR-030 enforcement).
+- **`applyArtifact` paths/scope copy**: root-cause fix —
+  `tools/edikt/cmd/migrate_sidecars.go` now copies `paths[]` and
+  `scope[]` from the v0.5.x sentinel into the new sidecar, eliminating
+  the LOST.paths and LOST.scope regression class entirely. Pre-fix
+  the dogfood corpus reported 201 LOST items across 34 artifacts; post-
+  fix the same corpus produces an empty manifest.
+
+### Doctor (Phase 4)
+
+- **"Rejected Options Coverage" check**: warns when an ADR has ≥2 considered options but no MUST NOT directives (neither `prohibitions[]` entries nor `manual_directives` containing MUST NOT/NEVER). Remediation: `bin/edikt sidecar add-manual-directive`. The message never suggests editing the ADR body (INV-002 honored).
+- **Free-form heading detection**: option counter recognises both the
+  lettered conventions (`### A.`, `### Option A`) and free-form titles
+  (`### Per-concern mechanisms (chosen)`) so the check fires against
+  real-world ADRs that don't follow the spec's letter style.
+- Wired into the `bin/edikt doctor` main check loop after Plan
+  Verification (was previously only callable from tests).
+
+### Sidecar Regenerate Flow (Phase 5 Half A)
+
+- **`commands/sidecar/regenerate.md`** (tier-1): consumes a
+  `migrate sidecars --strict --report-json` manifest, dispatches the
+  sidecar-extractor subagent (Task tool, parallel up to N=4) for `LOST`
+  items, and routes `FACTUAL` / `DEGRADED` items to
+  `docs/internal/v060-manual-review.md` for human review. Tier-1
+  declarative — no shell logic beyond `bin/edikt` exit-code reads. Uses
+  the existing `migrate` verb only; no ADR-029 verb-list amendment
+  needed.
+- **`commands/upgrade.md` regression check**: post-install step runs
+  `bin/edikt migrate sidecars --dry-run --report-json` and surfaces the
+  summary on upgrade. Does not auto-dispatch regenerate — user decides.
+- **`test/integration/v060-fix-flow.sh`**: hermetic integration test
+  (TMPDIR-only, no host settings.json) verifying the post-Phase-3
+  contract: full-v0.5.x sentinel → lossless apply, directive text
+  round-trips verbatim, idempotent re-apply on already-migrated
+  artifacts.
+
+### Verify (Phase 12, folded from PLAN-sidecar-architecture)
+
+- **`bin/edikt verify <plan-id> [--phase N]`**: walks a plan's
+  criteria sidecar, executes per-criterion `verify:` shell commands
+  under bash (30s timeout, `EDIKT_VERIFY=1` env), captures pass/fail/
+  timeout/skipped, writes JSON + text reports to `.edikt/state/verify/`.
+  Exit codes: 0 (all passed/skipped), 1 (any failed/timeout, suppressed
+  by `--allow-failures`), 2 (sidecar missing/malformed), 3 (invalid args).
+- **Plan-flip gating**: `commands/sdlc/plan.md` Phase-End Flow now
+  invokes `bin/edikt verify` before flipping a progress row to `done`.
+  On exit 1, asks the user whether to mark `done` anyway; on user `y`,
+  records an override marker `done (overrides: K)` in the Updated cell.
+- **Doctor "Plan Verification" check**: warns when a `done` row has no
+  recent passing report (newer than the last commit touching the
+  criteria sidecar). Soft check — never errors, never blocks doctor
+  exit. Informational pressure on stale phase-completions.
+- **Schema dialect support**: criteria sidecar parser accepts both the
+  v0.5 dialect (`id`/`statement`/`name`) and the richer v0.6 dialect
+  (`phase`/`text`/`title` + `status`/`attempt`/`fail_count`) under one
+  KnownFields-strict decoder. `Phase.EffectiveID()` /
+  `Phase.EffectiveName()` / `Criterion.EffectiveStatement()` collapse
+  the two dialects at the runner boundary. Required to land Phase 12 —
+  the plan template generates the v0.6 dialect; the legacy runner
+  schema only accepted v0.5.
+
 ## v0.6.0-rc4 (2026-05-03)
 
 Six dogfood findings from the rc3 test on a real v0.4.3-era project

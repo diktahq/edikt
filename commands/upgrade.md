@@ -268,6 +268,44 @@ Apply the migration now? [y/N]
 
 **Headless mode.** If `EDIKT_HEADLESS=1` or `--yes` was passed to `/edikt:upgrade` (no future flag exists today, but reserve the convention) AND the dry-run reports a non-empty plan, fall through to deferred — never auto-apply without an interactive confirmation. Migration is destructive on the prose body (sentinel blocks are removed) and must not happen silently.
 
+### 1.6. Post-install sidecar regression check (v0.6.0+)
+
+After migration is applied (or deferred), run a sidecar regression check to surface any quality regressions in the existing sidecars. This step fires on every upgrade to catch regressions introduced between rc versions.
+
+**Requires `bin/edikt` on PATH.** If absent, skip this step with:
+```
+⚠ Sidecar regression check skipped: bin/edikt not on PATH.
+  Install with: edikt install edikt
+```
+
+When the binary is present, run:
+
+```bash
+bin/edikt migrate sidecars --dry-run --report-json /tmp/edikt-upgrade-report.json
+```
+
+Wait for exit. Per ADR-029 Rule 2, display output verbatim; do not parse it.
+
+Then read `/tmp/edikt-upgrade-report.json` and extract the `summary` block's `lost`, `degraded`, and `factual` fields. Print:
+
+```
+Sidecar regression summary: {lost} lost, {degraded} degraded, {factual} factual.
+```
+
+If any count is non-zero, print:
+
+```
+Run: claude /edikt:sidecar:regenerate to fix detected regressions.
+```
+
+If all counts are zero, print:
+
+```
+Sidecars already current.
+```
+
+**MUST NOT auto-run `/edikt:sidecar:regenerate`.** Sidecar regeneration dispatches LLM subagents and must remain a user-initiated action. The check is advisory only.
+
 ### 2. Detect What Needs Upgrading
 
 Run all checks in parallel and collect findings.

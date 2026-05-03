@@ -43,6 +43,8 @@ var (
 	migrateSidecarsApply  bool
 	migrateSidecarsForce  bool
 	migrateSidecarsJSON   bool
+	migrateSidecarsStrict bool
+	migrateSidecarsReport string
 )
 
 var migrateSidecarsCmd = &cobra.Command{
@@ -68,7 +70,13 @@ the correct lift path. Mandatory --dry-run before --apply.`,
 		if err != nil {
 			return err
 		}
-		return runMigrateSidecars(projectRoot, ediktRoot, migrateSidecarsDryRun, migrateSidecarsApply, migrateSidecarsForce, migrateSidecarsJSON)
+		// INV-006: validate report path is a non-empty string that doesn't escape to stdin/stdout aliases.
+		if migrateSidecarsReport != "" {
+			if migrateSidecarsReport == "-" {
+				return fmt.Errorf("--report-json: use a file path, not \"-\"")
+			}
+		}
+		return runMigrateSidecars(projectRoot, ediktRoot, migrateSidecarsDryRun, migrateSidecarsApply, migrateSidecarsForce, migrateSidecarsJSON, migrateSidecarsStrict, migrateSidecarsReport)
 	},
 }
 
@@ -77,6 +85,8 @@ func init() {
 	migrateSidecarsCmd.Flags().BoolVar(&migrateSidecarsApply, "apply", false, "apply the migration (requires prior --dry-run within 24h, or --force)")
 	migrateSidecarsCmd.Flags().BoolVar(&migrateSidecarsForce, "force", false, "bypass the 24h dry-run gate (test/escape hatch)")
 	migrateSidecarsCmd.Flags().BoolVar(&migrateSidecarsJSON, "json", false, "emit the dry-run plan / apply summary as JSON to stdout (suppresses prose UI)")
+	migrateSidecarsCmd.Flags().BoolVar(&migrateSidecarsStrict, "strict", false, "exit 1 on LOST/FACTUAL regressions, exit 2 on DEGRADED, exit 0 if clean")
+	migrateSidecarsCmd.Flags().StringVar(&migrateSidecarsReport, "report-json", "", "write regression manifest to this file path")
 	migrateCmd.AddCommand(migrateSidecarsCmd)
 }
 
@@ -557,6 +567,8 @@ func applyArtifact(c candidate, ediktRoot, projectRoot string) liftResult {
 		SchemaVersion:        1,
 		Path:                 relPathOrBase(projectRoot, c.mdPath),
 		Signals:              dedupAndSort(sent.Signals),
+		Paths:                append([]string(nil), sent.Paths...),
+		Scope:                append([]string(nil), sent.Scope...),
 		ManualDirectives:     sent.ManualDirectives,
 		SuppressedDirectives: sent.SuppressedDirectives,
 		Reminders:            sent.Reminders,
@@ -829,7 +841,7 @@ type migrateSidecarsJSONOut struct {
 	Error   string                `json:"error,omitempty"`
 }
 
-func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jsonOut bool) error {
+func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jsonOut, strict bool, reportJSON string) error {
 	if apply && !force {
 		if err := checkDryRunGate(ediktRoot, projectRoot); err != nil {
 			return err
@@ -859,6 +871,8 @@ func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jso
 		skipped     int
 		alreadyMig  int
 		items       []migrateSidecarsItem
+		// For --strict / --report-json: accumulate (sentinel, sidecarPath) pairs to diff.
+		strictPairs []strictDiffPair
 	)
 
 	for _, c := range cands {
@@ -921,6 +935,15 @@ func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jso
 		for _, w := range res.warnLines {
 			fmt.Fprintln(os.Stderr, w)
 		}
+		// Collect pairs for --strict / --report-json diff after apply.
+		if (strict || reportJSON != "") && !dryRun && res.cache != nil &&
+			(res.action == "wrote" || res.action == "wrote-partial") {
+			strictPairs = append(strictPairs, strictDiffPair{
+				mdPath:      c.mdPath,
+				sidecarPath: res.sidecarPath,
+				sentinel:    res.cache.sentinel,
+			})
+		}
 	}
 
 	fmt.Fprintln(progressOut)
@@ -972,6 +995,23 @@ func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jso
 	if failed > 0 {
 		return fmt.Errorf("%d artifacts failed to migrate", failed)
 	}
+
+	// --strict / --report-json: build regression manifest and enforce exit codes.
+	if strict || reportJSON != "" {
+		manifest, err := buildStrictManifest(strictPairs)
+		if err != nil {
+			os.Exit(3)
+		}
+		if reportJSON != "" {
+			if err := writeStrictManifest(reportJSON, manifest); err != nil {
+				fmt.Fprintf(os.Stderr, "warn: could not write report: %v\n", err)
+			}
+		}
+		if strict {
+			strictExit(manifest)
+		}
+	}
+
 	return nil
 }
 

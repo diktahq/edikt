@@ -158,6 +158,25 @@ jobs:
         # slated for v0.7.0 removal).
         run: bash tools/edikt/check/no-llm-in-tier-2.sh
 
+      - name: Verify migrate_sidecars strict source does not invoke claude (Phase 3 gate)
+        # Phase 3 of PLAN-v060-governance-accuracy: --strict and --report-json
+        # must remain LLM-free. Checks non-comment non-test source lines only.
+        # Test files may reference 'claude' as fixture strings when asserting
+        # ADR-030 compliance — those are filtered by no-llm-in-tier-2.sh already.
+        run: |
+          hits=$(grep -rn 'claude' \
+                   tools/edikt/cmd/migrate_sidecars.go \
+                   tools/edikt/cmd/migrate_sidecars_strict.go \
+                   2>/dev/null \
+                 | awk -F: 'NF>=3 { line=$3; for(i=4;i<=NF;i++) line=line":"$i; gsub(/^[ \t]+/,"",line); if (substr(line,1,2)!="//") print }' \
+                 || true)
+          if [ -n "$hits" ]; then
+            echo "::error::migrate_sidecars production source contains 'claude' reference — violates ADR-030"
+            echo "$hits"
+            exit 1
+          fi
+          echo "OK: no 'claude' invocation in migrate_sidecars production source"
+
   # ─── Canonical YAML round-trip ──────────────────────────────────────────────
   canonical-yaml-roundtrip:
     name: Sidecar canonical YAML round-trip

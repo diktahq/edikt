@@ -184,6 +184,15 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 			if vRan {
 				warnN += vWarn
 			}
+
+			// Rejected Options Coverage (Phase 4 of PLAN-v060-governance-accuracy).
+			// Warns when an ADR has 2+ considered options but no MUST NOT
+			// directives — INV-002 honor: remediation cites manual_directives,
+			// never an ADR-body edit.
+			roWarn, roRan := runRejectedOptionsCheck(cwd, os.Stdout)
+			if roRan {
+				warnN += roWarn
+			}
 		}
 
 		// settings.json placeholder check — Claude Code does not expand env

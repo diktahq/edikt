@@ -21,6 +21,15 @@ var (
 	signalRe = regexp.MustCompile(`^[a-z0-9][a-z0-9 _.-]*$`)
 )
 
+// validScopePhases is the closed enum for the scope field (v1.1).
+// Any other value fails Validate.
+var validScopePhases = map[string]bool{
+	"planning":       true,
+	"design":         true,
+	"implementation": true,
+	"review":         true,
+}
+
 // Sidecar mirrors the v1 schema one-to-one. Unknown fields anywhere in the
 // document are rejected by the strict decoder, so the forbidden top-level
 // keys (source_hash, agent_prompt_version, directives_hash) raise a parse
@@ -31,6 +40,20 @@ type Sidecar struct {
 	Path          string      `yaml:"path"`
 	Signals       []string    `yaml:"signals"`
 	Directives    []Directive `yaml:"directives"`
+
+	// v1.1 targeting fields — optional, additive (ADR-027, Phase 1 of
+	// PLAN-v060-governance-accuracy). KnownFields(true) means these fields
+	// MUST be present in the struct before any sidecar that uses them can
+	// round-trip through Load. Older readers (without these struct fields)
+	// will hard-fail on decode — forward-only, not forward-compatible.
+	// Paths is a list of glob patterns scoping where directives apply.
+	Paths []string `yaml:"paths,omitempty"`
+	// Scope is a list of lifecycle phases from the closed enum
+	// {planning, design, implementation, review}.
+	Scope []string `yaml:"scope,omitempty"`
+	// Prohibitions are MUST NOT directives synthesised from rejected
+	// ## Considered Options by the sidecar-extractor (Rule C).
+	Prohibitions []Prohibition `yaml:"prohibitions,omitempty"`
 
 	// User-authored overrides preserved across sidecar regenerations.
 	// ManualDirectives are always included in the effective rule set.
@@ -75,6 +98,16 @@ type SourceExcerpt struct {
 	LineStart int    `yaml:"line_start"`
 	LineEnd   int    `yaml:"line_end"`
 	Quote     string `yaml:"quote"`
+}
+
+// Prohibition is a MUST NOT directive derived from a rejected ## Considered
+// Option (Rule C in the sidecar-extractor prompt). The DerivedFrom field
+// carries a stable label for the rejected option so doctor and migration
+// tooling can identify the source (e.g. "rejected_option_a").
+type Prohibition struct {
+	Text          string        `yaml:"text"`
+	SourceExcerpt SourceExcerpt `yaml:"source_excerpt"`
+	DerivedFrom   string        `yaml:"derived_from,omitempty"`
 }
 
 // Load reads sidecarPath, strictly decodes it, and runs the v1 validators.
@@ -152,6 +185,37 @@ func (s *Sidecar) Validate() error {
 		}
 		if d.SourceExcerpt.Quote == "" {
 			return fmt.Errorf("directives[%d].source_excerpt.quote: required", i)
+		}
+	}
+	// v1.1: scope must be from the closed enum when present.
+	for i, phase := range s.Scope {
+		if !validScopePhases[phase] {
+			return fmt.Errorf("scope[%d]: %q is not a valid lifecycle phase (allowed: planning, design, implementation, review)", i, phase)
+		}
+	}
+	// v1.1: paths entries must be non-empty strings.
+	for i, p := range s.Paths {
+		if p == "" {
+			return fmt.Errorf("paths[%d]: empty string not allowed", i)
+		}
+	}
+	// v1.1: prohibitions must satisfy the same source-excerpt invariants as
+	// directives.
+	for i, p := range s.Prohibitions {
+		if p.Text == "" {
+			return fmt.Errorf("prohibitions[%d].text: required", i)
+		}
+		if len(p.Text) > 500 {
+			return fmt.Errorf("prohibitions[%d].text: %d chars, max 500", i, len(p.Text))
+		}
+		if p.SourceExcerpt.LineStart < 1 {
+			return fmt.Errorf("prohibitions[%d].source_excerpt.line_start: %d, must be >= 1", i, p.SourceExcerpt.LineStart)
+		}
+		if p.SourceExcerpt.LineEnd < p.SourceExcerpt.LineStart {
+			return fmt.Errorf("prohibitions[%d].source_excerpt.line_end: %d < line_start %d", i, p.SourceExcerpt.LineEnd, p.SourceExcerpt.LineStart)
+		}
+		if p.SourceExcerpt.Quote == "" {
+			return fmt.Errorf("prohibitions[%d].source_excerpt.quote: required", i)
 		}
 	}
 	return nil
