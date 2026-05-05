@@ -6,24 +6,59 @@ umask 0022
 # TODO: add SHA-256 manifest verification once the release workflow exists
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash                    # global (default)
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash -s -- --project   # project-only
-#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash -s -- --dry-run   # preview changes
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash                              # global (default)
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash -s -- --project              # project-only
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash -s -- --dry-run              # preview changes
+#   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash -s -- --ref v0.4.3           # install a specific tag
+#
+# --ref (or EDIKT_REF env var) accepts any tag matching v<MAJOR>.<MINOR>.<PATCH>
+# and overrides the default fetch ref. Use it to pin to an older version or
+# downgrade.
 
 REPO="diktahq/edikt"
-BRANCH="v0.4.4"
+BRANCH="v0.4.5"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 
 # Parse flags
 INSTALL_MODE=""
 DRY_RUN=false
+REF=""
+expect_ref=false
 for arg in "$@"; do
+  if [ "$expect_ref" = true ]; then
+    REF="$arg"
+    expect_ref=false
+    continue
+  fi
   case "$arg" in
     --project)  INSTALL_MODE="project" ;;
     --global)   INSTALL_MODE="global" ;;
     --dry-run)  DRY_RUN=true ;;
+    --ref)      expect_ref=true ;;
+    --ref=*)    REF="${arg#--ref=}" ;;
   esac
 done
+
+# Fall back to EDIKT_REF env var if --ref not given on the command line.
+if [ -z "$REF" ] && [ -n "${EDIKT_REF:-}" ]; then
+  REF="$EDIKT_REF"
+fi
+
+# Override default ref when --ref / EDIKT_REF is set. Validate against a
+# strict tag regex so we never interpolate arbitrary input into a URL.
+if [ -n "$REF" ]; then
+  if [[ ! "$REF" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+    echo "error: --ref must match v<MAJOR>.<MINOR>.<PATCH> (got: $REF)" >&2
+    exit 2
+  fi
+  case "$REF" in
+    v*) ;;
+    *)  REF="v${REF}" ;;
+  esac
+  BRANCH="$REF"
+  BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
+  echo "==> Installing edikt from ref: $BRANCH"
+fi
 
 # Detect pre-existing edikt installations in BOTH locations. This powers
 # the install location prompt, duplication warnings, and leftover cleanup.
