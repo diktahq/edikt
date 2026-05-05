@@ -236,3 +236,34 @@ func (e *exitErr) Error() string {
 	return fmt.Sprintf("exit %d", e.code)
 }
 func (e *exitErr) ExitCode() int { return e.code }
+
+// exitFromExitErr translates an *exitErr returned by a sub-RunE into an
+// os.Exit with the carried code, matching the cobra → os.Exit handling
+// pattern in compile.go's RunE. The root cmd's Execute() only knows
+// about *exitCodeError (cmd package); cross-package exit codes need
+// their own bridge.
+func exitFromExitErr(err error) {
+	if err == nil {
+		return
+	}
+	var ee *exitErr
+	if errAs(err, &ee) {
+		if ee.msg != "" {
+			fmt.Fprintln(os.Stderr, ee.msg)
+		}
+		os.Exit(ee.code)
+	}
+}
+
+// errAs is a tiny errors.As shim so importers don't have to depend on
+// the errors package just for this single use site.
+func errAs(err error, target **exitErr) bool {
+	if err == nil {
+		return false
+	}
+	if e, ok := err.(*exitErr); ok {
+		*target = e
+		return true
+	}
+	return false
+}

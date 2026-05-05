@@ -115,50 +115,10 @@ For each `.claude/rules/*.md` file that has the `edikt:generated` marker:
 
 The compiled routing table in `.claude/rules/governance.md` and its topic files under `.claude/rules/governance/` cite ADRs and invariants via `(ref: ADR-NNN)` / `(ref: INV-NNN)` tails. This check walks the routing surface, extracts every cited ID, and verifies each source file exists and is readable at the expected path. Missing source = hard FAIL: the model's routing table points nowhere, and any directive that tells the model "read the relevant ADR" resolves to an empty disk lookup.
 
-Implementation:
+Implementation: ported into the tier-2 binary as part of Phase 11.5 of PLAN-v060-governance-accuracy. The check runs automatically as part of `bin/edikt doctor` (see `tools/edikt/cmd/doctor_routed_sources.go`). Per ADR-029 + ADR-033 the markdown surface delegates to the helper; per ADR-030 the helper is LLM-agnostic and pure Go.
 
 ```bash
-python3 - <<'PY'
-import re, sys, os, glob, yaml
-from pathlib import Path
-
-# Resolve paths from config
-cfg = yaml.safe_load(open(".edikt/config.yaml"))
-paths = cfg.get("paths", {}) or {}
-base = cfg.get("base", "docs")
-decisions_dir = Path(paths.get("decisions") or f"{base}/architecture/decisions")
-invariants_dir = Path(paths.get("invariants") or f"{base}/architecture/invariants")
-
-# Collect every cited ID from the routing surface
-routing_files = []
-routing_files += list(Path(".claude/rules").glob("governance.md"))
-routing_files += list(Path(".claude/rules/governance").glob("*.md"))
-cited = set()
-cite_re = re.compile(r"\(ref:\s*(ADR-\d+|INV-\d+)\s*\)")
-for f in routing_files:
-    if not f.is_file():
-        continue
-    for m in cite_re.finditer(f.read_text()):
-        cited.add(m.group(1))
-
-# Resolve each ID to its expected source file
-missing = []
-resolved = 0
-for cid in sorted(cited):
-    prefix = "ADR" if cid.startswith("ADR") else "INV"
-    search_dir = decisions_dir if prefix == "ADR" else invariants_dir
-    matches = list(search_dir.glob(f"{cid}-*.md"))
-    if matches and matches[0].is_file():
-        resolved += 1
-    else:
-        missing.append((cid, str(search_dir / f"{cid}-*.md")))
-
-if missing:
-    for cid, expected in missing:
-        print(f"[FAIL] Missing source for routed directive: {cid} expected at {expected}")
-    sys.exit(1)
-print(f"[ok] Routed sources — {resolved} of {resolved} resolve")
-PY
+bin/edikt doctor
 ```
 
 - `[ok] Routed sources — {n} of {n} resolve` when every cited ID's source file exists.
@@ -185,37 +145,21 @@ fi
 
 **StatusLine type field check:**
 
-```bash
-python3 -c "
-import json
-try:
-    s = json.load(open('.claude/settings.json'))
-    sl = s.get('statusLine')
-    if isinstance(sl, dict) and 'type' not in sl:
-        print('[!!] settings.json statusLine block missing the required type field — Claude Code refuses to load the entire settings file (statusLine › type: Invalid value). Run /edikt:upgrade to auto-repair, or add \"type\": \"command\" manually as the first key inside the statusLine object.')
-except Exception:
-    pass
-" 2>/dev/null
-```
+Implemented in `bin/edikt doctor` (see `tools/edikt/cmd/doctor_settings_status.go`). The check runs automatically as part of doctor's main loop. Per ADR-029 + ADR-033 the markdown surface delegates to the helper.
 
 Critical signal — fire `[!!]` because a missing `type` field invalidates the WHOLE settings.json from Claude Code's perspective; every hook stops firing too.
 
 The placeholder is meant to be resolved at install time per `commands/init.md:993`. If it survives into the runtime config, Claude Code's shell expansion at hook-fire time produces an empty string and the hook path becomes a literal `/<hook>.sh`. Critical signal — fire `[!!]` not `[!]`.
 
 **Hooks (PreToolUse + PreCompact):**
+
+Inspect `.claude/settings.json` via the existing doctor helpers (no python required — `jq` or shell-native tools are sufficient for these read-only presence checks):
+
 ```bash
-python3 -c "
-import json
-s = json.load(open('.claude/settings.json'))
-hooks = s.get('hooks', {})
-pre_tool = hooks.get('PreToolUse', [])
-pre_compact = hooks.get('PreCompact', [])
-has_tool = any('Write|Edit' in str(h.get('matcher','')) for h in pre_tool)
-has_compact = len(pre_compact) > 0
-print(f'PreToolUse:{has_tool}')
-print(f'PreCompact:{has_compact}')
-" 2>/dev/null
+jq -e '.hooks.PreToolUse // [] | map(select((.matcher // "") | test("Write|Edit"))) | length > 0' .claude/settings.json >/dev/null && echo "PreToolUse:true" || echo "PreToolUse:false"
+jq -e '.hooks.PreCompact // [] | length > 0' .claude/settings.json >/dev/null && echo "PreCompact:true" || echo "PreCompact:false"
 ```
+
 - `[ok] PreToolUse hook (Write|Edit sentinel)` if present
 - `[!!] PreToolUse hook missing` — suggest `/edikt:init`
 - `[ok] PreCompact hook` if present
@@ -544,16 +488,10 @@ Report:
 
 **Check 2 — Schema version.**
 
-For each PRD `.yaml` sidecar:
+For each PRD `.yaml` sidecar (read the `schema_version` key with any YAML-aware tool — `yq` is fine; the 1-line python form stays acceptable here under INV-001 since it's stdlib-only):
 
 ```bash
-python3 <<'PYEOF' "$YAML_PATH"
-import sys, yaml
-with open(sys.argv[1]) as f:
-    data = yaml.safe_load(f) or {}
-v = data.get("schema_version", "")
-print(v if v else "missing")
-PYEOF
+python3 -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1])).get('schema_version','missing') or 'missing')" "$YAML_PATH"
 ```
 
 - `schema_version == "1.0"` → `[ok]`

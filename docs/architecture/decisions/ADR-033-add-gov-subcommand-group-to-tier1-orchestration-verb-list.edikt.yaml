@@ -1,0 +1,70 @@
+schema_version: 1
+topic: architecture
+path: docs/architecture/decisions/ADR-033-add-gov-subcommand-group-to-tier1-orchestration-verb-list.md
+signals:
+  - orchestration verb
+  - tier-1 orchestration
+  - adr-029 rule 3
+  - bin.edikt gov
+  - gov subcommand
+  - tier-1 markdown
+  - gov compile-history
+  - gov gitignore-bootstrap
+  - gov directive-check
+paths:
+  - bin/**/*
+  - tools/edikt/cmd/gov/**/*
+  - tools/edikt/internal/dircheck/**/*
+  - tools/edikt/internal/gitignore/**/*
+  - tools/edikt/internal/orphan/**/*
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "ADR-029 Rule 3 MUST broaden the entry `bin/edikt gov compile` into the group permit `bin/edikt gov <subcommand>`. (ref: ADR-033)"
+    source_excerpt:
+      line_start: 52
+      line_end: 52
+      quote: "**Amend ADR-029 Rule 3 to replace the single-verb entry `bin/edikt gov compile` with the group-permit entry `bin/edikt gov <subcommand>`.**"
+  - text: "All four ADR-029 rules MUST hold for every `gov` subcommand invocation. (ref: ADR-033)"
+    source_excerpt:
+      line_start: 68
+      line_end: 68
+      quote: "All four ADR-029 rules still hold for every `gov` subcommand invocation:"
+  - text: "Exit code MUST be the only contract — Phase 11.5 callers pass output verbatim and MUST NOT parse its shape. (ref: ADR-033)"
+    source_excerpt:
+      line_start: 71
+      line_end: 71
+      quote: "2. **Exit code only** — Phase 11.5 callers pass output verbatim and never parse its shape."
+  - text: "Tier-1 markdown commands invoking `bin/edikt gov <subcommand>` MUST declare `tier_2_dependency: edikt` in frontmatter. (ref: ADR-033)"
+    source_excerpt:
+      line_start: 73
+      line_end: 73
+      quote: "4. **Failure mode documented** — `commands/gov/compile.md` declares `tier_2_dependency: edikt`"
+prohibitions:
+  - text: "MUST NOT pin each new `gov` subcommand individually via successive ADRs — the group-permit precedent set by ADR-031 covers the whole `gov` parent. (ref: ADR-033)"
+    source_excerpt:
+      line_start: 89
+      line_end: 89
+      quote: "Phase 11.5 already adds three verbs; future phases will add more. Per-verb ADRs become a documentation tax with no security or correctness benefit."
+  - text: "MUST NOT leave Python heredocs in tier-1 markdown commands — heredocs bypass every tier-2 invariant (not unit-tested, not benchmarked, not in the ADR-030 LLM-agnostic gate). (ref: ADR-033)"
+    source_excerpt:
+      line_start: 95
+      line_end: 95
+      quote: "The Phase 11.5 architectural debt (Python heredocs in tier-1) stays in the repo. Heredocs bypass every tier-2 invariant"
+  - text: "MUST NOT fold migrated logic into existing enumerated verbs (e.g. fold compile-history into `gov compile`) — conflates pure deterministic state-machine work with the broader compile pipeline and loses the tight test surface. (ref: ADR-033)"
+    source_excerpt:
+      line_start: 101
+      line_end: 101
+      quote: "Conflates pure deterministic state-machine work with the broader compile pipeline. Makes `gov compile` impossible to drive in isolation"
+reminders:
+  - "Before adding a new `gov` subcommand → verify it falls under the ADR-029 Rule 3 `gov <subcommand>` group permit, not a new top-level verb (ref: ADR-033)"
+  - "Before migrating a Python heredoc from tier-1 to tier-2 → verify the new Go subcommand is covered by the no-llm-in-tier-2 CI grep gate (ref: ADR-033)"
+  - "Before adding a tier-1 invocation of a `gov` subcommand → verify the markdown file declares `tier_2_dependency: edikt` and the call uses exit code only, never parses output shape (ref: ADR-033)"
+verification:
+  - "[ ] `bin/edikt gov compile-history --help` exits 0 (ref: ADR-033)"
+  - "[ ] `bin/edikt gov gitignore-bootstrap --help` exits 0 (ref: ADR-033)"
+  - "[ ] `bin/edikt gov directive-check --help` exits 0 (ref: ADR-033)"
+  - "[ ] `commands/gov/compile.md`, `commands/gov/_shared-directive-checks.md`, and `commands/doctor.md` contain no `python3 - <<` heredocs (ref: ADR-033)"
+  - "[ ] CI grep gate in `.github/workflows/sidecar-checks.yml` covers `tools/edikt/cmd/gov/compilehistory.go`, `cmd/gov/gitignorebootstrap.go`, `cmd/gov/directivecheck.go`, `internal/dircheck/`, `internal/gitignore/`, `internal/orphan/` (ref: ADR-033)"

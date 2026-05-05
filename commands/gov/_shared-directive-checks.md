@@ -77,68 +77,19 @@ The procedure returns a list of warning strings, one per triggered condition acr
 
 **Callers must not alter warning text** — downstream tests (`test/integration/test_shared_directive_checks.py`) assert exact substrings to verify that compile and review produce identical output for the same input.
 
-## Inline Script
+## Tier-2 Subcommand
 
-The following Python script is the canonical implementation of the three checks. Callers embed it as a heredoc and invoke it with a JSON payload on stdin.
+The three checks are implemented in `bin/edikt gov directive-check` (Go, pure deterministic — see `tools/edikt/internal/dircheck/`). Per ADR-029 + ADR-033 this is an authorized tier-2 orchestration call; per ADR-030 the helper is LLM-agnostic.
 
 **Input contract (stdin):** a JSON object with keys `adr_id`, `directive_body`, `canonical_phrases` (list), and `no_directives_reason` (string or null).
 
-**Output contract (stdout):** one warning line per triggered condition, or nothing on a clean directive. **Exit 0 always** — this script never blocks a caller.
+**Output contract (stdout):** one warning line per triggered condition, or nothing on a clean directive.
 
-```bash
-python3 - <<'PY'
-import json
-import re
-import sys
+**Exit codes (ADR-029 Rule 2 — exit code is the contract):**
+- `0` — checks ran (warning lines on stdout if any). NEVER blocks a caller (AC-021 grace period).
+- `2` — INV-006 refusal: malformed JSON payload, unknown fields, or empty stdin.
 
-payload = json.loads(sys.stdin.read())
-adr_id = payload["adr_id"]
-body = payload["directive_body"]
-phrases = payload.get("canonical_phrases") or []
-no_dir_reason = payload.get("no_directives_reason")
-
-warnings = []
-
-# ── Check A: length vs canonical_phrases ──────────────────────────────────────
-# Strip (ref: …) tail
-stripped_body = re.sub(r'\s*\(ref:[^)]+\)\s*$', '', body.rstrip())
-
-# Split on sentence terminators (. ; ! ?) followed by a space, or at end of string
-clauses = re.split(r'(?<=[.;!?])\s+|(?<=[.;!?])$', stripped_body)
-clauses = [c.strip() for c in clauses if c.strip()]
-sentence_count = len(clauses)
-
-if sentence_count > 1 and not phrases:
-    warnings.append(
-        f'[WARN] {adr_id}: directive has {sentence_count} sentences but no canonical_phrases'
-        f' — run /edikt:adr:review --backfill'
-    )
-
-# ── Check B: phrase-not-in-body ───────────────────────────────────────────────
-body_lower = body.lower()
-for phrase in phrases:
-    p = phrase.strip()
-    if p and p.lower() not in body_lower:
-        warnings.append(
-            f'[WARN] {adr_id}: canonical_phrase "{p}" not found in directive body'
-        )
-
-# ── Check C: no-directives reason ─────────────────────────────────────────────
-if no_dir_reason is not None:
-    reason = str(no_dir_reason).strip()
-    forbidden = {"tbd", "todo", "fix later"}
-    if not reason or len(reason) < 10 or reason.lower() in forbidden:
-        warnings.append(
-            f'[WARN] {adr_id}: no-directives reason "{no_dir_reason}" is not acceptable'
-            f' — provide a meaningful explanation \u2265 10 characters'
-        )
-
-for w in warnings:
-    print(w)
-
-sys.exit(0)
-PY
-```
+The Go implementation matches the previous Python heredoc byte-for-byte; downstream callers read warnings as substring matches. Callers MUST NOT parse stdout structure (ADR-029 Rule 2).
 
 ## Invocation Protocol
 
@@ -154,9 +105,7 @@ echo '{
   "directive_body": "All DB access MUST go through the repository layer. NEVER bypass the repository.",
   "canonical_phrases": ["repository layer", "NEVER bypass"],
   "no_directives_reason": null
-}' | python3 - <<'PY'
-# ... (script body from above)
-PY
+}' | bin/edikt gov directive-check
 ```
 
 ### Collecting and surfacing results

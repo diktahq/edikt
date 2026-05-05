@@ -202,6 +202,22 @@ Exits 0 (healthy), 1 (warnings), or 2 (errors).`,
 			if omRan {
 				warnN += omWarn
 			}
+
+			// Routed sources (SPEC-005 Phase 2 / AC-004) — replaces the
+			// python heredoc previously embedded in commands/doctor.md
+			// (Phase 11.5 of PLAN-v060-governance-accuracy). Validates
+			// that every cited ADR/INV in the routing surface
+			// resolves to a source file under paths.{decisions,invariants}.
+			rsErr, _, rsRan := runRoutedSourcesCheck(cwd, os.Stdout)
+			if rsRan {
+				errN += rsErr
+			}
+
+			// statusLine.type validation (Phase 11.5). A missing type
+			// field invalidates the WHOLE settings.json from Claude
+			// Code's perspective; every hook stops firing too.
+			slErr, _, _ := runStatusLineTypeCheck(cwd, os.Stdout)
+			errN += slErr
 		}
 
 		// settings.json placeholder check — Claude Code does not expand env

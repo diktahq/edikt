@@ -6,6 +6,68 @@ Eliminates the v0.4.3 → v0.6.0 governance extraction regressions before
 shipping v0.6.0 final. Phase 1 ships the schema groundwork; remaining
 phases land incrementally.
 
+### Tier-3 Python migration (Phase 11.5)
+
+Closes the v0.6.0 architectural debt around Python heredocs embedded in
+tier-1 markdown commands. Heredocs bypassed every tier-2 invariant —
+not unit-tested, not benchmarked, not in any CI gate (including the
+ADR-030 LLM-agnostic gate). Phase 11.5 ports the four heaviest
+heredocs into proper Go subcommands.
+
+- **`bin/edikt gov compile-history`** — new tier-2 cobra subcommand.
+  Replaces the ~200 LOC orphan-set state-machine heredoc previously
+  embedded in `commands/gov/compile.md` Pass 2. Implements the five
+  transition rules (first-detection, consecutive, subset/recovered,
+  superset, different-reset) over `.edikt/state/compile-history.json`.
+  Atomic writes (tmp + rename). INV-006-validated `--orphans` and
+  `--history-path` flags. Exit codes: 0 clean, 1 BLOCK, 2 INV-006
+  refusal. 9 unit tests in `internal/orphan/` + 8 subcommand integration
+  tests covering each transition + corruption recovery + traversal
+  refusals + deterministic ordering (ADR-020 byte-equal contract).
+- **`bin/edikt gov gitignore-bootstrap`** — new tier-2 cobra subcommand.
+  Replaces the ~30 LOC `.gitignore` management heredoc. Idempotent;
+  trailing-slash variants (`.edikt/state/` vs `.edikt/state`) are
+  deduplicated. INV-006-validated `--project-root` and `--entry`. 5 unit
+  tests in `internal/gitignore/` + 3 subcommand integration tests.
+- **`bin/edikt gov directive-check`** — new tier-2 cobra subcommand.
+  Replaces the ~50 LOC three-check heredoc in
+  `commands/gov/_shared-directive-checks.md`. Pure Go port — same JSON
+  payload contract, byte-for-byte identical warning text. AC-021 grace
+  period preserved (always exits 0 unless INV-006 refusal). 12 unit
+  tests in `internal/dircheck/` (length-vs-canonical, phrase-not-in-body,
+  no-directives reason, edge cases) + 3 subcommand integration tests.
+- **`bin/edikt doctor`** — extended with the routed-source check
+  (replaces the ~40 LOC heredoc in `commands/doctor.md` line 121) and
+  the statusLine-type-field check (replaces the ~10 LOC heredoc at line
+  189). Both wired into the existing doctor main loop alongside
+  `runRejectedOptionsCheck` / `runOrphanManualRefCheck`. New files:
+  `cmd/doctor_routed_sources.go` + `cmd/doctor_settings_status.go`.
+  4 + (covered by smoke) tests.
+- **`commands/gov/compile.md`, `_shared-directive-checks.md`,
+  `doctor.md`** — heredocs replaced by single-line invocations of the
+  new subcommands. Per ADR-029 + ADR-033 the markdown surface
+  delegates to the helper; output is informational, exit code is the
+  contract. Three trivial 1-liner stdlib-only python invocations remain
+  (config YAML safe-load, schema-version field read, sha256 hash) —
+  intentional per the heredoc-vs-1-liner threshold.
+- **ADR-033** at `docs/architecture/decisions/ADR-033-add-gov-
+  subcommand-group-to-tier1-orchestration-verb-list.md` (status
+  Accepted) — amends ADR-029 Rule 3 to broaden `bin/edikt gov compile`
+  into `bin/edikt gov <subcommand>` (group permit, mirrors
+  ADR-031's `sidecar` precedent). Covers the three new gov
+  subcommands without per-verb amendments for future additions.
+- **CI grep gate extended** in `.github/workflows/sidecar-checks.yml`
+  to cover the new tier-2 paths (`internal/dircheck/`,
+  `internal/gitignore/`, `internal/orphan/`, `cmd/gov/compilehistory.go`,
+  `cmd/gov/gitignorebootstrap.go`, `cmd/gov/directivecheck.go`,
+  `cmd/doctor_routed_sources.go`, `cmd/doctor_settings_status.go`).
+  Pattern refined to `\bclaude\b` (LLM shell-out) instead of bare
+  `claude` substring so legitimate `.claude/` filesystem paths don't
+  trip the gate.
+- **Pin-warning exemption** generalised to walk the parent-command
+  chain — subcommands under `gov` now inherit the parent's exemption
+  (previously only the literal `gov` leaf was exempt).
+
 ### Quality lock (Phase 11)
 
 - **`bin/edikt gov lossless-check`** — new tier-2 cobra subcommand. Walks

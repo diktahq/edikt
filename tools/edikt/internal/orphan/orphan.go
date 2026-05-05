@@ -76,29 +76,52 @@ func Decide(current []string, prior *[]string) (sc Scenario, block bool, write b
 // ReadState loads the history file. Returns (nil, nil) if absent, which the
 // caller should treat as "no prior history".
 func ReadState(path string) (*State, error) {
+	s, _, err := ReadStateDetailed(path)
+	return s, err
+}
+
+// ReadStateDetailed is the verbose form of ReadState used by callers that
+// need to know whether the history was missing, corrupt, or healthy. The
+// boolean reports whether the file was loadable; when false the caller
+// should treat the history as absent (matches the python heredoc's
+// `history_loadable` flag and the `[WARN] compile-history.json is
+// unparseable` log line).
+func ReadStateDetailed(path string) (*State, bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, true, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
 	var s State
 	if err := json.Unmarshal(data, &s); err != nil {
-		// Corrupt history — treat as absent (loud warning logged by caller).
-		return nil, nil
+		// Corrupt history — treat as absent (loud warning logged by
+		// caller). Loadable=false signals the corruption.
+		return nil, false, nil
 	}
-	return &s, nil
+	// Schema sanity: orphan_adrs must be a JSON array (decoded slice).
+	// A nil slice from a missing key is fine; a non-list would have
+	// failed Unmarshal already because OrphanADRs is []string.
+	return &s, true, nil
 }
 
-// WriteState atomically writes the history file (tmp + rename).
+// WriteState atomically writes the history file (tmp + rename) using the
+// current UTC clock for last_compile_at.
 func WriteState(path string, orphans []string, ediktVersion string) error {
+	return WriteStateAt(path, orphans, ediktVersion, time.Now().UTC())
+}
+
+// WriteStateAt is the deterministic form of WriteState. The timestamp is
+// injected by the caller so byte-equal output tests have a stable input.
+// Used by `bin/edikt gov compile-history` when the operator pins a clock.
+func WriteStateAt(path string, orphans []string, ediktVersion string, ts time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("mkdir state: %w", err)
 	}
 	state := State{
 		SchemaVersion: 1,
-		LastCompileAt: time.Now().UTC().Format("2006-01-02T15:04:05Z"),
+		LastCompileAt: ts.UTC().Format("2006-01-02T15:04:05Z"),
 		OrphanADRs:    uniqSort(orphans),
 		EdiktVersion:  ediktVersion,
 	}

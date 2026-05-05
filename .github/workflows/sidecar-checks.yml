@@ -166,8 +166,16 @@ jobs:
         # Phase 6 extends the same gate to sidecardiff and the diff portion of
         # cmd/sidecar.go — comparator stays pure-Go per ADR-030.
         # Phase 10 extends the same gate to the benchmark package.
+        # Phase 11.5 extends the same gate to the new tier-2 ports of
+        # the legacy Python heredocs: gov compile-history,
+        # gov gitignore-bootstrap, gov directive-check, plus the doctor
+        # routed-source / statusline-type checks. All pure Go, no LLM.
         run: |
-          hits=$(grep -rn 'claude' \
+          # Match `claude` only when it appears as an LLM-shellout token,
+          # not as part of `.claude/...` filesystem paths (settings.json,
+          # rules/, etc. are legitimate references to the host agent's
+          # config directory; they don't dispatch an LLM).
+          hits=$(grep -rnE '(\bclaude\b[^/.]|"claude"|exec\.Command[^)]*claude|exec\.LookPath[^)]*claude)' \
                    tools/edikt/cmd/migrate_sidecars.go \
                    tools/edikt/cmd/migrate_sidecars_strict.go \
                    tools/edikt/cmd/sidecar.go \
@@ -175,16 +183,25 @@ jobs:
                    tools/edikt/internal/benchmark/ \
                    tools/edikt/internal/lossless/ \
                    tools/edikt/cmd/gov/losslesscheck.go \
+                   tools/edikt/cmd/gov/compilehistory.go \
+                   tools/edikt/cmd/gov/gitignorebootstrap.go \
+                   tools/edikt/cmd/gov/directivecheck.go \
+                   tools/edikt/cmd/doctor_routed_sources.go \
+                   tools/edikt/cmd/doctor_settings_status.go \
+                   tools/edikt/internal/dircheck/ \
+                   tools/edikt/internal/gitignore/ \
+                   tools/edikt/internal/orphan/ \
                    2>/dev/null \
                  | awk -F: 'NF>=3 { line=$3; for(i=4;i<=NF;i++) line=line":"$i; gsub(/^[ \t]+/,"",line); if (substr(line,1,2)!="//") print }' \
                  | grep -v '_test\.go:' \
+                 | grep -vE '\.claude(/|")' \
                  || true)
           if [ -n "$hits" ]; then
-            echo "::error::migrate_sidecars / sidecardiff / benchmark production source contains 'claude' reference — violates ADR-030"
+            echo "::error::migrate_sidecars / sidecardiff / benchmark / Phase 11.5 ports production source contains LLM-shellout 'claude' reference — violates ADR-030"
             echo "$hits"
             exit 1
           fi
-          echo "OK: no 'claude' invocation in migrate_sidecars / sidecardiff / benchmark production source"
+          echo "OK: no LLM-shellout 'claude' invocation in migrate_sidecars / sidecardiff / benchmark / Phase 11.5 ports production source"
 
       - name: Sidecar fixture comparator (all)
         # Run the deterministic structural-equivalence comparator against

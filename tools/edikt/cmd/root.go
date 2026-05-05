@@ -81,8 +81,18 @@ func init() {
 			_ = unlock
 		}
 
-		// Pin warning for non-exempt commands.
-		if !pinWarnExempt(name) {
+		// Pin warning for non-exempt commands. Walk the parent chain so
+		// subcommands (e.g. `gov compile-history`) inherit the parent's
+		// exemption — the policy is "any command under `gov` is exempt"
+		// not "only the literal `gov` leaf".
+		exempt := false
+		for c := cmd; c != nil; c = c.Parent() {
+			if pinWarnExempt(c.Name()) {
+				exempt = true
+				break
+			}
+		}
+		if !exempt {
 			emitPinWarn(ediktRoot)
 		}
 		return nil
