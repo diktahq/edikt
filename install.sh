@@ -11,7 +11,7 @@ umask 0022
 #   curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash -s -- --dry-run   # preview changes
 
 REPO="diktahq/edikt"
-BRANCH="main"
+BRANCH="v0.4.4"
 BASE_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}"
 
 # Parse flags

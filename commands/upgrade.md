@@ -29,7 +29,7 @@ If `--offline` is in `$ARGUMENTS`, skip this step entirely and proceed to Step 1
 Otherwise, check if a newer edikt version is available:
 
 ```bash
-LATEST_VERSION=$(curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/main/VERSION" 2>/dev/null | tr -d '[:space:]')
+LATEST_VERSION=$(curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/v0.4.4/VERSION" 2>/dev/null | tr -d '[:space:]')
 INSTALLED_VERSION=$(cat .edikt/VERSION 2>/dev/null || cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]')
 ```
 
@@ -49,7 +49,7 @@ Proceed to Step 1 normally.
 📦 edikt {LATEST_VERSION} is available (you have {INSTALLED_VERSION}).
 
   Update now:
-    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.4/install.sh | bash
 
   Then re-run /edikt:upgrade to apply changes to this project.
   To skip this check: /edikt:upgrade --offline
@@ -66,7 +66,7 @@ No edikt config found. Run /edikt:init to set up this project.
 Check that edikt templates exist at `~/.edikt/templates/`. If not:
 ```
 edikt templates not found. Re-install edikt:
-  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.4/install.sh | bash
 ```
 
 Use the Bash tool to read both versions — do NOT infer or guess them:
