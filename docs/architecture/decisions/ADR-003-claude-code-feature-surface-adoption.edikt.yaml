@@ -1,26 +1,68 @@
 schema_version: 1
 topic: hooks
 path: docs/architecture/decisions/ADR-003-claude-code-feature-surface-adoption.md
-signals: []
-directives:
-  - text: 'Use PostToolUse hooks for auto-formatting after Write or Edit. Fire only on known source file extensions. Respect `EDIKT_FORMAT_SKIP=1` and config disable. (ref: ADR-003)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Use PostToolUse hooks for auto-formatting after Write or Edit. Fire only on known source file extensions. Respect `EDIKT_FORMAT_SKIP=1` and config disable. (ref: ADR-003)'
-  - text: 'Use shell preprocessing in slash commands to inject live project state (next ADR/INV/PRD number, active plan phase). NEVER guess or hardcode sequential identifiers. (ref: ADR-003)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Use shell preprocessing in slash commands to inject live project state (next ADR/INV/PRD number, active plan phase). NEVER guess or hardcode sequential identifiers. (ref: ADR-003)'
-  - text: 'Agents run in forked subagents (`context: fork`), invoked by edikt on domain signals. They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-003)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Agents run in forked subagents (`context: fork`), invoked by edikt on domain signals. They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-003)'
-paths:
-  - templates/hooks/**
-  - templates/settings.json.tmpl
-  - commands/**
+signals:
+- posttooluse hook
+- post-tool-use
+- auto-format
+- formatter detection
+- shell preprocessing
+- live data injection
+- context fork
+- edikt sync
+- read-only commands
+- forked subagent
+paths: []
 scope:
-  - implementation
+- design
+- implementation
+- review
+prohibitions: []
+reminders: []
+verification: []
+directives:
+- text: 'A PostToolUse hook MUST fire after Write or Edit on source files. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 21
+    line_end: 21
+    quote: Add a `PostToolUse` hook that fires after `Write` or `Edit` on source files.
+- text: 'If a formatter is detected in the project (gofmt, prettier, black, rustfmt), it SHOULD run automatically. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 21
+    line_end: 21
+    quote: If a formatter is detected in the project (gofmt, prettier, black, rustfmt), run it automatically.
+- text: 'The PostToolUse hook MUST only fire when the edited file matches a known source extension. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 23
+    line_end: 23
+    quote: '**Noise control:** Only fire when the edited file matches a known source extension.'
+- text: 'The PostToolUse hook MUST suppress formatting when writing markdown, YAML, JSON config files. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 23
+    line_end: 23
+    quote: Suppress when writing markdown, YAML, JSON config files — formatting those is rarely the right behavior.
+- text: 'Shell preprocessing MUST be used in slash commands where live project state matters. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 29
+    line_end: 29
+    quote: 'Use shell preprocessing in slash commands where live project state matters:'
+- text: 'context: fork frontmatter MUST be added to commands that do read-only analysis and should not affect the main session. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 40
+    line_end: 40
+    quote: 'Add `context: fork` frontmatter to commands that do read-only analysis and shouldn''t affect the main session.'
+- text: 'MUST NOT fork commands that need to write files (edikt:init, edikt:context, edikt:adr, etc.) — forked subagents can''t write back to the parent session. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 47
+    line_end: 47
+    quote: Do NOT fork commands that need to write files (`edikt:init`, `edikt:context`, `edikt:adr`, etc.) — forked subagents can't write back to the parent session.
+- text: 'Linter config to AI rules translation MUST be implemented as a new command edikt:sync. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 51
+    line_end: 51
+    quote: Implement linter config → AI rules translation as a new command `edikt:sync`.
+- text: 'edikt:sync MUST run during edikt:init for brownfield projects (auto), and manually when linter config changes. (ref: ADR-003)'
+  source_excerpt:
+    line_start: 51
+    line_end: 51
+    quote: Runs during `edikt:init` for brownfield projects (auto), and manually when linter config changes.

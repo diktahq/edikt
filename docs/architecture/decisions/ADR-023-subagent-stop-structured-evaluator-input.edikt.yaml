@@ -4,9 +4,8 @@ path: docs/architecture/decisions/ADR-023-subagent-stop-structured-evaluator-inp
 signals:
   - subagent-stop
   - subagent
-  - evaluator
   - evaluator output
-  - evaluator_output.agent
+  - evaluator_output
   - verdict schema
   - gate severity threshold
   - events.jsonl
@@ -61,6 +60,11 @@ directives:
       line_start: 67
       line_end: 67
       quote: "Evaluator agents MUST NOT emit prose verdicts. ADR-018's schema (`templates/agents/evaluator-verdict.schema.json`) is the source of truth for the JSON structure; this ADR adds the `evaluator_output.agent` field requirement on top of it."
+  - text: "`subagent-stop.sh` MUST resolve the effective severity threshold in priority order: EDIKT_GATE_SEVERITY_THRESHOLD env var, then gates.<agent>, then gates.default, then compiled-in fallback `critical`. (ref: ADR-023)"
+    source_excerpt:
+      line_start: 71
+      line_end: 76
+      quote: "`subagent-stop.sh` resolves the effective severity threshold for a given invocation in this order:\n\n1. `EDIKT_GATE_SEVERITY_THRESHOLD` env var (if set — per-invocation override, validated against allowlist per INV-006)\n2. `.edikt/config.yaml` → `gates.<agent>` (read from `evaluator_output.agent`)\n3. `.edikt/config.yaml` → `gates.default`\n4. Compiled-in fallback: `critical`"
   - text: "Severity ordering MUST be `critical(3) > warning(2) > info(1)`. (ref: ADR-023)"
     source_excerpt:
       line_start: 78

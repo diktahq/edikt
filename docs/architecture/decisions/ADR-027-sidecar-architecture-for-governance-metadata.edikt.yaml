@@ -1,56 +1,82 @@
 schema_version: 1
 topic: compile
 path: docs/architecture/decisions/ADR-027-sidecar-architecture-for-governance-metadata.md
-signals: []
-directives:
-  - text: 'edikt MUST NOT write to any ADR, invariant, or guideline `.md` file. Generated directive metadata MUST live in a co-located `<name>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.json`. (ref: ADR-027)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: edikt MUST NOT write to any ADR, invariant, or guideline `.md` file. Generated directive metadata MUST live in a co-located `<name>.edikt.yaml` sidecar conforming to `templates/schemas/sidecar.schema.
-  - text: 'The sidecar schema MUST NOT persist `source_hash`, `agent_prompt_version`, or `directives_hash` at the root. Hashes are recomputed on read at compile time. (ref: ADR-027)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The sidecar schema MUST NOT persist `source_hash`, `agent_prompt_version`, or `directives_hash` at the root. Hashes are recomputed on read at compile time. (ref: ADR-027)'
-  - text: '`/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` MUST generate the `(parent.md, parent.edikt.yaml)` pair atomically by dispatching extraction to a forked subagent (`context: fork`) with a locked extraction prompt. (ref: ADR-027)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` MUST generate the `(parent.md, parent.edikt.yaml)` pair atomically by dispatching extraction to a forked subagent (`context: fork`) wit'
-  - text: 'Per-artifact `:compile` commands MUST regenerate the sidecar in a fresh subagent context per artifact. NEVER pipe multiple artifacts through one parent session. (ref: ADR-027)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Per-artifact `:compile` commands MUST regenerate the sidecar in a fresh subagent context per artifact. NEVER pipe multiple artifacts through one parent session. (ref: ADR-027)'
-  - text: 'v0.6.0 `gov:compile` MUST read sidecars only. Pre-migration projects MUST exit non-zero with a single-line actionable error directing the user to `edikt migrate sidecars`. NEVER fall back to in-body sentinel parsing. (ref: ADR-027)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: v0.6.0 `gov:compile` MUST read sidecars only. Pre-migration projects MUST exit non-zero with a single-line actionable error directing the user to `edikt migrate sidecars`. NEVER fall back to in-body s
-  - text: 'INV-005''s managed-region guard NARROWS in v0.6.0 to `CLAUDE.md` and `settings.json` only. Governance artifacts (`.md` files in decisions/, invariants/, guidelines/) are NEVER managed regions because edikt does not write to them. (ref: ADR-027, INV-005)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: INV-005's managed-region guard NARROWS in v0.6.0 to `CLAUDE.md` and `settings.json` only. Governance artifacts (`.md` files in decisions/, invariants/, guidelines/) are NEVER managed regions because e
-paths:
-  - tools/edikt/cmd/gov.go
-  - tools/edikt/internal/compile/**
-  - templates/schemas/sidecar.schema.json
-  - commands/adr/new.md
-  - commands/adr/compile.md
-  - commands/adr/review.md
-  - commands/invariant/new.md
-  - commands/invariant/compile.md
-  - commands/invariant/review.md
-  - commands/guideline/new.md
-  - commands/guideline/compile.md
-  - commands/guideline/review.md
-  - commands/gov/compile.md
-  - docs/architecture/decisions/**/*.edikt.yaml
-  - docs/architecture/invariants/**/*.edikt.yaml
-  - docs/guidelines/**/*.edikt.yaml
+signals:
+  - sidecar
+  - sidecar schema
+  - sidecar architecture
+  - edikt.yaml
+  - gov compile
+  - source hash
+  - directives hash
+  - agent prompt version
+  - migrate sidecars
+  - in-body sentinel
+  - pre-migration
+  - subagent isolation
+  - compile in progress
+  - co-located sidecar
+  - additionalproperties false
+paths: []
 scope:
   - design
   - implementation
   - review
+directives:
+  - text: "edikt MUST never write to any `<name>.md` governance artifact. Compile MUST be a pure deterministic merge over the existing sidecar set. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 36
+      line_end: 36
+      quote: "**Adopt a co-located sidecar pattern for governance metadata.** For every ADR, invariant, and guideline `<name>.md`, edikt maintains a co-located `<name>.edikt.yaml`. The sidecar contains the topic, signals, and directives extracted from the parent's prose body. edikt **never** writes to `<name>.md`. Compile becomes a pure deterministic merge over the existing sidecar set."
+  - text: "`gov:compile` MUST read parent `.md` prose only to recompute hashes for drift detection and MUST NEVER write to any ADR, invariant, or guideline `.md`. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 40
+      line_end: 40
+      quote: "1. **Compile is read-only over .md.** `gov:compile` reads parent prose only to recompute hashes for drift detection. It writes to `<name>.edikt.yaml` only when the sidecar's recorded source quote no longer matches the live body (resync — see ADR-028 / Phase 3). It writes to `.claude/rules/governance.md` and `.claude/rules/governance/<topic>.md` as it does today. It NEVER writes to any ADR, invariant, or guideline `.md`."
+  - text: "`/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` MUST create the `(parent.md, parent.edikt.yaml)` pair atomically by dispatching extraction to a forked subagent (`context: fork`) with a locked extraction prompt. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 43
+      line_end: 43
+      quote: "   - `/edikt:adr:new`, `/edikt:invariant:new`, `/edikt:guideline:new` create the `(parent.md, parent.edikt.yaml)` pair atomically. Sidecar generation runs in a forked subagent (`context: fork`) with a locked extraction prompt — no parent-session contamination."
+  - text: "`/edikt:adr:compile` and the per-artifact variants MUST regenerate the sidecar in a fresh subagent context per artifact. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 44
+      line_end: 44
+      quote: "   - `/edikt:adr:compile` (and the per-artifact variants) regenerate the sidecar in a fresh subagent context per artifact. Replaces today's \"compile mutates the parent ADR\" path."
+  - text: "`additionalProperties: false` MUST be enforced at every object level in the sidecar schema. `source_hash`, `agent_prompt_version`, and `directives_hash` MUST NEVER appear in the persisted sidecar shape. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "3. **Schema is sealed at v1.** Sidecars conform to `templates/schemas/sidecar.schema.json` (Phase 1). The on-disk shape contains: `schema_version` (const 1), `topic`, `path`, `signals`, `directives[]` (each with `text` + `source_excerpt{line_start, line_end, quote}`). `additionalProperties: false` is enforced at every object level. **`source_hash`, `agent_prompt_version`, and `directives_hash` are explicitly forbidden in the persisted shape.** All hashes are recomputed on read at compile time. Persisting them invites stale-hash bugs and drift between recorded and computed values."
+  - text: "v0.6.0 `gov:compile` MUST read sidecars only — there MUST be no double-parser fallback window. Pre-migration projects MUST produce a clear actionable error, not silent degradation. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 49
+      line_end: 49
+      quote: "4. **In-body sentinels are removed in v0.6.0.** The `[edikt:directives:start]` / `[edikt:directives:end]` block stops being authoritative. The `edikt migrate sidecars` tool (Phase 6) lifts existing sentinel content into sidecars and strips the in-body block. The migration runs once on upgrade; v0.6.0's compile reads sidecars only — there is no double-parser fallback window. Pre-migration projects produce a clear actionable error, not silent degradation."
+  - text: "`:new` and per-artifact `:compile` MUST always dispatch each artifact's extraction to a fresh subagent context. The parent MUST NEVER see other ADRs' bodies. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "5. **Subagent isolation eliminates cross-artifact contamination.** `:new` and per-artifact `:compile` always dispatch each artifact's extraction to a fresh subagent context. The parent never sees the other ADRs' bodies. This closes the v0.6.0-rc1 regression class."
+prohibitions:
+  - text: "MUST NOT use a single project-level sidecar for all governance metadata — doing so loses co-location, git-blame locality, and subagent dispatch isolation. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 105
+      line_end: 105
+      quote: "- **Cons:** Loses co-location — readers can no longer browse to an ADR and see its associated metadata in the same directory. Loses git-blame locality — a directive change cannot be attributed to a specific artifact's edit. Loses isolation — a project-level file is one Claude session's contention point, defeating subagent dispatch."
+    derived_from: "rejected_option_one-sidecar-at-project-level"
+  - text: "MUST NOT store sidecars in a separate directory (e.g., `.edikt/sidecars/<name>.yaml`) — doing so loses co-location at the directory level and breaks `git mv` ergonomics. (ref: ADR-027)"
+    source_excerpt:
+      line_start: 111
+      line_end: 111
+      quote: "- **Cons:** Loses co-location at the directory level — readers must navigate elsewhere. Loses ergonomics: `git mv` of an ADR doesn't move its sidecar. Increases the contract surface (which directory holds what)."
+    derived_from: "rejected_option_separate-directory"
+reminders:
+  - "Before verifying the sidecar schema → check `templates/schemas/sidecar.schema.json` exists, validates v1 shape, and forbids `source_hash` / `agent_prompt_version` / `directives_hash` at root via `additionalProperties: false` (ref: ADR-027)"
+  - "Before running `gov:compile` → verify ADR-008 has `status: superseded`, `superseded_by: ADR-027`, and `**Status:** Superseded by ADR-027` as its top body line (ref: ADR-027)"
+  - "Before running `gov:compile` on a pre-migration project → verify compile exits non-zero with a single-line actionable error directing the user to `edikt migrate sidecars` (ref: ADR-027)"
+verification:
+  - "[ ] `templates/schemas/sidecar.schema.json` exists and forbids `source_hash`, `agent_prompt_version`, `directives_hash` at root via `additionalProperties: false` (ref: ADR-027)"
+  - "[ ] `docs/architecture/decisions/ADR-008-*.md` has `status: superseded`, `superseded_by: ADR-027`, and `**Status:** Superseded by ADR-027` as its top body line (ref: ADR-027)"
+  - "[ ] `docs/architecture/decisions/ADR-027-*.md` exists with `status: accepted` and contains all required sections (ref: ADR-027)"
+  - "[ ] `gov:compile` re-run picks up ADR-027 directives and drops ADR-008 directives — verify ADR-027 directives appear in compiled topic file (ref: ADR-027)"

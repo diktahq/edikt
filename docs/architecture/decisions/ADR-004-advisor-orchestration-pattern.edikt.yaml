@@ -1,29 +1,75 @@
 schema_version: 1
 topic: agent-rules
 path: docs/architecture/decisions/ADR-004-advisor-orchestration-pattern.md
-signals: []
-directives:
-  - text: 'Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Specialist agents are advisors only — they read, analyze, and return findings. They NEVER write files or modify state. (ref: ADR-004)'
-  - text: 'Agents run in forked subagents (`context: fork`). They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-004)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Agents run in forked subagents (`context: fork`). They do not coordinate parallel execution — that is Claude Code''s responsibility. (ref: ADR-004)'
-  - text: 'Domain signal detection is keyword-based. Over-routing is acceptable; under-routing is not. (ref: ADR-004)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Domain signal detection is keyword-based. Over-routing is acceptable; under-routing is not. (ref: ADR-004)'
-paths:
-  - templates/agents/**
-  - commands/review.md
-  - commands/plan.md
-  - commands/audit.md
+signals:
+- advisor orchestration
+- proactive advisor
+- domain signal detection
+- specialist agents
+- context fork
+- pre-flight review
+- post-implementation review
+- session start hook
+- advisor findings
+- severity model
 scope:
-  - planning
-  - design
-  - review
+- design
+- implementation
+- review
+directives:
+- text: 'The distinction between advisors (in scope) and executors (out of scope) MUST be maintained precisely. (ref: ADR-004)'
+  source_excerpt:
+    line_start: 19
+    line_end: 19
+    quote: 'The distinction is precise and must be maintained:'
+- text: 'Advisor agents MUST NEVER write files or modify state. (ref: ADR-004)'
+  source_excerpt:
+    line_start: 24
+    line_end: 24
+    quote: '- Never write files, never modify state'
+- text: 'Advisor agents MUST run in isolated forked subagents (context: fork). (ref: ADR-004)'
+  source_excerpt:
+    line_start: 25
+    line_end: 25
+    quote: '- Run in isolated forked subagents (context: fork)'
+- text: 'Advisor agents MUST be invoked automatically by edikt based on domain signals. (ref: ADR-004)'
+  source_excerpt:
+    line_start: 26
+    line_end: 26
+    quote: '- Invoked automatically by edikt based on domain signals'
+- text: 'Proactive advisory MUST fire at three moments: session start, pre-flight (after plan creation), and post-implementation (via /edikt:review). (ref: ADR-004)'
+  source_excerpt:
+    line_start: 49
+    line_end: 53
+    quote: 'Proactive advisory fires at three moments in the workflow:
+
+
+      1. **Session start** — git-aware summary of what changed since last session, which domains are affected, which agents are relevant
+
+      2. **Pre-flight** — after `/edikt:plan` creates a plan, relevant specialists review it before execution begins
+
+      3. **Post-implementation** — `/edikt:review` routes to specialists based on what was actually built'
+- text: 'Advisor findings MUST use the three-level severity model: Critical (must be addressed before shipping), Warning (should be addressed, not blocking), OK (domain looks healthy). (ref: ADR-004)'
+  source_excerpt:
+    line_start: 57
+    line_end: 60
+    quote: '- 🔴 **Critical** — must be addressed before shipping (security vulnerability, data loss risk, broken contract)
+
+      - 🟡 **Warning** — should be addressed, not blocking (missing index, no rollback, test gap)
+
+      - 🟢 **OK** — domain looks healthy, notable positive patterns'
+prohibitions:
+- text: 'MUST NOT route tasks to agents that write code or modify files (full execution orchestration) — execution orchestration is out of scope per ADR-004. (ref: ADR-004)'
+  source_excerpt:
+    line_start: 65
+    line_end: 65
+    quote: 'Auto-route tasks to agents that write code, not just review it. Rejected: violates edikt''s "no execution orchestration" principle from ADR-001. Claude Code handles execution natively via worktrees and subagents.'
+  derived_from: rejected_option_full-execution-orchestration
+- text: 'MUST NOT fire advisor agents from PostToolUse hooks via nested claude -p calls — PostToolUse hooks cannot run Claude agents and nested calls break session context. (ref: ADR-004)'
+  source_excerpt:
+    line_start: 67
+    line_end: 68
+    quote: 'Fire advisor agents after each file write to catch domain issues mid-edit. Rejected: PostToolUse hooks can only run shell commands, not Claude agents. Would require nested `claude -p` calls — messy, slow, breaks session context.'
+  derived_from: rejected_option_posttooluse-advisory-hooks
+reminders: []
+verification: []

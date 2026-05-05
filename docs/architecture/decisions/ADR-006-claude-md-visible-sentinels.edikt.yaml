@@ -1,21 +1,53 @@
 schema_version: 1
-topic: hooks
+topic: compile
 path: docs/architecture/decisions/ADR-006-claude-md-visible-sentinels.md
-signals: []
-directives:
-  - text: 'CLAUDE.md sentinels use visible markdown link reference definitions: `[edikt:start]: #` and `[edikt:end]: #`. NEVER use HTML comment sentinels. (ref: ADR-006)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'CLAUDE.md sentinels use visible markdown link reference definitions: `[edikt:start]: #` and `[edikt:end]: #`. NEVER use HTML comment sentinels. (ref: ADR-006)'
-  - text: 'Detect both formats (HTML comments and link references) for backward compatibility during init and upgrade. (ref: ADR-006)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Detect both formats (HTML comments and link references) for backward compatibility during init and upgrade. (ref: ADR-006)'
-paths:
-  - templates/CLAUDE.md.tmpl
-  - commands/init.md
-  - commands/upgrade.md
+signals:
+  - claude.md sentinels
+  - sentinel format
+  - sentinel migration
+  - html comment sentinels
+  - link reference definitions
+  - managed region
+  - visible markers
+  - backward compatibility
+  - edikt init
+  - edikt upgrade
+paths: []
 scope:
+  - design
   - implementation
+  - review
+directives:
+  - text: "HTML comment sentinels MUST be replaced with markdown link reference definitions, which are not stripped by Claude Code. (ref: ADR-006)"
+    source_excerpt:
+      line_start: 15
+      line_end: 15
+      quote: "Replace HTML comment sentinels with markdown link reference definitions, which are not stripped by Claude Code:"
+  - text: "The merge logic (three cases) and the Read + Edit approach from ADR-002 MUST remain unchanged. (ref: ADR-006)"
+    source_excerpt:
+      line_start: 23
+      line_end: 23
+      quote: "The merge logic (three cases) and the Read + Edit approach from ADR-002 remain unchanged. Only the sentinel format changes."
+  - text: "Only the sentinel format MUST change. (ref: ADR-006)"
+    source_excerpt:
+      line_start: 23
+      line_end: 23
+      quote: "The merge logic (three cases) and the Read + Edit approach from ADR-002 remain unchanged. Only the sentinel format changes."
+  - text: "Both formats MUST be detected. (ref: ADR-006)"
+    source_excerpt:
+      line_start: 25
+      line_end: 25
+      quote: "**Backward compatibility:** Both formats are detected. `/edikt:init` migrates old HTML comment markers to the new format when re-running on an existing project. `/edikt:upgrade` explicitly detects and migrates old markers as part of its upgrade flow."
+  - text: "`/edikt:init` MUST migrate old HTML comment markers to the new format when re-running on an existing project. (ref: ADR-006)"
+    source_excerpt:
+      line_start: 25
+      line_end: 25
+      quote: "**Backward compatibility:** Both formats are detected. `/edikt:init` migrates old HTML comment markers to the new format when re-running on an existing project. `/edikt:upgrade` explicitly detects and migrates old markers as part of its upgrade flow."
+  - text: "`/edikt:upgrade` MUST explicitly detect and migrate old markers as part of its upgrade flow. (ref: ADR-006)"
+    source_excerpt:
+      line_start: 25
+      line_end: 25
+      quote: "**Backward compatibility:** Both formats are detected. `/edikt:init` migrates old HTML comment markers to the new format when re-running on an existing project. `/edikt:upgrade` explicitly detects and migrates old markers as part of its upgrade flow."
+prohibitions: []
+reminders: []
+verification: []

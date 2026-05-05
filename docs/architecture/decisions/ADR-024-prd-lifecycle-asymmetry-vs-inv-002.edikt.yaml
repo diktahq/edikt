@@ -4,14 +4,16 @@ path: docs/architecture/decisions/ADR-024-prd-lifecycle-asymmetry-vs-inv-002.md
 signals:
   - prd lifecycle
   - edit-in-place
-  - revision history
   - per-entry status
-  - prd sidecar
-  - supersede
+  - revision history
   - transition commands
-  - evaluator scoring
+  - accepted adr
+  - supersede
   - shipped entries
+  - drift checks
+  - prd sidecar
   - inv-002
+  - evaluator scoring
 paths: []
 scope:
   - design
@@ -53,7 +55,12 @@ directives:
       line_start: 41
       line_end: 41
       quote: "5. **ADRs are unchanged.** INV-002 remains in force for ADRs. This ADR does not weaken or scope INV-002; it carves PRDs and SPECs out of the ADR immutability model."
-  - text: "The PRD/SPEC evaluator MUST score only shipped entries when validating implementation coverage. proposed entries MUST be ignored by drift checks. (ref: ADR-024)"
+  - text: "The PRD/SPEC evaluator MUST score only shipped entries when validating implementation coverage. (ref: ADR-024)"
+    source_excerpt:
+      line_start: 42
+      line_end: 42
+      quote: "6. **Evaluator semantics respect per-entry status.** When the PRD/SPEC evaluator validates implementation coverage, it scores only `shipped` entries. `proposed` entries are ignored by drift checks; they have not been built yet by design."
+  - text: "proposed entries MUST be ignored by drift checks; they have not been built yet by design. (ref: ADR-024)"
     source_excerpt:
       line_start: 42
       line_end: 42
@@ -70,7 +77,7 @@ prohibitions:
       line_start: 55
       line_end: 55
       quote: "- **Create INV-NNN for PRD edit-in-place.** Rejected: the PRD model is not \"never changes\" but \"always changes via structured mutations.\" That is a decision (ADR), not a rule (invariant)."
-    derived_from: rejected_option_create-inv-nnn-for-prd
+    derived_from: rejected_option_create-inv-nnn-for-prd-edit-in-place
   - text: "MUST NOT implement opt-in ADR-style immutability for PRDs — rejected: creates two incompatible mental models. (ref: ADR-024)"
     source_excerpt:
       line_start: 56

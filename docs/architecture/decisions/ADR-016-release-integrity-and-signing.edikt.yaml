@@ -1,38 +1,106 @@
 schema_version: 1
 topic: release
 path: docs/architecture/decisions/ADR-016-release-integrity-and-signing.md
-signals: []
-directives:
-  - text: 'Release workflow MUST publish `edikt-payload-<tag>.tar.gz`, `SHA256SUMS`, and `SHA256SUMS.sig.bundle` as GitHub Release assets. NEVER use the auto-generated archive as the canonical artifact. (ref: ADR-016)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Release workflow MUST publish `edikt-payload-<tag>.tar.gz`, `SHA256SUMS`, and `SHA256SUMS.sig.bundle` as GitHub Release assets. NEVER use the auto-generated archive as the canonical artifact. (ref: AD'
-  - text: 'Release workflow MUST sign `SHA256SUMS` with Sigstore keyless (`cosign sign-blob --yes --bundle SHA256SUMS.sig.bundle SHA256SUMS`) using the workflow''s GitHub OIDC identity. NEVER publish a redundant `.pem` or detached `.sig` — the bundle is self-contained. (ref: ADR-016)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Release workflow MUST sign `SHA256SUMS` with Sigstore keyless (`cosign sign-blob --yes --bundle SHA256SUMS.sig.bundle SHA256SUMS`) using the workflow''s GitHub OIDC identity. NEVER publish a redundant '
-  - text: '`install.sh` and `bin/edikt install`/`upgrade` MUST verify `SHA256SUMS.sig.bundle` with `cosign verify-blob --bundle ... --certificate-identity-regexp ''^https://github\.com/diktahq/edikt/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$'' --certificate-oidc-issuer ''https://token.actions.githubusercontent.com''` before extracting any artifact. (ref: ADR-016)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`install.sh` and `bin/edikt install`/`upgrade` MUST verify `SHA256SUMS.sig.bundle` with `cosign verify-blob --bundle ... --certificate-identity-regexp ''^https://github\.com/diktahq/edikt/\.github/work'
-  - text: 'If cosign is unavailable, the installer MUST abort with an actionable message unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, the post-install banner MUST include a loud warning. (ref: ADR-016)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'If cosign is unavailable, the installer MUST abort with an actionable message unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, the post-install banner MUST include a loud warning. (ref: ADR-016'
-  - text: 'Launcher URL composition MUST use `https://github.com/diktahq/edikt/releases/download/<tag>/edikt-payload-<tag>.tar.gz`. NEVER use `archive/refs/tags/<tag>.tar.gz`. (ref: ADR-016)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Launcher URL composition MUST use `https://github.com/diktahq/edikt/releases/download/<tag>/edikt-payload-<tag>.tar.gz`. NEVER use `archive/refs/tags/<tag>.tar.gz`. (ref: ADR-016)'
-paths:
-  - .github/workflows/release.yml
+signals:
+  - sha256sums
+  - sigstore
+  - cosign
+  - release asset
+  - release workflow
+  - edikt-payload
   - install.sh
-  - bin/edikt
-  - README.md
+  - sha256sums.sig.bundle
+  - cosign verify-blob
+  - certificate-identity-regexp
+  - edikt install
+  - releases download
+  - github oidc
+  - fulcio
+  - release integrity
+paths:
+  - .github/workflows/**/*.yml
+  - install.sh
+  - bin/**/*
 scope:
+  - design
   - implementation
   - review
+directives:
+  - text: "The release workflow MUST publish exactly one canonical payload artifact per release tag: edikt-payload-<tag>.tar.gz as a GitHub Release asset (NOT the auto-generated archive). (ref: ADR-016)"
+    source_excerpt:
+      line_start: 52
+      line_end: 52
+      quote: "(a) Publish exactly one canonical payload artifact per release tag: `edikt-payload-<tag>.tar.gz` as a GitHub Release asset (not the auto-generated archive)."
+  - text: "The release workflow MUST publish SHA256SUMS alongside the payload as a Release asset, covering every asset in the release. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 54
+      line_end: 54
+      quote: "(b) Publish `SHA256SUMS` alongside the payload as a Release asset, covering every asset in the release. Format is the standard `sha256sum` format (carries forward from ADR-013)."
+  - text: "The release workflow MUST sign SHA256SUMS with Sigstore keyless: requesting a short-lived signing certificate from Fulcio via GitHub OIDC token, signing SHA256SUMS, and publishing the combined signature + certificate as a single SHA256SUMS.sig.bundle Release asset. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "(c) Sign `SHA256SUMS` with Sigstore keyless: the release workflow requests a short-lived signing certificate from Fulcio via GitHub's OIDC token, signs `SHA256SUMS`, and publishes the combined signature + certificate as a single `SHA256SUMS.sig.bundle` Release asset. No separate `.pem` or `.sig` files — the bundle is self-contained."
+  - text: "MUST NOT publish separate .pem or .sig files alongside the signature — the SHA256SUMS.sig.bundle is self-contained. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "No separate `.pem` or `.sig` files — the bundle is self-contained."
+  - text: "The launcher MUST download the edikt-payload-<tag>.tar.gz Release asset (NOT the auto-generated archive). (ref: ADR-016)"
+    source_excerpt:
+      line_start: 59
+      line_end: 59
+      quote: "- Download the `edikt-payload-<tag>.tar.gz` Release asset (NOT the auto-generated archive)."
+  - text: "The launcher MUST download SHA256SUMS and SHA256SUMS.sig.bundle. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 60
+      line_end: 60
+      quote: "- Download `SHA256SUMS` and `SHA256SUMS.sig.bundle`."
+  - text: "The launcher MUST verify the bundle signature using cosign with a regex-form identity assertion. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 61
+      line_end: 61
+      quote: "- Verify the bundle signature using cosign with a regex-form identity assertion:"
+  - text: "The launcher MUST grep SHA256SUMS for the payload filename and assert the SHA matches the downloaded bytes. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 70
+      line_end: 70
+      quote: "- Grep `SHA256SUMS` for the payload filename, assert the SHA matches the downloaded bytes."
+  - text: "If cosign is not installed, the installer MAY abort with an actionable install instruction unless EDIKT_INSTALL_INSECURE=1 is set. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 71
+      line_end: 71
+      quote: "- If cosign is not installed, abort with an actionable install instruction unless `EDIKT_INSTALL_INSECURE=1` is set. When honored, append a loud banner to the post-install output: \"⚠️ Integrity verification was disabled via EDIKT_INSTALL_INSECURE=1.\""
+  - text: "The README install command and all documentation MUST pin to a specific release tag (releases/download/v<PINNED>/install.sh). (ref: ADR-016)"
+    source_excerpt:
+      line_start: 73
+      line_end: 73
+      quote: "(e) The README install command and all documentation MUST pin to a specific release tag (`releases/download/v<PINNED>/install.sh`). `main` and `releases/latest/download/` are never user-facing install surfaces. This decision is companion to INV-008 which states the hard rule; this ADR documents the implementation mechanism."
+  - text: "MUST NOT use main or releases/latest/download/ as user-facing install surfaces. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 73
+      line_end: 73
+      quote: "`main` and `releases/latest/download/` are never user-facing install surfaces."
+prohibitions:
+  - text: "MUST NOT use GPG signing with maintainer-held keys — requires a private key kept secret forever, key rotation procedures, and key loss means no more signed releases. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 79
+      line_end: 79
+      quote: "- **Cons:** Requires a private key kept secret forever; key rotation procedures; key loss means no more signed releases; contributor onboarding requires a web-of-trust step."
+    derived_from: rejected_option_gpg-signing
+  - text: "MUST NOT skip signing and ship ADR-013 wiring fixes only — CRIT-7 remains open, leaving a transient repo compromise able to compromise future installs. (ref: ADR-016)"
+    source_excerpt:
+      line_start: 84
+      line_end: 84
+      quote: "- **Cons:** CRIT-7 remains — a transient repo compromise still compromises future installs."
+    derived_from: rejected_option_no-signing
+reminders:
+  - "Before modifying .github/workflows/release.yml → verify it publishes edikt-payload-<tag>.tar.gz, SHA256SUMS, and SHA256SUMS.sig.bundle as Release assets (ref: ADR-016)"
+  - "Before modifying install.sh or bin/edikt install/upgrade → verify cosign verify-blob with certificate-identity-regexp is called before extracting any artifact (ref: ADR-016)"
+  - "Before updating the README install command → verify URL pins to releases/download/v<PINNED>/install.sh and grep returns zero matches for raw.githubusercontent.com/.*/main/ (ref: ADR-016)"
+verification:
+  - "[ ] .github/workflows/release.yml publishes edikt-payload-v<ver>.tar.gz, SHA256SUMS, and SHA256SUMS.sig.bundle as Release assets (ref: ADR-016)"
+  - "[ ] install.sh and bin/edikt install both invoke cosign verify-blob with the regex identity before extracting any artifact (ref: ADR-016)"
+  - "[ ] With a tampered SHA256SUMS, verification fails and installer aborts with exit code 3 (EX_CHECKSUM) (ref: ADR-016)"
+  - "[ ] README install command uses releases/download/v<PINNED>/install.sh — grep -rn raw.githubusercontent.com/.*/main/ README.md docs/ returns zero matches (ref: ADR-016)"
+  - "[ ] ADR-013.md Status line reads Superseded by ADR-016 in the bolded Status line and frontmatter (ref: ADR-016)"

@@ -1,27 +1,85 @@
 schema_version: 1
-topic: extensibility
+topic: architecture
 path: docs/architecture/decisions/ADR-005-extensibility-model.md
-signals: []
-directives:
-  - text: 'Project templates in `.edikt/templates/` take precedence over edikt defaults. Lookup order: project override → edikt default. Report overrides in `/edikt:doctor`. (ref: ADR-005)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Project templates in `.edikt/templates/` take precedence over edikt defaults. Lookup order: project override → edikt default. Report overrides in `/edikt:doctor`. (ref: ADR-005)'
-  - text: 'Agent customization: mark with `<!-- edikt:custom -->` or list in `agents.custom` in config. Upgrade MUST skip customized agents without prompting. (ref: ADR-005)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Agent customization: mark with `<!-- edikt:custom -->` or list in `agents.custom` in config. Upgrade MUST skip customized agents without prompting. (ref: ADR-005)'
-  - text: 'Rule packs: override by placing a file at `.edikt/rules/{name}.md` without the `edikt:generated` marker, or extend via config. Upgrade MUST skip files without the marker. (ref: ADR-005)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Rule packs: override by placing a file at `.edikt/rules/{name}.md` without the `edikt:generated` marker, or extend via config. Upgrade MUST skip files without the marker. (ref: ADR-005)'
-paths:
-  - commands/upgrade.md
-  - commands/doctor.md
-  - commands/rules-update.md
-  - commands/init.md
+signals:
+  - template override
+  - lookup order
+  - edikt custom
+  - agents.custom
+  - edikt upgrade
+  - edikt doctor
+  - rule pack
+  - extend config
+  - project templates
+  - edikt generated marker
+  - custom agents
 scope:
+  - design
   - implementation
+  - review
+directives:
+  - text: "The project MUST be able to override any template by placing a file in `.edikt/templates/`. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 48
+      line_end: 48
+      quote: "edikt provides default templates. The project can override any template by placing a file in `.edikt/templates/`."
+  - text: "`/edikt:doctor` MUST report which templates are custom vs default. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "`/edikt:doctor` reports which templates are custom vs default."
+  - text: "Both config-based and file-based agent customization options MUST be supported. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 90
+      line_end: 90
+      quote: "Both options are supported. Config takes precedence."
+  - text: "Config MUST take precedence over file-based markers for agent customization. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 90
+      line_end: 90
+      quote: "Both options are supported. Config takes precedence."
+  - text: "Custom agents (not from edikt templates) MUST always be skipped by upgrade — they have no matching template to compare against. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 92
+      line_end: 92
+      quote: "Custom agents (not from edikt templates) are always skipped by upgrade — they have no matching template to compare against."
+  - text: "A rule override file at `.edikt/rules/{name}.md` SHOULD NOT have the `<!-- edikt:generated -->` marker (so upgrade skips it). (ref: ADR-005)"
+    source_excerpt:
+      line_start: 98
+      line_end: 98
+      quote: "**Override:** Place a file at `.edikt/rules/{name}.md`. If it exists, edikt uses it instead of the built-in pack. The file should NOT have the `<!-- edikt:generated -->` marker (so upgrade skips it)."
+  - text: "If a rule override file exists at `.edikt/rules/{name}.md`, edikt MAY use it instead of the built-in pack. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 98
+      line_end: 98
+      quote: "**Override:** Place a file at `.edikt/rules/{name}.md`. If it exists, edikt uses it instead of the built-in pack. The file should NOT have the `<!-- edikt:generated -->` marker (so upgrade skips it)."
+  - text: "The extension file MUST be concatenated after the built-in pack when rules are installed. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 108
+      line_end: 108
+      quote: "The extension file is concatenated after the built-in pack when rules are installed. Both the base pack and the extension are version-controlled."
+  - text: "Both the base pack and the extension MUST be version-controlled. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 108
+      line_end: 108
+      quote: "The extension file is concatenated after the built-in pack when rules are installed. Both the base pack and the extension are version-controlled."
+  - text: "`/edikt:doctor` MUST report which rules are overridden, extended, or default. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 110
+      line_end: 110
+      quote: "`/edikt:doctor` reports which rules are overridden, extended, or default."
+prohibitions:
+  - text: "MUST NOT use a unified override model as the single extensibility mechanism — rules need extension (add to defaults), not just override; agents need per-file control. (ref: ADR-005)"
+    source_excerpt:
+      line_start: 35
+      line_end: 35
+      quote: "- Cons: rules need extension (add to defaults), not just override; agents need per-file control"
+    derived_from: "rejected_option_unified-override-model"
+reminders:
+  - "Before modifying `/edikt:upgrade` behavior → verify it never overwrites a file marked with `<!-- edikt:custom -->` or listed in `agents.custom` (ref: ADR-005)"
+  - "Before adding a new template → verify `.edikt/templates/` lookup order has project override taking precedence over edikt default (ref: ADR-005)"
+  - "Before modifying rule install logic → verify extension files are concatenated after the built-in pack and both are version-controlled (ref: ADR-005)"
+verification:
+  - "[ ] `/edikt:doctor` reports custom vs default status for templates, agents, and rules (ref: ADR-005)"
+  - "[ ] `/edikt:upgrade` never overwrites a file marked with `<!-- edikt:custom -->` or listed in `agents.custom` (ref: ADR-005)"
+  - "[ ] Extension files are concatenated correctly — test with a rule that has both base and extension (ref: ADR-005)"

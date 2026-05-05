@@ -1,39 +1,83 @@
 schema_version: 1
 topic: tooling
 path: docs/architecture/decisions/ADR-022-single-go-binary-replaces-bash-launcher.md
-signals: []
-directives:
-  - text: 'The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or documentation. (ref: ADR-022)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: The user-facing `edikt` binary MUST be the Go binary in `tools/edikt/`. The bash launcher (`bin/edikt-shell`) is an internal shim; it MUST NOT appear in any user-facing help text, error messages, or d
-  - text: 'Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Subcommands not yet migrated to Go MUST be delegated to `bin/edikt-shell` via `os/exec` with full stdio passthrough and `EDIKT_SHELL_CALLER=1` set to prevent re-entry loops. (ref: ADR-022)'
-  - text: 'Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Compiled binary artifacts (the `edikt` binary) MUST NOT be committed to the git repository. They are shipped only via release assets (ADR-016) and are excluded by `.gitignore`. (ref: ADR-022)'
-  - text: 'When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'When `bin/edikt-shell` is absent, the Go binary MUST emit a clear actionable error message and exit non-zero. NEVER hang, never panic. (ref: ADR-022)'
-  - text: 'Phase 1 release tarballs contain BOTH `bin/edikt` (Go) and `bin/edikt-shell` (bash). `install.sh` places both. (ref: ADR-022)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Phase 1 release tarballs contain BOTH `bin/edikt` (Go) and `bin/edikt-shell` (bash). `install.sh` places both. (ref: ADR-022)'
+signals:
+  - go binary
+  - bin.edikt
+  - bin.edikt-shell
+  - edikt-shell
+  - bash launcher
+  - strangler-fig
+  - install.sh
+  - release tarball
+  - subcommands
+  - stdio passthrough
+  - edikt_shell_caller
+  - user-facing binary
 paths:
-  - tools/edikt/**
-  - bin/edikt
-  - bin/edikt-shell
+  - tools/edikt/**/*.go
   - install.sh
 scope:
-  - implementation
   - design
+  - implementation
   - review
+directives:
+  - text: "The Go binary MUST be the user-facing `edikt` entry point. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 66
+      line_end: 66
+      quote: "The Go binary is the user-facing `edikt` entry point. It handles the subcommands"
+  - text: "For ALL other subcommands, the binary execs `edikt-shell` (the renamed bash launcher) with full stdin/stdout/stderr passthrough and `EDIKT_SHELL_CALLER=1` to prevent re-entry loops. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 73
+      line_end: 75
+      quote: "For ALL other subcommands, the binary execs `edikt-shell` (the renamed bash\nlauncher) with full stdin/stdout/stderr passthrough and `EDIKT_SHELL_CALLER=1`\nto prevent re-entry loops."
+  - text: "`install.sh` MUST place BOTH artifacts from the release tarball: `bin/edikt` (Go binary, user-facing) and `bin/edikt-shell` (renamed bash launcher, internal). (ref: ADR-022)"
+    source_excerpt:
+      line_start: 79
+      line_end: 81
+      quote: "`install.sh` places BOTH artifacts from the release tarball:\n- `bin/edikt` — the Go binary (user-facing)\n- `bin/edikt-shell` — the renamed bash launcher (internal)"
+  - text: "No user-visible command (`edikt --help`, any subcommand) MUST NOT surface the word `edikt-shell` or any bash internals. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 144
+      line_end: 145
+      quote: "- No user-visible command (`edikt --help`, any subcommand) surfaces the word\n  \"edikt-shell\" or any bash internals."
+  - text: "When `bin/edikt-shell` is absent, the Go binary MUST produce a clear error message (not a hang, not a panic). (ref: ADR-022)"
+    source_excerpt:
+      line_start: 142
+      line_end: 143
+      quote: "- `edikt-shell not found` produces a clear error message (not a hang, not a panic)\n  when `bin/edikt-shell` is absent."
+  - text: "The `tools/edikt/.gitignore` MUST exclude compiled binary artifacts; the binary is shipped only via release assets (ADR-016), never committed to the repo. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 146
+      line_end: 147
+      quote: "- `tools/edikt/.gitignore` excludes compiled binary artifacts; the binary\n  is shipped only via release assets (ADR-016), never committed to the repo."
+prohibitions:
+  - text: "MUST NOT keep two separate user-facing binaries permanently — governance tools must have minimal surface area and two binaries causes user confusion. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 99
+      line_end: 100
+      quote: "- **Cons:** Confusing for users (\"is `gov-compile` the same as `edikt`?\").\n  Governance tools should have minimal surface area. Two binaries is one too many."
+    derived_from: rejected_option_keep-two-binaries-permanently
+  - text: "MUST NOT perform a big-bang rewrite of all subcommands in Go at once — 3000 lines of bash handle many edge cases and a big-bang rewrite risks regressions for months. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 107
+      line_end: 109
+      quote: "- **Cons:** 3000 lines of bash handle many edge cases (NFS locks, symlink chains,\n  platform detection, migration logic). A big-bang rewrite risks regressions for\n  months."
+    derived_from: rejected_option_rewrite-everything-in-go-at-once
+  - text: "MUST NOT keep the bash launcher and never migrate to Go — bash is untestable, not cross-platform (no Windows), and accumulates tech debt faster than Go. (ref: ADR-022)"
+    source_excerpt:
+      line_start: 116
+      line_end: 118
+      quote: "- **Cons:** Bash is untestable, bash is not cross-platform (no Windows), bash\n  accumulates tech debt faster than Go. Every new feature in the launcher gets\n  harder to maintain."
+    derived_from: rejected_option_keep-bash-launcher-never-migrate
+reminders:
+  - "Before migrating a subcommand from edikt-shell to Go → verify EDIKT_SHELL_CALLER=1 delegation still works for all remaining unmigrated subcommands (ref: ADR-022)"
+  - "Before any release build → verify tools/edikt/.gitignore excludes the compiled binary and it is absent from the git tree (ref: ADR-022)"
+  - "Before any user-facing error message or help text change → verify the word edikt-shell does not appear in any user-visible output (ref: ADR-022)"
+verification:
+  - "[ ] `edikt version` runs natively in Go with no edikt-shell invocation confirmed (ref: ADR-022)"
+  - "[ ] `edikt gov compile [root]` completes in <= 20ms natively in Go with no edikt-shell invocation (ref: ADR-022)"
+  - "[ ] `edikt upgrade` execs edikt-shell with full stdio passthrough — output is byte-identical to running the bash launcher directly (ref: ADR-022)"
+  - "[ ] Removing bin/edikt-shell causes Go binary to emit a clear error and exit non-zero, not hang or panic (ref: ADR-022)"
+  - "[ ] grep for edikt-shell in compiled user-facing help output and error messages returns zero matches (ref: ADR-022)"

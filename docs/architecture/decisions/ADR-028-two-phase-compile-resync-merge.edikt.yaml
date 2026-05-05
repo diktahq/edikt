@@ -1,49 +1,107 @@
 schema_version: 1
 topic: compile
 path: docs/architecture/decisions/ADR-028-two-phase-compile-resync-merge.md
-signals: []
-directives:
-  - text: '`gov:compile` MUST run as two phases. Phase A (resync) is conditional on stale sidecars and may invoke subagents at concurrency 8. Phase B (merge) is unconditional and MUST be a pure deterministic merge with no LLM calls and no Task/Agent tool dispatch. (ref: ADR-028)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`gov:compile` MUST run as two phases. Phase A (resync) is conditional on stale sidecars and may invoke subagents at concurrency 8. Phase B (merge) is unconditional and MUST be a pure deterministic mer'
-  - text: '`gov:compile --check` MUST exit 1 immediately when any sidecar is stale. `--check` MUST NOT dispatch any subagent. The actionable error MUST direct the user to `edikt gov compile` for resync. (ref: ADR-028)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`gov:compile --check` MUST exit 1 immediately when any sidecar is stale. `--check` MUST NOT dispatch any subagent. The actionable error MUST direct the user to `edikt gov compile` for resync. (ref: AD'
-  - text: 'Phase B''s latency budget is `<5s` full regenerate, `<500ms` no-op, `<2s` --check on the 50-sidecar baseline corpus. The budget binds Phase B exclusively; Phase A has no SLO. (ref: ADR-028, ADR-020)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Phase B''s latency budget is `<5s` full regenerate, `<500ms` no-op, `<2s` --check on the 50-sidecar baseline corpus. The budget binds Phase B exclusively; Phase A has no SLO. (ref: ADR-028, ADR-020)'
-  - text: 'Phase B''s purity MUST be enforced by a static-analysis test that verifies no `Agent` / `Task` / subprocess-spawning symbol is transitively reachable from the merge code path. (ref: ADR-028)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Phase B''s purity MUST be enforced by a static-analysis test that verifies no `Agent` / `Task` / subprocess-spawning symbol is transitively reachable from the merge code path. (ref: ADR-028)'
-  - text: 'Phase A MUST emit per-subagent progress on stderr (artifact name + completed/total + ETA from running p50). Silent multi-minute operation is forbidden. (ref: ADR-028)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Phase A MUST emit per-subagent progress on stderr (artifact name + completed/total + ETA from running p50). Silent multi-minute operation is forbidden. (ref: ADR-028)'
-  - text: 'Phase A subagent failures MUST be logged to `.edikt/state/compile-errors.log` with continue-on-error. Topic files MUST NOT be updated if any subagent failed; compile exits 1 with an aggregated report. (ref: ADR-028)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Phase A subagent failures MUST be logged to `.edikt/state/compile-errors.log` with continue-on-error. Topic files MUST NOT be updated if any subagent failed; compile exits 1 with an aggregated report.
-  - text: 'Concurrent compile invocations MUST serialize through a file lock at `.edikt/state/compile.lock`. `--no-wait` exits 1 instead of blocking. (ref: ADR-028)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Concurrent compile invocations MUST serialize through a file lock at `.edikt/state/compile.lock`. `--no-wait` exits 1 instead of blocking. (ref: ADR-028)'
-paths:
-  - tools/edikt/cmd/gov.go
-  - tools/edikt/internal/compile/**
-  - test/integration/governance/**
-  - test/perf/**
+signals:
+  - two-phase compile
+  - phase a resync
+  - phase b merge
+  - stale sidecar
+  - compile.lock
+  - compile-errors.log
+  - gov compile
+  - check mode
+  - deterministic merge
+  - subagent concurrency
+  - progress ui
+  - topic files
+  - concurrent compile
 scope:
   - design
   - implementation
   - review
+directives:
+  - text: "Compile MUST run as two phases: Phase A is conditional and may invoke LLMs; Phase B is unconditional and MUST be a pure deterministic merge with the ADR-020 latency budget. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 40
+      line_end: 40
+      quote: "**Compile runs as two phases. Phase A is conditional and may invoke LLMs; Phase B is unconditional and is a pure deterministic merge with the ADR-020 latency budget.**"
+  - text: "Phase A MUST run if and only if at least one sidecar is stale; staleness is determined by recomputing the parent body's content hash and comparing each sidecar's recorded source_excerpt.quote against the live prose at the recorded line_start/line_end range. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 44
+      line_end: 44
+      quote: "- **Trigger.** Phase A runs if and only if at least one sidecar is stale. Staleness is determined by recomputing the parent body's content hash and comparing each sidecar's recorded `source_excerpt.quote` against the live prose at the recorded `line_start`/`line_end` range. Any mismatch flags the sidecar as stale."
+  - text: "For each stale sidecar, Phase A MUST dispatch the directive extraction prompt to a forked subagent (context: fork) at concurrency 8 with continue-on-error semantics; each subagent MUST run against a single artifact's parent body — never multiple artifacts in the same subagent context. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 45
+      line_end: 45
+      quote: "- **Action.** For each stale sidecar, dispatch the directive extraction prompt to a forked subagent (`context: fork`) at concurrency 8, with continue-on-error semantics. Each subagent runs against a single artifact's parent body — never multiple artifacts in the same subagent context. Subagent failures are logged to `.edikt/state/compile-errors.log` and the run continues. At the end of Phase A, an aggregated failure report is produced; if any subagent failed, Phase B does NOT run and compile exits non-zero."
+  - text: "Phase A MUST emit a per-subagent progress line on stderr while it runs; the ETA MUST be computed from the running p50 latency of completed subagents in the same run; silent operation is forbidden. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "- **Mandatory progress UI.** Phase A MUST emit a per-subagent progress line on stderr while it runs. Format: `Resyncing ADR-001... ADR-007... [▓▓▓░░░░] 2/7 (eta 45s)`. ETA is computed from the running p50 latency of completed subagents in the same run. The progress UI is the user's only feedback during a multi-minute resync; silent operation is forbidden."
+  - text: "When gov:compile --check is invoked and any sidecar is stale, compile MUST exit 1 immediately with a single-line actionable error directing the user to run edikt gov compile to resync; --check MUST NOT dispatch any subagents. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 48
+      line_end: 48
+      quote: "- **`--check` mode FORBIDDEN.** When `gov:compile --check` is invoked and any sidecar is stale, compile exits 1 immediately with a single-line actionable error: `error: N sidecar(s) stale — run 'edikt gov compile' to resync`. `--check` MUST NOT dispatch any subagents. This preserves the CI gate's determinism: PRs that drift sidecars from prose fail CI and must be fixed by the author, not auto-fixed by the bot."
+  - text: "Phase B MUST be a pure read-only deterministic merge; output MUST be byte-equal across runs for byte-equal sidecar input; Phase B MUST NOT make LLM calls, Task/Agent tool dispatches, or shell-outs that introduce nondeterminism. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 52
+      line_end: 52
+      quote: "- **Action.** Pure read-only deterministic merge. Walks the sidecar set, groups directives by `topic`, renders the routing table, writes `.claude/rules/governance.md` and `.claude/rules/governance/<topic>.md`. Output MUST be byte-equal across runs for byte-equal sidecar input. No LLM calls. No `Task` / `Agent` tool dispatch. No shell-out to anything that could introduce nondeterminism (date stamps, hash random salt, sort order without a tiebreaker)."
+  - text: "A test in test/integration/governance/ MUST verify, via Go AST inspection or symbol grep, that the Phase B merge code path has no transitive reference to Agent, Task, or any subprocess-spawning symbol. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 53
+      line_end: 53
+      quote: "- **Static analysis check.** A test in `test/integration/governance/` MUST verify, via Go AST inspection or symbol grep, that the merge code path has no transitive reference to `Agent`, `Task`, or any subprocess-spawning symbol. The check enforces \"Phase B is pure\" structurally, not by code review."
+  - text: "Phase B's latency SLO MUST be: <5s for full regenerate from cold cache (50 sidecars baseline), <500ms for no-op (all sidecars unchanged), <2s for --check; these numbers bind Phase B exclusively and Phase A has no SLO. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 54
+      line_end: 59
+      quote: "- **Latency SLO (preserved from ADR-020).** Phase B's budget binds the deterministic merge:\n  - `<5s` for full regenerate from cold cache (50 sidecars baseline)\n  - `<500ms` for no-op (all sidecars unchanged)\n  - `<2s` for `--check`\n\n  These numbers are the contract ADR-020 originally placed on the whole compile. ADR-028 reassigns them to Phase B specifically. The expectation is that Phase B is fast — it's parsing YAML and rendering markdown."
+  - text: "Subagent failures in Phase A MUST be logged to .edikt/state/compile-errors.log with continue-on-error; topic files MUST NOT be updated if any subagent failed; compile MUST exit 1 with an aggregated report listing each failed artifact and a one-line remediation hint per failure class. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 69
+      line_end: 69
+      quote: "- **Subagent failure in Phase A.** Logged to `.edikt/state/compile-errors.log` with the subagent's stderr, the parent artifact path, and the prompt template version. Run continues for the remaining sidecars. At the end of Phase A, if any subagent failed, compile exits 1 with an aggregated report listing each failed artifact and a one-line remediation hint per failure class. Topic files are NOT updated when any sidecar failed — the merge step is gated on Phase A success because partial topic files would silently drop directives."
+  - text: "Concurrent compile invocations MUST serialize through a file lock at .edikt/state/compile.lock; --no-wait MUST exit 1 instead of blocking; the lock MUST be released even on Phase A failure. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 70
+      line_end: 70
+      quote: "- **Concurrent compile.** A file lock at `.edikt/state/compile.lock` serializes runs. The second compile blocks until the first releases the lock, or exits 1 with `--no-wait`. The lock is released even on Phase A failure (since topic files weren't touched)."
+prohibitions:
+  - text: "MUST NOT use a one-phase compile that always re-runs subagents inline — this blows ADR-020's budget on every steady-state compile and makes --check either nondeterministic or self-contradictory. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 86
+      line_end: 87
+      quote: "- **Cons:** Blows ADR-020's budget on every steady-state compile. `--check` becomes either nondeterministic (it triggers subagents) or a contradiction (it claims to be a check but mutates state)."
+    derived_from: rejected_option_one-phase-inline
+  - text: "MUST NOT implement resync as a separate user-driven verb (edikt resync) — creates a two-step UX for the common case and new users will experience compile as broken when sidecars are stale. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 91
+      line_end: 92
+      quote: "- **Cons:** Two-step UX for the common case (edit prose → run resync → run compile). New users will hit the \"compile says my sidecars are stale, what now?\" trap and experience compile as broken. Adds a second hot-path verb."
+    derived_from: rejected_option_separate-resync-verb
+  - text: "MUST NOT resync inline while skipping determinism for --check — CI cannot rely on --check being deterministic and two CI runs of the same input would produce different verdicts. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 97
+      line_end: 98
+      quote: "- **Cons:** CI cannot rely on `--check` being deterministic. Two CI runs of the same input produce different verdicts (subagents drift). Catastrophic for branch protection."
+    derived_from: rejected_option_resync-inline-skip-determinism
+  - text: "MUST NOT cache subagent outputs to disk for --check determinism — sidecars are the cache; adding a cache on top of a cache introduces stale-cache, cross-machine, and corruption failure modes. (ref: ADR-028)"
+    source_excerpt:
+      line_start: 103
+      line_end: 104
+      quote: "- **Cons:** Cache invalidation is a separate problem with its own failure modes (stale cache, cross-machine cache differences, cache corruption). Complicates the model significantly for marginal gain. Phase B is already deterministic via the sidecars themselves."
+    derived_from: rejected_option_cache-subagent-outputs
+reminders:
+  - "Before modifying Phase B merge code → verify the static-analysis test in test/integration/governance/ confirms no Agent/Task/subprocess symbol is transitively reachable from the merge path (ref: ADR-028)"
+  - "Before invoking gov:compile --check in CI → verify it exits 1 on stale sidecars without dispatching any subagent (ref: ADR-028)"
+  - "Before updating Phase A concurrency or failure handling → verify subagent failures still log to .edikt/state/compile-errors.log and Phase B is gated on Phase A success (ref: ADR-028)"
+verification:
+  - "[ ] bin/edikt gov compile (without --check) runs Phase A on stale sidecars with concurrency 8, emits progress lines, then runs Phase B unconditionally on Phase A success (ref: ADR-028)"
+  - "[ ] bin/edikt gov compile --check exits 1 immediately when any sidecar is stale and emits the canonical actionable error directing the user to run edikt gov compile (ref: ADR-028)"
+  - "[ ] Static-analysis test in test/integration/governance/test_phase_b_purity.go verifies Phase B code path has no transitive reference to Agent/Task symbols (ref: ADR-028)"
+  - "[ ] ADR-020 frontmatter has amended_by: ADR-028 and its Status line reads Amended by ADR-028 (ref: ADR-028)"
+  - "[ ] Phase B satisfies <5s / <500ms / <2s SLOs on the 50-sidecar baseline corpus in test/perf/ (ref: ADR-028)"

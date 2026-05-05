@@ -1,37 +1,108 @@
 schema_version: 1
 topic: architecture
 path: docs/architecture/decisions/ADR-029-tier-1-orchestration-of-tier-2-helpers.md
-signals: []
-directives:
-  - text: 'Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, but only under the four rules of ADR-029. (ref: ADR-029)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, but only under the four rules of ADR-029. (ref: ADR-029)'
-  - text: 'A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit an actionable error citing `edikt install <helper>` by name. (ref: ADR-029)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit an actionable error citing `edikt install <helper>` by name. (ref: '
-  - text: 'Tier-1 markdown commands MUST NOT parse the output SHAPE of any tier-2 binary. The contract surface between tier-1 and tier-2 is the exit code only; output may be displayed verbatim but never read programmatically. (ref: ADR-029)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tier-1 markdown commands MUST NOT parse the output SHAPE of any tier-2 binary. The contract surface between tier-1 and tier-2 is the exit code only; output may be displayed verbatim but never read pro
-  - text: 'Tier-1 markdown MAY invoke only the enumerated tier-2 orchestration verbs: `verify`, `doctor`, `migrate`, `gov compile`, `install`, `upgrade`, `use`, `rollback`. Other binary calls remain forbidden in tier-1; adding a verb to this list requires an ADR amending ADR-029. (ref: ADR-029)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-1 markdown MAY invoke only the enumerated tier-2 orchestration verbs: `verify`, `doctor`, `migrate`, `gov compile`, `install`, `upgrade`, `use`, `rollback`. Other binary calls remain forbidden in'
-  - text: 'Tier-1 commands that invoke tier-2 binaries MUST declare `tier_2_dependency:` and `on_absent:` in command frontmatter. Valid `on_absent:` values are `skip-with-warning` and `refuse-and-direct-user`. Absent the field, the default is `refuse-and-direct-user`. (ref: ADR-029)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tier-1 commands that invoke tier-2 binaries MUST declare `tier_2_dependency:` and `on_absent:` in command frontmatter. Valid `on_absent:` values are `skip-with-warning` and `refuse-and-direct-user`. A
-paths:
-  - commands/**/*.md
-  - tools/edikt/cmd/**
+signals:
+  - tier-1 orchestration
+  - tier-2 binary
+  - bin.edikt subcommand
+  - orchestration verb
+  - absence detection
+  - exit code contract
+  - on_absent
+  - tier_2_dependency
+  - tier boundary
+  - install.sh
+  - commands sdlc plan
 scope:
   - design
   - implementation
   - review
+directives:
+  - text: "Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, provided the four rules below all hold. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 42
+      line_end: 42
+      quote: "**Tier-1 markdown commands MAY invoke tier-2 binaries via `bin/edikt <subcommand>` for orchestration purposes, provided the four rules below all hold. The tier boundary is preserved structurally — tier-1 still installs without tier-2 — but the tier boundary at runtime becomes a contract about exit codes, not a prohibition on invocation.**"
+  - text: "A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit a clear actionable error directing the user to `edikt install <helper>` (or to the documented install path for the helper in question). (ref: ADR-029)"
+    source_excerpt:
+      line_start: 46
+      line_end: 46
+      quote: "A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit a clear actionable error directing the user to `edikt install <helper>` (or to the documented install path for the helper in question). The absence-detection check MUST cite the helper by name in the error so the user knows what to install."
+  - text: "The absence-detection check MUST cite the helper by name in the error so the user knows what to install. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 46
+      line_end: 46
+      quote: "A tier-1 markdown command that invokes `bin/edikt <subcommand>` MUST detect absence of the binary on PATH before invocation and emit a clear actionable error directing the user to `edikt install <helper>` (or to the documented install path for the helper in question). The absence-detection check MUST cite the helper by name in the error so the user knows what to install."
+  - text: "The markdown command MUST NOT depend on the binary's output SHAPE. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 50
+      line_end: 50
+      quote: "The markdown command MUST NOT depend on the binary's output SHAPE. Output may be displayed verbatim to the user (passthrough is fine), but parsing — extracting fields, splitting on whitespace, regex-matching against the binary's output — is forbidden. The contract surface between tier-1 and tier-2 is the exit code. Output drift in tier-2 is allowed; behavior coupling on output shape is not."
+  - text: "Output may be displayed verbatim to the user (passthrough is fine), but parsing — extracting fields, splitting on whitespace, regex-matching against the binary's output — MUST NOT be done. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 50
+      line_end: 50
+      quote: "The markdown command MUST NOT depend on the binary's output SHAPE. Output may be displayed verbatim to the user (passthrough is fine), but parsing — extracting fields, splitting on whitespace, regex-matching against the binary's output — is forbidden. The contract surface between tier-1 and tier-2 is the exit code. Output drift in tier-2 is allowed; behavior coupling on output shape is not."
+  - text: "Other binary calls MUST remain forbidden in tier-1. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "Other binary calls remain forbidden in tier-1. Adding a new orchestration verb to this list requires an ADR amending this one — the list is exhaustive, not illustrative."
+  - text: "Adding a new orchestration verb to this list MUST require an ADR amending ADR-029 — the list is exhaustive, not illustrative. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "Other binary calls remain forbidden in tier-1. Adding a new orchestration verb to this list requires an ADR amending this one — the list is exhaustive, not illustrative."
+  - text: "Each tier-1 command that invokes a tier-2 binary MUST document its failure-mode in command frontmatter. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 71
+      line_end: 71
+      quote: "Each tier-1 command that invokes a tier-2 binary MUST document its failure-mode in command frontmatter:"
+  - text: "Absent the `on_absent:` frontmatter field, the default MUST be `refuse-and-direct-user` (fail-closed). (ref: ADR-029)"
+    source_excerpt:
+      line_start: 76
+      line_end: 76
+      quote: "The choice is per-command and is a documented contract — users reading the command's frontmatter can predict its behavior under absence without running it. Absent the frontmatter field, the default is `refuse-and-direct-user` (fail-closed)."
+  - text: "Tier-1 MUST install without tier-2. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "Tier-1 still installs without tier-2. `install.sh` does not install the Go binary; users get tier-1 markdown and nothing else by default. Helper install (including the `edikt` binary itself) is a separate explicit step. This ADR does not change that — it changes the runtime relationship between tier-1 commands and tier-2 binaries, not the install relationship."
+  - text: "`install.sh` MUST NOT install the Go binary; users MUST get tier-1 markdown and nothing else by default. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "Tier-1 still installs without tier-2. `install.sh` does not install the Go binary; users get tier-1 markdown and nothing else by default. Helper install (including the `edikt` binary itself) is a separate explicit step. This ADR does not change that — it changes the runtime relationship between tier-1 commands and tier-2 binaries, not the install relationship."
+  - text: "Helper install (including the `edikt` binary itself) MUST be a separate explicit step from tier-1 install. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "Tier-1 still installs without tier-2. `install.sh` does not install the Go binary; users get tier-1 markdown and nothing else by default. Helper install (including the `edikt` binary itself) is a separate explicit step. This ADR does not change that — it changes the runtime relationship between tier-1 commands and tier-2 binaries, not the install relationship."
+prohibitions:
+  - text: "MUST NOT allow tier-1 to call tier-2 freely with no contract — tier boundary becomes meaningless and tier-2 helpers must keep output formats stable forever to avoid breaking tier-1 callers. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 109
+      line_end: 109
+      quote: "- **Cons:** Tier boundary becomes meaningless. Tier-2 helpers must keep output formats stable forever to avoid breaking tier-1 callers. The \"compile your decisions into automatic enforcement\" vision becomes a tangle of cross-tier coupling."
+    derived_from: rejected_option_b
+  - text: "MUST NOT implement orchestration verbs (such as verify) as tier-1 markdown commands — markdown cannot reliably execute shell commands with timeouts, capture per-criterion exit codes, and persist a structured report. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 115
+      line_end: 115
+      quote: "- **Cons:** Markdown cannot reliably execute shell commands with timeouts, capture per-criterion exit codes, and persist a structured report. The verify runner is genuinely Tier-2 work; trying to do it in markdown reproduces every problem `tools/edikt/` was created to solve."
+    derived_from: rejected_option_c
+  - text: "MUST NOT route tier-1 to tier-2 calls through a Bash wrapper — the wrapper is itself a runtime dependency and the problem moves rather than disappearing. (ref: ADR-029)"
+    source_excerpt:
+      line_start: 121
+      line_end: 121
+      quote: "- **Cons:** Adds a layer of indirection that has to be installed, maintained, and kept in sync with the binary. The wrapper is itself a runtime dependency — the problem moves, it doesn't go away."
+    derived_from: rejected_option_d
+reminders:
+  - "Before invoking a new `bin/edikt` subcommand from tier-1 markdown → verify the verb is in ADR-029 Rule 3's enumerated list (ref: ADR-029)"
+  - "Before adding a tier-1 command that calls a tier-2 binary → verify it declares `tier_2_dependency:` and `on_absent:` in its frontmatter (ref: ADR-029)"
+  - "Before merging a tier-1 command that invokes tier-2 → verify absence-detection emits an actionable error citing the helper by name (ref: ADR-029)"
+verification:
+  - "[ ] `commands/sdlc/plan.md` declares `tier_2_dependency: edikt verify` and an `on_absent:` value in its frontmatter (ref: ADR-029)"
+  - "[ ] ADR-015's frontmatter contains `amended_by: ADR-029` and its `**Status:**` line reads `Accepted (Amended by ADR-029)` (ref: ADR-029)"
+  - "[ ] Integration test `test/integration/plan-tier2-absent.sh` (or equivalent) exercises the absence path with `bin/edikt` removed from PATH (ref: ADR-029)"
+  - "[ ] Tier-1 markdown commands that invoke tier-2 binaries restrict their calls to the eight enumerated verbs in Rule 3 (ref: ADR-029)"

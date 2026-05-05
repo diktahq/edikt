@@ -1,32 +1,56 @@
 schema_version: 1
 topic: architecture
 path: docs/architecture/decisions/ADR-001-edikt-architecture.md
-signals: []
-directives:
-  - text: 'Claude Code is the only supported platform. Do not write code or configuration targeting Cursor, Copilot, or other AI coding tools. (ref: ADR-001)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Claude Code is the only supported platform. Do not write code or configuration targeting Cursor, Copilot, or other AI coding tools. (ref: ADR-001)'
-  - text: 'Use a three-tier rule system: base (language-agnostic), lang, framework. One `.md` file per topic per tier. NEVER merge tiers or create subtiers. (ref: ADR-001)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Use a three-tier rule system: base (language-agnostic), lang, framework. One `.md` file per topic per tier. NEVER merge tiers or create subtiers. (ref: ADR-001)'
-  - text: 'Plans are the persistent execution state. Track progress in the plan file''s progress table — it survives context compaction. NEVER track plan state elsewhere. (ref: ADR-001)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Plans are the persistent execution state. Track progress in the plan file''s progress table — it survives context compaction. NEVER track plan state elsewhere. (ref: ADR-001)'
-  - text: 'Installation is copy files only — no npm, no package managers, no build step. (ref: ADR-001)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Installation is copy files only — no npm, no package managers, no build step. (ref: ADR-001)'
+signals:
+  - governance layer
+  - agentic engineering
+  - plain markdown
+  - runtime dependencies
+  - copy install
+  - three-tier rules
+  - execution orchestration
+  - path-conditional rules
+  - custom agents
+  - claude code only
+  - no silent background writes
+  - proactive capture loop
 paths:
-  - '**/*'
+  - .claude/rules/**/*
 scope:
-  - planning
   - design
-  - review
   - implementation
+  - review
+directives:
+  - text: "Coding standards, security rules, and architecture patterns MUST be installed as .claude/rules/ files where Claude automatically reads and enforces them. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 19
+      line_end: 19
+      quote: "Install coding standards, security rules, and architecture patterns as `.claude/rules/` files where Claude automatically reads and enforces them. Three-tier rule system:"
+  - text: "Plans MUST be the persistent execution state — progress tracked directly in the plan file, surviving context compaction. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 29
+      line_end: 29
+      quote: "Provide a framework to capture product context (project-context.md, product specs, PRDs) and create phased execution plans. Plans are the persistent state — progress tracked directly in the plan file, surviving context compaction."
+  - text: "edikt MUST NOT make silent background writes — suggestions fire only on strong signals; preferences and implementation details are ignored. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 63
+      line_end: 63
+      quote: "This is transparent — Claude tells you what it detected and you decide whether to capture it. No silent background writes. The suggestion fires only on strong signals; preferences and implementation details are ignored."
+  - text: "edikt MUST NOT perform execution orchestration — Claude Code handles worktrees, agents, and parallelism natively. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "- **No execution orchestration** — Claude Code handles worktrees, agents, parallelism natively"
+  - text: "edikt MUST NOT use proprietary formats — everything MUST be plain markdown and YAML. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 76
+      line_end: 76
+      quote: "- **No proprietary formats** — Everything is plain markdown and YAML"
+  - text: "edikt MUST NOT have runtime dependencies — installation is copy .md files only. (ref: ADR-001)"
+    source_excerpt:
+      line_start: 77
+      line_end: 77
+      quote: "- **No runtime dependencies** — Copy .md files, done"
+prohibitions: []
+reminders: []
+verification: []

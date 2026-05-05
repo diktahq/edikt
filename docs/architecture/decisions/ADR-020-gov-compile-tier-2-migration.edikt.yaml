@@ -1,43 +1,100 @@
 schema_version: 1
-topic: tooling
+topic: compile
 path: docs/architecture/decisions/ADR-020-gov-compile-tier-2-migration.md
-signals: []
-directives:
-  - text: 'Deterministic transformations in `/edikt:gov:compile` (YAML parse, sentinel extraction, hash computation, three-list merge, topic grouping, template rendering, orphan detection) MUST run in `tools/edikt/` (tier-2 Python helper per ADR-015). NEVER keep them as LLM round-trips in `commands/gov/compile.md`. (ref: ADR-020)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Deterministic transformations in `/edikt:gov:compile` (YAML parse, sentinel extraction, hash computation, three-list merge, topic grouping, template rendering, orphan detection) MUST run in `tools/edi
-  - text: 'LLM invocations from `/edikt:gov:compile` are restricted to: (a) generating sentinel blocks for new artifacts that lack one, (b) hand-edit conflict interviews (when `source_hash` matches but `directives_hash` does not), (c) composing contradiction-warning wording from a mechanically-detected contradiction list. No other LLM calls are permitted during compile. (ref: ADR-020)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'LLM invocations from `/edikt:gov:compile` are restricted to: (a) generating sentinel blocks for new artifacts that lack one, (b) hand-edit conflict interviews (when `source_hash` matches but `directiv'
-  - text: 'Compile output MUST be byte-equal across runs for byte-equal input. Non-determinism (LLM drift, unsorted iteration, timestamp embedding in hashed content) is forbidden. CI MUST include a diff-equality test. (ref: ADR-020)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Compile output MUST be byte-equal across runs for byte-equal input. Non-determinism (LLM drift, unsorted iteration, timestamp embedding in hashed content) is forbidden. CI MUST include a diff-equality
-  - text: '`/edikt:gov:compile --check` on 40 source documents MUST complete in under 2 seconds. Full regenerate on the same corpus MUST complete in under 5 seconds. No-op recompile (both hashes match) MUST exit in under 500 ms with zero LLM calls. (ref: ADR-020)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`/edikt:gov:compile --check` on 40 source documents MUST complete in under 2 seconds. Full regenerate on the same corpus MUST complete in under 5 seconds. No-op recompile (both hashes match) MUST exit'
-  - text: 'Tier-2 `gov-compile` install is opt-in via `edikt install gov-compile`. Users without the helper installed MUST continue to get a functional (if slow) compile via the legacy LLM path. (ref: ADR-020, ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-2 `gov-compile` install is opt-in via `edikt install gov-compile`. Users without the helper installed MUST continue to get a functional (if slow) compile via the legacy LLM path. (ref: ADR-020, A'
-  - text: 'Sentinel blocks SHOULD carry a `topic:` field (optional in v0.6.0, required in v0.7.0). Missing `topic:` falls back to one-shot LLM grouping, which writes the resolved topic back into the sentinel so subsequent compiles are deterministic. (ref: ADR-020)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Sentinel blocks SHOULD carry a `topic:` field (optional in v0.6.0, required in v0.7.0). Missing `topic:` falls back to one-shot LLM grouping, which writes the resolved topic back into the sentinel so '
-paths:
-  - commands/gov/compile.md
-  - tools/edikt/**
-  - .edikt/config.yaml
+signals:
+  - gov-compile
+  - tier-2 helper
+  - deterministic compile
+  - compile determinism
+  - sentinel blocks
+  - source_hash
+  - directives_hash
+  - three-list formula
+  - fast-path skip
+  - llm fallback
+  - edikt install gov-compile
+  - gov-compile check
+  - tools edikt compile.py
+  - commands gov compile.md
 scope:
-  - implementation
   - design
+  - implementation
   - review
+paths:
+  - tools/edikt/**/*.py
+  - commands/gov/**/*.md
+directives:
+  - text: "Deterministic transformations in /edikt:gov:compile (YAML parse, sentinel extraction, hash computation, three-list merge, topic grouping, template rendering, orphan detection) MUST run in tools/edikt/ as a tier-2 Python helper — NEVER as LLM round-trips in commands/gov/compile.md. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 58
+      line_end: 58
+      quote: "**Moves to `tools/edikt/` (Python, deterministic):**"
+  - text: "The tier-2 helper MUST compute source_hash (SHA-256 of body excluding the sentinel block, CRLF to LF normalized) and directives_hash (SHA-256 of sorted directives: list items) per ADR-008. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 63
+      line_end: 63
+      quote: "- Compute `source_hash` (SHA-256 of body excluding the sentinel block, CRLF→LF normalized) and `directives_hash` (SHA-256 of sorted `directives:` list items) per ADR-008."
+  - text: "The tier-2 helper MUST fast-path skip when both hashes match — byte-for-byte equal input means byte-for-byte equal output, no re-work. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 64
+      line_end: 64
+      quote: "- Fast-path skip when both hashes match — byte-for-byte equal input means byte-for-byte equal output, no re-work."
+  - text: "The tier-2 helper MUST compute the effective rule set via the ADR-008 three-list formula: (directives - suppressed_directives) union manual_directives. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 65
+      line_end: 65
+      quote: "- Compute effective rule set via the ADR-008 three-list formula: `(directives - suppressed_directives) ∪ manual_directives`."
+  - text: "First-compile sentinel generation for artifacts lacking a sentinel block MUST stay in commands/gov/compile.md (LLM path), happening once per artifact; the tier-2 helper reads the generated block on every subsequent compile. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "1. **First-compile sentinel generation** for artifacts that have no `[edikt:directives:*]: #` block yet. Read `## Decision` or `## Rule`, emit MUST/NEVER directive text, write the block back into the source. Happens once per artifact, then the tier-2 helper reads the generated block on every subsequent compile."
+  - text: "Hand-edit conflict interview MUST stay in commands/gov/compile.md (LLM path), triggered when source_hash matches but directives_hash does not; strategy flag --strategy=regenerate|preserve short-circuits in headless mode. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 75
+      line_end: 75
+      quote: "2. **Hand-edit conflict interview** triggered when `source_hash` matches but `directives_hash` does not (user edited the compiled block directly). One LLM Q/A per conflict; strategy flag `--strategy=regenerate|preserve` short-circuits in headless mode."
+  - text: "Contradiction warning wording MUST stay in commands/gov/compile.md (LLM path): the helper detects contradictions mechanically and passes the list to the LLM only for human-readable framing of the warning. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 76
+      line_end: 76
+      quote: "3. **Contradiction warning wording.** The helper detects contradictions mechanically (same predicate, opposite sense across artifacts) and passes the list to the LLM only for human-readable framing of the warning."
+  - text: "Compile output MUST be byte-equal across runs for byte-equal input via pure template rendering and sorted iteration — no LLM sampling in the deterministic path. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 82
+      line_end: 83
+      quote: "| Byte-equal output for byte-equal input | Pure Python template rendering + sorted iteration |\n| Reproducible across runs | No LLM sampling in the deterministic path |"
+  - text: "Tier-2 gov-compile install MUST be opt-in via `edikt install gov-compile`; users without the helper installed MUST continue to receive a functional compile via the legacy LLM path. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "1. **Full tier-2 migration with LLM fallback.** Ship a Python helper that does the deterministic work; LLM re-enters for the narrow \"reasoning\" steps. Users opt in via `edikt install gov-compile`. Legacy LLM path remains for users who don't install."
+prohibitions:
+  - text: "MUST NOT rely on better prompting of the LLM compile path as a substitute for tier-2 migration — it cuts latency ~2x at best and does not solve determinism or token cost. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 102
+      line_end: 102
+      quote: "- **Cons:** Cuts time ~2x at best; still minutes; does not solve determinism or token cost; fights the shape of the problem."
+    derived_from: rejected_option_better-prompting
+  - text: "MUST NOT remove LLM involvement from compile entirely — users who write a new ADR must not be required to author the sentinel block by hand; auto-generation is a headline product feature. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 108
+      line_end: 108
+      quote: "- **Cons:** Users who write a new ADR have to author the `[edikt:directives:*]: #` block by hand. The \"just write the decision and compile figures it out\" experience is a headline product feature for edikt."
+    derived_from: rejected_option_full-native-compile
+  - text: "MUST NOT implement compile as a cache layer only — first compile per artifact still pays full latency cost and a cache layer does not fix determinism across LLM runs. (ref: ADR-020)"
+    source_excerpt:
+      line_start: 114
+      line_end: 114
+      quote: "- **Cons:** First compile per artifact still pays the 35-min cost. Cache is non-trivial (invalidation on source edit, cross-platform cache location). Doesn't fix determinism (different LLM runs can still produce different cached values)."
+    derived_from: rejected_option_cache-layer-only
+reminders:
+  - "Before modifying commands/gov/compile.md → verify it still delegates YAML parse, hash computation, and template rendering to the tier-2 helper and has not re-inlined those steps (ref: ADR-020)"
+  - "Before modifying tools/edikt/compile.py → verify byte-equal output test passes: two consecutive compiles of the same source produce byte-equal .claude/rules/ trees via diff -r in CI (ref: ADR-020)"
+  - "Before releasing a compile change → verify no-op recompile exits in under 500 ms with zero LLM calls and full regenerate completes in under 5 s wall-clock (ref: ADR-020)"
+verification:
+  - "[ ] tools/edikt/compile.py exists and installs successfully via `edikt install gov-compile` (ref: ADR-020)"
+  - "[ ] commands/gov/compile.md delegates deterministic steps to the tier-2 helper and does not contain 500+ lines of inline YAML/hash/render procedure (ref: ADR-020)"
+  - "[ ] Byte-equal output: two consecutive compiles of the same source produce byte-equal .claude/rules/ trees — verified by diff -r in CI (ref: ADR-020)"
+  - "[ ] No-op recompile (all hashes match) exits in under 500 ms with zero LLM calls (ref: ADR-020)"
+  - "[ ] /edikt:gov:compile --check runs in under 2 s on 40 source documents (ref: ADR-020)"

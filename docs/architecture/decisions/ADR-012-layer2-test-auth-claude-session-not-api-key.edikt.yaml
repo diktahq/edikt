@@ -1,36 +1,69 @@
 schema_version: 1
-topic: agent-rules
+topic: testing
 path: docs/architecture/decisions/ADR-012-layer2-test-auth-claude-session-not-api-key.md
-signals: []
-directives:
-  - text: 'Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, not pytest_sessionstart — collection-time gating lets the scope of collected tests determine whether auth is needed. (ref: ADR-012)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, not pytest_sessionstart — collection-time gating lets the scope of collected tests determine whether auth is need
-  - text: 'The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The auth gate MUST accept either a claude CLI session (credentials present in $CLAUDE_HOME) OR ANTHROPIC_API_KEY — never require both, never require only one. (ref: ADR-012)'
-  - text: 'Tests in test/integration/regression/ MUST run without any claude authentication — they are pure Python reference implementations. The gate MUST NOT fire when only regression tests are collected. (ref: ADR-012)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tests in test/integration/regression/ MUST run without any claude authentication — they are pure Python reference implementations. The gate MUST NOT fire when only regression tests are collected. (r
-  - text: 'The claude-agent-sdk spawns a subprocess claude CLI; ANTHROPIC_API_KEY is a CI/headless fallback, NOT the primary auth mechanism. Never document it as the only option. (ref: ADR-012)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The claude-agent-sdk spawns a subprocess claude CLI; ANTHROPIC_API_KEY is a CI/headless fallback, NOT the primary auth mechanism. Never document it as the only option. (ref: ADR-012)'
-  - text: 'When the auth gate fires, the error message MUST list all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1. Silent exits are forbidden. (ref: ADR-012)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'When the auth gate fires, the error message MUST list all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1. Silent exits are forbidden. (ref: ADR-012)'
+signals:
+  - layer 2 sdk tests
+  - pytest_collection_finish
+  - pytest_sessionstart
+  - claude auth login
+  - anthropic_api_key
+  - regression museum tests
+  - test.integration.regression
+  - conftest.py
+  - skip_integration
+  - claude session
+  - auth gate
 paths:
-  - test/integration/**/*.py
-  - test/integration/conftest.py
+  - test/integration/regression/**/*
 scope:
+  - design
   - implementation
   - review
+directives:
+  - text: "Layer 2 SDK tests MUST gate on claude authentication using pytest_collection_finish, which checks that either a claude CLI session exists (~/.claude/credentials or equivalent) OR ANTHROPIC_API_KEY is set in the environment. If neither is present when SDK tests are collected, pytest.exit() fires with a clear message listing all three remediation paths: claude auth login, set ANTHROPIC_API_KEY, or SKIP_INTEGRATION=1. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 61
+      line_end: 65
+      quote: "Layer 2 SDK tests gate on claude authentication using `pytest_collection_finish`, which checks\nthat either a claude CLI session exists (`~/.claude/credentials` or equivalent) OR\n`ANTHROPIC_API_KEY` is set in the environment. If neither is present when SDK tests are\ncollected, `pytest.exit()` fires with a clear message listing all three remediation paths:\n`claude auth login`, set `ANTHROPIC_API_KEY`, or `SKIP_INTEGRATION=1`."
+  - text: "Regression museum tests (test/integration/regression/) MUST be runnable without any authentication. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 67
+      line_end: 68
+      quote: "Regression museum tests (`test/integration/regression/`) MUST be runnable without any\nauthentication."
+  - text: "The gate MUST NOT fire when only regression tests are collected. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 68
+      line_end: 68
+      quote: "The gate MUST NOT fire when only regression tests are collected."
+  - text: "The gate MUST use pytest_collection_finish (post-collection) rather than pytest_sessionstart (pre-collection) so the scope of what was collected is known before gating. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 70
+      line_end: 71
+      quote: "The gate uses `pytest_collection_finish` (post-collection) rather than `pytest_sessionstart`\n(pre-collection) so the scope of what was collected is known before gating."
+  - text: "ANTHROPIC_API_KEY MUST remain supported as the CI/headless fallback — it is an escape hatch for environments where interactive login is not possible. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 73
+      line_end: 74
+      quote: "`ANTHROPIC_API_KEY` remains supported as the CI/headless fallback. It is not the primary\nmechanism — it is an escape hatch for environments where interactive login is not possible."
+prohibitions:
+  - text: "MUST NOT gate Layer 2 SDK tests on ANTHROPIC_API_KEY only — the SDK never reads it and this breaks every developer logged in to Claude Code without a separate API key. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 81
+      line_end: 83
+      quote: "- **Cons:** factually wrong — the SDK never reads it; breaks every developer who is logged in\n  to Claude Code but has not obtained a separate API key; contradicts SPEC-004 §16 item 4"
+    derived_from: rejected_option_anthropic-api-key-only
+  - text: "MUST NOT gate Layer 2 SDK tests on claude session only — CI non-interactive environments cannot do claude auth login and there is no escape hatch for automated pipelines. (ref: ADR-012)"
+    source_excerpt:
+      line_start: 86
+      line_end: 87
+      quote: "- **Cons:** breaks CI — non-interactive environments cannot do `claude auth login`; no\n  escape hatch for automated pipelines"
+    derived_from: rejected_option_claude-session-only
+reminders:
+  - "Before modifying test/integration/conftest.py auth gate → verify pytest_collection_finish is used (not pytest_sessionstart) and the error message lists all three remediation paths: claude auth login, ANTHROPIC_API_KEY, and SKIP_INTEGRATION=1 (ref: ADR-012)"
+  - "Before adding new tests under test/integration/ → verify regression museum tests in test/integration/regression/ do not require any claude auth and the gate does not fire for them (ref: ADR-012)"
+  - "Before updating CI workflow auth configuration → verify ANTHROPIC_API_KEY is documented as the headless fallback only, not the primary mechanism (ref: ADR-012)"
+verification:
+  - "[ ] python3 -m pytest test/integration/regression/ --no-header -q passes without any environment variables set (ref: ADR-012)"
+  - "[ ] python3 -m pytest test/integration/test_init_greenfield.py --collect-only exits with 'claude CLI not authenticated' when neither ~/.claude/credentials nor ANTHROPIC_API_KEY is present (ref: ADR-012)"
+  - "[ ] Both ANTHROPIC_API_KEY and pytest.exit appear in test/integration/conftest.py (ref: ADR-012)"
+  - "[ ] CI workflow uses either ANTHROPIC_API_KEY secret or a persisted claude session and both paths are documented (ref: ADR-012)"

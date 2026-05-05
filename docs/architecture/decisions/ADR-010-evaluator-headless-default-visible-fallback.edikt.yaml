@@ -1,55 +1,140 @@
 schema_version: 1
 topic: agent-rules
 path: docs/architecture/decisions/ADR-010-evaluator-headless-default-visible-fallback.md
-signals: []
-directives:
-  - text: 'Evaluator default mode MUST be headless. `.edikt/config.yaml` ships with `evaluator.mode: headless`. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Evaluator default mode MUST be headless. `.edikt/config.yaml` ships with `evaluator.mode: headless`. (ref: ADR-010)'
-  - text: 'Evaluator templates MUST declare BLOCKED as a valid per-criterion and overall verdict. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Evaluator templates MUST declare BLOCKED as a valid per-criterion and overall verdict. (ref: ADR-010)'
-  - text: 'Evaluator MUST NOT return PASS for criteria that require execution when execution was denied or unavailable. Return BLOCKED instead. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Evaluator MUST NOT return PASS for criteria that require execution when execution was denied or unavailable. Return BLOCKED instead. (ref: ADR-010)'
-  - text: '`commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`, and fall back to subagent only on headless failure with a visible warning banner. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`, and fall back to subagent only on headless failure with a visible warning banner. (ref: ADR-010)'
-  - text: 'Progress tables in plan files MUST support a `blocked` state in addition to `pass`/`fail`/`evaluating`. A phase with BLOCKED criteria is NOT verified. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Progress tables in plan files MUST support a `blocked` state in addition to `pass`/`fail`/`evaluating`. A phase with BLOCKED criteria is NOT verified. (ref: ADR-010)'
-  - text: 'Subagent-mode evaluator MUST probe Bash availability before claiming verdicts on criteria that require execution. If Bash is denied, return BLOCKED with a recovery hint. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Subagent-mode evaluator MUST probe Bash availability before claiming verdicts on criteria that require execution. If Bash is denied, return BLOCKED with a recovery hint. (ref: ADR-010)'
-  - text: '`/edikt:doctor` MUST probe the evaluator path: `claude` on PATH, headless probe success, template presence, explicit mode config. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`/edikt:doctor` MUST probe the evaluator path: `claude` on PATH, headless probe success, template presence, explicit mode config. (ref: ADR-010)'
-  - text: 'Every evaluator failure mode MUST produce user-visible output with the reason and a one-line recovery command. Silent degradation is forbidden. (ref: ADR-010)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Every evaluator failure mode MUST produce user-visible output with the reason and a one-line recovery command. Silent degradation is forbidden. (ref: ADR-010)'
-paths:
-  - templates/agents/evaluator.md
-  - templates/agents/evaluator-headless.md
-  - commands/sdlc/plan.md
-  - commands/doctor.md
-  - .edikt/config.yaml
+signals:
+  - evaluator
+  - headless
+  - subagent
+  - blocked verdict
+  - evaluator mode
+  - evaluator template
+  - evaluator-headless.md
+  - evaluator.md
+  - edikt doctor
+  - commands sdlc plan.md
+  - silent degradation
+  - bash denied
 scope:
+  - design
   - implementation
   - review
-  - planning
+directives:
+  - text: "The evaluator MUST run headless by default. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 41
+      line_end: 41
+      quote: "edikt adopts Option 3. The evaluator MUST run headless by default. The evaluator MAY fall back to subagent mode only when headless fails, and MUST emit a visible warning banner when it does. The evaluator MUST return a BLOCKED verdict — never PASS — when it cannot execute a verification step required by an acceptance criterion."
+  - text: "The evaluator MAY fall back to subagent mode only when headless fails, and MUST emit a visible warning banner when it does. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 41
+      line_end: 41
+      quote: "edikt adopts Option 3. The evaluator MUST run headless by default. The evaluator MAY fall back to subagent mode only when headless fails, and MUST emit a visible warning banner when it does. The evaluator MUST return a BLOCKED verdict — never PASS — when it cannot execute a verification step required by an acceptance criterion."
+  - text: "The evaluator MUST return a BLOCKED verdict — never PASS — when it cannot execute a verification step required by an acceptance criterion. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 41
+      line_end: 41
+      quote: "edikt adopts Option 3. The evaluator MUST run headless by default. The evaluator MAY fall back to subagent mode only when headless fails, and MUST emit a visible warning banner when it does. The evaluator MUST return a BLOCKED verdict — never PASS — when it cannot execute a verification step required by an acceptance criterion."
+  - text: "Default mode MUST be headless. `.edikt/config.yaml` ships with `evaluator.mode: headless` as the default and recommended value. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 45
+      line_end: 45
+      quote: "1. **Default mode MUST be headless.** `.edikt/config.yaml` ships with `evaluator.mode: headless` as the default and recommended value. `subagent` remains a supported value for environments where headless cannot run."
+  - text: "Both `templates/agents/evaluator.md` (subagent) and `templates/agents/evaluator-headless.md` (headless) MUST declare BLOCKED as a valid per-criterion verdict and a valid overall verdict. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "2. **The evaluator agent template MUST support a BLOCKED verdict.** Both `templates/agents/evaluator.md` (subagent) and `templates/agents/evaluator-headless.md` (headless) MUST declare BLOCKED as a valid per-criterion verdict and a valid overall verdict. BLOCKED means \"evaluator could not verify this criterion due to a missing capability (Bash denied, test runner missing, external dependency unavailable).\""
+  - text: "The evaluator MUST NOT return PASS when required verification steps could not execute. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 49
+      line_end: 49
+      quote: "3. **The evaluator MUST NOT return PASS when required verification steps could not execute.** If an acceptance criterion requires Bash execution and Bash is denied, the verdict for that criterion is BLOCKED. Read-only inspection does not substitute for runtime verification. Overall verdict is BLOCKED whenever any criterion is BLOCKED."
+  - text: "If an acceptance criterion requires Bash execution and Bash is denied, the verdict for that criterion MAY be BLOCKED. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 49
+      line_end: 49
+      quote: "3. **The evaluator MUST NOT return PASS when required verification steps could not execute.** If an acceptance criterion requires Bash execution and Bash is denied, the verdict for that criterion is BLOCKED. Read-only inspection does not substitute for runtime verification. Overall verdict is BLOCKED whenever any criterion is BLOCKED."
+  - text: "Read-only inspection MUST NOT substitute for runtime verification. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 49
+      line_end: 49
+      quote: "3. **The evaluator MUST NOT return PASS when required verification steps could not execute.** If an acceptance criterion requires Bash execution and Bash is denied, the verdict for that criterion is BLOCKED. Read-only inspection does not substitute for runtime verification. Overall verdict is BLOCKED whenever any criterion is BLOCKED."
+  - text: "`commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "4. **`commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`.** On headless failure (spawn error, non-zero exit, auth error, timeout), it MUST fall back to subagent mode and emit a visible warning banner naming the failure reason and the remediation."
+  - text: "On headless failure (spawn error, non-zero exit, auth error, timeout), `commands/sdlc/plan.md` MUST fall back to subagent mode and emit a visible warning banner naming the failure reason and the remediation. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 51
+      line_end: 51
+      quote: "4. **`commands/sdlc/plan.md` MUST attempt headless first when `evaluator.mode: headless`.** On headless failure (spawn error, non-zero exit, auth error, timeout), it MUST fall back to subagent mode and emit a visible warning banner naming the failure reason and the remediation."
+  - text: "`commands/sdlc/plan.md` MUST parse and surface BLOCKED verdicts in the phase evaluation output. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 53
+      line_end: 53
+      quote: "5. **`commands/sdlc/plan.md` MUST parse and surface BLOCKED verdicts in the phase evaluation output.** The progress table MUST gain a `blocked` state in addition to the existing `pass`/`fail`/`evaluating` states. A phase with BLOCKED verdicts is NOT considered verified and MUST NOT be marked complete."
+  - text: "The progress table MUST gain a `blocked` state in addition to the existing `pass`/`fail`/`evaluating` states. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 53
+      line_end: 53
+      quote: "5. **`commands/sdlc/plan.md` MUST parse and surface BLOCKED verdicts in the phase evaluation output.** The progress table MUST gain a `blocked` state in addition to the existing `pass`/`fail`/`evaluating` states. A phase with BLOCKED verdicts is NOT considered verified and MUST NOT be marked complete."
+  - text: "A phase with BLOCKED verdicts is NOT considered verified and MUST NOT be marked complete. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 53
+      line_end: 53
+      quote: "5. **`commands/sdlc/plan.md` MUST parse and surface BLOCKED verdicts in the phase evaluation output.** The progress table MUST gain a `blocked` state in addition to the existing `pass`/`fail`/`evaluating` states. A phase with BLOCKED verdicts is NOT considered verified and MUST NOT be marked complete."
+  - text: "The subagent evaluator template MUST self-check before claiming verdicts: before evaluating any criterion that requires Bash, it MUST probe whether Bash is available. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "6. **The subagent evaluator template MUST self-check before claiming verdicts.** Before evaluating any criterion that requires Bash, it MUST probe whether Bash is available. If denied, it MUST return BLOCKED for that criterion with an explicit recovery hint (\"re-run with `evaluator.mode: headless` or via `/edikt:sdlc:plan`\")."
+  - text: "If Bash is denied, the subagent evaluator MUST return BLOCKED for that criterion with an explicit recovery hint. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "6. **The subagent evaluator template MUST self-check before claiming verdicts.** Before evaluating any criterion that requires Bash, it MUST probe whether Bash is available. If denied, it MUST return BLOCKED for that criterion with an explicit recovery hint (\"re-run with `evaluator.mode: headless` or via `/edikt:sdlc:plan`\")."
+  - text: "`/edikt:doctor` MUST probe the evaluator path: verify `claude` is on PATH, headless probe succeeds, configured evaluator template exists, and `evaluator.mode` is set explicitly (not inferred default). (ref: ADR-010)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "7. **`/edikt:doctor` MUST probe the evaluator path.** It MUST verify `claude` is on PATH, that a headless probe (`claude -p \"echo ok\"`) succeeds, that the configured evaluator template exists, and that `evaluator.mode` is set explicitly (not inferred default). Failures MUST surface with actionable remediation."
+  - text: "Failures in evaluator path probing MUST surface with actionable remediation. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "7. **`/edikt:doctor` MUST probe the evaluator path.** It MUST verify `claude` is on PATH, that a headless probe (`claude -p \"echo ok\"`) succeeds, that the configured evaluator template exists, and that `evaluator.mode` is set explicitly (not inferred default). Failures MUST surface with actionable remediation."
+  - text: "Every evaluator failure mode MUST produce user-visible output with the failure reason, the criterion affected (where applicable), and the one-line command the user can run to recover. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 59
+      line_end: 59
+      quote: "8. **Every evaluator failure mode MUST produce user-visible output.** Headless spawn failure, auth failure, Bash denial, BLOCKED verdicts, and full evaluation failure each have a defined output block with the failure reason, the criterion affected (where applicable), and the one-line command the user can run to recover."
+prohibitions:
+  - text: "MUST NOT collapse to headless-only (remove subagent mode entirely) — strands users in environments where headless cannot run. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 66
+      line_end: 66
+      quote: "- **Cons:** Headless has real environmental failure modes (missing CLI, expired auth, subprocess restrictions, MCP dependencies). Users in those environments would have no working evaluator at all."
+    derived_from: rejected_option_collapse-to-headless-only
+  - text: "MUST NOT keep both evaluator modes with only a user-facing config switch and no automatic fallback or BLOCKED verdict — this preserves silent-PASS failures. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 72
+      line_end: 72
+      quote: "- **Cons:** Preserves every problem that produced this ADR. The evaluator can still silently PASS. Users can still bypass config by invoking the agent directly."
+    derived_from: rejected_option_keep-both-modes-config-switch
+  - text: "MUST NOT allow the evaluator to be invoked directly (bypassing the orchestrator config) without enforcing the BLOCKED-verdict contract. (ref: ADR-010)"
+    source_excerpt:
+      line_start: 72
+      line_end: 72
+      quote: "- **Cons:** Preserves every problem that produced this ADR. The evaluator can still silently PASS. Users can still bypass config by invoking the agent directly."
+    derived_from: rejected_option_keep-both-modes-config-switch
+reminders:
+  - "Before modifying templates/agents/evaluator.md or templates/agents/evaluator-headless.md → verify BLOCKED is declared as a valid per-criterion verdict and valid overall verdict (ref: ADR-010)"
+  - "Before adding a new evaluator-invocation site → verify it routes through plan.md's orchestrator or explicitly includes the BLOCKED-verdict contract (ref: ADR-010)"
+  - "Before modifying the evaluator flow in commands/sdlc/plan.md → verify headless-first attempt, fallback to subagent with visible warning banner, and BLOCKED verdict parsing are all present (ref: ADR-010)"
+verification:
+  - "[ ] grep BLOCKED templates/agents/evaluator.md — file contains BLOCKED in output format and execution-required rule (ref: ADR-010)"
+  - "[ ] grep BLOCKED templates/agents/evaluator-headless.md — file contains BLOCKED in output format (ref: ADR-010)"
+  - "[ ] grep for try-headless-then-fallback warning banner string in commands/sdlc/plan.md (ref: ADR-010)"
+  - "[ ] grep for evaluator probe invocation (claude -p) in commands/doctor.md (ref: ADR-010)"
+  - "[ ] Any new evaluator-invocation site reviewed — direct Agent() calls must be justified and must include BLOCKED-verdict contract (ref: ADR-010)"

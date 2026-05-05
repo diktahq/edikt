@@ -3,18 +3,19 @@ topic: tooling
 path: docs/architecture/decisions/ADR-030-tier-2-stays-llm-agnostic.md
 signals:
   - tier-2
-  - llm-agnostic
-  - agent dispatch
-  - sidecar-extractor
   - exec.command
   - exec.lookpath
+  - llm-agnostic
   - no-llm-in-tier-2
   - phasea runner
+  - sidecar-extractor
   - host agent
   - edikt_llm_bin
+  - agent dispatch
 paths:
   - tools/edikt/**/*.go
-  - tools/edikt/check/no-llm-*.sh
+  - tools/edikt/check/no-llm-in-tier-2.sh
+  - templates/agents/sidecar-extractor.md
 scope:
   - design
   - implementation
@@ -57,7 +58,7 @@ prohibitions:
       line_start: 149
       line_end: 152
       quote: "- **Move to a generic \"agent dispatch\" abstraction inside Go that\n  pluggably calls Claude / Codex / etc.** Rejected: every additional\n  agent integration requires a Go release; tier-1 markdown evolves\n  faster and is the natural seam for agent-specific code paths."
-    derived_from: "rejected_option_generic-go-dispatch-abstraction"
+    derived_from: "rejected_option_generic-go-dispatch"
   - text: "MUST NOT keep LLM dispatch in Go with silent skip on missing-binary failure — silent degradation to topic: needs-review without user-facing remediation is the bug this ADR was created to eliminate. (ref: ADR-030)"
     source_excerpt:
       line_start: 153

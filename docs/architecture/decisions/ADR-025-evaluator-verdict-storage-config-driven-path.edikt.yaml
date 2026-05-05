@@ -1,40 +1,112 @@
 schema_version: 1
 topic: agent-rules
 path: docs/architecture/decisions/ADR-025-evaluator-verdict-storage-config-driven-path.md
-signals: []
-directives:
-  - text: 'Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-025)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-025)'
-  - text: 'The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-025)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-025'
-  - text: 'Verdicts are persisted at `<paths.plans>/verdicts/<plan>/<phase>.json`, where `<paths.plans>` is resolved from `.edikt/config.yaml`. NEVER hardcode a literal verdicts path. (ref: ADR-025)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Verdicts are persisted at `<paths.plans>/verdicts/<plan>/<phase>.json`, where `<paths.plans>` is resolved from `.edikt/config.yaml`. NEVER hardcode a literal verdicts path. (ref: ADR-025)'
-  - text: 'Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true` under the resolved `<paths.plans>/verdicts/` path. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-025)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true` under the resolved `<paths.plans>/verdicts/` path. Grandfathered verdicts bypass t'
-  - text: '`bin/edikt upgrade` MUST migrate any legacy `docs/product/plans/verdicts/` content to the resolved `<paths.plans>/verdicts/` location for projects whose `paths.plans` is no longer `docs/product/plans`. The migration MUST preserve filenames and contents byte-for-byte. (ref: ADR-025)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`bin/edikt upgrade` MUST migrate any legacy `docs/product/plans/verdicts/` content to the resolved `<paths.plans>/verdicts/` location for projects whose `paths.plans` is no longer `docs/product/plans`'
+signals:
+  - evaluator verdict
+  - evaluator-verdict.schema.json
+  - verdict storage
+  - paths.plans
+  - evidence gate
+  - grandfathered verdict
+  - config-driven path
+  - phase-end-detector.sh
+  - bin.edikt upgrade
+  - evidence_type test_run
 paths:
-  - templates/agents/evaluator.md
-  - templates/agents/evaluator-headless.md
-  - templates/agents/evaluator-verdict.schema.json
-  - templates/hooks/phase-end-detector.sh
-  - commands/sdlc/plan.md
-  - tools/edikt/cmd/upgrade.go
+  - templates/agents/**/*.json
+  - templates/agents/**/*.md
+  - templates/hooks/**/*.sh
+  - commands/sdlc/**/*.md
 scope:
+  - design
   - implementation
   - review
+directives:
+  - text: "The evaluator MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 46
+      line_end: 46
+      quote: "The evaluator emits a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`:"
+  - text: "For every criterion whose `id` references a shell command in the plan's criteria sidecar (patterns: `pytest`, `bash`, `make`, `npm test`, `./test/`, `uv run`), the verdict's corresponding criterion MUST have `evidence_type: \"test_run\"`. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 72
+      line_end: 72
+      quote: "- For every criterion whose `id` references a shell command in the plan's criteria sidecar (patterns: `pytest`, `bash`, `make`, `npm test`, `./test/`, `uv run`), the verdict's corresponding criterion MUST have `evidence_type: \"test_run\"`."
+  - text: "If any required-test criterion has a different `evidence_type`, the overall verdict MUST be forced to BLOCKED regardless of the evaluator's stated verdict, and the reason MUST be logged with the unmet criterion IDs. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 73
+      line_end: 73
+      quote: "- If any required-test criterion has a different `evidence_type`, the overall verdict is forced to BLOCKED regardless of the evaluator's stated verdict, and the reason is logged with the unmet criterion IDs."
+  - text: "Structured verdicts MUST persist as runtime state sidecars at `<paths.plans>/verdicts/<plan-slug>/<phase-id>.json`, where `<paths.plans>` is the value of `paths.plans` in `.edikt/config.yaml`. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 78
+      line_end: 78
+      quote: "Structured verdicts persist as runtime state sidecars at `<paths.plans>/verdicts/<plan-slug>/<phase-id>.json`, where `<paths.plans>` is the value of `paths.plans` in `.edikt/config.yaml`. Concrete resolutions:"
+  - text: "Tooling that reads or writes verdicts MUST resolve the path through the loaded `paths.plans` config value. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 86
+      line_end: 86
+      quote: "Tooling that reads or writes verdicts MUST resolve the path through the loaded `paths.plans` config value. NEVER hardcode a literal verdicts path."
+  - text: "NEVER hardcode a literal verdicts path. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 86
+      line_end: 86
+      quote: "Tooling that reads or writes verdicts MUST resolve the path through the loaded `paths.plans` config value. NEVER hardcode a literal verdicts path."
+  - text: "`templates/agents/evaluator-verdict.schema.json` MUST carry a top-level `$id` of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 90
+      line_end: 90
+      quote: "The verdict schema follows the same versioning discipline as ADR-007. `templates/agents/evaluator-verdict.schema.json` carries a top-level `$id` of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. Additive changes (new optional fields, new enum values) do NOT bump `<N>`. Breaking changes (removed fields, changed enum semantics, required-field additions) bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. Old verdicts (identified by their `$schema` URL) are never silently reinterpreted under a new schema version."
+  - text: "Additive changes to the evaluator verdict schema (new optional fields, new enum values) MUST NOT bump the schema version `<N>`. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 90
+      line_end: 90
+      quote: "The verdict schema follows the same versioning discipline as ADR-007. `templates/agents/evaluator-verdict.schema.json` carries a top-level `$id` of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. Additive changes (new optional fields, new enum values) do NOT bump `<N>`. Breaking changes (removed fields, changed enum semantics, required-field additions) bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. Old verdicts (identified by their `$schema` URL) are never silently reinterpreted under a new schema version."
+  - text: "Breaking changes to the evaluator verdict schema (removed fields, changed enum semantics, required-field additions) MUST bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 90
+      line_end: 90
+      quote: "The verdict schema follows the same versioning discipline as ADR-007. `templates/agents/evaluator-verdict.schema.json` carries a top-level `$id` of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. Additive changes (new optional fields, new enum values) do NOT bump `<N>`. Breaking changes (removed fields, changed enum semantics, required-field additions) bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. Old verdicts (identified by their `$schema` URL) are never silently reinterpreted under a new schema version."
+  - text: "Old verdicts (identified by their `$schema` URL) MUST NEVER be silently reinterpreted under a new schema version. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 90
+      line_end: 90
+      quote: "The verdict schema follows the same versioning discipline as ADR-007. `templates/agents/evaluator-verdict.schema.json` carries a top-level `$id` of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. Additive changes (new optional fields, new enum values) do NOT bump `<N>`. Breaking changes (removed fields, changed enum semantics, required-field additions) bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. Old verdicts (identified by their `$schema` URL) are never silently reinterpreted under a new schema version."
+  - text: "Grandfathered verdicts MUST bypass the evidence gate on a one-time basis per phase. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 97
+      line_end: 97
+      quote: "- Grandfathered verdicts bypass the evidence gate on a one-time basis per phase."
+  - text: "New evaluations (future phase completions) MUST use the strict schema. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 98
+      line_end: 98
+      quote: "- New evaluations (future phase completions) use the strict schema."
+  - text: "`bin/edikt upgrade` MUST move any legacy `docs/product/plans/verdicts/` content to the resolved `<paths.plans>/verdicts/` location before running grandfathering for projects whose `paths.plans` no longer matches that path, preserving filenames and contents byte-for-byte. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 101
+      line_end: 101
+      quote: "If an existing project still has verdicts under the legacy `docs/product/plans/verdicts/` path (because they predate this ADR) and no longer matches the project's `paths.plans`, `bin/edikt upgrade` MUST move those legacy verdicts to the resolved `<paths.plans>/verdicts/` location before running grandfathering, preserving filenames and contents byte-for-byte."
+prohibitions:
+  - text: "MUST NOT edit an accepted ADR in place to fix a directive error — this violates INV-002 (accepted ADRs are immutable) and breaks the audit trail. Supersede with a new ADR instead. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 108
+      line_end: 108
+      quote: "- **Cons:** Violates INV-002 (accepted ADRs are immutable). Breaks the audit trail."
+    derived_from: "rejected_option_edit-adr-018-in-place"
+  - text: "MUST NOT add erratum notes to an accepted ADR — erratum-style metadata is not a recognized concept in edikt's ADR model and such a note still mutates the accepted ADR in violation of INV-002. (ref: ADR-025)"
+    source_excerpt:
+      line_start: 114
+      line_end: 114
+      quote: "- **Cons:** Still mutates ADR-018; still violates INV-002. And erratum-style metadata is not a recognized concept in edikt's ADR model."
+    derived_from: "rejected_option_add-erratum-note"
+reminders:
+  - "Before modifying evaluator agent templates → verify no literal verdict path strings exist in templates/agents/evaluator-headless.md and templates/agents/evaluator.md (ref: ADR-025)"
+  - "Before writing verdict storage logic → verify the path resolves through paths.plans config value and contains no hardcoded literal (ref: ADR-025)"
+  - "Before running bin/edikt upgrade on a pre-0.5.0 project → verify grandfathered verdicts are written under the resolved paths.plans value, not a hardcoded docs/product/plans/verdicts path (ref: ADR-025)"
+verification:
+  - "[ ] templates/agents/evaluator-verdict.schema.json exists and validates against JSON Schema draft 2020-12 (ref: ADR-025)"
+  - "[ ] templates/agents/evaluator-headless.md and templates/agents/evaluator.md contain no literal verdict path strings (ref: ADR-025)"
+  - "[ ] test/security/evaluator/test_evidence_gate.sh passes all three fixture cases: test_run PASS preserved, grep forced to BLOCKED, grandfathered bypassed (ref: ADR-025)"
+  - "[ ] bin/edikt upgrade on a v0.4.3 snapshot writes verdicts under the resolved paths.plans value, not a hardcoded path (ref: ADR-025)"
+  - "[ ] grep -rn 'docs/product/plans/verdicts' templates/ commands/ tools/ returns no matches outside ADR-018 and CHANGELOG (ref: ADR-025)"

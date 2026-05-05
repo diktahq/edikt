@@ -1,37 +1,97 @@
 schema_version: 1
 topic: hooks
 path: docs/architecture/decisions/ADR-026-subagent-stop-keyword-fallback-removal-v060.md
-signals: []
-directives:
-  - text: 'subagent-stop.sh MUST identify the agent only via `evaluator_output.agent` (ADR-023 primary) or canonical Claude Code payload fields (`subagent_type`, `agent_name`, `tool_name`, `agent`). NEVER use content keyword detection for agent identity. (ref: ADR-026)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: subagent-stop.sh MUST identify the agent only via `evaluator_output.agent` (ADR-023 primary) or canonical Claude Code payload fields (`subagent_type`, `agent_name`, `tool_name`, `agent`). NEVER use co
-  - text: 'subagent-stop.sh MUST identify severity only via `evaluator_output.severity`. When the field is absent, severity stays at default "info"; NEVER keyword-grep severity from subagent content. (ref: ADR-026)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'subagent-stop.sh MUST identify severity only via `evaluator_output.severity`. When the field is absent, severity stays at default "info"; NEVER keyword-grep severity from subagent content. (ref: ADR-0'
-  - text: 'When neither structured path yields a valid agent name, subagent-stop.sh MUST return `{"continue": true}` and exit. NEVER fire a gate against `gates.default` for non-agent subagents. (ref: ADR-026)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'When neither structured path yields a valid agent name, subagent-stop.sh MUST return `{"continue": true}` and exit. NEVER fire a gate against `gates.default` for non-agent subagents. (ref: ADR-026)'
-  - text: 'Specialist agent templates MUST emit `evaluator_output.agent` and `evaluator_output.severity` to be subject to gate firing. Pre-v0.5.0 unstructured templates MUST be updated to the ADR-018 schema. (ref: ADR-026, ADR-018)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Specialist agent templates MUST emit `evaluator_output.agent` and `evaluator_output.severity` to be subject to gate firing. Pre-v0.5.0 unstructured templates MUST be updated to the ADR-018 schema. (re
-  - text: 'The `AGENT_IDENTITY_SOURCE` variable in subagent-stop.sh MUST take exactly one of two values: `evaluator_output` or `payload`. The legacy value `grep-fallback` is forbidden. (ref: ADR-026)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The `AGENT_IDENTITY_SOURCE` variable in subagent-stop.sh MUST take exactly one of two values: `evaluator_output` or `payload`. The legacy value `grep-fallback` is forbidden. (ref: ADR-026)'
+signals:
+  - subagent-stop
+  - subagent
+  - evaluator_output
+  - evaluator_output.agent
+  - keyword fallback
+  - agent identity
+  - gates.default
+  - subagent_type
+  - agent_name
+  - agent_identity_source
+  - non-agent subagent
+  - specialist agent
+  - grep-fallback
 paths:
-  - templates/hooks/subagent-stop.sh
-  - test/fixtures/hook-payloads/subagent-stop-*.json
-  - test/unit/hooks/test_subagent_stop.sh
+  - templates/hooks/**/*.sh
 scope:
+  - design
   - implementation
   - review
+directives:
+  - text: "Specialist agents MUST be identified only via structured paths: `evaluator_output.agent` (ADR-023) or canonical Claude Code payload fields. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 53
+      line_end: 53
+      quote: "**Remove the keyword content-grep fallback for agent identity entirely in v0.6.0. Specialist agents are identified only via structured paths: `evaluator_output.agent` (ADR-023) or canonical Claude Code payload fields. Subagents that yield no identity through either path exit clean — no gate firing.**"
+  - text: "Subagents that yield no identity through either structured path MUST exit clean — no gate firing. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 53
+      line_end: 53
+      quote: "**Remove the keyword content-grep fallback for agent identity entirely in v0.6.0. Specialist agents are identified only via structured paths: `evaluator_output.agent` (ADR-023) or canonical Claude Code payload fields. Subagents that yield no identity through either path exit clean — no gate firing.**"
+  - text: "The block in `templates/hooks/subagent-stop.sh` that scanned `INPUT_LOWER` for keywords like `architect`, `dba`, `security` MUST be removed in v0.6.0 (not v0.7.0). (ref: ADR-026)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "1. **Keyword-grep agent identity removed.** The block in `templates/hooks/subagent-stop.sh` that scanned `INPUT_LOWER` for keywords like `architect`, `dba`, `security` is removed in v0.6.0 (not v0.7.0). The block also included a fallback regex (`As (Staff|Senior|Principal) [A-Za-z]+`) — this is also removed."
+  - text: "The fallback regex (`As (Staff|Senior|Principal) [A-Za-z]+`) in subagent-stop.sh MUST also be removed. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "1. **Keyword-grep agent identity removed.** The block in `templates/hooks/subagent-stop.sh` that scanned `INPUT_LOWER` for keywords like `architect`, `dba`, `security` is removed in v0.6.0 (not v0.7.0). The block also included a fallback regex (`As (Staff|Senior|Principal) [A-Za-z]+`) — this is also removed."
+  - text: "The block that grep'd for severity terms when `evaluator_output.severity` is absent MUST be removed from subagent-stop.sh. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 59
+      line_end: 59
+      quote: "2. **Keyword-grep severity removed.** The block that grep'd for severity terms (`🔴|critical|CRITICAL|...`) when `evaluator_output.severity` was absent is removed (this part already shipped in commit b26f8c5 — ADR-026 documents and ratifies the change retroactively)."
+  - text: "If neither structured path yields a valid agent name, the hook MAY return `{\"continue\": true}` and exit — no severity detection, no threshold lookup, no gate firing. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 65
+      line_end: 65
+      quote: "4. **No identity → no gate.** If neither structured path yields a valid agent name (one of `architect dba security api backend frontend qa sre platform docs pm ux data performance compliance mobile seo gtm`), the hook returns `{\"continue\": true}` and exits. The subagent is treated as non-agent — no severity detection, no threshold lookup, no gate firing, no logging to `session-signals.log` as an AGENT event."
+  - text: "Subagents that DO yield an identity MUST continue to fire gates per ADR-023 §4 threshold resolution. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "5. **Specialist-agent gate firing unchanged.** Subagents that DO yield an identity continue to fire gates per ADR-023 §4 threshold resolution. `gates.<agent>` lookup and `gates.default` fallback work as before."
+  - text: "The legacy value `grep-fallback` MUST be removed from the code; it MUST NOT appear in any new gate event. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 72
+      line_end: 72
+      quote: "   The legacy value `\"grep-fallback\"` is removed from the code; it cannot appear in any new gate event."
+  - text: "All evaluator agents MUST emit structured JSON conforming to `templates/agents/evaluator-verdict.schema.json` by v0.5.0. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "7. **Migration path for legacy specialist agents.** Pre-v0.5.0 specialist agent templates that emit unstructured prose verdicts are no longer gated by this hook. Per ADR-018, all evaluator agents must emit structured JSON conforming to `templates/agents/evaluator-verdict.schema.json` by v0.5.0. Any project still running pre-v0.5.0 evaluator templates must update to the structured schema; their gate firing was already broken under ADR-023 keyword fallback's known false-positive surface."
+  - text: "Any project still running pre-v0.5.0 evaluator templates MUST update to the structured schema. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "7. **Migration path for legacy specialist agents.** Pre-v0.5.0 specialist agent templates that emit unstructured prose verdicts are no longer gated by this hook. Per ADR-018, all evaluator agents must emit structured JSON conforming to `templates/agents/evaluator-verdict.schema.json` by v0.5.0. Any project still running pre-v0.5.0 evaluator templates must update to the structured schema; their gate firing was already broken under ADR-023 keyword fallback's known false-positive surface."
+prohibitions:
+  - text: "MUST NOT implement a heuristic slash-command subagent exemption (absent `subagent_type` + content detection) as a workaround — this replaces one content-detection heuristic with another. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 81
+      line_end: 81
+      quote: "- **Cons:** A \"defensive workaround\" would have to identify slash-command subagents heuristically (e.g., absent `subagent_type` + presence of slash-command-shaped content) and exempt them from gate firing — itself a content-detection heuristic that risks the same false-positive class. Cleaner to remove the unsafe path entirely."
+    derived_from: rejected_option_keep-v070-timeline-defensive-workaround
+  - text: "MUST NOT keep `gates.default` firing for non-agent subagents with no identity — a non-agent with no identity MUST NOT trigger any gate. (ref: ADR-026)"
+    source_excerpt:
+      line_start: 87
+      line_end: 87
+      quote: "- **Cons:** Doesn't solve the slash-command false-positive case. A non-agent subagent with no identity at all would still fire `gates.default`, which in this project is `critical`. If the subagent's content mentioned `critical` (e.g., a doctor report listing critical warnings), the gate could still fire under the keyword-severity path until that's also removed. Then `gates.default` thresholds would still apply to non-agents — defensible as a security posture but produces noisy gate events on every dashboard run."
+    derived_from: rejected_option_accelerate-timeline-only
+reminders:
+  - "Before modifying `templates/hooks/subagent-stop.sh` → verify no keyword-grep agent identity block exists; only `evaluator_output.agent` and canonical payload fields set AGENT_NAME (ref: ADR-026)"
+  - "Before modifying `templates/hooks/subagent-stop.sh` → verify `AGENT_IDENTITY_SOURCE` can only be `evaluator_output` or `payload`; the legacy value `grep-fallback` must not exist in the code (ref: ADR-026)"
+  - "Before releasing v0.6.0 → verify `test/unit/hooks/test_subagent_stop.sh` includes `subagent-stop-no-agent.json` fixture and that expected output is `{\"continue\": true}` (ref: ADR-026)"
+verification:
+  - "[ ] `templates/hooks/subagent-stop.sh` contains no keyword-grep agent identity block — grep for `INPUT_LOWER` and agent keyword patterns returns zero matches (ref: ADR-026)"
+  - "[ ] `templates/hooks/subagent-stop.sh` contains no keyword-grep severity detection — grep for severity term patterns returns zero matches (ref: ADR-026)"
+  - "[ ] `test/fixtures/hook-payloads/subagent-stop-no-agent.json` exists with no `evaluator_output` and no canonical agent fields but content mentioning `architect` and `critical` (ref: ADR-026)"
+  - "[ ] `test/unit/hooks/test_subagent_stop.sh` includes the no-agent fixture in its FIXTURES array and passes (ref: ADR-026)"
+  - "[ ] `AGENT_IDENTITY_SOURCE` in `templates/hooks/subagent-stop.sh` takes only `evaluator_output` or `payload` — grep for `grep-fallback` returns zero matches (ref: ADR-026)"

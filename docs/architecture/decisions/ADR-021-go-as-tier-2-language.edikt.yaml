@@ -1,38 +1,83 @@
 schema_version: 1
 topic: tooling
 path: docs/architecture/decisions/ADR-021-go-as-tier-2-language.md
-signals: []
-directives:
-  - text: 'Tier-2 deterministic helpers under `tools/<name>/` MUST be Go modules producing single static binaries. Python, Node, Ruby, or other runtime-dependent languages are forbidden for this class of helper. (ref: ADR-021)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tier-2 deterministic helpers under `tools/<name>/` MUST be Go modules producing single static binaries. Python, Node, Ruby, or other runtime-dependent languages are forbidden for this class of helper.
-  - text: 'Tier-2 binaries MUST be cross-compiled in the release workflow for at least darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary''s SHA-256 MUST appear in the cosign-signed `SHA256SUMS` per ADR-016. (ref: ADR-021, ADR-016)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tier-2 binaries MUST be cross-compiled in the release workflow for at least darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary's SHA-256 MUST appear in the cosign-signed `SHA256SUMS` pe
-  - text: '`bin/edikt install <helper>` MUST download the platform-matching binary, verify the SHA-256 against cosign-verified `SHA256SUMS`, chmod +x, and symlink into `$EDIKT_ROOT/tools/<helper>`. NEVER install via `pipx`, `npm`, or other package managers. (ref: ADR-021, ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`bin/edikt install <helper>` MUST download the platform-matching binary, verify the SHA-256 against cosign-verified `SHA256SUMS`, chmod +x, and symlink into `$EDIKT_ROOT/tools/<helper>`. NEVER install'
-  - text: 'The bootstrap installer `install.sh` and the launcher `bin/edikt` MUST remain POSIX shell. NEVER rewrite these in Go — install.sh runs before any binary exists and the launcher must work on any POSIX system without a build step. (ref: ADR-021, INV-001)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: The bootstrap installer `install.sh` and the launcher `bin/edikt` MUST remain POSIX shell. NEVER rewrite these in Go — install.sh runs before any binary exists and the launcher must work on any POSI
-  - text: 'Tier-2 Go dependencies MUST be pinned via `go.mod` and `go.sum` at build time. This satisfies ADR-015''s "tier-2 deps pinned" contract via Go''s native resolution, not via `==` at install time. (ref: ADR-021, ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-2 Go dependencies MUST be pinned via `go.mod` and `go.sum` at build time. This satisfies ADR-015''s "tier-2 deps pinned" contract via Go''s native resolution, not via `==` at install time. (ref: AD'
+signals:
+  - go module
+  - tier-2 helpers
+  - static binary
+  - cross-compile
+  - sha256sums
+  - cosign-signed
+  - go.mod
+  - go.sum
+  - bin.edikt install
+  - install.sh
+  - bin.edikt
+  - gov-compile
 paths:
-  - tools/**
+  - tools/**/*.go
   - .github/workflows/release.yml
-  - bin/edikt
+  - install.sh
 scope:
-  - implementation
   - design
+  - implementation
   - review
+directives:
+  - text: "Tier-2 deterministic helpers MUST be implemented in Go. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 52
+      line_end: 52
+      quote: "We will adopt **Go** as the language for tier-2 deterministic helpers."
+  - text: "All future tier-2 helpers under `tools/<name>/` MUST be Go modules producing single static binaries. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 54
+      line_end: 54
+      quote: "- All future tier-2 helpers under `tools/<name>/` are Go modules producing single static binaries."
+  - text: "The release workflow MUST cross-compile each helper for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "- The release workflow cross-compiles each helper for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary's SHA-256 goes into the existing `SHA256SUMS` (cosign-signed per ADR-016)."
+  - text: "Each binary's SHA-256 MUST go into the existing `SHA256SUMS` (cosign-signed per ADR-016). (ref: ADR-021)"
+    source_excerpt:
+      line_start: 55
+      line_end: 55
+      quote: "- The release workflow cross-compiles each helper for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64. Each binary's SHA-256 goes into the existing `SHA256SUMS` (cosign-signed per ADR-016)."
+  - text: "`bin/edikt install <helper>` MUST download the matching binary for the host platform, verify the signed SHA-256, chmod +x, and symlink into `$EDIKT_ROOT/tools/<name>`. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "- `bin/edikt install <helper>` downloads the matching binary for the host platform, verifies the signed SHA-256, chmods +x, and symlinks into `$EDIKT_ROOT/tools/<name>`."
+  - text: "The bootstrap installer (`install.sh`) and the launcher (`bin/edikt`) MUST remain bash. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "- The bootstrap installer (`install.sh`) and the launcher (`bin/edikt`) stay bash. Chicken-and-egg for the installer (runs before any binary exists); small-and-stable-enough for the launcher (no build step needed for first install)."
+  - text: "Go dependency pinning MUST use `go.mod` + `go.sum` at build time. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 58
+      line_end: 58
+      quote: "- Go dependency pinning uses `go.mod` + `go.sum` at build time. No user-side pinning needed because the binary is static. This satisfies ADR-015's \"tier-2 deps MUST be pinned\" directive via a different mechanism than `==` for Python; ADR-015 is clarified (not superseded) to acknowledge the Go path."
+prohibitions:
+  - text: "MUST NOT use Deno or Bun for tier-2 helpers — binaries bundle the full JS runtime (~60-100 MB), violating the release footprint target. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 71
+      line_end: 71
+      quote: "- **Cons:** Binaries bundle the full JS runtime (~60-100 MB). Cold start is slower. Still effectively shipping a runtime, just baked in. Release footprint grows fast across 4+ platform targets."
+    derived_from: rejected_option_deno-bun
+  - text: "MUST NOT implement tier-2 helpers in Python — requires user-side install friction (Python version, pipx, isolated venv) and produces non-static binaries that break on host dep changes. (ref: ADR-021)"
+    source_excerpt:
+      line_start: 83
+      line_end: 83
+      quote: "- **Cons:** Users-side install friction (Python version, pipx, isolated venv). Non-static: helper breaks if a transitive dep changes on the host. Even with pinned deps, the install path is heavier than a single binary download."
+    derived_from: rejected_option_keep-python
+reminders:
+  - "Before adding a new tier-2 helper → verify it is a Go module under `tools/<name>/` with `go.mod` and `go.sum` committed (ref: ADR-021)"
+  - "Before modifying the release workflow → verify all four platform targets are cross-compiled and each binary's SHA-256 is added to `SHA256SUMS` (ref: ADR-021)"
+  - "Before changing `install.sh` or `bin/edikt` → verify they remain POSIX bash with no Go binary dependency at install time (ref: ADR-021)"
+verification:
+  - "[ ] `tools/edikt/` contains `go.mod` and `go.sum` committed to the repo (ref: ADR-021)"
+  - "[ ] `.github/workflows/release.yml` cross-compiles for darwin-amd64, darwin-arm64, linux-amd64, linux-arm64 and uploads binaries as release assets (ref: ADR-021)"
+  - "[ ] `bin/edikt install gov-compile` verifies against cosign-signed `SHA256SUMS` before symlinking (ref: ADR-021)"
+  - "[ ] `install.sh` is POSIX bash with no Go binary dependency (ref: ADR-021)"
+  - "[ ] Any future tier-2 helper under `tools/<name>/` is a Go module following the same cross-compile and install contract (ref: ADR-021)"

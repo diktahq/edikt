@@ -1,38 +1,82 @@
 schema_version: 1
-topic: hooks
+topic: security
 path: docs/architecture/decisions/ADR-017-default-permissions-posture.md
-signals: []
-directives:
-  - text: '`templates/settings.json.tmpl` MUST include an explicit `permissions` block with populated `deny`, `allow`, and `defaultMode: askBeforeAllow` keys. (ref: ADR-017)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`templates/settings.json.tmpl` MUST include an explicit `permissions` block with populated `deny`, `allow`, and `defaultMode: askBeforeAllow` keys. (ref: ADR-017)'
-  - text: 'The `permissions.deny` list MUST include at minimum the destructive Bash patterns, destructive git patterns, plaintext HTTP fetch patterns, and sensitive file read patterns enumerated in ADR-017. (ref: ADR-017)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: The `permissions.deny` list MUST include at minimum the destructive Bash patterns, destructive git patterns, plaintext HTTP fetch patterns, and sensitive file read patterns enumerated in ADR-017. (ref
-  - text: 'The `permissions.allow` list MUST include edikt''s operational tools (git, gh, pytest, npm test, `./test/run.sh`, `./test/test-e2e.sh`, make test, uv, ruff, WebFetch(https://**), WebSearch). (ref: ADR-017)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The `permissions.allow` list MUST include edikt''s operational tools (git, gh, pytest, npm test, `./test/run.sh`, `./test/test-e2e.sh`, make test, uv, ruff, WebFetch(https://**), WebSearch). (ref: ADR-'
-  - text: 'Managed-region integrity for `settings.json` MUST use the sidecar mechanism at `~/.edikt/state/settings-managed.json`. NEVER embed `_edikt` metadata inside the settings.json itself. (ref: ADR-017, INV-005)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Managed-region integrity for `settings.json` MUST use the sidecar mechanism at `~/.edikt/state/settings-managed.json`. NEVER embed `_edikt` metadata inside the settings.json itself. (ref: ADR-017, INV'
-  - text: 'On upgrade with a drifted `settings.json`, the writer MUST prompt the user before overwriting managed keys. User-added top-level keys outside the managed region MUST be preserved untouched. (ref: ADR-017)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'On upgrade with a drifted `settings.json`, the writer MUST prompt the user before overwriting managed keys. User-added top-level keys outside the managed region MUST be preserved untouched. (ref: ADR-'
+signals:
+  - settings.json.tmpl
+  - permissions block
+  - permissions.deny
+  - permissions.allow
+  - permissions.defaultmode
+  - deny-by-default
+  - default permissions
+  - settings-managed.json
+  - askbeforeallow
+  - destructive bash patterns
+  - sensitive file reads
+  - managed-region tracking
 paths:
   - templates/settings.json.tmpl
-  - install.sh
-  - bin/edikt
-  - docs/guides/permissions.md
 scope:
+  - design
   - implementation
   - review
+directives:
+  - text: "`templates/settings.json.tmpl` MUST ship with an explicit `permissions` block with both `deny` and `allow` lists populated. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "Ship `templates/settings.json.tmpl` with an explicit `permissions` block. Contents:"
+  - text: "The `permissions.defaultMode` MUST be set to `askBeforeAllow` — any tool not explicitly allowed or denied prompts the user once. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 81
+      line_end: 81
+      quote: "`askBeforeAllow` — any tool not explicitly allowed or denied prompts the user once."
+  - text: "The `permissions` block MUST be edikt-managed. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 85
+      line_end: 85
+      quote: "The `permissions` block is edikt-managed. Integrity is tracked via the sidecar mechanism defined by INV-005(b): `~/.edikt/state/settings-managed.json` records the canonical hash of the managed keys. Any drift (user edited `permissions` directly) is detected on the next install/upgrade and prompts the user before overwrite. User-added top-level keys outside `permissions` survive untouched."
+  - text: "Integrity MUST be tracked via the sidecar mechanism defined by INV-005(b): `~/.edikt/state/settings-managed.json` MUST record the canonical hash of the managed keys. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 85
+      line_end: 85
+      quote: "The `permissions` block is edikt-managed. Integrity is tracked via the sidecar mechanism defined by INV-005(b): `~/.edikt/state/settings-managed.json` records the canonical hash of the managed keys. Any drift (user edited `permissions` directly) is detected on the next install/upgrade and prompts the user before overwrite. User-added top-level keys outside `permissions` survive untouched."
+  - text: "Any drift in the `permissions` block MUST be detected on the next install/upgrade and MUST prompt the user before overwrite. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 85
+      line_end: 85
+      quote: "The `permissions` block is edikt-managed. Integrity is tracked via the sidecar mechanism defined by INV-005(b): `~/.edikt/state/settings-managed.json` records the canonical hash of the managed keys. Any drift (user edited `permissions` directly) is detected on the next install/upgrade and prompts the user before overwrite. User-added top-level keys outside `permissions` survive untouched."
+  - text: "User-added top-level keys outside `permissions` MUST survive untouched on install/upgrade. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 85
+      line_end: 85
+      quote: "The `permissions` block is edikt-managed. Integrity is tracked via the sidecar mechanism defined by INV-005(b): `~/.edikt/state/settings-managed.json` records the canonical hash of the managed keys. Any drift (user edited `permissions` directly) is detected on the next install/upgrade and prompts the user before overwrite. User-added top-level keys outside `permissions` survive untouched."
+prohibitions:
+  - text: "MUST NOT use allow-by-default with only a narrow deny list — this posture is equivalent to shipping no permissions block and fails to address the HI-9 audit finding. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 91
+      line_end: 91
+      quote: "- **Cons:** Same posture as the current `settings.json.tmpl` (which ships no `permissions` — effectively allow-by-default). Fails to address the audit finding."
+    derived_from: rejected_option_allow-by-default
+  - text: "MUST NOT ship with no default permissions and link only to a recommended-settings doc — documented-but-unshipped defaults are effectively not the default and leave the HI-9 audit finding open. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 96
+      line_end: 96
+      quote: "- **Cons:** Documented-but-unshipped defaults are effectively not the default. The audit finding stands."
+    derived_from: rejected_option_no-default-link-to-docs
+  - text: "MUST NOT use a strict allow-list with no deny list — every new tool, every new Bash invocation, and every WebFetch to an unfamiliar domain would prompt, guaranteeing permission fatigue. (ref: ADR-017)"
+    source_excerpt:
+      line_start: 101
+      line_end: 101
+      quote: "- **Cons:** Every new tool, every new Bash invocation, every WebFetch to an unfamiliar domain prompts. Permission fatigue guaranteed."
+    derived_from: rejected_option_strict-allow-list
+reminders:
+  - "Before modifying templates/settings.json.tmpl permissions block → verify deny list includes all destructive Bash patterns, destructive git patterns, plaintext HTTP fetches, and sensitive file reads enumerated in ADR-017 (ref: ADR-017)"
+  - "Before running bin/edikt upgrade on a customized settings.json → verify the user is prompted before the managed permissions block is overwritten (ref: ADR-017)"
+  - "Before shipping a new edikt install → verify ~/.edikt/state/settings-managed.json is created and records the canonical hash of the managed permissions keys (ref: ADR-017)"
+verification:
+  - "[ ] Fresh install produces a settings.json that validates against Claude Code's settings schema (ref: ADR-017)"
+  - "[ ] `cat ~/.claude/settings.json | jq .permissions.deny` lists every denied pattern from ADR-017 (ref: ADR-017)"
+  - "[ ] Running `curl http://example.com` under a fresh install produces a permission prompt, not silent allow (ref: ADR-017)"
+  - "[ ] Running `./test/run.sh` under a fresh install runs without a permission prompt (ref: ADR-017)"
+  - "[ ] `~/.edikt/state/settings-managed.json` exists after install and records the canonical hash of the managed keys (ref: ADR-017)"

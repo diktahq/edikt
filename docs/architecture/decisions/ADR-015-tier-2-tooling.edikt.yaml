@@ -1,63 +1,156 @@
 schema_version: 1
-topic: architecture
+topic: tooling
 path: docs/architecture/decisions/ADR-015-tier-2-tooling.md
-signals: []
-directives:
-  - text: 'Tier-2 optional tools MUST be installed via `edikt install <tool>` and MUST NOT be bundled in `install.sh`. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-2 optional tools MUST be installed via `edikt install <tool>` and MUST NOT be bundled in `install.sh`. (ref: ADR-015)'
-  - text: 'Tier-1 command files MUST remain pure markdown with no compiled code, no build step, and no runtime dependency on tier-2 artifacts. INV-001 applies verbatim to tier-1. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-1 command files MUST remain pure markdown with no compiled code, no build step, and no runtime dependency on tier-2 artifacts. INV-001 applies verbatim to tier-1. (ref: ADR-015)'
-  - text: 'Tier-2 tools MUST NOT modify any tier-1 command file, config, or state at install or uninstall time. After `edikt uninstall <tool>`, tier-1 file checksums MUST be byte-equal to their pre-install state. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tier-2 tools MUST NOT modify any tier-1 command file, config, or state at install or uninstall time. After `edikt uninstall <tool>`, tier-1 file checksums MUST be byte-equal to their pre-install state
-  - text: 'A tool''s tier MUST be declared in its command frontmatter as `tier: 1` or `tier: 2`. A tool''s tier is frozen at install time; promoting or demoting a tool across tiers requires a major-version bump of edikt. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'A tool''s tier MUST be declared in its command frontmatter as `tier: 1` or `tier: 2`. A tool''s tier is frozen at install time; promoting or demoting a tool across tiers requires a major-version bump of'
-  - text: 'Tier-2 install MUST verify any vendored package artifacts against the release checksum manifest from ADR-013 before executing the package install. Mismatch MUST abort with a clear message. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-2 install MUST verify any vendored package artifacts against the release checksum manifest from ADR-013 before executing the package install. Mismatch MUST abort with a clear message. (ref: ADR-0'
-  - text: 'Tier-2 install MUST pin exact versions (`==`) for package dependencies. Floating ranges (`>=`, `~=`, `*`) are forbidden in tier-2 manifests. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-2 install MUST pin exact versions (`==`) for package dependencies. Floating ranges (`>=`, `~=`, `*`) are forbidden in tier-2 manifests. (ref: ADR-015)'
-  - text: 'Tier-2 package helpers MUST install into an isolated environment (`~/.edikt/venv/<tool>/` venv or `pipx`), NEVER into the ambient system Python. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Tier-2 package helpers MUST install into an isolated environment (`~/.edikt/venv/<tool>/` venv or `pipx`), NEVER into the ambient system Python. (ref: ADR-015)'
-  - text: 'Tier-2 install MUST fail fast with an actionable error before touching the filesystem when prerequisites (Python version, venv creation, disk space) are unmet. Partial installs MUST roll back copied files on failure. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: Tier-2 install MUST fail fast with an actionable error before touching the filesystem when prerequisites (Python version, venv creation, disk space) are unmet. Partial installs MUST roll back copied f
-  - text: '`edikt uninstall <tool>` MUST be idempotent — repeated runs exit 0 and tolerate missing state (already-removed files, already-uninstalled helpers) without error. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: '`edikt uninstall <tool>` MUST be idempotent — repeated runs exit 0 and tolerate missing state (already-removed files, already-uninstalled helpers) without error. (ref: ADR-015)'
-  - text: 'Parity between a tier-2 markdown command and its supporting code MUST be enforced by tests, not by shared modules crossing the tier-1/tier-2 boundary. (ref: ADR-015)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Parity between a tier-2 markdown command and its supporting code MUST be enforced by tests, not by shared modules crossing the tier-1/tier-2 boundary. (ref: ADR-015)'
+signals:
+  - edikt install
+  - install.sh
+  - tier-2 tools
+  - tier-1 commands
+  - command frontmatter
+  - venv
+  - pipx
+  - pyproject.toml
+  - release checksum manifest
+  - package dependencies
+  - pip-installed helpers
+  - ambient system python
 paths:
   - install.sh
-  - bin/edikt
-  - commands/**/*.md
-  - tools/**
 scope:
-  - implementation
   - design
+  - implementation
+  - review
+directives:
+  - text: "INV-001 MUST apply to tier-1 without modification. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 52
+      line_end: 52
+      quote: "edikt distinguishes two tiers of shipped tools. INV-001 applies to tier-1 without modification. Tier-2 tools may depend on packages provided three conditions hold."
+  - text: "`install.sh` and the global installer MUST install only tier-1 artifacts. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 56
+      line_end: 56
+      quote: "- `install.sh` and the global installer install **only** tier-1 artifacts."
+  - text: "Every tier-1 command file MUST be a `.md` or `.yaml` file; no tier-1 code is compiled; tier-1 install is file-copy only. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 57
+      line_end: 57
+      quote: "- Every tier-1 command file is a `.md` or `.yaml` file; no tier-1 code is compiled; tier-1 install is file-copy only."
+  - text: "Tier-1 commands MUST NOT read from, write to, or depend on any tier-2 file or helper at runtime. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 58
+      line_end: 58
+      quote: "- Tier-1 commands MUST NOT read from, write to, or depend on any tier-2 file or helper at runtime."
+  - text: "INV-001 MUST apply verbatim to every tier-1 artifact with no exceptions. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 59
+      line_end: 59
+      quote: "- INV-001 applies verbatim to every tier-1 artifact with no exceptions."
+  - text: "Tier-2 tools MUST be installed via `edikt install <tool>`, never bundled in `install.sh`, never added to a user's environment without an explicit command. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 65
+      line_end: 65
+      quote: "1. **Install is explicit.** Tier-2 tools are installed via `edikt install <tool>`, never bundled in `install.sh`, never added to a user's environment without an explicit command."
+  - text: "`edikt uninstall <tool>` MUST remove tier-2 files and any package-managed dependencies for that tool. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 66
+      line_end: 66
+      quote: "2. **Uninstall is isolated.** `edikt uninstall <tool>` removes tier-2 files and any package-managed dependencies for that tool. After uninstall, tier-1 command surface — files on disk, their content, their behavior — is byte-equal to its pre-install state. Uninstall MUST be idempotent: repeated runs exit 0 without error."
+  - text: "After uninstall, tier-1 command surface — files on disk, their content, their behavior — MUST be byte-equal to its pre-install state. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 66
+      line_end: 66
+      quote: "2. **Uninstall is isolated.** `edikt uninstall <tool>` removes tier-2 files and any package-managed dependencies for that tool. After uninstall, tier-1 command surface — files on disk, their content, their behavior — is byte-equal to its pre-install state. Uninstall MUST be idempotent: repeated runs exit 0 without error."
+  - text: "Uninstall MUST be idempotent: repeated runs exit 0 without error. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 66
+      line_end: 66
+      quote: "2. **Uninstall is isolated.** `edikt uninstall <tool>` removes tier-2 files and any package-managed dependencies for that tool. After uninstall, tier-1 command surface — files on disk, their content, their behavior — is byte-equal to its pre-install state. Uninstall MUST be idempotent: repeated runs exit 0 without error."
+  - text: "A tool's tier MUST be declared in its command frontmatter (`tier: 1` or `tier: 2`). (ref: ADR-015)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "3. **Tier is frozen at install time.** A tool's tier is declared in its command frontmatter (`tier: 1` or `tier: 2`). Promoting a tool from tier-2 to tier-1 requires a major-version bump of edikt. Demoting tier-1 to tier-2 requires a major-version bump of edikt. This prevents silent install-profile drift."
+  - text: "Promoting a tool from tier-2 to tier-1 MUST require a major-version bump of edikt. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "3. **Tier is frozen at install time.** A tool's tier is declared in its command frontmatter (`tier: 1` or `tier: 2`). Promoting a tool from tier-2 to tier-1 requires a major-version bump of edikt. Demoting tier-1 to tier-2 requires a major-version bump of edikt. This prevents silent install-profile drift."
+  - text: "Demoting a tool from tier-1 to tier-2 MUST require a major-version bump of edikt. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 67
+      line_end: 67
+      quote: "3. **Tier is frozen at install time.** A tool's tier is declared in its command frontmatter (`tier: 1` or `tier: 2`). Promoting a tool from tier-2 to tier-1 requires a major-version bump of edikt. Demoting tier-1 to tier-2 requires a major-version bump of edikt. This prevents silent install-profile drift."
+  - text: "Tier-2 tools MUST declare `tier: 2` in their command file frontmatter. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 71
+      line_end: 71
+      quote: "- Declare `tier: 2` in their command file frontmatter."
+  - text: "Tier-2 tools MUST verify their package-install artifacts against the release checksum manifest established by ADR-013 before installing. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 72
+      line_end: 72
+      quote: "- Verify their package-install artifacts (e.g., vendored wheels) against the release checksum manifest established by ADR-013 before installing."
+  - text: "Tier-2 tools MUST pin exact versions (`==`) for their package dependencies in any `pyproject.toml` / equivalent manifest — no `>=` or floating ranges. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 73
+      line_end: 73
+      quote: "- Pin exact versions (`==`) for their package dependencies in any `pyproject.toml` / equivalent manifest — no `>=` or floating ranges."
+  - text: "Tier-2 tools MUST use an isolated environment for any pip-installed helpers: dedicated venv under `~/.edikt/venv/<tool>/` or `pipx`. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "- Use isolated environment for any pip-installed helpers: dedicated venv under `~/.edikt/venv/<tool>/` or `pipx`. Never install into ambient system Python."
+  - text: "Tier-2 tools MUST NEVER install pip helpers into the ambient system Python. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 74
+      line_end: 74
+      quote: "- Use isolated environment for any pip-installed helpers: dedicated venv under `~/.edikt/venv/<tool>/` or `pipx`. Never install into ambient system Python."
+  - text: "Tier-2 tools MUST fail fast with an actionable error message when prerequisites (Python version, venv creation, disk space) are unmet, before touching the filesystem. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 75
+      line_end: 75
+      quote: "- Fail fast with an actionable error message when prerequisites (Python version, venv creation, disk space) are unmet, before touching the filesystem."
+  - text: "Tier-2 tools MUST roll back partial installs: if install fails after some files were copied, those files are removed before exit. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 76
+      line_end: 76
+      quote: "- Roll back partial installs: if install fails after some files were copied, those files are removed before exit."
+  - text: "Parity between a tier-2 markdown command surface and its supporting code MUST be enforced by tests, not by code reuse. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "For tier-2 tools that ship both a markdown command surface and supporting code (e.g., `/edikt:gov:benchmark` + `tools/gov-benchmark/`), parity between the two is enforced by **tests**, not by **code reuse**. A single shared module is acceptable within the tier-2 boundary (the Python helper may share code with itself) but MUST NOT cross into tier-1. Tier-1 files depend on tier-2 at runtime is forbidden."
+  - text: "A shared module within the tier-2 boundary MAY be used, but MUST NOT cross into tier-1. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "For tier-2 tools that ship both a markdown command surface and supporting code (e.g., `/edikt:gov:benchmark` + `tools/gov-benchmark/`), parity between the two is enforced by **tests**, not by **code reuse**. A single shared module is acceptable within the tier-2 boundary (the Python helper may share code with itself) but MUST NOT cross into tier-1. Tier-1 files depend on tier-2 at runtime is forbidden."
+  - text: "Tier-1 files MUST NOT depend on tier-2 at runtime. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 80
+      line_end: 80
+      quote: "For tier-2 tools that ship both a markdown command surface and supporting code (e.g., `/edikt:gov:benchmark` + `tools/gov-benchmark/`), parity between the two is enforced by **tests**, not by **code reuse**. A single shared module is acceptable within the tier-2 boundary (the Python helper may share code with itself) but MUST NOT cross into tier-1. Tier-1 files depend on tier-2 at runtime is forbidden."
+prohibitions:
+  - text: "MUST NOT weaken INV-001 to allow package dependencies in core commands — adding an exception at the invariant level erodes the core guarantee. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 46
+      line_end: 46
+      quote: "1. Weaken INV-001 to \"core commands are markdown-only; supporting tools may depend on packages\". Rejected — INV-001's strength is that it has no asterisks. Adding an exception at the invariant level erodes the core guarantee."
+    derived_from: rejected_option_weaken-inv-001
+  - text: "MUST NOT defer tier-2 benchmark tooling to a separate downstream project — splitting it weakens the governance-holds-under-execution claim. (ref: ADR-015)"
+    source_excerpt:
+      line_start: 47
+      line_end: 47
+      quote: "2. Keep INV-001 unchanged and defer the benchmark to a separate downstream project. Rejected — the benchmark is central to SPEC-005's \"governance holds under literal execution\" claim; splitting it weakens the release."
+    derived_from: rejected_option_defer-benchmark
+reminders:
+  - "Before modifying install.sh → verify it contains no package-manager invocations and references only tier-1 artifacts (ref: ADR-015)"
+  - "Before adding a command file with package-dependent helpers → verify it declares `tier: 2` in frontmatter (ref: ADR-015)"
+  - "Before releasing a tier-2 install → verify test/integration/test_install_tier2.py::test_tier1_checksums_unchanged passes (ref: ADR-015)"
+verification:
+  - "[ ] `install.sh` contains no package-manager invocations and references only tier-1 artifacts (ref: ADR-015)"
+  - "[ ] `bin/edikt install benchmark` is the only `pip`-invoking code in the repo (ref: ADR-015)"
+  - "[ ] Every command file in `commands/` with a package-dependent helper declares `tier: 2` in frontmatter (ref: ADR-015)"
+  - "[ ] `test/integration/test_install_tier2.py::test_tier1_checksums_unchanged` passes after any tier-2 install/uninstall (ref: ADR-015)"
+  - "[ ] `/edikt:doctor` surfaces the tier-2 install state (which tools are installed, which are not) (ref: ADR-015)"

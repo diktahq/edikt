@@ -1,35 +1,93 @@
 schema_version: 1
 topic: agent-rules
 path: docs/architecture/decisions/ADR-018-evaluator-verdict-schema.md
-signals: []
-directives:
-  - text: 'Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-018)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Evaluator agents MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. NEVER emit prose verdicts. (ref: ADR-018)'
-  - text: 'The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-018)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'The plan harness MUST reject PASS unless every criterion whose id references a shell command has `evidence_type: "test_run"`. Mismatch forces the verdict to BLOCKED with a listed reason. (ref: ADR-018'
-  - text: 'Verdicts are persisted at `docs/product/plans/verdicts/<plan>/<phase>.json`. This directory is runtime state, not governance, and is exempt from INV-001''s markdown/yaml rule. (ref: ADR-018)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Verdicts are persisted at `docs/product/plans/verdicts/<plan>/<phase>.json`. This directory is runtime state, not governance, and is exempt from INV-001''s markdown/yaml rule. (ref: ADR-018)'
-  - text: 'Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true`. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-018)'
-    source_excerpt:
-      line_start: 1
-      line_end: 1
-      quote: 'Upgrade from < 0.5.0 MUST grandfather existing `done` phases by writing verdict stubs with `meta.grandfathered: true`. Grandfathered verdicts bypass the evidence gate on a one-time basis. (ref: ADR-01'
-paths:
-  - templates/agents/evaluator.md
-  - templates/agents/evaluator-headless.md
-  - templates/agents/evaluator-verdict.schema.json
-  - templates/hooks/phase-end-detector.sh
-  - commands/sdlc/plan.md
-  - docs/product/plans/verdicts/**
+signals:
+  - evaluator
+  - evaluator-verdict.schema.json
+  - evaluator output
+  - verdict schema
+  - evidence_type
+  - evidence gate
+  - test_run
+  - subagent
+  - grandfathered
+  - phase-end-detector.sh
+  - evaluator-headless.md
 scope:
+  - design
   - implementation
   - review
+directives:
+  - text: "The evaluator MUST emit a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 50
+      line_end: 50
+      quote: "The evaluator emits a single JSON object conforming to `templates/agents/evaluator-verdict.schema.json`:"
+  - text: "For every criterion whose `id` references a shell command in the plan's criteria sidecar (patterns: `pytest`, `bash`, `make`, `npm test`, `./test/`, `uv run`), the verdict's corresponding criterion MUST have `evidence_type: \"test_run\"`. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 76
+      line_end: 76
+      quote: "- For every criterion whose `id` references a shell command in the plan's criteria sidecar (patterns: `pytest`, `bash`, `make`, `npm test`, `./test/`, `uv run`), the verdict's corresponding criterion MUST have `evidence_type: \"test_run\"`."
+  - text: "If any required-test criterion has a different evidence_type, the overall verdict MUST be forced to BLOCKED regardless of the evaluator's stated verdict, and the reason MUST be logged with the unmet criterion IDs. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 77
+      line_end: 77
+      quote: "- If any required-test criterion has a different evidence_type, the overall verdict is forced to BLOCKED regardless of the evaluator's stated verdict, and the reason is logged with the unmet criterion IDs."
+  - text: "Structured verdicts MUST persist as runtime state sidecars at `docs/product/plans/verdicts/<plan-slug>/<phase-id>.json`. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 82
+      line_end: 82
+      quote: "Structured verdicts persist as runtime state sidecars at `docs/product/plans/verdicts/<plan-slug>/<phase-id>.json`. This is a new on-disk location; it is runtime state, not governance, so INV-001 (commands and templates are markdown/yaml) does not apply. Verdicts are JSON because they are machine output intended for programmatic reading."
+  - text: "`templates/agents/evaluator-verdict.schema.json` MUST carry a top-level `$id` field of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 86
+      line_end: 86
+      quote: "The verdict schema follows the same versioning discipline as ADR-007 (compile schema version). `templates/agents/evaluator-verdict.schema.json` carries a top-level `$id` field of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. Additive changes (new optional fields, new enum values) do NOT bump `<N>`. Breaking changes (removed fields, changed enum semantics, required-field additions) bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. Old verdicts (identified by their `$schema` URL) are never silently reinterpreted under a new schema version."
+  - text: "Old verdicts (identified by their `$schema` URL) MUST NEVER be silently reinterpreted under a new schema version. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 86
+      line_end: 86
+      quote: "The verdict schema follows the same versioning discipline as ADR-007 (compile schema version). `templates/agents/evaluator-verdict.schema.json` carries a top-level `$id` field of the form `https://edikt.dev/schemas/evaluator-verdict/v<N>.json`. Additive changes (new optional fields, new enum values) do NOT bump `<N>`. Breaking changes (removed fields, changed enum semantics, required-field additions) bump `<N>` and ship with a migration routine in `bin/edikt upgrade`. Old verdicts (identified by their `$schema` URL) are never silently reinterpreted under a new schema version."
+  - text: "On upgrade from edikt < 0.5.0, for every phase currently marked `done`, the upgrade MUST write a stub verdict with `meta.grandfathered: true` and `meta.migrated_from: \"<prior-version>\"`. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 91
+      line_end: 91
+      quote: "- For every phase currently marked `done` in any plan under `docs/product/plans/` or `docs/plans/`, the upgrade writes a stub verdict at `docs/product/plans/verdicts/<plan>/<phase>.json` with `meta.grandfathered: true` and `meta.migrated_from: \"<prior-version>\"`. Every criterion's `status` is set to `met` with `evidence_type: \"manual\"` and `evidence: \"grandfathered from <prior-version> — pre-schema verdict\"`."
+  - text: "Grandfathered verdicts MUST bypass the evidence gate on a one-time basis per phase. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 92
+      line_end: 92
+      quote: "- Grandfathered verdicts bypass the evidence gate on a one-time basis per phase."
+  - text: "New evaluations (future phase completions) MUST use the strict schema. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 93
+      line_end: 93
+      quote: "- New evaluations (future phase completions) use the strict schema."
+prohibitions:
+  - text: "MUST NOT use a hard cutover that discards all existing PASS verdicts on upgrade — causes every live plan to regress and forces users mid-release into re-evaluation. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 100
+      line_end: 100
+      quote: "- **Cons:** Every live plan regresses. Users mid-release get dumped into re-evaluation. Adoption friction."
+    derived_from: rejected_option_hard-cutover
+  - text: "MUST NOT use prose verdicts with a lint pass for machine-checkability — fragile; produces false positives and false negatives on keyword matching; does not solve the fundamental lack of machine-checkable evidence. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 105
+      line_end: 105
+      quote: "- **Cons:** Fragile; false positives and false negatives on keyword matching; doesn't solve the fundamental \"no machine-checkable evidence\" problem."
+    derived_from: rejected_option_prose-verdict-with-lint
+  - text: "MUST NOT use a dual-evaluator approach as the primary fix for false PASS verdicts — doubles eval cost and does not prevent both evaluators from rationalizing the same PASS. (ref: ADR-018)"
+    source_excerpt:
+      line_start: 110
+      line_end: 110
+      quote: "- **Cons:** Doubles eval cost; doesn't prevent both evaluators from rationalizing the same PASS."
+    derived_from: rejected_option_dual-evaluator
+reminders:
+  - "Before modifying evaluator agent templates → verify they emit a JSON object conforming to `templates/agents/evaluator-verdict.schema.json`, not prose verdicts (ref: ADR-018)"
+  - "Before marking a plan phase done → verify every shell-command criterion has `evidence_type: \"test_run\"` or the harness forces BLOCKED (ref: ADR-018)"
+  - "Before running upgrade on a pre-0.5.0 project → verify `bin/edikt upgrade` writes stub verdicts with `meta.grandfathered: true` for all `done` phases (ref: ADR-018)"
+verification:
+  - "[ ] `templates/agents/evaluator-verdict.schema.json` exists and validates against draft 2020-12 JSON Schema (ref: ADR-018)"
+  - "[ ] `templates/agents/evaluator-headless.md` and `templates/agents/evaluator.md` instruct the agent to emit conforming JSON (ref: ADR-018)"
+  - "[ ] `test/security/evaluator/test_evidence_gate.sh` passes: pytest criterion with evidence_type test_run → PASS preserved; pytest criterion with evidence_type grep → forced to BLOCKED; grandfathered verdict → evidence gate bypassed (ref: ADR-018)"
+  - "[ ] `bin/edikt upgrade` on a v0.4.3 snapshot emits the grandfather banner with a non-zero count (ref: ADR-018)"
