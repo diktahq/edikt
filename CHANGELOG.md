@@ -1,5 +1,77 @@
 # edikt changelog
 
+## v0.6.0-rc5 (2026-05-06)
+
+Release candidate cutting the full PLAN-v060-governance-accuracy work +
+the parallel sidecar-architecture rework for testing via Homebrew before
+the v0.6.0 final cut. v0.5.x is retracted; v0.4.x users skip directly to
+v0.6.0.
+
+### Headline
+
+- **Sidecar architecture** (ADR-027/028): governance metadata moves from
+  in-body sentinel blocks to co-located `<artifact>.edikt.yaml` sidecars.
+  Compile becomes a deterministic two-phase merge. LLM extraction moves
+  out of the compile hot path.
+- **Schema v1.1** (Phase 1): additive `paths`, `scope`, `prohibitions`
+  fields. Forward-only via `KnownFields(true)`. Hash-stability test pins
+  rc4 marshal output.
+- **Phase 2 extractor rules A–D**: paths inference, scope defaults by
+  artifact type, prohibition synthesis from rejected `## Considered
+  Options`, modality preservation for contingency-prefixed sentences
+  (`Fallback:`, `Alternatively:`, `Optionally:`, `If <cond>:`,
+  `As a fallback,`).
+- **Migrate `--strict`** (Phase 3): tier-2, no-LLM regression report
+  with deterministic JSON manifest.
+- **Doctor**: Rejected Options Coverage check (Phase 4), orphan
+  manual-ref check (Phase 8), routed-source check (Phase 11.5),
+  statusLine.type check (Phase 11.5).
+- **`bin/edikt sidecar add-manual-directive`** + `/edikt:adr:enrich`
+  (Phase 7): editorial enrichment without violating INV-002.
+- **`bin/edikt sidecar diff`** + 16 golden fixtures (Phases 6, 9):
+  bug-taxonomy CI gate.
+- **Compile pipeline** (Phase 8): three managed regions per topic file
+  (directives, prohibitions, manual) with distinct sha256 anchors.
+  INV-005 byte-range overlap guard. Bootstrap-write semantics for
+  rc4 → rc5 upgrade.
+- **Adversarial benchmark CI** (Phase 10): `--mode rejected-options`
+  auto-generates attacks per rejected ADR option. PR-subset
+  (~$0.50/PR) + release-tag full corpus (~$36/release, ≥90% gate).
+- **Quality lock** (Phase 11): `bin/edikt gov lossless-check` verifies
+  v0.4.3 → v0.6.0 is at least as faithful. ADR-032 locks
+  `prohibitions[]` schema position through v1.x.
+- **Tier-3 Python migration** (Phase 11.5): three Python heredocs in
+  tier-1 markdown (Pass 2 orphan state machine, .gitignore bootstrap,
+  directive-check) ported to `bin/edikt gov` Go subcommands. ADR-033
+  broadens ADR-029 verb permit to `bin/edikt gov <subcommand>` group.
+- **Rich corpus re-extraction**: 25 ADR sidecars re-extracted via
+  Phase 2 rules. Corpus-wide totals: directives 199 → 303,
+  signals ~95 → 399, prohibitions 8 → 56, reminders 23 → 82,
+  verification 39 → 121.
+
+### Migration
+
+- v0.4.x → v0.6.0-rc5: `edikt upgrade` runs
+  `bin/edikt migrate sidecars --apply` automatically.
+- v0.6.0-rc4 → v0.6.0-rc5: `edikt upgrade`. Phase 8's bootstrap-write
+  appends the new `[edikt:prohibitions:...]` and `[edikt:manual:...]`
+  managed regions to existing topic files on first post-upgrade
+  compile.
+
+### ADRs accepted in this release window
+
+- ADR-021/022: Go binary replaces bash launcher; tier-2 stays Go.
+- ADR-027: sidecar architecture supersedes ADR-008 three-list schema.
+- ADR-028: two-phase compile (resync + merge), Phase B
+  pure-deterministic.
+- ADR-029: tier-1 → tier-2 orchestration via exit code, enumerated
+  verb whitelist.
+- ADR-030: tier-2 stays LLM-agnostic. CI grep gate enforced across
+  all tier-2 packages.
+- ADR-031: `bin/edikt sidecar` group permit (Phase 7).
+- ADR-032: `prohibitions[]` schema lock through v1.x (Phase 11).
+- ADR-033: `bin/edikt gov` group permit (Phase 11.5).
+
 ## v0.6.0 (in progress — PLAN-v060-governance-accuracy)
 
 Eliminates the v0.4.3 → v0.6.0 governance extraction regressions before
