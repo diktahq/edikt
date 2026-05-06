@@ -167,6 +167,15 @@ jobs:
           # runs `migrate sidecars --apply` and `gov compile`, asserts sidecars
           # present and in-body sentinels gone. Hermetic — no network, runs
           # against the freshly-built tools/edikt binary.
+          #
+          # The acceptance script reads LAUNCHER_SRC from $PROJECT_ROOT/bin/edikt
+          # (ADR-022: compiled binaries are gitignored, never committed). The
+          # cross-compile step above writes per-platform binaries under
+          # build/${goos}-${goarch}/bin/edikt. Stage linux-amd64 at bin/edikt
+          # for the acceptance test (the runner is ubuntu-latest = linux-amd64).
+          mkdir -p bin
+          cp "$GITHUB_WORKSPACE/build/linux-amd64/bin/edikt" bin/edikt
+          chmod +x bin/edikt
           if [ ! -x test/release/install-fresh-and-upgrade.sh ]; then
             echo "::warning::test/release/install-fresh-and-upgrade.sh missing or not executable — skipping acceptance test"
             exit 0
