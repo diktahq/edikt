@@ -1,5 +1,35 @@
 # edikt changelog
 
+## v0.6.0-rc7 (2026-05-07)
+
+Release candidate fixing a second v0.4.5 audit finding that also
+applied to v0.6.0: born-stale sentinels reported by `gov:review`,
+`adr:review`, and `invariant:review`.
+
+### Fixed
+
+- **`/edikt:gov:review`, `/edikt:adr:review`, `/edikt:invariant:review`
+  no longer report freshly-compiled files as stale.** The legacy v0.2-
+  v0.4 `content_hash:` MD5 mechanism had a write/read asymmetry: the
+  compiler hashed the body *before* appending the sentinel + blank-line
+  separator (via `awk … | sed '$d' | md5`), but the reader hashed
+  *everything above the marker* (including the inserted blank line).
+  Result: every freshly-compiled file was born-stale, forever, on any
+  read-time check. External audit verified 7/7 match against this
+  reverse-engineered writer algorithm.
+- v0.6.0's primary governance metadata mechanism is co-located sidecars
+  (ADR-027), not in-body sentinels with content_hash. Staleness is
+  detected via `directive[].source_excerpt.quote` lookup against the
+  parent `.md` body line range — not a content-MD5 of everything-
+  above-the-marker. The reviewer commands now invoke
+  `bin/edikt gov compile --check` (which uses the sidecar `IsStale`
+  algorithm in `tools/edikt/internal/sidecar/drift.go`) and parse its
+  output. Round-trips correctly because no synthesised separator
+  confuses the comparison.
+- For projects still on the legacy v0.2-v0.4 sentinel schema,
+  `/edikt:doctor` flags them with a migration prompt; review commands
+  defer to doctor rather than retrying the broken hash check.
+
 ## v0.6.0-rc6 (2026-05-07)
 
 Release candidate adding one bug fix surfaced by a v0.4.5 audit that

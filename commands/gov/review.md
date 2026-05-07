@@ -113,38 +113,47 @@ If no warnings for a document, omit the sub-heading for that document. These war
 
 ### Staleness Detection
 
-10. Display progress: `Step 2/3: Checking sentinel staleness...`
+10. Display progress: `Step 2/3: Checking sidecar staleness...`
 
-11. For each source document that has a sentinel block, check for staleness:
-    - Compute the MD5 of the human-readable content above `[edikt:directives:start]: #`
-    - Compare with the `content_hash:` stored inside the sentinel block
-    - If different: flag as stale
-      ```
-      ⚠ Stale directives detected:
-        {document path} — content changed since sentinels were generated.
-        Run /edikt:gov:compile to regenerate.
-      ```
-    - If same: report as current
+11. Run the tier-2 deterministic staleness check. v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars (ADR-027); staleness is detected by `bin/edikt gov compile --check`, which compares each sidecar's recorded `directive[].source_excerpt.quote` against the current parent `.md` body line range. If the quote no longer matches, the sidecar is stale.
 
-12. For each source document with **no sentinel block**: report it as missing and direct to compile:
+    ```bash
+    if ! command -v bin/edikt >/dev/null 2>&1 && ! command -v edikt >/dev/null 2>&1; then
+      echo "error: bin/edikt not found on PATH. Run: edikt install edikt"
+      exit 1
+    fi
+    if check_output=$(bin/edikt gov compile --check 2>&1); then
+      stale_count=0
+      missing_count=0
+    else
+      stale_count=$(echo "$check_output" | grep -cE '^\s*stale:' || true)
+      missing_count=$(echo "$check_output" | grep -cE 'sidecar missing — run' || true)
+    fi
     ```
-    ⚠ Missing sentinel: {document path}
-      Run /edikt:gov:compile to generate.
-    ```
+
+    Why this replaces the v0.2.x `content_hash:` mechanism:
+    - The legacy approach hashed everything-above-the-sentinel-marker. Compile's writer computed the hash *before* appending the sentinel + blank-line separator, but the read-time check hashed *after* — write/read disagreed by exactly one trailing newline. Every freshly-compiled file was born stale, forever.
+    - v0.6.0 sidecars don't store a content_hash. Drift is detected via per-directive `source_excerpt.quote` lookup against current `.md` line ranges. Round-trips correctly because no synthesised separator confuses the comparison.
+    - For projects still on the legacy v0.2-v0.4 sentinel schema, `/edikt:doctor` flags them with a one-line migration prompt; `/edikt:gov:review` does not retry the broken hash check.
+
+12. Parse `bin/edikt gov compile --check` output to populate per-document findings:
+    - Each `stale: ADR-NNN — directive[K]: ...` line maps to one stale finding for `ADR-NNN`'s parent `.md`.
+    - Each `<path>: sidecar missing — run /edikt:<kind>:compile` line maps to one missing finding.
+    - Exit code 0 with empty stdout = all current.
 
 13. Display progress: `Step 3/3: Generating report...`
 
-14. Output the sentinel summary:
+14. Output the sidecar summary:
     ```
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-     DIRECTIVE SENTINELS
+     SIDECAR STALENESS
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-     Current:  {n} documents
-     Stale:    {k} documents — run /edikt:gov:compile to regenerate
-     Missing:  {m} documents — run /edikt:gov:compile to generate
+     Current:  {n} sidecars
+     Stale:    {k} sidecars — run /edikt:gov:compile to resync (Phase A LLM dispatch)
+     Missing:  {m} parent .md files have no sidecar — run /edikt:<kind>:compile <ID> per artifact
 
-     Next: Run /edikt:gov:compile to rebuild governance with updated sentinels.
+     Next: Run /edikt:gov:compile to rebuild governance.md with current sidecars.
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     ```
 

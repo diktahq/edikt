@@ -153,27 +153,31 @@ Score manual directives to the same standard. Flag soft language, missing `(ref:
 
 **Friction risk:** flag directives contradicting common language/framework patterns with a suggested alternative.
 
-### 4. Check Sentinel Staleness
+### 4. Check Sidecar Staleness
 
-Display progress: `Step 2/3: Checking sentinel staleness...`
+Display progress: `Step 2/3: Checking sidecar staleness...`
 
-For each ADR reviewed:
+v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars (ADR-027). Staleness is detected by `bin/edikt gov compile --check`, which compares each sidecar's recorded `directive[].source_excerpt.quote` against the current parent `.md` body line range. The legacy v0.2-v0.4 `content_hash:` field is NOT used — its writer/reader hash mismatch made every freshly-compiled file born-stale.
 
-1. Look for `[edikt:directives:start]: #` in the file.
-2. If present: compute MD5 of content above the sentinel start. Compare with stored `content_hash:`.
-   - Match: current
-   - Mismatch: stale
-3. If absent: missing
+For each ADR reviewed, run the corpus-wide check once and grep for the artifact:
+
+```bash
+check_output=$(bin/edikt gov compile --check 2>&1)
+adr_stale=$(echo "$check_output" | grep -E "^\s*stale:\s+ADR-${NNN}\b" | head -1)
+adr_missing=$(echo "$check_output" | grep -E "ADR-${NNN}.*sidecar missing" | head -1)
+```
 
 Report:
 ```
-⚠ Stale sentinel: {file} — content changed since last compile.
-  Run /edikt:adr:compile ADR-{NNN} to regenerate.
+⚠ Stale sidecar: {file} — directive quote no longer matches parent .md line range.
+  Run /edikt:adr:compile ADR-{NNN} to resync.
 ```
 ```
-⚠ Missing sentinel: {file}
+⚠ Missing sidecar: {file}
   Run /edikt:adr:compile ADR-{NNN} to generate.
 ```
+
+If the parent `.md` has a legacy v0.2-v0.4 sentinel block (with `content_hash:`), don't try to re-hash it — `/edikt:doctor` flags such files with a migration prompt; review trusts that migration is the correct remedy and treats the file as missing-sidecar rather than stale-sentinel.
 
 ### 5. Output Report
 
