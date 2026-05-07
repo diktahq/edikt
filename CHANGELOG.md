@@ -1,5 +1,33 @@
 # edikt changelog
 
+## v0.6.0-rc6 (2026-05-07)
+
+Release candidate adding one bug fix surfaced by a v0.4.5 audit that
+also applied to v0.6.0.
+
+### Fixed
+
+- **`/edikt:upgrade` now drops stale project-level `.edikt/VERSION`**
+  on completion (Step 6, item 2). Older projects (initialised under
+  v0.2/v0.3) carry a `.edikt/VERSION` file that Step 0a's
+  `INSTALLED_VERSION` resolution falls back to when the launcher's
+  VERSION file isn't readable. A stale value left after upgrade
+  silently anchored subsequent runs (e.g., `.edikt/VERSION` reading
+  `0.3.0-dev` while `.edikt/config.yaml`'s `edikt_version` was
+  `0.6.0`). The fix removes the legacy file post-upgrade — v0.6.0+
+  canonical version sources are the launcher's `~/.edikt/current/
+  VERSION` plus `.edikt/config.yaml`'s `edikt_version:`. Idempotent;
+  re-running upgrade after the cleanup is a no-op. Surfaced by
+  external audit of v0.4.5; same defect was present in v0.6.0-dev.
+
+### Verified-not-applicable from the same v0.4.5 audit
+
+- **Hardcoded `v0.4.5` in upgrade's latest-version URL** — fixed in
+  v0.6.0 via GitHub releases API resolution (`commands/upgrade.md`
+  Step 0b).
+- **`agents.custom` undocumented** — fixed in v0.6.0 via
+  `commands/config.md:207` table entry.
+
 ## v0.6.0-rc5 (2026-05-06)
 
 Release candidate cutting the full PLAN-v060-governance-accuracy work +

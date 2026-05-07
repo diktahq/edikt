@@ -1010,12 +1010,23 @@ After applying:
    - If a `edikt_version:` line exists, replace it
    - If it doesn't exist (project predates versioning), add it as the first non-comment line after any leading `#` comment block at the top of the file
 
-2. Check if linter configs exist and linter rules are outdated (template mtime > linter rule mtime):
+2. **Drop stale project-level `.edikt/VERSION`** (v0.3-era artefact). Older projects (initialised under v0.2/v0.3) carry a `.edikt/VERSION` file in the project root. Step 0a's `INSTALLED_VERSION` resolution falls back to this file when the launcher VERSION isn't readable, which means a stale value left after upgrade silently anchors subsequent runs. v0.6.0+ canonical version sources are the launcher's `~/.edikt/current/VERSION` plus `.edikt/config.yaml`'s `edikt_version:` (just bumped in step 1). Remove the legacy file:
+
+   ```bash
+   if [ -f .edikt/VERSION ]; then
+     rm -f .edikt/VERSION
+     echo "Removed stale .edikt/VERSION (v0.3-era; superseded by .edikt/config.yaml edikt_version)"
+   fi
+   ```
+
+   This is INV-002-safe — `.edikt/VERSION` is a state file, not an ADR or invariant artefact. Idempotent: re-running upgrade after the cleanup is a no-op.
+
+3. Check if linter configs exist and linter rules are outdated (template mtime > linter rule mtime):
    ```
    Linter configs found. Run /edikt:sync to regenerate linter rules.
    ```
 
-3. **Check project templates (v0.3.0+, ADR-005 + ADR-009)**: if any of `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` is missing, surface a prominent next-step prompt in the post-upgrade output:
+4. **Check project templates (v0.3.0+, ADR-005 + ADR-009)**: if any of `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` is missing, surface a prominent next-step prompt in the post-upgrade output:
    ```
    📋 Project templates — /edikt:init required
 
@@ -1037,7 +1048,7 @@ After applying:
 
    **This is advisory only.** Do not auto-run `/edikt:init`. Leave the user in control.
 
-4. Output results:
+5. Output results:
 
 If only `edikt_version` was added (everything else was already current):
 ```
