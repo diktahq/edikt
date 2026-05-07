@@ -30,6 +30,24 @@ applied to v0.6.0: born-stale sentinels reported by `gov:review`,
   `/edikt:doctor` flags them with a migration prompt; review commands
   defer to doctor rather than retrying the broken hash check.
 
+### Tests
+
+- **`tools/edikt/internal/sidecar/drift_test.go`**:
+  `TestIsStale_FreshlyCompiledFileIsNotStale` pins the regression —
+  a sidecar with `source_excerpt.quote` matching parent `.md` prose
+  at the recorded line range MUST report `stale=false`. Blank-line
+  separator between Decision body and the next `## ` heading is
+  included to mimic the exact byte layout that broke v0.4.5's
+  content_hash.
+- **`test/integration/upgrade-stale-version-cleanup.sh`**:
+  hermetic regression for the `.edikt/VERSION` cleanup. Synthesises
+  a project with stale `.edikt/VERSION = 0.3.0-dev` +
+  `.edikt/config.yaml.edikt_version = 0.6.0-rc7`, runs the upgrade
+  Step 6 cleanup logic, asserts file removed + config untouched +
+  idempotent on re-run.
+
+### Verified-not-applicable from the same v0.4.5 audit (carried forward from rc6)
+
 ## v0.6.0-rc6 (2026-05-07)
 
 Release candidate adding one bug fix surfaced by a v0.4.5 audit that
