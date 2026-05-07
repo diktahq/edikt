@@ -84,6 +84,7 @@ One page. Every edikt command. Match by meaning, not exact words — Claude Code
 /edikt:sdlc:review      →  post-implementation review
 ```
 
+<!-- v0.6.0 not yet deployed — re-enable this section when v0.6.0 ships:
 ### Capture a decision mid-session (v0.6.0 sidecar flow)
 
 ```
@@ -100,6 +101,7 @@ If you later edit the ADR's prose:
 /edikt:gov:compile      →  Phase A detects stale sidecar, resyncs it,
                         then Phase B rerenders only the affected topic file
 ```
+-->
 
 ### PRD lifecycle
 

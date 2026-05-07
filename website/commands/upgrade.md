@@ -26,7 +26,7 @@ Before upgrading the project, edikt checks if a newer version is available on Gi
 📦 edikt 0.2.0 is available (you have 0.1.3).
 
   Update now:
-    curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 
   Then re-run /edikt:upgrade to apply changes to this project.
   To skip this check: /edikt:upgrade --offline
@@ -163,10 +163,7 @@ edikt rollback
 
 This is a launcher-level operation, not a command. See [Upgrade and rollback](../guides/upgrade-and-rollback.md).
 
-## Migration
-
-Upgrading from v0.4.x? See [Migrating from v0.4](../guides/migrating-from-v0.4.md).
-
+<!-- v0.6.0 not yet deployed — re-enable this section when v0.6.0 ships:
 ## v0.6.0 sidecar migration
 
 If your project still has v0.5.x or earlier in-body `[edikt:directives:start]` sentinel blocks, the upgrade detects them and prompts before applying:
@@ -193,10 +190,7 @@ Compile will refuse until migration is applied.
 There is no double-parser window. `/edikt:gov:compile` exits 1 with an actionable error when in-body sentinels are still present in non-skip-list, non-fenced files.
 
 The full walkthrough is in [Sidecar Migration](/guides/sidecar-migration).
-
-## Homebrew users
-
-`brew upgrade edikt` updates the launcher binary. `edikt upgrade` updates the payload. They're independent. See [Homebrew install](../guides/homebrew.md) for the full two-tier model.
+-->
 
 ## Natural language triggers
 

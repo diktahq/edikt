@@ -18,27 +18,21 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 
 ## 1. Install
 
-### macOS / Linux (via Homebrew — recommended)
-
 ```bash
-brew install diktahq/tap/edikt
-edikt install
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 ```
 
-### Any platform (via curl)
+Fetches the payload (templates, commands, hooks) to `~/.edikt/`. No dependencies, no build step, no runtime — just files.
+
+The install URL is pinned to the v0.4.5 git tag. v0.5.x is retracted.
+
+**Pin to an older version:**
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash -s -- --ref v0.4.3
 ```
 
-Installs the launcher (`bin/edikt`) and fetches the payload (templates, commands, hooks) to `~/.edikt/`. No dependencies, no build step, no runtime — just files.
-
-**Upgrading from v0.4.x?** See [Migrating from v0.4](guides/migrating-from-v0.4.md).
-**Upgrading from v0.5.x to v0.6.0?** See [Upgrading to v0.6.0](guides/v0.6.0-upgrade.md) — PRD v2, structured evaluator gates, plan model assignment.
-
-**Want to pin a version or roll back?** See [Upgrade and rollback](guides/upgrade-and-rollback.md).
-
-**Using Homebrew?** See [Homebrew install](guides/homebrew.md) for the two-tier update model.
+`--ref` (or `EDIKT_REF` env var) accepts any tag matching `v<MAJOR>.<MINOR>.<PATCH>`.
 
 ## 2. Open a project in Claude Code
 
@@ -282,6 +276,3 @@ These variables are read by Claude Code itself; edikt doesn't change its behavio
 
 - [Cheatsheet](cheatsheet.md) — every slash command on one page
 - [Natural-language triggers](natural-language.md) — phrases Claude routes to commands
-- [Upgrade and rollback](guides/upgrade-and-rollback.md) — keep edikt current, roll back if needed
-- [Migrating from v0.4](guides/migrating-from-v0.4.md) — if you're upgrading from v0.4.x
-- [Homebrew install](guides/homebrew.md) — two-tier update model explained

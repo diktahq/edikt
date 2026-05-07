@@ -1,5 +1,9 @@
 # Keeping edikt Up to Date
 
+::: warning v0.5.x retracted
+v0.5.0 and v0.5.1 have been marked as prereleases due to upgrade issues. The current install entry point is **v0.4.5**. The "Upgrading to v0.5.0" section below is preserved for historical context but should not be followed.
+:::
+
 edikt has two layers that need updating separately: the **global templates** (installed on your machine) and the **project configuration** (committed in each repo).
 
 ## How versioning works
@@ -22,7 +26,7 @@ edikt_version: "0.1.0"
 ### Step 1 — Update global templates
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 ```
 
 This takes ~10 seconds. Your commands, templates, and `~/.edikt/VERSION` are now current.
@@ -135,7 +139,7 @@ v0.2.0 changes how governance is compiled. The flat `governance.md` is replaced 
 **Recommended upgrade steps:**
 
 ```text
-1. Update global:    curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+1. Update global:    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 2. Upgrade project:  /edikt:upgrade
 3. Generate sentinels: /edikt:gov:review
 4. Recompile:        /edikt:gov:compile
@@ -161,7 +165,7 @@ v0.3.0 introduces the three-list directive schema, Invariant Records, and compil
 **Recommended upgrade steps:**
 
 ```text
-1. Update global:       curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.5.0/install.sh | bash
+1. Update global:       curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 2. Upgrade project:     /edikt:upgrade
 3. Compile invariants:  /edikt:invariant:compile
 4. Compile ADRs:        /edikt:adr:compile
@@ -182,7 +186,7 @@ Hook output migrated from plaintext to JSON. The migration is transparent to mos
 
 **Stability (SPEC-004) — versioned layout migration**
 
-v0.5.0 changes `~/.edikt/` from a flat layout to a versioned one. This is a one-time migration. See [Migrating from v0.4](migrating-from-v0.4.md) for the step-by-step.
+v0.5.0 changes `~/.edikt/` from a flat layout to a versioned one. This is a one-time migration. (Step-by-step guide removed alongside the v0.5.x retraction.)
 
 **Directive hardening (SPEC-005) — backward-compatible sentinel fields**
 

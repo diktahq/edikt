@@ -23,8 +23,6 @@ Before diving into the workflow layers: v0.5.0 shipped a full security audit of 
 - **Hermetic test sandboxes.** The governance benchmark no longer copies your `~/.claude/settings.json` or hooks into adversarial sandboxes (INV-007).
 - **Structured evaluator verdicts with evidence gate.** The evaluator now emits machine-readable JSON verdicts conforming to `evaluator-verdict.schema.json`. The plan harness rejects `PASS` unless every criterion that names a shell command has `evidence_type: "test_run"` (ADR-018). A coerced PASS ("just trust me, I ran the tests") is forced to `BLOCKED`.
 
-Upgrading from v0.4.x? Read the [v0.5.0 upgrade guide](/guides/v0.5.0-upgrade) for the pre-flight checklist, expected behavior changes, and rollback walkthrough.
-
 Full audit: `docs/reports/security-audit-v0.5.0-2026-04-17.md` in the repo. Sign-off: `docs/reports/v0.5.0-security-signoff-2026-04-17.md`.
 
 ---
