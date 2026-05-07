@@ -1,2 +1,7 @@
 edikt
 gov-compile
+
+# Runtime state when the binary is exercised in-place during dev
+# (e.g. running `bin/edikt gov compile-history` from this directory
+# creates .edikt/state/compile-history.json next to it).
+.edikt/
