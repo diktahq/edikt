@@ -209,6 +209,13 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          # Any tag containing "-rc", "-beta", "-alpha", or "-pre" is a
+          # prerelease — never auto-promoted to "Latest". v0.4.x and final
+          # v0.6.0+ tags are the only ones that may take the Latest slot.
+          # This matches the v0.5.x retraction intent (v0.4.x → Latest)
+          # and prevents accidental rc-as-Latest drift.
+          prerelease: ${{ contains(steps.version.outputs.version, '-rc') || contains(steps.version.outputs.version, '-beta') || contains(steps.version.outputs.version, '-alpha') || contains(steps.version.outputs.version, '-pre') }}
+          make_latest: ${{ (contains(steps.version.outputs.version, '-rc') || contains(steps.version.outputs.version, '-beta') || contains(steps.version.outputs.version, '-alpha') || contains(steps.version.outputs.version, '-pre')) && 'false' || 'true' }}
           files: |
             edikt-v${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
             edikt-v${{ steps.version.outputs.version }}-darwin-amd64.tar.gz
