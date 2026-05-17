@@ -218,6 +218,12 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 	}
 
 	if opts.CheckOnly {
+		// Emit a verdict line even when no stale sidecars were found —
+		// silent exit-0 in --check mode (regression rc≤7) made CI checks
+		// indistinguishable from "compile is broken" vs "all good".
+		if !opts.JSONMode {
+			fmt.Fprintf(opts.Stderr, "edikt gov compile --check: up-to-date (%d sidecar(s), 0 stale)\n", len(pairs))
+		}
 		return res, nil
 	}
 

@@ -29,7 +29,7 @@ var losslessReportPath string
 var losslessCheckCmd = &cobra.Command{
 	Use:   "lossless-check",
 	Short: "Verify v0.6.0 sidecars are at least as faithful as their v0.4.3 baselines",
-	Long: `Walks paths.decisions + paths.invariants, loads each .edikt.yaml,
+	Long: `Walks paths.decisions + paths.invariants + paths.guidelines, loads each .edikt.yaml,
 finds the matching .md snapshot under test/fixtures/sidecar-baseline-v043/,
 and asserts that every (modality, ref_id, normalised noun-phrase) tuple
 from the legacy sentinel block is covered by the sidecar's directives,
@@ -56,6 +56,7 @@ type losslessConfig struct {
 	Paths struct {
 		Decisions  string `yaml:"decisions"`
 		Invariants string `yaml:"invariants"`
+		Guidelines string `yaml:"guidelines"`
 	} `yaml:"paths"`
 }
 
@@ -112,7 +113,13 @@ func runLosslessCheck(cmd *cobra.Command, args []string) error {
 		return &exitErr{code: 2, msg: fmt.Sprintf("baseline directory not found: %s — run Phase 11 setup", baselineDir)}
 	}
 
-	dirs := []string{cfg.Paths.Decisions, cfg.Paths.Invariants}
+	// Walks all three artifact dirs. Guidelines were excluded in rc≤7
+	// which let the sidecar-extractor's silent reminders/verification drop
+	// on guideline resync go undetected. v0.6.0 closes that gap — if any
+	// pre-v0.6 guideline carried hand-authored reminders/verification in
+	// its legacy block, the lift must preserve them and this check must
+	// catch any regression.
+	dirs := []string{cfg.Paths.Decisions, cfg.Paths.Invariants, cfg.Paths.Guidelines}
 	pairs, err := sidecar.Discover(root, dirs)
 	if err != nil {
 		return fmt.Errorf("discover sidecars: %w", err)

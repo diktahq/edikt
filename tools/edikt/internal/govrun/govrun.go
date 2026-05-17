@@ -268,6 +268,30 @@ func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
 		return nil
 	}
 
+	// ── Zero-directive guard (refuses to clobber existing output) ────────────
+	// Counts what the legacy parser actually found. If everything is zero,
+	// don't overwrite governance.md or topic files with an empty skeleton —
+	// the common cause is `--legacy` run after `migrate sidecars --apply`
+	// stripped embedded sentinels, so the in-body parser sees nothing.
+	// The default (sidecar) path is the right tool in that case; refusing
+	// here forces an explicit decision instead of silent data loss
+	// (rc≤7 regression: legacy path clobbered manually-curated reminders).
+	preCount := len(invRules)
+	for _, name := range topicNames {
+		preCount += len(topicMap[name].Rules)
+	}
+	if preCount == 0 {
+		msg := "legacy compile resolved 0 directives — refusing to overwrite existing governance output. " +
+			"Did you mean to run without --legacy? The default (sidecar) path reads .edikt.yaml sidecars directly. " +
+			"If sidecars were intentionally removed, run `edikt migrate sidecars --dry-run` to inspect first."
+		if jsonMode {
+			emit(JSONOutput{Status: "error", Errors: []string{msg}, Warnings: warnings})
+		} else {
+			fmt.Println("  ERROR:", msg)
+		}
+		return fmt.Errorf("legacy compile: zero directives, refusing to clobber")
+	}
+
 	// ── Write output ─────────────────────────────────────────────────────────
 	progress("Step 4/5: Scanning codebase for path patterns...")
 	progress("Step 5/5: Writing governance files...")
@@ -375,6 +399,19 @@ func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// GovernanceDirs returns the configured paths for ADRs, invariants, and
+// guidelines from .edikt/config.yaml under root. Falls back to defaults
+// (docs/architecture/{decisions,invariants}, docs/guidelines) when the
+// config is absent or unreadable.
+//
+// Use this from any dispatcher that needs to know "where does this project
+// keep its governance" — never hardcode the defaults at a call site,
+// because that silently breaks projects with customized paths.*.
+func GovernanceDirs(root string) []string {
+	cfg, _ := loadConfig(root)
+	return []string{cfg.Paths.Decisions, cfg.Paths.Invariants, cfg.Paths.Guidelines}
+}
 
 func loadConfig(root string) (ediktConfig, error) {
 	var cfg ediktConfig

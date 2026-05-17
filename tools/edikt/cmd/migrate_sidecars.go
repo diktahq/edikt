@@ -588,6 +588,19 @@ func applyArtifact(c candidate, ediktRoot, projectRoot string) liftResult {
 		Reminders:            sent.Reminders,
 		Verification:         sent.Verification,
 	}
+
+	// Guideline-specific notice: surfaces when hand-authored reminders or
+	// verification items are lifted from a legacy block, so the user
+	// understands the v0.6.0 preservation contract (sidecar-extractor
+	// preserves these on resync per templates/agents/sidecar-extractor.md
+	// "Guidelines — preserve existing reminders and verification" rule).
+	// Closes the rc≤7 silent-drop class — historically the lift copied the
+	// arrays correctly but a subsequent resync emptied them.
+	if c.kind == "guideline" && (len(sent.Reminders) > 0 || len(sent.Verification) > 0) {
+		res.warnLines = append(res.warnLines, fmt.Sprintf(
+			"migrate sidecars: %s: lifting %d reminder(s) + %d verification item(s) from legacy block — preserved on future resync per v0.6.0 extractor contract",
+			c.mdPath, len(sent.Reminders), len(sent.Verification)))
+	}
 	if sent.Topic != "" {
 		sc.Topic = sent.Topic
 	} else if len(sent.Topics) > 0 {

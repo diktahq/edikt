@@ -19,8 +19,17 @@ type exitCodeError struct {
 
 func (e *exitCodeError) Error() string { return e.msg }
 
-// Version is set at build time via ldflags; falls back to the constant.
-const Version = "0.6.0-rc4"
+// Version is set at build time via ldflags:
+//   go build -ldflags "-X 'github.com/diktahq/edikt/tools/edikt/cmd.Version=$(cat ../../VERSION)'" .
+//
+// The "dev" fallback is intentional: a plain `go build .` produces a binary
+// stamped "dev", signaling to the user that they built from source without
+// version injection. Never hardcode a version string here — that creates
+// drift between the binary's --version output and the VERSION file
+// (regression that shipped rc4-stamped binaries through rc5/6/7).
+//
+// `var` (not `const`) is required for `-X` ldflag injection to work.
+var Version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:   "edikt",

@@ -306,6 +306,7 @@ Do not emit anything else. Not the sidecar contents, not a summary, not commenta
 
 - **Invariants** use `## Statement` / `## Rationale` / `## Enforcement` instead of `## Decision`. Extract from `## Statement` and `## Enforcement`. The `(ref: INV-NNN)` tail must use the invariant's ID.
 - **Guidelines** have no fixed structure. Walk the whole body and extract anything imperative. The `(ref: <slug>)` tail uses the filename slug (e.g., `guideline-error-handling`).
+- **Guidelines — preserve existing `reminders` and `verification` on resync.** Guidelines have no defined source heading for these fields (unlike ADRs/INVs which use `## Confirmation` / `## Enforcement`). When the target sidecar file already exists, READ IT FIRST and copy its current `reminders:` and `verification:` arrays verbatim into your output. Only emit `reminders: []` / `verification: []` when no prior sidecar exists OR the existing arrays were empty. **Never blank out non-empty `reminders`/`verification` on a guideline sidecar regeneration.** Rationale: prior to v0.6.0, guidelines could carry hand-authored items in their `[edikt:directives:start]` block; silent loss on regeneration (rc≤7 regression) cost real users 7+ reminders and 12+ verification items in their compiled `governance.md`. The migration tool preserves these on initial lift; the extractor must preserve them on every subsequent resync until guidelines get defined source headings of their own.
 
 ## Locked prompt — what you will not do
 

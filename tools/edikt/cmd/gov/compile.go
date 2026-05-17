@@ -73,7 +73,10 @@ Flags:
 			return nil
 		}
 
-		dirs := governanceDirs()
+		// Resolve paths from .edikt/config.yaml — NEVER hardcode defaults
+		// at this call site. Hardcoding silently no-ops projects with
+		// customized paths.* (regression that shipped in v0.6.0-rc≤7).
+		dirs := govrun.GovernanceDirs(projectRoot)
 		hasSidecars := sidecar.HasAnySidecar(projectRoot, dirs)
 		hasMarkdown := sidecar.HasAnyGovernanceMarkdown(projectRoot, dirs)
 
@@ -85,8 +88,21 @@ Flags:
 			os.Exit(1)
 		}
 
-		// Empty project: no governance .md at all. Compile is a no-op.
+		// Empty project: no governance .md at all. Compile is a no-op,
+		// but emit a hint listing the paths that were checked so a
+		// misconfigured paths.* in .edikt/config.yaml doesn't silently
+		// no-op (regression from rc≤7 where this branch was silent).
 		if !hasSidecars && !hasMarkdown {
+			if !jsonFlag {
+				fmt.Fprintln(os.Stderr, "edikt gov compile: no governance .md or .edikt.yaml sidecars found at:")
+				for _, d := range dirs {
+					if d == "" {
+						continue
+					}
+					fmt.Fprintf(os.Stderr, "  - %s\n", d)
+				}
+				fmt.Fprintln(os.Stderr, "If you customized paths.* in .edikt/config.yaml, verify they match this list.")
+			}
 			return nil
 		}
 
@@ -121,18 +137,28 @@ func emitTwoPhaseJSON(res *govrun.TwoPhaseResult, runErr error) {
 		Errors     []govrun.PhaseAErrorRec  `json:"errors"`
 	}
 	type phaseBOut struct {
+		Ran             bool     `json:"ran"`
 		TopicsRendered  []string `json:"topics_rendered"`
 		TopicsUnchanged []string `json:"topics_unchanged"`
 		IndexWritten    bool     `json:"index_written"`
 		TotalDirectives int      `json:"total_directives"`
 	}
 	out := struct {
-		Status string     `json:"status"`
-		PhaseA phaseAOut  `json:"phase_a"`
-		PhaseB *phaseBOut `json:"phase_b,omitempty"`
-		Error  string     `json:"error,omitempty"`
+		Status string    `json:"status"`
+		PhaseA phaseAOut `json:"phase_a"`
+		// PhaseB is ALWAYS populated. {"ran": false, ...} when --check mode
+		// skipped phase B; {"ran": true, ...} otherwise. Never null — that
+		// was the rc≤7 contract violation (consumers couldn't distinguish
+		// "phase B produced no changes" from "phase B never ran" from
+		// "compile is broken").
+		PhaseB phaseBOut `json:"phase_b"`
+		Error  string    `json:"error,omitempty"`
 	}{
 		Status: "ok",
+		PhaseB: phaseBOut{
+			TopicsRendered:  []string{},
+			TopicsUnchanged: []string{},
+		},
 	}
 	if res != nil {
 		out.PhaseA.Stale = len(res.StaleSidecars)
@@ -144,11 +170,18 @@ func emitTwoPhaseJSON(res *govrun.TwoPhaseResult, runErr error) {
 			out.PhaseA.Errors = []govrun.PhaseAErrorRec{}
 		}
 		if res.PhaseB != nil {
-			out.PhaseB = &phaseBOut{
+			out.PhaseB = phaseBOut{
+				Ran:             true,
 				TopicsRendered:  res.PhaseB.TopicsRendered,
 				TopicsUnchanged: res.PhaseB.TopicsUnchanged,
 				IndexWritten:    res.PhaseB.IndexWritten,
 				TotalDirectives: res.PhaseB.TotalDirectives,
+			}
+			if out.PhaseB.TopicsRendered == nil {
+				out.PhaseB.TopicsRendered = []string{}
+			}
+			if out.PhaseB.TopicsUnchanged == nil {
+				out.PhaseB.TopicsUnchanged = []string{}
 			}
 		}
 	}
@@ -160,13 +193,6 @@ func emitTwoPhaseJSON(res *govrun.TwoPhaseResult, runErr error) {
 	fmt.Fprintln(os.Stdout, string(body))
 }
 
-func governanceDirs() []string {
-	return []string{
-		"docs/architecture/decisions",
-		"docs/architecture/invariants",
-		"docs/guidelines",
-	}
-}
 
 // preMigrationError returns the canonical ADR-027 §5 error string. The
 // migration guide URL is tag-pinned per INV-008 to v0.6.0 — the release

@@ -31,8 +31,13 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
 
 ## Arguments
 
-- `--check` — validate only, don't write. Exit with errors if contradictions found. For CI.
-- `--json` — output only the JSON format (see Reference). No progress indicators, no emoji, no prose.
+- `--check` — validate only, don't write. In two-phase mode (default, v0.6.0+) emits a verdict line on stderr (`up-to-date` or stale-count). Exits non-zero on stale sidecars. For CI.
+- `--dry-run` — alias for `--check`. Use the flag that matches your mental model.
+- `--json` — output structured JSON (see Reference). In two-phase mode emits a single object with `phase_a` and `phase_b` summaries; `phase_b` is **always** a populated object, never `null` (Claude Code consumers rely on this contract).
+- `--no-wait` — fail fast instead of blocking on a held `compile.lock`.
+- `--legacy` — **DEPRECATED (v0.7.0 removal).** Force the legacy in-body sentinel compile path even when sidecars exist. Preserved for the v0.5.x→v0.6.0 transition window only. Refuses to clobber when zero directives are resolved (defense against accidental wipe of curated `governance.md`).
+
+All paths are resolved dynamically from `.edikt/config.yaml` per ADR-027. Defaults are never hardcoded at the dispatcher — projects with customized `paths.decisions`, `paths.invariants`, or `paths.guidelines` work correctly.
 
 ## Instructions
 
@@ -505,7 +510,41 @@ Compiled directive:
     Action: Remove the guideline — invariants are non-negotiable.
 ```
 
-### JSON Output Format
+### JSON Output Format (two-phase mode, v0.6.0+)
+
+`--json` in default or `--check` mode emits a single object. `phase_b` is **always** a populated object — never `null` — so consumers can distinguish "ran and produced no changes" from "did not run" via the `ran` field.
+
+```json
+{
+  "status": "ok",
+  "phase_a": {
+    "dispatched": 0,
+    "stale": 0,
+    "errors": []
+  },
+  "phase_b": {
+    "ran": true,
+    "topics_rendered": [],
+    "topics_unchanged": [],
+    "index_written": false,
+    "total_directives": 27
+  }
+}
+```
+
+In `--check --json` mode, `phase_b.ran` is `false` (the merge is skipped):
+
+```json
+{
+  "status": "ok",
+  "phase_a": {"dispatched": 0, "stale": 0, "errors": []},
+  "phase_b": {"ran": false, "topics_rendered": [], "topics_unchanged": [], "index_written": false, "total_directives": 0}
+}
+```
+
+On error, `status: "error"` and `error: "<message>"` are set; `phase_a`/`phase_b` remain populated with whatever state was reached.
+
+### JSON Output Format (legacy mode, `--legacy`)
 
 ```json
 {
@@ -518,7 +557,21 @@ Compiled directive:
 }
 ```
 
-### Check Output Format
+### Check Output Format (prose, default mode `--check`)
+
+Two-phase mode emits a single verdict line on stderr:
+
+```
+edikt gov compile --check: up-to-date (14 sidecar(s), 0 stale)
+```
+
+If any sidecars are stale, exits non-zero with:
+
+```
+error: 3 sidecar(s) stale — run 'edikt gov compile' to resync
+```
+
+Legacy mode (`--legacy --check`) emits the longer prose summary:
 
 ```
 /edikt:gov:compile --check

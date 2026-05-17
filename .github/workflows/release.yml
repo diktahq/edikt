@@ -72,7 +72,18 @@ jobs:
             mkdir -p "$outdir/bin"
             ( cd tools/edikt && \
               GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
-                go build -trimpath -ldflags='-s -w' -o "$outdir/bin/edikt" . )
+                go build -trimpath \
+                  -ldflags="-s -w -X 'github.com/diktahq/edikt/tools/edikt/cmd.Version=v${VERSION}'" \
+                  -o "$outdir/bin/edikt" . )
+            # Verify the binary's --version matches the release tag (catches the
+            # rc4-in-rc7 drift class — must hold before tarballing).
+            if [ "$goos-$goarch" = "$(go env GOOS)-$(go env GOARCH)" ]; then
+              built_ver=$("$outdir/bin/edikt" --binary-version 2>/dev/null || "$outdir/bin/edikt" version --binary 2>/dev/null | head -1)
+              case "$built_ver" in
+                "v${VERSION}"|"${VERSION}") echo "  version stamp OK: $built_ver" ;;
+                *) echo "::error::Version stamp mismatch: binary reports '$built_ver', expected 'v${VERSION}'" && exit 1 ;;
+              esac
+            fi
             cp LICENSE README.md "$outdir/"
             ( cd "$outdir" && \
               tar -czf "$GITHUB_WORKSPACE/edikt-v${VERSION}-${goos}-${goarch}.tar.gz" \
@@ -181,6 +192,19 @@ jobs:
             exit 0
           fi
           bash test/release/install-fresh-and-upgrade.sh
+
+      - name: E2E regression — Family 1 + Family 2 (verification-before-completion gate)
+        run: |
+          # Catches the rc≤7 silent regressions: governanceDirs hardcode,
+          # silent compile, --json null contract, --check silent, migration
+          # silent reminders/verification drop. Failure here means the
+          # release would ship a known regression class.
+          if [ ! -x test/test-e2e-v04-guideline-heavy.sh ]; then
+            echo "::error::E2E regression test missing — refusing to tag without it"
+            exit 1
+          fi
+          EDIKT_BIN="$GITHUB_WORKSPACE/build/linux-amd64/bin/edikt" \
+            bash test/test-e2e-v04-guideline-heavy.sh
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
