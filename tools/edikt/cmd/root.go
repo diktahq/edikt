@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/spf13/cobra"
@@ -57,8 +58,12 @@ func Execute() {
 
 func init() {
 	// Propagate the canonical version into the govrun package so compiled
-	// output carries the correct version string.
-	govrun.CompilerVersion = Version
+	// output carries the correct version string. Strip the leading "v"
+	// because the render templates already prepend "v" — letting Version
+	// pass through unchanged produced "vv0.6.0-rcN" stamps when the
+	// ldflag value followed git-tag convention (with "v"), conflicting
+	// with the historical CompilerVersion default of "0.1.0" (no "v").
+	govrun.CompilerVersion = strings.TrimPrefix(Version, "v")
 
 	// Unknown subcommand: print error and usage.
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
