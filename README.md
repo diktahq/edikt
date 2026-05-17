@@ -4,6 +4,12 @@
 
 edikt compiles your engineering decisions into directives Claude follows automatically — every session, every engineer, every project.
 
+## How you interact with edikt
+
+You use edikt through **slash commands inside Claude Code** — `/edikt:init`, `/edikt:upgrade`, `/edikt:gov:compile`, `/edikt:doctor`, and so on. That is the primary surface and always will be.
+
+The `bin/edikt` CLI exists too and is fully discoverable (`edikt --help`). It's how the slash commands and lifecycle hooks talk to the deterministic helpers under the hood, and it's available for direct invocation when you need it (debugging, CI, scripting). But the recommended path for every user-facing operation is the slash command — they handle the surrounding context (config resolution, Claude state, recovery paths) that bare CLI invocations don't.
+
 ## Install
 
 ```bash

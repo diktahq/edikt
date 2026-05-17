@@ -54,7 +54,7 @@ If already up-to-date, reports so and exits 0.`,
 			}
 		}
 		if currentV == "" {
-			return fmt.Errorf("no active version found. Run 'edikt install <tag>' first.")
+			return fmt.Errorf("no active version found. Bootstrap via /edikt:upgrade in Claude Code (primary path), or run 'edikt install <tag>' directly.")
 		}
 
 		// Resolve latest tag.

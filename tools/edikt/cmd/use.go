@@ -25,7 +25,7 @@ Fails clearly if the version is not installed.`,
 
 		targetDir := filepath.Join(ediktRoot, "versions", tag)
 		if _, err := os.Stat(targetDir); os.IsNotExist(err) {
-			return fmt.Errorf("version %s is not installed. Run `edikt install %s` first.", tag, tag)
+			return fmt.Errorf("version %s is not installed. Install it via /edikt:upgrade in Claude Code (primary path), or run `edikt install %s` directly.", tag, tag)
 		}
 
 		// Minimum payload version gate: payloads below 0.5.0 are not supported.
@@ -109,6 +109,27 @@ func repairExternalSymlinks(ediktRoot string) {
 	}
 	if err := os.MkdirAll(filepath.Join(claudeRoot, "commands"), 0o755); err == nil {
 		replaceSymlink(ediktCmds, ediktCmdsTarget)
+	}
+
+	// Per-skill symlinks so Claude Code's ~/.claude/skills/<name>/SKILL.md
+	// picks up edikt-shipped skills natively. Walks the payload's
+	// templates/skills/ directory and links each subdirectory into
+	// ~/.claude/skills/. New in v0.6.0 (adopted from obra/superpowers
+	// convention). replaceSymlink fails silently on a non-empty
+	// pre-existing directory at the target, which preserves user-installed
+	// skills of the same name (fail-open in the user's favor).
+	skillsSrc := filepath.Join(ediktRoot, "current", "templates", "skills")
+	if entries, err := os.ReadDir(skillsSrc); err == nil {
+		if err := os.MkdirAll(filepath.Join(claudeRoot, "skills"), 0o755); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() {
+					continue
+				}
+				skillLink := filepath.Join(claudeRoot, "skills", e.Name())
+				skillTarget := filepath.Join(ediktRoot, "current", "templates", "skills", e.Name())
+				replaceSymlink(skillLink, skillTarget)
+			}
+		}
 	}
 }
 
