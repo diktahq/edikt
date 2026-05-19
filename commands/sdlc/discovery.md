@@ -10,7 +10,7 @@ allowed-tools:
   - Grep
   - Bash
 ---
-!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && { printf "<!-- edikt:live -->\nNext DISCOVERY number: DISCOVERY-001\nExisting discoveries: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; PROOT=$(dirname "$(dirname "$CFG")"); BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; DIR="$PROOT/$BASE/product/discovery"; [ ! -d "$DIR" ] && { printf "<!-- edikt:live -->\nNext DISCOVERY number: DISCOVERY-001\nExisting discoveries: (none yet)\n<!-- /edikt:live -->\n"; exit 0; }; COUNT=$(find "$DIR" -maxdepth 1 -type f -name "DISCOVERY-*.md" 2>/dev/null | wc -l | tr -d " "); NEXT=$(printf "%03d" $((COUNT + 1))); EXISTING=$(find "$DIR" -maxdepth 1 -type f -name "DISCOVERY-*.md" 2>/dev/null | sort | xargs -I{} basename {} .md | tr "\n" "," | sed "s/,$//"); printf "<!-- edikt:live -->\nNext DISCOVERY number: DISCOVERY-%s\nExisting discoveries: %s\n<!-- /edikt:live -->\n" "$NEXT" "${EXISTING:-(none yet)}"'`
+!`${HOME}/.edikt/bin/edikt next-id discovery`
 
 # edikt:sdlc:discovery
 

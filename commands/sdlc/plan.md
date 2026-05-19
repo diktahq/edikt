@@ -14,7 +14,7 @@ allowed-tools:
 tier_2_dependency: edikt verify
 on_absent: skip-with-warning
 ---
-!`bash -c 'CFG=""; D="$PWD"; while [ "$D" != "/" ]; do [ -f "$D/.edikt/config.yaml" ] && CFG="$D/.edikt/config.yaml" && break; D=$(dirname "$D"); done; [ -z "$CFG" ] && exit 0; PROOT=$(dirname "$(dirname "$CFG")"); REL=$(grep "^  plans:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); if [ -z "$REL" ]; then BASE=$(grep "^base:" "$CFG" 2>/dev/null | awk "{print \$2}" | tr -d "\""); BASE="${BASE:-docs}"; REL="$BASE/plans"; fi; case "$REL" in /*) DIR="$REL" ;; *) DIR="$PROOT/$REL" ;; esac; PLAN=$(find "$DIR" -maxdepth 1 -type f -name "*.md" 2>/dev/null | while read f; do printf "%s\t%s\n" "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" "$f"; done | sort -rn | head -1 | cut -f2); if [ -z "$PLAN" ]; then PLAN=$(find "$PROOT/docs/product/plans" -maxdepth 1 -type f -name "*.md" 2>/dev/null | while read f; do printf "%s\t%s\n" "$(stat -f %m "$f" 2>/dev/null || stat -c %Y "$f" 2>/dev/null)" "$f"; done | sort -rn | head -1 | cut -f2); fi; if [ -n "$PLAN" ]; then NAME=$(basename "$PLAN"); PHASE=$(grep -iE "\|.*in[_ -]progress" "$PLAN" 2>/dev/null | head -1 | tr -d "|" | xargs); printf "<!-- edikt:live -->\nActive plan: %s\nCurrent phase status: %s\n<!-- /edikt:live -->\n" "$NAME" "${PHASE:-(none in progress)}"; fi'`
+!`${HOME}/.edikt/bin/edikt next-id plan`
 
 # edikt:plan
 
