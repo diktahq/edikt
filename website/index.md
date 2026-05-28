@@ -13,7 +13,7 @@ hero:
 ## Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.4.5/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 ```
 
 Copies edikt's commands to `~/.claude/commands/edikt/` and its templates and hooks to `~/.edikt/`. No dependencies, no build step, no runtime — just files.

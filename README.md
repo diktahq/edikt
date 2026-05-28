@@ -7,7 +7,7 @@ edikt compiles your engineering decisions into directives Claude follows automat
 ## Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.4.5/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
 ```
 
 ## The problem
@@ -40,7 +40,7 @@ edikt uses Claude Code's platform primitives — path-conditional rules, lifecyc
 
 ### Windows / WSL
 
-The launcher (`bin/edikt`) is POSIX sh. On Windows, run inside WSL2. The payload installs to `~/.edikt/` inside the WSL filesystem. Claude Code for Windows accesses it through the WSL path.
+The installer is POSIX sh. On Windows, run it inside WSL2. Files install to `~/.claude/commands/edikt/` and `~/.edikt/` inside the WSL filesystem; Claude Code for Windows accesses them through the WSL path.
 
 ### Claude Code parity
 
