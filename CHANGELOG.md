@@ -126,7 +126,7 @@ The v0.5.0 security audit closed the following failure classes and locked them b
 
 - **Upgrade: new agent detection.** `/edikt:upgrade` now detects agent templates added in newer versions. Core agents (evaluator, evaluator-headless) are installed automatically. Optional agents are offered to the user with a description — declined agents are added to `agents.custom` so future upgrades skip them.
 - **Upgrade: config migration.** `paths.soul` renamed to `paths.project-context`. Upgrade auto-migrates existing configs.
-- **CodeRabbit review fixes.** Subagent-stop override check now matches agent + finding on the same line (was two independent greps). WEAK PASS exit code corrected to 0. .gitignore negation patterns fixed. BSD-only stat removed from SPEC-003. Agent count corrected to 18 across website docs.
+- **CodeRabbit review fixes.** Subagent-stop override check now matches agent + finding on the same line (was two independent greps). WEAK PASS exit code corrected to 0. .gitignore negation patterns fixed. BSD-only stat removed from SPEC-003. Agent count corrected to 18.
 
 ### Documentation
 
@@ -170,7 +170,6 @@ Quality gates now log overrides with accountability, and artifact lifecycle is e
 
 - Updated `project-context.md` for v0.4.0: hook count (9→13), agent count (20→19), quality gates, plan harness features, context vs enforcement framing
 - Fixed 12 pre-existing documentation gaps (stale agent/hook/command counts, old command names in AGENTS.md, missing index entries)
-- Updated website: plan, gates, chain, features, doctor, drift pages with v0.4.0 features
 - Removed stale AGENTS.md (Codex convention — edikt is Claude Code only per ADR-001)
 
 ### New config keys
@@ -193,7 +192,6 @@ evaluator:
 - **PRINCIPAL prefix.** Compile output no longer prefixes directives with `PRINCIPAL:`.
 - **Review output.** `/edikt:sdlc:review` output formatting fixed.
 - **SubagentStop hook: seniority prefix.** The fallback agent detection pattern matched "As Principal Architect" → `principal-architect` instead of `architect`, breaking slug lookup and gate matching. Now extracts only the role word.
-- **Missing page.** Added `/edikt:guideline:compile` website page (was dead link).
 - **Test fixes.** All 25 suites pass after v0.3.0 regressions.
 
 ### Artifact generation: JSONB support and domain class diagram
@@ -378,10 +376,6 @@ Bug-fix release following v0.2.0 field reports.
 
 - **Seniority prefixes removed from `/edikt:sdlc:review` reviewer lenses.** The command documentation still labeled agents as `Principal DBA`, `Staff SRE`, `Staff Security`, `Senior API`, `Principal Architect`, `Senior Performance` — inconsistent with the agent templates which dropped seniority prefixes in v0.2.0. Now just `DBA`, `SRE`, `Security`, `API`, `Architect`, `Performance`.
 
-### Website content
-
-- **Fixed 10 dead links in `website/governance/chain.md`, `website/governance/compile.md`, `website/governance/drift.md`, and `website/commands/brainstorm.md`** — they referenced old flat command paths (`/commands/prd`, `/commands/spec`, `/commands/plan`, etc.) that broke the v0.2.0 VitePress deploy. Now use namespaced paths (`/commands/sdlc/prd`, `/commands/gov/compile`, etc.).
-
 ### Test coverage
 
 - New `test/test-v021-regressions.sh` — 36 assertions guarding against all five v0.2.1 bugs so they can't silently return.
@@ -458,7 +452,6 @@ All 19 agent templates now include governance frontmatter:
 
 - **`--json` output** — compile, drift, audit, doctor, review, and review-governance support `--json` for machine-readable output.
 - **Headless mode** — `EDIKT_HEADLESS=1` with `headless-ask.sh` hook auto-answers interactive prompts for CI pipelines.
-- **CI guide** — new website guide with GitHub Actions example, recommended settings, and environment variables.
 - **Managed settings awareness** — `/edikt:team` detects organization-managed settings (`managed-settings.json`, `managed-settings.d/`).
 
 ### UX consistency improvements
@@ -486,7 +479,6 @@ All 19 agent templates now include governance frontmatter:
 ### Platform alignment
 
 - **Environment hardening** — `/edikt:team` checks for `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`. Security guide documents `sandbox.failIfUnavailable`.
-- **SendMessage auto-resume** — documented on website for agent resumption.
 
 ## v0.1.4 (2026-03-28)
 
@@ -640,11 +632,6 @@ edikt governs your architecture and compiles your engineering decisions into aut
 - EXP-001: 15/15 compliance with rules vs 0/15 without on invented conventions
 - EXP-002: holds under multi-rule conflict, multi-file sessions, Opus vs Sonnet, adversarial prompts
 - Reproducible: `test/experiments/rule-compliance/exp-001-scenarios/` and `test/experiments/rule-compliance/exp-002-scenarios/`
-
-**Website**
-- Full documentation at edikt.dev
-- Guides: solo engineer, teams, multi-project, greenfield, brownfield, monorepo, security, daily workflow
-- Governance section: chain, gates, compile, drift, review-governance
 
 **Zero dependencies**
 - Every file is `.md` or `.yaml` — no build step, no runtime, no daemon
