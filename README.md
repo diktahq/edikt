@@ -43,16 +43,16 @@ Works for any tag with release assets (v0.6.0 and forward). `--ref` is the only 
 
 ### Stay on the v0.4 line (legacy)
 
-If your project isn't ready for v0.6.0's sidecar architecture (ADR-027), the v0.4.5 install path is still supported:
+If your project isn't ready for v0.6.0's sidecar architecture (ADR-027), the v0.4.5 install path is still supported. v0.4.x lives in [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only) — the current repo's history starts at v0.7.0:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install.sh | bash
 ```
 
 v0.4.5's installer uses a different fetch model (raw git-tag, not release assets), so its `--ref` flag only resolves to other v0.4.x tags — not v0.6.x:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash -s -- --ref v0.4.3
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install.sh | bash -s -- --ref v0.4.3
 ```
 
 v0.5.x is retracted. v0.6.0's installer cannot install v0.4.x (no release assets at those tags); use the v0.4.5 URL directly.
@@ -79,7 +79,7 @@ Without governance, every Claude Code session starts from scratch. Architecture 
 - 20 rule packs (Go, TypeScript, Python, Next.js, Django, and more)
 - 25 specialist agents (architect, dba, security, api, qa, sre, and others)
 - 22 lifecycle hooks (plan injection, compaction recovery, quality gates)
-- 47 commands from init through drift detection
+- 51 commands from init through drift detection
 
 ## Documentation
 
@@ -109,7 +109,7 @@ On Windows, run inside WSL2. The payload installs to `~/.edikt/` inside the WSL 
 
 ### Claude Code parity
 
-edikt tracks Claude Code feature adoption in [docs/internal/claude-code-parity.md](docs/internal/claude-code-parity.md). The v0.5.0 baseline is Claude Code v2.1.111 (April 2026). Hook protocol, agent frontmatter fields (`effort`, `maxTurns`, `disallowedTools`, `initialPrompt`), conditional hook `if`, and the full PostCompact / SubagentStart / TaskCompleted / WorktreeCreate event set are all adopted. Plugin packaging is a future candidate.
+edikt tracks Claude Code feature adoption internally. Hook protocol, agent frontmatter fields (`effort`, `maxTurns`, `disallowedTools`, `initialPrompt`), conditional hook `if`, and the full PostCompact / SubagentStart / TaskCompleted / WorktreeCreate event set are all adopted. Plugin packaging is a future candidate.
 
 ---
 
