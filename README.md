@@ -13,7 +13,7 @@ The `bin/edikt` CLI exists too and is fully discoverable (`edikt --help`). It's 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.7.0/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.0/install.sh | bash
 ```
 
 Installs the v0.7.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets (ADR-016). Pinned to a specific release tag per INV-008.
@@ -36,7 +36,7 @@ edikt rollback             # revert to the previous version
 ### Pin to a specific v0.7.x version at install time
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.7.0/install.sh | bash -s -- --ref v0.7.0
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.0/install.sh | bash -s -- --ref v0.7.0
 ```
 
 Works for any tag with release assets (v0.7.0 and forward — no earlier tag ever published real release assets, only v0.7.0 does). `--ref` is the only supported way to pin a version — there is no `EDIKT_REF` environment variable, and passing one has no effect.
