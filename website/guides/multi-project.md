@@ -13,18 +13,18 @@ This guide shows the full workflow. Same methodology across every client project
 
 ---
 
-## 1. Setting up client project A — Go backend for a logistics platform
+## 1. Setting up client project A — Go backend for a restaurant inventory platform
 
-Ravi is the technical director. His consultancy just signed a new client — a logistics company that needs a shipment tracking API. Go, Chi, PostgreSQL. Ravi opens the project.
+Ravi is the technical director. His consultancy just signed a new client — a restaurant group that needs an inventory management API. Go, Chi, PostgreSQL. Ravi opens the project.
 
-<Terminal title="Claude Code — logistics-tracking-api">
+<Terminal title="Claude Code — restaurant-inventory-api">
 <T in>/edikt:init</T>
 <T>[1/3] Scanning project...</T>
 <T dim>  Code: no source files detected</T>
 <T>What are you building?</T>
 <T dim>  Example: "A multi-tenant SaaS for restaurant inventory.</T>
 <T dim>  Go + Chi, PostgreSQL, DDD with bounded contexts."</T>
-<T in>Shipment tracking API for a logistics client. Go with Chi, PostgreSQL. DDD with bounded contexts — tracking, routing, and notifications. Multi-tenant: the client has sub-clients (shippers) who each see only their own shipments.</T>
+<T in>Inventory management API for a restaurant group. Go with Chi, PostgreSQL. DDD with bounded contexts — inventory, procurement, and alerts. Multi-tenant: the client has multiple restaurant locations who each see only their own inventory.</T>
 <T>[2/3] Configuring...</T>
 <T>Rules (✓ = recommended for your stack):</T>
 <T hi>  [x] code-quality     — naming, correctness guardrails</T>
@@ -46,35 +46,35 @@ Ravi is the technical director. His consultancy just signed a new client — a l
 
 Ravi captures the client-specific constraints immediately:
 
-<Terminal title="Claude Code — logistics-tracking-api">
-<T in>That's a hard rule — all data must stay in the EU region. The client's compliance requirement.</T>
+<Terminal title="Claude Code — restaurant-inventory-api">
+<T in>That's a hard rule — payment card data must never touch application logs. The client's PCI compliance requirement.</T>
 <T>Invariant recorded.</T>
-<T>INV-001: EU Data Residency</T>
-<T>All data storage, processing, and backups must remain within EU regions. No cross-region replication or CDN edge caching of shipment data outside EU.</T>
-<T hi>Saved: docs/architecture/invariants/INV-001-eu-data-residency.md</T>
+<T>INV-001: Payment Card Data Isolation</T>
+<T>Payment card numbers, CVVs, and tokens must never appear in application logs, error messages, or debug output. No exceptions for staging or local environments.</T>
+<T hi>Saved: docs/architecture/invariants/INV-001-payment-card-data-isolation.md</T>
 <T warn>This invariant will block progression if violated.</T>
-<T in>Save this decision — we're using event sourcing for the tracking bounded context. Shipment state changes must be auditable, and the client needs full history reconstruction.</T>
-<T>ADR-001: Event Sourcing for Tracking Context</T>
+<T in>Save this decision — we're using event sourcing for the inventory bounded context. Stock level changes must be auditable, and the client needs full history reconstruction for shrinkage reporting.</T>
+<T>ADR-001: Event Sourcing for Inventory Context</T>
 <T dim>Status: accepted</T>
 <T>Context:</T>
-<T>  Client requires full audit trail of shipment state changes with history reconstruction capability.</T>
+<T>  Client requires full audit trail of stock level changes with history reconstruction capability for shrinkage reporting.</T>
 <T>Decision:</T>
-<T>  Use event sourcing in the tracking bounded context. ShipmentCreated, ShipmentPickedUp, ShipmentInTransit, ShipmentDelivered as domain events. Event store in PostgreSQL. CQRS with read projections for query performance.</T>
+<T>  Use event sourcing in the inventory bounded context. StockReceived, StockReserved, StockDepleted, StockWasted as domain events. Event store in PostgreSQL. CQRS with read projections for query performance.</T>
 <T>Consequences:</T>
 <T ok>  + Full audit trail by design</T>
 <T ok>  + History reconstruction at any point in time</T>
-<T>  - Higher complexity in the tracking context</T>
+<T>  - Higher complexity in the inventory context</T>
 <T>  - Eventual consistency between write and read models</T>
-<T hi>Saved: docs/architecture/decisions/ADR-001-event-sourcing-tracking.md</T>
+<T hi>Saved: docs/architecture/decisions/ADR-001-event-sourcing-inventory.md</T>
 <T in>Compile governance.</T>
 <T hi>Governance compiled: .claude/rules/governance.md</T>
 <T>  1 ADR   ->  2 directives</T>
 <T>  1 invariant -> 1 directive</T>
 <T>  3 total directives</T>
 <T>Directives:</T>
-<T>  1. Use event sourcing in the tracking bounded context (ADR-001)</T>
-<T>  2. CQRS with read projections for tracking queries (ADR-001)</T>
-<T>  3. All data must remain in EU regions — no exceptions (INV-001)</T>
+<T>  1. Use event sourcing in the inventory bounded context (ADR-001)</T>
+<T>  2. CQRS with read projections for inventory queries (ADR-001)</T>
+<T>  3. Payment card data must never be written to logs — no exceptions (INV-001)</T>
 <T>Claude will follow these directives automatically in every session.</T>
 </Terminal>
 
@@ -138,7 +138,7 @@ Commit, push. Project B is governed. The methodology is Ravi's consultancy's met
 
 ## 3. Engineer rotating from project A to project B
 
-Anya has been working on the logistics API (project A) for three weeks. She's built the tracking context, captured two more ADRs, and is comfortable with the Go codebase. Today she rotates to the trading dashboard (project B) because the frontend needs an engineer who understands real-time data.
+Anya has been working on the inventory API (project A) for three weeks. She's built the inventory context, captured two more ADRs, and is comfortable with the Go codebase. Today she rotates to the trading dashboard (project B) because the frontend needs an engineer who understands real-time data.
 
 Anya opens project B in Claude Code. She's never seen this codebase.
 
@@ -221,11 +221,11 @@ Anya commits. Tomorrow, when Kai opens the project, his Claude session knows abo
 
 End of the week. Ravi checks the health of both client projects.
 
-He opens the logistics project:
+He opens the inventory project:
 
-<Terminal title="Claude Code — logistics-tracking-api">
+<Terminal title="Claude Code — restaurant-inventory-api">
 <T in>What's our status?</T>
-<T>EDIKT STATUS — logistics-tracking-api</T>
+<T>EDIKT STATUS — restaurant-inventory-api</T>
 <T>GOVERNANCE HEALTH</T>
 <T>  Rules:        7 active</T>
 <T dim>                code-quality, testing, security, error-handling,</T>
@@ -241,7 +241,7 @@ He opens the logistics project:
 <T ok>  dba:   1 warning (resolved — Anya, Mar 15)</T>
 <T ok>  qa:        0 findings</T>
 <T>INVARIANT STATUS</T>
-<T ok>  INV-001 (EU Data Residency): active, 0 violations</T>
+<T ok>  INV-001 (Payment Card Data Isolation): active, 0 violations</T>
 <T ok>Governance is current. Last compiled: Mar 17.</T>
 </Terminal>
 
@@ -269,7 +269,7 @@ He opens the trading dashboard project:
 <T ok>Governance is current. Last compiled: Mar 20.</T>
 </Terminal>
 
-Ravi can see at a glance: the logistics API has zero security findings and one DBA warning that was resolved. The trading dashboard had a security gate fire and was resolved. Both projects have their client-specific invariants active with no violations — same status format, two different clients.
+Ravi can see at a glance: the inventory API has zero security findings and one DBA warning that was resolved. The trading dashboard had a security gate fire and was resolved. Both projects have their client-specific invariants active with no violations — same status format, two different clients.
 
 He pulls this up in the client review meeting. Not a report he spent an hour writing — a command he ran in 2 seconds per project.
 
@@ -287,12 +287,12 @@ The methodology is the constant:
 - The lifecycle hooks: session start, plan injection, compaction recovery, signal detection
 
 What varies is what should vary:
-- The stack rules: Go rules on the logistics project, TypeScript rules on the dashboard
-- The ADRs: event sourcing for logistics tracking, Zustand for dashboard state
-- The invariants: EU data residency for one client, no client-side storage for the other
+- The stack rules: Go rules on the inventory project, TypeScript rules on the dashboard
+- The ADRs: event sourcing for inventory tracking, Zustand for dashboard state
+- The invariants: payment card data isolation for one client, no client-side storage for the other
 - The compiled governance: each project's directives reflect that project's decisions only
 
-Nothing leaks between clients. The logistics client's data residency invariant doesn't appear in the trading dashboard project. The dashboard's Zustand decision doesn't show up in the Go codebase. Per-project governance, shared methodology.
+Nothing leaks between clients. The inventory client's payment card data invariant doesn't appear in the trading dashboard project. The dashboard's Zustand decision doesn't show up in the Go codebase. Per-project governance, shared methodology.
 
 The specifics accumulate as the engagement progresses. The next engineer who joins gets everything the last one built.
 

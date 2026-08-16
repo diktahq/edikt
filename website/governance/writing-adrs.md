@@ -60,11 +60,11 @@ Split compound statements:
 
 ```
 Bad (one directive, two decisions):
-  "Use CQRS and event sourcing for the order domain"
+  "Rate-limit the search endpoint and cache its responses"
 
 Good (two directives):
-  "Use CQRS for write/read separation in the order domain. (ref: ADR-005)"
-  "Order state changes MUST be captured as immutable event records. (ref: ADR-005)"
+  "Rate-limit the search endpoint with a token bucket, 100 req/min per client. (ref: ADR-005)"
+  "Search responses MUST be cached for 60 seconds using the shared Redis client. (ref: ADR-005)"
 ```
 
 ## Make it verifiable

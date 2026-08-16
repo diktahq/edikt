@@ -16,7 +16,7 @@ The `bin/edikt` CLI exists too and is fully discoverable (`edikt --help`). It's 
 curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.0/install.sh | bash
 ```
 
-Installs the v0.7.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets (ADR-016). Pinned to a specific release tag per INV-008.
+Installs the v0.7.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
 
 Then open any project in Claude Code and say "initialize edikt" or run `/edikt:init`.
 
@@ -26,8 +26,8 @@ The launcher manages multiple installed versions side-by-side. Use `/edikt:upgra
 
 ```bash
 edikt list                 # show all installed versions
-edikt install v0.7.1       # download and install a specific v0.7.x release
-edikt use v0.7.1           # activate it (switches the ~/.edikt/current symlink)
+edikt install v0.7.0       # download and install a specific v0.7.x release
+edikt use v0.7.0           # activate it (switches the ~/.edikt/current symlink)
 edikt rollback             # revert to the previous version
 ```
 
@@ -43,7 +43,7 @@ Works for any tag with release assets (v0.7.0 and forward — no earlier tag eve
 
 ### Stay on the v0.4 line (legacy)
 
-If your project isn't ready for the sidecar architecture (ADR-027, introduced in v0.6.0 and current through v0.7.0), the v0.4.5 install path is still supported. v0.4.x lives in [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only) — the current repo's history starts at v0.7.0:
+If your project isn't ready for the sidecar architecture (introduced in v0.6.0 and current through v0.7.0), the v0.4.5 install path is still supported. v0.4.x lives in [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only) — the current repo's history starts at v0.7.0:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install.sh | bash
