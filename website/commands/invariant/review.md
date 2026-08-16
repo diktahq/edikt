@@ -1,0 +1,55 @@
+# /edikt:invariant:review
+
+Review invariant language quality — checks whether hard constraints are specific, actionable, and phrased for reliable enforcement.
+
+This is a scoped shortcut for running `/edikt:gov:review` targeting invariants only.
+
+## Usage
+
+```bash
+/edikt:invariant:review
+/edikt:invariant:review INV-001
+```
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| (none) | Review all active invariants in `docs/architecture/invariants/` |
+| `INV-NNN` | Review a specific invariant |
+
+## What it checks
+
+Invariants are held to a higher standard than ADRs — they must be non-negotiable, verifiable, and carry a clear consequence for violation.
+
+Each invariant is evaluated on:
+
+| Dimension | Strong | Weak |
+|-----------|--------|------|
+| **Specificity** | Names exact patterns, types, or operations | Vague or broadly interpretable |
+| **Phrasing** | NEVER/MUST with explicit consequence | "avoid" or "try to" language |
+| **Violation signal** | Describes what a violation looks like | No way to tell if violated |
+| **Testability** | Checkable by static analysis, grep, or test | Cannot be verified mechanically |
+
+## Sidecar Cross-Check (v0.6.0)
+
+After the prose-quality review, `:review` cross-checks the invariant's `<INV>.edikt.yaml` sidecar against the prose body for drift. The check is read-only — it never modifies files.
+
+For each directive in the sidecar:
+
+1. Read `<INV>.edikt.yaml`. If missing, warn: *"No sidecar found — run `/edikt:invariant:compile <INV>` to generate."*
+2. Locate each of the directive's `source_excerpts[].quote` entries in the prose body. If any verbatim quote is not found, flag the directive as stale.
+3. Scan the prose body for imperative directives (MUST, MUST NOT, SHOULD, NEVER, ALWAYS) not represented in the sidecar. Flag any extras.
+
+Output is either `✓ Sidecar in sync` or a warning list with line numbers and a recovery command. `:review` never auto-regenerates — the user resolves drift via `:compile` or by editing the prose.
+
+## When to run
+
+- After writing a new invariant, before it goes active
+- Before running `/edikt:gov:compile` — clean invariant language produces clean enforcement
+
+## What's next
+
+- [/edikt:invariant:new](/commands/invariant/new) — capture a new hard constraint
+- [/edikt:invariant:compile](/commands/invariant/compile) — compile invariants into governance directives
+- [/edikt:gov:review](/commands/gov/review) — full governance review across all sources

@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CompileQualityReport",
+  "description": "Output of the compiled-governance quality grader (bin/edikt gov grade-compile). An LLM-as-judge scores the .claude/rules/governance/ tree on four editorial dimensions, 0-10 each, per compile-quality.md. Validated by KnownFields(true) loader.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "graded_at",
+    "grader_model",
+    "target_dir",
+    "scores",
+    "overall",
+    "findings",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "graded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "grader_model": {
+      "type": "string",
+      "minLength": 1
+    },
+    "target_dir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "coherence",
+        "conciseness",
+        "signal_to_noise",
+        "description_quality",
+        "tier_assignment",
+        "no_double_loading"
+      ],
+      "properties": {
+        "coherence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "conciseness": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "signal_to_noise": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "description_quality": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "tier_assignment": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "no_double_loading": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        }
+      }
+    },
+    "overall": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dimension",
+          "severity",
+          "message"
+        ],
+        "properties": {
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "coherence",
+              "conciseness",
+              "signal_to_noise",
+              "description_quality",
+              "tier_assignment",
+              "no_double_loading"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "suggested_fix": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

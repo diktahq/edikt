@@ -1,0 +1,249 @@
+{
+  "permissions": {
+    "defaultMode": "askBeforeAllow",
+    "deny": [
+      "WebFetch(http://**)",
+      "Bash(curl http://**)",
+      "Bash(wget http://**)",
+      "Bash(rm -rf /**)",
+      "Bash(rm -rf ~/**)",
+      "Bash(rm -rf $HOME/**)",
+      "Bash(chmod -R 777 **)",
+      "Bash(sudo **)",
+      "Bash(sudo:*)",
+      "Bash(:(){ :|:& };:)",
+      "Bash(* > /dev/tcp/**)",
+      "Bash(* > /dev/udp/**)",
+      "Bash(git push --force main)",
+      "Bash(git push --force master)",
+      "Bash(git push --force origin main)",
+      "Bash(git reset --hard origin/**)",
+      "Bash(dd if=/dev/zero **)",
+      "Bash(mkfs.**)",
+      "Read(/etc/shadow)",
+      "Read(**/.ssh/id_*)",
+      "Read(**/.ssh/known_hosts)",
+      "Read(**/.aws/credentials)",
+      "Read(**/.docker/config.json)"
+    ],
+    "allow": [
+      "Read(**)",
+      "Glob",
+      "Grep",
+      "Edit(**)",
+      "Bash(gh :*)",
+      "Bash(npm test)",
+      "Bash(npm run test:*)",
+      "Bash(pytest :*)",
+      "Bash(./test/run.sh)",
+      "Bash(./test/test-e2e.sh)",
+      "Bash(make test)",
+      "Bash(uv run :*)",
+      "Bash(ruff :*)",
+      "WebFetch(https://**)",
+      "WebSearch"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/session-start.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/user-prompt-submit.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/pre-tool-use.sh"
+          },
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/verify-gate.sh"
+          },
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/inject-directives-pre.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "if": "(Write(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs}) | Edit(**/*.{go,ts,tsx,js,jsx,py,rb,php,rs})) & !Write(**/node_modules/**) & !Edit(**/node_modules/**) & !Write(**/.venv/**) & !Edit(**/.venv/**)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/post-tool-use.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/inject-directives-post.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/stop-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/phase-end-detector.sh"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/stop-failure.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/subagent-stop.sh"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/post-compact.sh"
+          }
+        ]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "if": "Read(.claude/rules/*.md)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/instructions-loaded.sh"
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/task-created.sh"
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/cwd-changed.sh"
+          }
+        ]
+      }
+    ],
+    "FileChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/file-changed.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/session-end.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/subagent-start.sh"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/task-completed.sh"
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/worktree-create.sh"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/worktree-remove.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "${EDIKT_HOOK_DIR}/status-line.sh",
+    "refreshInterval": 30
+  }
+}

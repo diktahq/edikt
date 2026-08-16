@@ -1,0 +1,51 @@
+schema_version: 1
+topic: test-coverage
+path: templates/sidecars/baseline/test-coverage.edikt.yaml
+signals:
+  - test coverage
+  - coverage threshold
+  - go test cover
+  - jest coverage
+  - test naming
+  - unit test
+paths:
+  - "**/*_test.go"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/__tests__/**"
+scope:
+  - implementation
+  - review
+directives:
+  - text: "Aggregate test coverage across the codebase MUST be at least 70% lines-covered as reported by the canonical coverage tool."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "coverage threshold contract"
+    verify: "go test ./... -coverprofile=coverage.out && go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/,\"\",$3); exit ($3 < 70)}'"
+    verify_kind: behavioral
+    intent: "A coverage regression that drops the project below 70% lines-covered fails CI and blocks merge."
+    falsifying_observation: "CI passes on a PR that deletes a test file and the coverage report shows 55% lines-covered, proving the threshold gate did not run."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/test-coverage.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/test-coverage.0.sh"
+  - text: "Every exported function with non-trivial branching (more than one return path or any conditional) MUST have at least one test that exercises each branch."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "branch coverage contract"
+    verify: "go test ./... -covermode=count -coverprofile=branches.out && go tool cover -func=branches.out | awk '!/^total:/ && $3+0 < 50 {print; exit 1}'"
+    verify_kind: behavioral
+    intent: "An exported function with an error path has at least one test that triggers the error branch — not only the happy path."
+    falsifying_observation: "A coverage report shows an exported function at 100% line coverage but its error branch is never executed by any test, surfaced via per-function coverage falling below 50%."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/test-coverage.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/test-coverage.1.sh"
+prohibitions:
+  - text: "Test functions MUST NOT skip themselves with t.Skip without a tracked issue reference in the skip message."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no untracked skips"
+    verify: "grep -rnE 't\\.Skip\\(\"[^#]*\"\\)' . 2>/dev/null | wc -l | grep -qx '0'"
+    verify_kind: structural

@@ -1,0 +1,498 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run — build tarballs and compute checksums, but do NOT open the Homebrew tap PR"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write   # upload release assets
+  id-token: write   # Sigstore keyless signing via GitHub OIDC (ADR-016)
+
+jobs:
+  # ─── Build per-platform launcher tarballs + payload, sign, upload ────────────
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      sha_darwin_arm64: ${{ steps.checksums.outputs.sha_darwin_arm64 }}
+      sha_darwin_amd64: ${{ steps.checksums.outputs.sha_darwin_amd64 }}
+      sha_linux_arm64:  ${{ steps.checksums.outputs.sha_linux_arm64 }}
+      sha_linux_amd64:  ${{ steps.checksums.outputs.sha_linux_amd64 }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            # workflow_dispatch: derive from latest tag
+            VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')"
+          fi
+          # Strict tag-shape gate (HI-8, INV-006): block releases for any tag
+          # that doesn't match the v0.5.0+ format. A crafted tag would otherwise
+          # flow into sed/cat/PR-body interpolations in the bump-tap job.
+          case "v${VERSION}" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            v[0-9]*.[0-9]*.[0-9]*-*) ;;
+            *)
+              echo "::error::Invalid version shape: v${VERSION} — must match v<major>.<minor>.<patch>[-prerelease]"
+              exit 1
+              ;;
+          esac
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building release for v$VERSION"
+
+          # Computed ONCE here rather than re-deriving `contains(version, '-rc')
+          # || '-beta' || '-alpha' || '-pre'` at every consumer — that pattern
+          # was already duplicated in Upload's prerelease/make_latest fields
+          # below, and the tap jobs (bump-tap/wait-tap-ci/merge-tap-pr) had NO
+          # copy of it at all: they were gated only on `dry_run != 'true'`,
+          # which is true for any real tag push regardless of prerelease
+          # status. A real rc tag would have opened a live PR against the
+          # public homebrew-tap repo and run its CI, gated only by
+          # merge-tap-pr's manual-approval step — found reading this workflow
+          # end to end before spending a tag on it, not by a tag failing.
+          case "$VERSION" in
+            *-rc*|*-beta*|*-alpha*|*-pre*) echo "is_prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "is_prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/edikt/go.mod
+          cache-dependency-path: tools/edikt/go.sum
+
+      - name: Cross-compile launcher binaries (ADR-021 — darwin/linux × arm64/amd64)
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          for plat in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64; do
+            goos="${plat%/*}"
+            goarch="${plat#*/}"
+            outdir="$GITHUB_WORKSPACE/build/${goos}-${goarch}"
+            mkdir -p "$outdir/bin"
+            ( cd tools/edikt && \
+              GOOS="$goos" GOARCH="$goarch" CGO_ENABLED=0 \
+                go build -trimpath \
+                  -ldflags="-s -w -X 'github.com/diktahq/edikt/tools/edikt/cmd.Version=v${VERSION}'" \
+                  -o "$outdir/bin/edikt" . )
+            # Verify the binary's --version matches the release tag (catches the
+            # rc4-in-rc7 drift class — must hold before tarballing).
+            if [ "$goos-$goarch" = "$(go env GOOS)-$(go env GOARCH)" ]; then
+              built_ver=$("$outdir/bin/edikt" --binary-version 2>/dev/null || "$outdir/bin/edikt" version --binary 2>/dev/null | head -1)
+              case "$built_ver" in
+                "v${VERSION}"|"${VERSION}") echo "  version stamp OK: $built_ver" ;;
+                *) echo "::error::Version stamp mismatch: binary reports '$built_ver', expected 'v${VERSION}'" && exit 1 ;;
+              esac
+            fi
+            cp LICENSE README.md "$outdir/"
+            ( cd "$outdir" && \
+              tar -czf "$GITHUB_WORKSPACE/edikt-v${VERSION}-${goos}-${goarch}.tar.gz" \
+                bin/edikt LICENSE README.md )
+            echo "Built edikt-v${VERSION}-${goos}-${goarch}.tar.gz"
+          done
+
+      - name: Build payload tarball
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Stamp the release tag into the payload VERSION so payload identity
+          # always matches lock.yaml's `active:` (which is written from the tag).
+          # The repo VERSION may lag (e.g. an rc suffix) — the tag is authoritative.
+          printf '%s\n' "${VERSION}" > VERSION
+          # Payload tarball: everything the launcher fetches on first install.
+          tar -czf "edikt-payload-v${VERSION}.tar.gz" \
+            templates/ commands/ install.sh VERSION
+          echo "Payload tarball entry count: $(tar -tzf "edikt-payload-v${VERSION}.tar.gz" | wc -l)"
+          # Verify the stamped VERSION inside the tarball matches the release tag
+          # (payload-side counterpart of the binary version-stamp guard above).
+          payload_ver=$(tar -xzOf "edikt-payload-v${VERSION}.tar.gz" VERSION)
+          if [ "$payload_ver" != "${VERSION}" ]; then
+            echo "::error::Payload VERSION mismatch: tarball contains '$payload_ver', expected '${VERSION}'"
+            exit 1
+          fi
+          echo "  payload VERSION stamp OK: $payload_ver"
+
+      - name: Compute SHA256SUMS
+        id: checksums
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # install.sh is published as a Release asset so the README can pin
+          # to the immutable releases/download/ form (ADR-016 (e), INV-008) —
+          # a tag can be repointed, a published asset cannot. It is included
+          # here so it is covered by the Sigstore-signed manifest like every
+          # other asset; install.sh's own note is the rule being applied
+          # ("NOT covered by SHA256SUMS and therefore cannot be
+          # cosign-verified"). Shipping it unsigned beside signed artifacts
+          # would be the odd one out.
+          sha256sum \
+            install.sh \
+            "edikt-v${VERSION}-darwin-arm64.tar.gz" \
+            "edikt-v${VERSION}-darwin-amd64.tar.gz" \
+            "edikt-v${VERSION}-linux-arm64.tar.gz" \
+            "edikt-v${VERSION}-linux-amd64.tar.gz" \
+            "edikt-payload-v${VERSION}.tar.gz" \
+            > SHA256SUMS
+          echo "SHA256SUMS:"
+          cat SHA256SUMS
+          for plat in darwin-arm64 darwin-amd64 linux-arm64 linux-amd64; do
+            sha=$(awk -v f="edikt-v${VERSION}-${plat}.tar.gz" '$2==f {print $1}' SHA256SUMS)
+            echo "sha_${plat//-/_}=${sha}" >> "$GITHUB_OUTPUT"
+          done
+
+      - name: Sign SHA256SUMS with Sigstore keyless (ADR-016)
+        run: |
+          # Keyless signing via GitHub OIDC. The bundle carries the certificate
+          # and the signature — no separate .pem or .sig files (ADR-016 drops
+          # the redundant extras). Verification uses --certificate-identity-regexp
+          # to match the workflow identity at any release tag.
+          cosign sign-blob --yes \
+            --bundle SHA256SUMS.sig.bundle \
+            SHA256SUMS
+          echo "Signed SHA256SUMS. Bundle contents:"
+          ls -la SHA256SUMS.sig.bundle
+
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          # Phase 11 — release engineering. Pull the matching `## v<VERSION>`
+          # section from CHANGELOG.md and use it as the GitHub Release body
+          # so the MIGRATION REQUIRED block (and any other ship-gating notice)
+          # is the first thing users see on the release page.
+          #
+          # VERSION was shape-validated in the "Resolve version" step (HI-8 /
+          # INV-006), so the awk pattern below is safe to interpolate.
+          VERSION="${{ steps.version.outputs.version }}"
+          if [ ! -f CHANGELOG.md ]; then
+            echo "::error::CHANGELOG.md missing — cannot build release body"
+            exit 1
+          fi
+          # An rc is a candidate for a version, not a version of its own — the
+          # CHANGELOG carries one shared section per real release, not one per
+          # rc. v0.7.0-rc1/-rc2/... all draw `## v0.7.0`; strip the -rcN
+          # suffix before matching so the heading doesn't have to carry it.
+          # First discovered 2026-08-15: v0.7.0-rc1's own first release run
+          # failed here — VERSION (rc-suffixed) never matched the bare
+          # `## v0.7.0` heading, and this path had never been exercised
+          # end-to-end before that run (no rc had ever been tagged).
+          CHANGELOG_VERSION="${VERSION%-rc[0-9]*}"
+          # Capture everything from `## v$CHANGELOG_VERSION` up to (but not
+          # including) the next `## v` heading. Trailing blank lines stripped.
+          awk -v v="$CHANGELOG_VERSION" '
+            BEGIN { in_section = 0 }
+            /^## v[0-9]/ {
+              if (in_section) { exit }
+              # Match `## v<VERSION>` regardless of the trailing date suffix.
+              if ($0 ~ "^## v" v "([^0-9].*)?$") { in_section = 1 }
+            }
+            in_section { print }
+          ' CHANGELOG.md > RELEASE_BODY.md
+          if ! [ -s RELEASE_BODY.md ]; then
+            echo "::error::No '## v${CHANGELOG_VERSION}' section found in CHANGELOG.md"
+            exit 1
+          fi
+          # Append a footer link to the full changelog for context.
+          {
+            echo
+            echo "---"
+            echo
+            echo "[Full changelog](https://github.com/diktahq/edikt/blob/v${VERSION}/CHANGELOG.md)"
+          } >> RELEASE_BODY.md
+          echo "Generated release body ($(wc -l < RELEASE_BODY.md) lines):"
+          echo "── BEGIN ──"
+          cat RELEASE_BODY.md
+          echo "── END ──"
+
+      - name: Phase 11 acceptance test — install + cross-major upgrade + sidecar migration
+        run: |
+          # Synthesizes a v0.5.x install, seeds two ADRs with v0.5.x in-body
+          # sentinels, overwrites with the just-built v0.6.0 launcher + payload,
+          # runs `migrate sidecars --apply` and `gov compile`, asserts sidecars
+          # present and in-body sentinels gone. Hermetic — no network, runs
+          # against the freshly-built tools/edikt binary.
+          #
+          # The acceptance script reads LAUNCHER_SRC from $PROJECT_ROOT/bin/edikt
+          # (ADR-022: compiled binaries are gitignored, never committed). The
+          # cross-compile step above writes per-platform binaries under
+          # build/${goos}-${goarch}/bin/edikt. Stage linux-amd64 at bin/edikt
+          # for the acceptance test (the runner is ubuntu-latest = linux-amd64).
+          mkdir -p bin
+          cp "$GITHUB_WORKSPACE/build/linux-amd64/bin/edikt" bin/edikt
+          chmod +x bin/edikt
+          if [ ! -x test/release/install-fresh-and-upgrade.sh ]; then
+            echo "::warning::test/release/install-fresh-and-upgrade.sh missing or not executable — skipping acceptance test"
+            exit 0
+          fi
+          bash test/release/install-fresh-and-upgrade.sh
+
+      - name: E2E regression — Family 1 + Family 2 (verification-before-completion gate)
+        run: |
+          # Catches the rc≤7 silent regressions: governanceDirs hardcode,
+          # silent compile, --json null contract, --check silent, migration
+          # silent reminders/verification drop. Failure here means the
+          # release would ship a known regression class.
+          if [ ! -x test/test-e2e-v04-guideline-heavy.sh ]; then
+            echo "::error::E2E regression test missing — refusing to tag without it"
+            exit 1
+          fi
+          # Fixture pins edikt_version: "0.6.0" deliberately — ADR-042's own
+          # directive requires EDIKT_SKIP_VERSION_GATE=1 for CI/tests exercising
+          # a fixture pinned to a historical version, "the same way the verify
+          # trust gate (ADR-041) uses EDIKT_VERIFY_TRUST=1". Missing here since
+          # before the version floor was ever raised past 0.6 — first surfaced
+          # 2026-08-15 cutting v0.7.0-rc2, the third distinct untried-path
+          # failure in this same release run (see F-083/F-085/F-086).
+          EDIKT_BIN="$GITHUB_WORKSPACE/build/linux-amd64/bin/edikt" \
+            EDIKT_SKIP_VERSION_GATE=1 \
+            bash test/test-e2e-v04-guideline-heavy.sh
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          # Any tag containing "-rc", "-beta", "-alpha", or "-pre" is a
+          # prerelease — never auto-promoted to "Latest". v0.4.x and final
+          # v0.6.0+ tags are the only ones that may take the Latest slot.
+          # This matches the v0.5.x retraction intent (v0.4.x → Latest)
+          # and prevents accidental rc-as-Latest drift. Computed once in the
+          # "Resolve version" step (steps.version.outputs.is_prerelease) —
+          # every consumer of prerelease status, including the tap jobs
+          # below, reads that one value rather than re-deriving it.
+          prerelease: ${{ steps.version.outputs.is_prerelease == 'true' }}
+          make_latest: ${{ steps.version.outputs.is_prerelease == 'true' && 'false' || 'true' }}
+          files: |
+            install.sh
+            edikt-v${{ steps.version.outputs.version }}-darwin-arm64.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-darwin-amd64.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-linux-arm64.tar.gz
+            edikt-v${{ steps.version.outputs.version }}-linux-amd64.tar.gz
+            edikt-payload-v${{ steps.version.outputs.version }}.tar.gz
+            SHA256SUMS
+            SHA256SUMS.sig.bundle
+          body_path: RELEASE_BODY.md
+          fail_on_unmatched_files: true
+
+  # ─── Bump the Homebrew tap formula on a staging branch ───────────────────────
+  # NEVER for a prerelease (-rc/-beta/-alpha/-pre): the tap formula tracks the
+  # public "brew install edikt" version, and Upload's own prerelease/
+  # make_latest fields already refuse to let an rc take the Latest slot on
+  # the GitHub Release — the tap must not disagree by publishing it anyway.
+  bump-tap:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' && needs.build.outputs.is_prerelease != 'true' }}
+    outputs:
+      pr_number: ${{ steps.open-pr.outputs.pr_number }}
+
+    steps:
+      - name: Clone tap
+        run: |
+          git clone https://x-access-token:${{ secrets.TAP_GITHUB_TOKEN }}@github.com/diktahq/homebrew-tap.git tap
+          cd tap
+          git config user.name  "edikt-bot"
+          git config user.email "bot@edikt.dev"
+
+      - name: Create staging branch
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          BRANCH="edikt-bump-v${VERSION}"
+          cd tap
+          git checkout -b "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Regenerate Formula/edikt.rb (multi-platform, ADR-021)
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          BASE="https://github.com/diktahq/edikt/releases/download/v${VERSION}"
+          cd tap
+          cat > Formula/edikt.rb <<EOF
+          # typed: false
+          # frozen_string_literal: true
+
+          class Edikt < Formula
+            desc "Governance layer for agentic engineering"
+            homepage "https://github.com/diktahq/edikt"
+            license "Elastic-2.0"
+            version "${VERSION}"
+
+            on_macos do
+              on_arm do
+                url "${BASE}/edikt-v${VERSION}-darwin-arm64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_darwin_arm64 }}"
+              end
+              on_intel do
+                url "${BASE}/edikt-v${VERSION}-darwin-amd64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_darwin_amd64 }}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "${BASE}/edikt-v${VERSION}-linux-arm64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_linux_arm64 }}"
+              end
+              on_intel do
+                url "${BASE}/edikt-v${VERSION}-linux-amd64.tar.gz"
+                sha256 "${{ needs.build.outputs.sha_linux_amd64 }}"
+              end
+            end
+
+            def install
+              bin.install "bin/edikt"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/edikt version")
+            end
+          end
+          EOF
+          # Strip leading two-space heredoc indent (matches surrounding YAML block).
+          sed -i 's/^  //' Formula/edikt.rb
+          echo "Generated Formula/edikt.rb:"
+          cat Formula/edikt.rb
+          # Safety: verikt.rb must be byte-identical to HEAD.
+          if ! git diff --quiet Formula/verikt.rb; then
+            echo "::error::verikt.rb was modified — aborting"
+            exit 1
+          fi
+
+      - name: Commit and push staging branch
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          cd tap
+          git add Formula/edikt.rb
+          git diff --staged --quiet && echo "No changes — formula already at this version" && exit 0
+          git commit -m "bump: edikt v${VERSION}"
+          git push origin "${{ env.branch }}"
+
+      - name: Open PR against main
+        id: open-pr
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          PR_URL=$(gh pr create \
+            --repo diktahq/homebrew-tap \
+            --head "${{ env.branch }}" \
+            --base main \
+            --title "bump: edikt v${VERSION}" \
+            --body "Automated formula bump from \`diktahq/edikt\` release workflow.
+
+          **Version:** v${VERSION}
+          **Platforms:** darwin-arm64, darwin-amd64, linux-arm64, linux-amd64
+          **darwin-arm64 SHA256:** \`${{ needs.build.outputs.sha_darwin_arm64 }}\`
+          **darwin-amd64 SHA256:** \`${{ needs.build.outputs.sha_darwin_amd64 }}\`
+          **linux-arm64 SHA256:**  \`${{ needs.build.outputs.sha_linux_arm64 }}\`
+          **linux-amd64 SHA256:**  \`${{ needs.build.outputs.sha_linux_amd64 }}\`
+
+          This PR was opened by the release workflow and will auto-merge when tap CI passes.
+          The \`verikt.rb\` formula is unchanged." \
+          )
+          PR_NUMBER=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "PR opened: $PR_URL"
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+  # ─── Wait for tap CI to pass ─────────────────────────────────────────────────
+  wait-tap-ci:
+    needs: [build, bump-tap]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.dry_run != 'true' && needs.build.outputs.is_prerelease != 'true' }}
+
+    steps:
+      - name: Poll tap PR checks
+        run: |
+          PR="${{ needs.bump-tap.outputs.pr_number }}"
+          MAX=20
+          INTERVAL=60
+          for i in $(seq 1 $MAX); do
+            echo "[$i/$MAX] Polling tap PR #$PR checks..."
+            STATUS=$(gh pr checks "$PR" \
+              --repo diktahq/homebrew-tap \
+              --json state \
+              --jq '.[] | .state' 2>/dev/null | sort -u)
+            echo "Check states: $STATUS"
+            if echo "$STATUS" | grep -q "FAILURE\|CANCELLED"; then
+              echo "::error::Tap CI failed — leaving PR open for human review"
+              exit 1
+            fi
+            if [ "$(echo "$STATUS" | sort -u)" = "SUCCESS" ]; then
+              echo "All tap CI checks passed"
+              exit 0
+            fi
+            [ "$i" -lt "$MAX" ] && sleep "$INTERVAL"
+          done
+          echo "::warning::Tap CI did not complete within $((MAX * INTERVAL / 60)) minutes"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+
+  # ─── Auto-merge on tap CI success ────────────────────────────────────────────
+  # HI-8 mitigation: this job is INTENDED to be gated behind the `production`
+  # environment. A GitHub environment with required reviewers blocks the
+  # merge step until an authorized maintainer explicitly approves it in the
+  # Actions UI. The auto-merge that runs on approval is scoped to the
+  # narrowly-permissioned TAP_GITHUB_TOKEN (contents:write on
+  # diktahq/homebrew-tap only).
+  #
+  # THE GATE DOES NOT EXIST YET ON THIS REPO. `gh api
+  # repos/diktahq/edikt-dev/environments` lists only `github-pages` — no
+  # `production` environment is configured, confirmed 2026-08-15 (F-089).
+  # This is release-blocking for a real (non-prerelease) tag, NOT for a
+  # prerelease: the is_prerelease gate added the same day keeps this whole
+  # job from running at all until then, so there is no live exposure right
+  # now — but the gate below must be configured before this job is ever
+  # allowed to run for a real release.
+  #
+  # THE PRIOR VERSION OF THIS COMMENT WAS WRONG, AND THE CORRECTION IS THE
+  # POINT: it claimed a missing environment makes the job "fail with
+  # 'Environment not found' — which is safer than auto-merging." That claim
+  # was never verified against GitHub's actual behavior. Per GitHub's own
+  # docs (github.com/en/actions/deployment/targeting-different-environments/
+  # using-environments-for-deployment, confirmed 2026-08-15): "Running a
+  # workflow that references an environment that does not exist will create
+  # an environment with the referenced name," and "the newly created
+  # environment will not have any protection rules." A missing `production`
+  # environment does NOT fail this job closed — it auto-creates one with NO
+  # approval gate and the job runs unattended, squash-merging into the
+  # public tap with nobody having clicked anything. The failure mode this
+  # comment described as the safe default was, until the fix above, the
+  # actual defect: a description of intended behavior nobody had checked
+  # against the host, sitting silently wrong because the job it protects has
+  # never once run.
+  #
+  # To configure the environment before the first real (non-rc) release:
+  #   1. In the edikt-dev repo Settings → Environments → New environment "production".
+  #   2. Under "Deployment protection rules" → Required reviewers → add at least
+  #      one maintainer. Save.
+  #   3. (Optional) restrict to the main branch only.
+  merge-tap-pr:
+    needs: [build, bump-tap, wait-tap-ci]
+    runs-on: ubuntu-latest
+    environment: production
+    if: ${{ success() && github.event.inputs.dry_run != 'true' && needs.build.outputs.is_prerelease != 'true' }}
+
+    steps:
+      - name: Merge staging PR into main
+        run: |
+          PR="${{ needs.bump-tap.outputs.pr_number }}"
+          gh pr merge "$PR" \
+            --repo diktahq/homebrew-tap \
+            --squash \
+            --delete-branch \
+            --subject "bump: edikt v${{ needs.build.outputs.version }}"
+          echo "Merged PR #$PR — edikt v${{ needs.build.outputs.version }} is live in the tap"
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}

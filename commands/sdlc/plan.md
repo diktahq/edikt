@@ -1,0 +1,892 @@
+---
+name: sdlc:plan
+description: "Create execution plan with interview and codebase analysis"
+effort: high
+argument-hint: "[task, ticket, SPEC-NNN, or PLAN-NNN to continue]"
+allowed-tools:
+  - Read
+  - Write
+  - Glob
+  - Grep
+  - Bash
+  - Agent
+  - AskUserQuestion
+tier_2_dependency: edikt verify
+on_absent: skip-with-warning
+---
+!`${HOME}/.edikt/bin/edikt next-id plan`
+
+# edikt:plan
+
+Create an optimized execution plan through interview and codebase analysis.
+
+CRITICAL: This command requires live back-and-forth interview with the user. Check immediately whether you are in plan mode:
+- If you are in plan mode (you can only describe actions, not perform them), output exactly this and stop:
+  ```
+  ⚠️  /edikt:sdlc:plan requires an interactive interview and cannot run in plan mode.
+  Exit plan mode first, then run /edikt:sdlc:plan again.
+  ```
+- If you are not in plan mode, proceed normally with the interview.
+
+## CRITICAL GATE — DO NOT PROCEED PAST THIS LINE WITHOUT READING
+
+Writing the plan file is GATED on producing each of the evidence markers listed below. The agent MUST emit each marker to stdout at the exact point in the flow it represents. **If you are about to write the plan file and you cannot point to each marker in your own preceding output, you MUST stop and re-run the missing step.** Prose rationalizations like "we already did this at an earlier layer", "the work is mechanical", or "this is redundant given context" are explicitly disallowed. They are the exact failure mode this gate exists to catch.
+
+Required evidence markers (in order):
+
+```
+[PREFLIGHT:SPECIALIST-REVIEW:STARTED]
+[PREFLIGHT:SPECIALIST-REVIEW:COMPLETED findings=<N critical, M warnings>]
+[PREFLIGHT:CRITERIA-VALIDATION:STARTED]
+[PREFLIGHT:CRITERIA-VALIDATION:COMPLETED classified=<N testable / M vague / K subjective / L blocked>]
+[PREFLIGHT:READY-TO-WRITE]
+```
+
+**Authorized skip path.** The ONLY way to skip a pre-flight step is:
+1. `$ARGUMENTS` contains the literal flag `--no-review` (skips specialist review only). Emit `[PREFLIGHT:SPECIALIST-REVIEW:SKIPPED reason=flag]` then continue.
+2. `evaluator.preflight: false` in `.edikt/config.yaml` (skips criteria validation only). Emit `[PREFLIGHT:CRITERIA-VALIDATION:SKIPPED reason=config]` then continue.
+
+**Any other skip path — including "helpful override" based on context reasoning — is forbidden.** If you believe a step is redundant, you MUST:
+1. Emit `[PREFLIGHT:SPECIALIST-REVIEW:PROPOSING-SKIP reason="<your reason>"]`
+2. Stop, explain the reason to the user, and ask explicitly: "Do you want me to skip this step?"
+3. Proceed only on explicit user approval in the same session; emit `[PREFLIGHT:SPECIALIST-REVIEW:SKIPPED reason=user-approved]`.
+
+Canonical phrases you should echo when encountering this gate: "pre-flight review", "specialist review", "NEVER skip", "MUST emit evidence markers". These phrases exist so hooks, benchmarks, and `/edikt:gov:review` can detect compliance with this gate.
+
+CRITICAL: NEVER write a plan file without running the pre-flight specialist review — skip it only by one of the two authorized skip paths above.
+
+## Arguments
+
+- `$ARGUMENTS` — Optional. Any of: a task description, ticket ID, SPEC identifier, plan name, or nothing (triggers interview)
+- `--eval-only {phase}` — Re-run evaluation for a specific phase in the active plan without re-running the generator. Used to recover from BLOCKED verdicts after fixing the underlying cause (e.g. switching `evaluator.mode` to headless). `{phase}` is the phase number (1-indexed). Optionally combine with `--plan {slug}` to disambiguate when multiple plans exist. Cannot be combined with a positional task argument.
+- `--plan {slug}` — Optional companion to `--eval-only`. Names the plan file by slug (e.g. `v0.4.3-evaluator-headless-default`) when multiple plans exist in `docs/plans/` or `docs/product/plans/`.
+- `--sidecar-only [PLAN-slug]` — Rebuild the evaluation history file for an existing plan without changing the plan itself. Use when edikt says "evaluation history not found" and you want to restore full tracking (retry counts, failure reasons, last-checked timestamps). If the history file partly exists, the rebuild merges in — it preserves any evaluation results already recorded and adds fresh entries for any new acceptance criteria. If `PLAN-slug` is omitted, uses the most recent plan file.
+
+## Instructions
+
+0. **Routing** — check for special flags before anything else:
+
+   - If `$ARGUMENTS` contains `--eval-only N`: skip interview, codebase analysis, pre-flight review, and phase generation. Route to the **Eval-Only Flow** section in the Reference and stop.
+   - If `$ARGUMENTS` contains `--sidecar-only`: route to the **Sidecar-Only Flow** section in the Reference and stop. Do not generate or modify the plan file.
+
+1. Run `/edikt:context` logic to load project context, decisions, product context, and active rules. Read evaluator configuration from `.edikt/config.yaml`:
+   - `evaluator.preflight` (default: `true`) — whether to run pre-flight criteria validation
+   - `evaluator.phase-end` (default: `true`) — whether to run phase-end evaluation
+   - `evaluator.mode` (default: `headless`) — `"headless"` for separate `claude -p`, `"subagent"` for Agent tool
+   - `evaluator.max-attempts` (default: `5`) — max retries before stuck. Store as `MAX_ATTEMPTS` for use in the progress table and stuck detection.
+   - `evaluator.model` (default: `sonnet`) — model for headless evaluator
+   - `defaults.plan_model` (default: `claude-sonnet-4-6`) — plan-level default model for phase execution. Per-phase model overrides this. Inheritance chain: per-phase model > `defaults.plan_model` > `claude-sonnet-4-6`.
+   If the `evaluator` section is absent in config, use all defaults.
+
+2. Determine the task from `$ARGUMENTS`. Check in order — use first match:
+   - **SPEC identifier** (e.g., `SPEC-NNN`): find the spec folder, use spec + accepted artifacts as primary context
+   - **Ticket ID** (e.g., `GLO-35`, `PROJ-123`): note it for reference, fetch details if MCP is configured
+   - **Existing plan name** (e.g., `PLAN-NNN`, `v0.2.0`): read the plan, ask what the user wants — continue from current phase, re-plan remaining phases, or create a sub-plan for a specific phase
+   - **Natural language description** (anything else): use it as the task description directly
+   - **Empty**: check the current conversation for context. If a task or feature was being discussed, summarize it and confirm: "It sounds like you want to plan: {summary}. Is that right?" If no conversation context, ask: "What are you planning?"
+
+   **Disambiguation** — when the input is natural language or inferred from conversation (not a SPEC, ticket, or PLAN reference), offer the user a choice before proceeding:
+   ```
+   How would you like to plan this?
+
+   1. edikt plan — phased execution plan with model assignment, cost estimate,
+      codebase analysis, and specialist pre-flight review. Saved to docs/product/plans/.
+   2. Quick plan — help you think through the approach right here in conversation.
+      No file, no ceremony.
+   ```
+   If the user picks 2, help them think through the task conversationally — don't run the rest of this command. If the user picks 1, proceed with the full flow.
+
+3. Check the **governance chain** — only when a SPEC was resolved:
+   - Read spec frontmatter for `status:`. If not `accepted`, warn the user.
+   - Check for spec-artifacts in the spec folder. For each artifact file (excluding `spec.md`), read its status from frontmatter (`status: draft` between `---` markers) or comment header (`status=draft` in `%%`, `#`, `--`, or `<!-- -->` lines).
+
+     If any artifacts have `status: draft`:
+     ```
+     ⚠️ These spec artifacts are still in draft:
+        - {artifact filename} (status: draft)
+        - {artifact filename} (status: draft)
+
+        Draft artifacts haven't been reviewed. Planning against them
+        risks implementing a design that changes after review.
+
+        Options:
+        1. Proceed anyway (plan will note artifacts are unreviewed)
+        2. Stop — review and accept artifacts first
+     ```
+
+     If the user picks 1:
+     - Proceed with plan generation
+     - Add a `## Known Risks` section to the generated plan file:
+       ```markdown
+       ## Known Risks
+       - Planning against draft artifacts: {comma-separated list of draft artifact filenames}
+         These may change after review. Re-plan if they do.
+       ```
+
+     If the user picks 2: stop and output:
+     `Review and accept the draft artifacts, then run /edikt:sdlc:plan again.`
+   - If artifacts exist and are accepted, read them as planning context.
+   - **If NO artifacts exist** (spec folder contains only `spec.md`):
+     ```
+     ⚠️ No spec artifacts found for {SPEC-ID}.
+        Coverage checks (endpoint, event, migration, test strategy) will be skipped.
+        Without artifacts the plan may miss implementation phases.
+
+        Options:
+        1. Proceed without artifact coverage (plan will note the gap)
+        2. Stop — run /edikt:sdlc:artifacts {SPEC-ID} first, then re-run /edikt:sdlc:plan
+     ```
+     If the user picks 1: proceed, add to `## Known Risks`:
+     ```markdown
+     - No spec artifacts generated. Run /edikt:sdlc:artifacts {SPEC-ID} to add coverage.
+     ```
+     If the user picks 2: output `Run /edikt:sdlc:artifacts {SPEC-ID} to generate artifacts, then re-run /edikt:sdlc:plan.` and stop.
+   - **Inventory all artifacts** — scan the spec directory for every file (excluding `spec.md` itself). Build an artifact inventory:
+     ```bash
+     ls {spec_dir}/*.yaml {spec_dir}/*.md {spec_dir}/*.mmd {spec_dir}/*.sql {spec_dir}/contracts/*.yaml {spec_dir}/migrations/*.sql 2>/dev/null | grep -v spec.md
+     ```
+     Categorize each artifact using the Artifact Coverage Table in the Reference section. This inventory is used in step 6b to verify every artifact has plan coverage.
+
+4. Interview: present all 3-6 clarifying questions in a **single batched message** per Opus 4.7 best-practices guidance (every user turn adds reasoning overhead; batched questions respect the user's attention budget). Adapt question set to task type using the Interview Guidance in the Reference section.
+
+   **Presentation format** — numbered list; each question labeled:
+   - `[required]` — blocking; the plan cannot be written without this answer
+   - `[optional — default: <value>]` — default applied silently if skipped
+
+   Accept a single user reply covering any subset. For skipped `[optional]` items, apply the documented default. For skipped `[required]` items, re-ask only those.
+
+   Example batched message for a feature-work task:
+   ```
+   I need a few answers before writing the plan. Answer any subset — defaults apply for skipped [optional] items.
+
+   1. [required] What's the primary outcome? (one sentence)
+   2. [optional — default: no feature flag] Should this ship behind a feature flag?
+   3. [optional — default: existing test frameworks] Any testing preferences?
+   4. [optional — default: backward compatible] Any backward-compat constraints?
+   5. [required] Files or modules I must NOT touch?
+   ```
+
+5. Analyze the codebase using an Agent:
+   ```
+   Agent(
+     subagent_type: "Explore",
+     prompt: "Find files and patterns relevant to: {task description}. Look for existing implementations, related tests, config files, and dependencies that will be affected.",
+     description: "Scan codebase for plan"
+   )
+   ```
+
+6. Generate phases. For each phase, assign a model, write a detailed prompt, set a completion promise, max iterations, and dependencies. Use the Phase Structure and Model Assignment guide in the Reference section.
+
+   When generating each phase, populate the `Context Needed:` field by:
+   - Scanning spec artifacts referenced by the phase (from the inventory built in step 3)
+   - Identifying files produced by dependency phases (from the Artifact Flow Table)
+   - Including any ADRs referenced in the spec frontmatter or phase objectives
+   Each entry must be a specific file path with a brief description of why it's needed.
+
+6b. **Artifact coverage check** — only when a SPEC was resolved and artifacts were inventoried in step 3:
+
+   For each artifact in the inventory, verify it maps to at least one plan phase. Use the Artifact Coverage Table in the Reference section.
+
+   - **`fixtures*.yaml`** — must have a phase that creates seed data (SQL script, make target, or seeding logic). If missing, add a "Database seeding" phase or append seeding tasks to the final implementation phase.
+   - **`test-strategy.md`** — read it. Parse test categories (unit, integration, e2e, edge cases). Either embed test tasks into each relevant implementation phase, or create dedicated test phases. Every test category must map to at least one phase.
+   - **`contracts/api*.yaml`** — parse all endpoint definitions (`paths:` section). Every `path + method` pair must appear in at least one phase's prompt or task list. Emit a warning for uncovered endpoints:
+     ```
+     ⚠ Uncovered API endpoints:
+       POST /api/v1/ai/ask (contracts/api-ai.yaml) — no phase implements this
+     ```
+   - **`contracts/events*.yaml`** — parse channel definitions. Every event must have a producing phase and a consuming phase.
+   - **`migrations/*.sql`** — verify each migration has a corresponding phase. Already typically covered, but confirm.
+   - **`data-model*.mmd`** — reference only. No phase needed (diagram). Skip.
+   - **`config-spec.md`** — if present, verify configuration tasks appear in a phase.
+
+   If any artifact has no coverage, add phases or expand existing phases to cover it. Report:
+   ```
+   Artifact coverage:
+     ✓ fixtures.yaml → Phase 8 (database seeding)
+     ✓ test-strategy.md → Phases 2, 4, 6, 8 (tests embedded)
+     ✓ contracts/api.yaml → Phases 3, 4, 5 (all 12 endpoints covered)
+     ✓ contracts/events.yaml → Phases 5, 6 (3 events covered)
+     ⚠ contracts/api-ai.yaml → Phase 7 added (POST /api/v1/ai/ask was uncovered)
+     — data-model.mmd → reference only, no phase needed
+   ```
+
+6c. **Final artifact validation** — after all phases are finalized (including any added by step 6b):
+
+   Count artifacts with coverage vs without. If any artifact still has no phase coverage after step 6b attempted to fill gaps:
+
+   ```
+   ⛔ ARTIFACT COVERAGE INCOMPLETE
+
+   These spec artifacts have no plan coverage:
+     contracts/api-ai.yaml — POST /api/v1/ai/ask (no phase implements this)
+     fixtures-solution.yaml — no seeding phase for solution data
+
+   The plan cannot be written until all artifacts are covered.
+   Add phases for the uncovered artifacts, or confirm they should be skipped.
+   ```
+
+   Do NOT write the plan file if artifacts are uncovered — ask the user to resolve first. The user can:
+   - `[1]` Add phases for uncovered artifacts
+   - `[2]` Mark specific artifacts as "out of scope for this plan" (adds them to a `## Deferred Artifacts` section in the plan)
+   - `[3]` Cancel
+
+   If all artifacts are covered:
+   ```
+   ✓ All spec artifacts have plan coverage ({n}/{n})
+   ```
+
+7. Build the dependency graph. Identify phases with no inter-dependencies and group them into execution waves (Wave 1: no dependencies, Wave 2: depends only on Wave 1, etc.).
+
+8. Run pre-flight specialist review (skip if `--no-review` in arguments):
+    - Scan the full plan text for domain signals using the Domain Signal table in the Reference section.
+    - If no domains detected, output: `Pre-flight: no specialist domains detected — plan looks self-contained.` and skip to step 9.
+    - Spawn all applicable specialist agents concurrently (single message, multiple Agent tool calls) using the domain-to-subagent mapping in the Reference section. If a dispatch fails with `Agent type '<slug>' not found` but `.claude/agents/<slug>.md` exists (installed this session), use the fallback in `commands/_shared-agent-routing.md` § "Fallback: agent installed this session".
+    - Each agent reads the plan, reviews from their domain lens only, and returns findings with severity.
+    - Output the consolidated pre-flight review using the Pre-Flight Output Format in the Reference section.
+    - If user provides updates, incorporate them into the plan phases. If user skips, note outstanding findings for the Known Risks section.
+
+9. Run pre-flight criteria validation on every phase's acceptance criteria:
+    - If `evaluator.preflight` is false, skip this step entirely. Output: "Pre-flight validation skipped (evaluator.preflight: false in config)." Proceed to step 10.
+    - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
+    - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
+    - For TESTABLE criteria, the evaluator proposes a verification command.
+    - If any criteria are VAGUE or SUBJECTIVE, surface the evaluator's rewrites inline — ask the user to accept or edit before finalizing the plan.
+    - If the evaluator verdict is ABORT (50%+ criteria untestable), flag: "Phase {N} has untestable acceptance criteria. Rewrite before implementing."
+    - This step prevents wasted iterations on criteria the evaluator cannot judge at phase end.
+
+10. Write the plan file to `docs/product/plans/PLAN-{slug}.md` (or `docs/plans/` if product dir doesn't exist). Use the Plan File Template in the Reference section. Incorporate any findings from the pre-flight review (step 8) — add a `## Known Risks` section if there are outstanding findings the user chose not to address.
+
+10b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory. The sidecar is **spec-only**: it describes what each phase promises and how to check it, never evaluation state. `bin/edikt verify` strict-parses it (unknown fields → exit 2), so state fields (`status`, `fail_count`, `fail_reason`, `block_reason`, `last_evaluated`, `generated`, `attempt`) must NEVER appear in it — they live in the evaluation state file (see 10c).
+
+   Top-level fields: `schema_version: 1` (required), `plan`, `target_release`, `created`, `phases[]`. Each phase: `id` (string), `name`, `classification`, optional `completion_promise`, `criteria[]`. Each criterion: `id`, `statement`, and `verify` where one exists.
+
+   For each phase:
+   - Extract acceptance criteria from the plan text; each becomes `{id, statement}`
+   - Assign IDs: `AC-{phase}.{seq}` (e.g., AC-1.1, AC-1.2)
+   - If pre-flight criteria validation ran (step 9), populate `verify` with the proposed commands from the evaluator
+   - **Classify the phase:** `testable` only when EVERY criterion in it has a `verify` command — testable phases hard-require one per criterion. If some criteria have no command, use `operational` (humanly observable but not machine-checkable) or `informational` (context only). Never emit `verify: null` — omit the key entirely when there is no command.
+
+   Schema: `templates/schemas/plan-criteria.v1.schema.json` (shipped in the payload; project-local copy under `.edikt/schemas/` if present). Canonical example: `docs/internal/plans/PLAN-sidecar-architecture-criteria.yaml`.
+
+   The sidecar file is always a sibling of the plan file:
+   `docs/product/plans/PLAN-foo.md` → `docs/product/plans/PLAN-foo-criteria.yaml`
+
+10c. **Initialize evaluation state** — write `.edikt/state/plan-eval/PLAN-{slug}-eval.json` (create the directory if needed): `schema_version: 1`, `plan`, `last_evaluated: null`, and one entry per phase/criterion mirroring the sidecar's ids, all criteria `status: "pending"`, `fail_count: 0`, `fail_reason: null`, `block_reason: null`. Schema: `templates/schemas/plan-eval-state.v1.schema.json`. This file is machine-local (`.edikt/state/` is gitignored) — the durable committed record of evaluations is the verdict JSONs under `{paths.plans}/verdicts/`.
+
+11. Output next steps:
+   ```
+   ✅ Plan saved: {path}
+
+   Execution Strategy:
+     Wave 1: Phase {n}, {m} (parallel)
+     Wave 2: Phase {x}
+     Wave 3: Phase {y}
+
+   Estimated cost: ${total}
+
+   Next: Review the plan, then execute Phase 1.
+   ```
+
+## Reference
+
+### Interview Guidance
+
+Adapt questions to what was provided. Skip questions the input already answers.
+
+- **Feature work:** "Should this be behind a feature flag?", "What's the data model?"
+- **Refactoring:** "What's the migration strategy?", "Can we do it incrementally?"
+- **Bug fix:** "Can you reproduce it?", "What's the impact?"
+- **Natural prompt** (e.g., "plan how to refactor compile"): clarify scope and constraints — "What outcome do you want?", "Any constraints I should know?", "Should this be backward compatible?"
+- **Continuing a plan** (PLAN-NNN): "Which phase are you on?", "Did the approach change?", "Want to re-plan the remaining phases or create a sub-plan for one phase?"
+- **From conversation context** (empty args, ongoing discussion): summarize what was discussed and confirm before interviewing — don't re-ask what was already covered
+
+### Model Assignment
+
+| Model | Cost/phase | Best for |
+|---|---|---|
+| Haiku | ~$0.01 | Database migrations, config files, simple CRUD, documentation, scripts |
+| Sonnet | ~$0.08 | Business logic, UI components, API integrations, refactoring, complex tests |
+| Opus | ~$0.80 | Security, algorithms, architecture, complex debugging, novel problems |
+
+### Phase Structure
+
+Each phase requires:
+- Number (e.g., 1, 2, 3)
+- Title
+- Objective (one sentence)
+- Model recommendation with reasoning. The model chosen here is written to the plan frontmatter's `phases[].model` field (per ). Inheritance chain: per-phase model in frontmatter > `defaults.plan_model` in config > `claude-sonnet-4-6`.
+- Detailed prompt (full implementation instructions — be specific and self-contained)
+- Completion promise (shell-safe: uppercase, numbers, spaces, dots ONLY)
+- Acceptance criteria (binary PASS/FAIL assertions for the evaluator)
+- Evaluate flag (true/false — whether phase-end evaluation runs)
+- Max iterations (based on complexity)
+- Dependencies (which phases must complete first)
+- Context Needed (list of file paths the generator must read before starting this phase — spec artifacts, outputs from dependency phases, referenced ADRs)
+
+### Phase Startup Directive
+
+Before implementing any plan phase:
+1. Read every file listed in that phase's Context Needed section.
+2. If a listed file does not exist, check the progress table — the producing phase may not be complete.
+3. Do not proceed until all context files have been read.
+4. After reading, confirm you understand the relevant decisions and constraints before writing code.
+5. If the phase references any spec artifacts in its Context Needed section, check their status:
+   - For each referenced artifact with `status: accepted`, update it to `status: in-progress`:
+     - `.mmd` files: change `status=accepted` to `status=in-progress` in the `%% edikt:artifact` comment
+     - `.yaml` files: change `status=accepted` to `status=in-progress` in the `# edikt:artifact` comment
+     - `.sql` files: change `status=accepted` to `status=in-progress` in the `-- edikt:artifact` comment
+     - `.md` files: change `status: accepted` to `status: in-progress` in YAML frontmatter, or `status=accepted` to `status=in-progress` in `<!-- edikt:artifact -->` comment
+   - Output: `Status promoted: {artifact} accepted → in-progress`
+   - Do not update artifacts already `in-progress`, `implemented`, or `superseded`
+6. **Record the phase-start commit SHA.** When flipping a phase row from `pending` to `in-progress`, capture the current HEAD via an atomic write:
+
+   ```bash
+   SHA=$(git rev-parse HEAD 2>/dev/null || echo "")
+   if [ -n "$SHA" ]; then
+       mkdir -p .edikt/state
+       # PLAN_SLUG is the plan ID — the filename stem with a leading `PLAN-`
+       # REMOVED. It is defined once, executably, in
+       # templates/hooks/_plan-naming.sh; source that rather than re-deriving
+       # it here. Before that file existed this variable was interpolated and
+       # never defined anywhere, three independent forms appeared across the
+       # codebase, and a check written to read this filename condemned every
+       # plan in the repository on its first run (F-021).
+       #
+       # NOTE the two families differ and are NOT interchangeable:
+       #   phase-start-<id>-<n>.sha        drops the PLAN- prefix
+       #   plan-eval/<stem>-eval.json      keeps it
+       . "${EDIKT_HOOK_DIR:-$HOME/.edikt/hooks}/_plan-naming.sh"
+       SHA_PATH="$(edikt_phase_start_sha "$PLAN_FILE" "$PHASE_NUM")"
+       printf '%s\n' "$SHA" > "${SHA_PATH}.tmp"
+       mv -f "${SHA_PATH}.tmp" "$SHA_PATH"
+   fi
+   ```
+
+   Use `mv -f` (atomic rename on the same filesystem) so concurrent row-flips never produce a partial file. The post-flight orchestrator (`commands/sdlc/post-flight.md`) prefers this SHA for diff capture; without it, post-flight falls back to `HEAD~1..HEAD`.
+
+### Acceptance Criteria Rules
+
+Acceptance criteria are for the evaluator, not the generator. They must be:
+- **Binary** — PASS or FAIL, no "partially met"
+- **Testable** — verifiable by reading code, running a test, or grepping
+- **Specific** — name the file, function, endpoint, or pattern
+- Never subjective — "API is fast enough" fails. "GET /users responds with 200 and valid JSON" passes.
+
+If the spec has acceptance criteria (AC-NNN), inherit them per phase. If not, generate them from the phase objectives.
+
+### Conditional Evaluation
+
+Each phase has an `evaluate:` flag:
+- `true` (default for `effort: high` phases) — phase-end evaluator runs after completion
+- `false` (default for `effort: low` phases) — skip evaluation, go straight to context reset guidance
+- Author can override in either direction
+
+### Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `pending` | Not started |
+| `in-progress` | Generator is working |
+| `evaluating` | Phase-end evaluator is running |
+| `blocked` | Evaluator could not verify — missing capability (Bash denied, test runner unavailable, etc.). Phase NOT verified. |
+| `done` | All acceptance criteria PASS |
+| `stuck` | Max attempts reached — human decision needed |
+| `skipped` | Explicitly skipped by user |
+
+### Phase-End Flow
+
+When a phase completes (generator outputs the completion promise):
+
+1. **If `evaluate: true` AND `evaluator.phase-end` is true:**
+
+   **a. EVALUATOR FILE CHECK** — before invoking, verify the template exists:
+   - If `evaluator.mode` is `"headless"`: check that `templates/agents/evaluator-headless.md` exists (also check `.edikt/current/templates/agents/evaluator-headless.md` for a project-mode install, then `${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/current/templates/agents/evaluator-headless.md` for a global install)
+   - If `evaluator.mode` is `"subagent"`: check that `templates/agents/evaluator.md` exists (also check `.claude/agents/evaluator.md`)
+   - If the required file is missing:
+     ```
+     ❌ Evaluator template missing — cannot run evaluation.
+        Expected: {path}
+        Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+        Or disable evaluation: /edikt:config set evaluator.phase-end false
+     ```
+     Do NOT silently skip evaluation. This is a hard failure.
+
+   **b. PRIMARY MODE invocation:**
+   - If `evaluator.mode` is `"headless"`: attempt headless first. Invoke via Bash tool:
+     ```bash
+     claude -p "{evaluation prompt with criteria + file list}" \
+       --system-prompt "$(cat {path to evaluator-headless.md})" \
+       --allowedTools "Read,Grep,Glob,Bash" \
+       --disallowedTools "Write,Edit" \
+       --model {evaluator.model} \
+       --output-format json \
+       --bare
+     ```
+     The evaluation prompt (user message) must include:
+     - The phase's acceptance criteria (from criteria sidecar if available, or from plan markdown)
+     - The list of files modified during the phase (from `git diff --name-only` or phase output)
+     - The project's test command if available
+
+     Parse the evaluator's JSON output to extract per-criterion PASS/FAIL/BLOCKED verdicts.
+
+   - If `evaluator.mode` is `"subagent"`: go directly to subagent invocation in step c.iii below.
+
+   **c. HEADLESS FAILURE HANDLING** (only when `evaluator.mode` was `"headless"` and the invocation above did not return a usable verdict):
+
+   i. **Classify the failure:**
+      - spawn error (`claude` CLI not found: ENOENT or "command not found")
+      - non-zero exit
+      - auth error (stderr contains "authentication" or "not logged in")
+      - timeout (>60s no response)
+      - JSON parse failure (`--output-format json` returned malformed output)
+
+   ii. **Emit the fallback warning banner** (exact format — downstream tests grep for the header):
+      ```
+      ⚠ EVALUATOR FALLBACK
+      ━━━━━━━━━━━━━━━━━━━━
+        Headless mode failed: {reason}
+        Falling back to subagent mode.
+        ⚠ Bash execution may be denied in subagent mode — test criteria may return BLOCKED.
+        To fix: {actionable hint based on reason, e.g.:
+          - spawn error: "install Claude Code CLI or add `claude` to PATH"
+          - auth error: "run `claude login` or set ANTHROPIC_API_KEY"
+          - timeout: "check network / increase timeout"
+          - JSON parse: "file an edikt issue — claude -p output changed"}
+      ━━━━━━━━━━━━━━━━━━━━
+      ```
+
+   iii. **Invoke the subagent evaluator** via the Agent tool with the phase's acceptance criteria, code changes, and test results. This is the existing subagent path and is also the primary path when `evaluator.mode: "subagent"`.
+
+   iv. **If the subagent also fails**, emit the hard-failure banner (exact format — downstream tests grep for the header):
+      ```
+      ✗ EVALUATION FAILED
+      ━━━━━━━━━━━━━━━━━━━━
+        Headless: {reason}
+        Subagent: {reason}
+        Phase {N} marked UNVERIFIED in progress table.
+        Recovery:
+          1. Run /edikt:doctor to diagnose evaluator setup
+          2. Or skip with: /edikt:config set evaluator.phase-end false (not recommended)
+      ━━━━━━━━━━━━━━━━━━━━
+      ```
+      Set the phase status to `stuck` with the reason "evaluation failed in both modes" and wait for user input.
+
+   **d. Process the verdict:** Wait for PASS / FAIL / BLOCKED verdict.
+   - If PASS:
+     1. **Verify gate (tier-2 orchestration — Phase 12 of PLAN-sidecar-architecture).** Before flipping the phase row from in-progress to `done`, invoke the runner against the criteria sidecar.
+
+        **Step 1.1 — Absence detection.** Check for the binary on PATH before invocation:
+        ```bash
+        command -v edikt >/dev/null 2>&1 || command -v bin/edikt >/dev/null 2>&1
+        ```
+        If the check fails, this command's frontmatter declares `on_absent: skip-with-warning`. Emit exactly:
+        ```
+        ⚠ verify gate skipped: edikt binary not on PATH.
+          Install with: edikt install verify (or run install.sh to install the Go binary).
+          Phase {N} will be flipped without verification — the doctor check will record this as an override.
+        ```
+        Then continue to step 2 (flip the row), recording `done (overrides: gate-skipped)` in the `Updated` cell.
+
+        **Step 1.2 — Invocation.** When the binary is present:
+        ```bash
+        edikt verify {plan-id} --phase {N}
+        ```
+         Rule 2, this command consumes only the binary's exit code. Output is displayed to the user verbatim; never parsed.
+        - **Exit 0** — verifications passed; proceed to step 2.
+        - **Exit 1** — at least one criterion failed or timed out. Print the failed criteria and ask the user explicitly:
+          > Phase {N} has K verification failures. Mark as `done` anyway? [y/N]
+          Default `N`. On `y`, write the row but include an override marker in the `Updated` cell of the form `done (overrides: K)` so the doctor check (`edikt doctor` → "Plan Verification" group) can detect overrides on subsequent runs.
+        - **Exit 2** — sidecar missing or malformed. Surface the error verbatim and stop. Do not flip the row.
+        - **Exit 3** — invalid args (unknown plan-id, malformed phase). Surface the error and stop.
+        NEVER silently flip without either (a) the gate passing, (b) explicit user override, or (c) the documented absence-warning above.
+
+     1b. **Composite verdict gate.** After the L1 verify gate passes, read the most recent post-flight composite report at `.edikt/state/post-flight/<plan>-<phase>-*.json` (latest by timestamp). If the file is absent OR `meta.dispatch_mode == "stub"`, skip this gate (the row-flip relies on L1 alone). Otherwise:
+
+        ```bash
+        LATEST_PF=$(ls -t .edikt/state/post-flight/${PLAN_SLUG}-${PHASE_NUM}-*.json 2>/dev/null | head -1)
+        if [ -n "$LATEST_PF" ]; then
+            L2_STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["l2_summary"]["status"])' "$LATEST_PF")
+            L2_FAIL_COUNT=$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["l2_summary"].get("counts",{}); print(c.get("fail",0))' "$LATEST_PF")
+        fi
+        ```
+
+        - **L2 status `failed` OR L2 FAIL count > 0** → REFUSE the row-flip. Surface the failing directive_ids (read from the per-topic `.edikt/state/gov-verify/<topic>-*.json` reports referenced in the composite) and ask the user explicitly:
+          > Phase {N} has K L2 governance verifier FAILs. Mark as `done` anyway? [y/N]
+          Default `N`. On `y`, write the row with `done (overrides: l2-fails=K)` in the `Updated` cell — doctor surfaces this on subsequent runs.
+
+        - **L2 status `failed` is the ONLY blocking signal from the composite verdict.** L2 `NEEDS_REVIEW` and L3 `critical` findings ANNOTATE the row's `Updated` cell but DO NOT block — they're advisory:
+
+          ```text
+          Updated cell formats:
+            done                                         # clean
+            done (l2-needs-review: K)                    # K L2 NEEDS_REVIEW verdicts
+            done (l3-critical: M)                        # M L3 critical findings
+            done (l2-needs-review: K, l3-critical: M)    # both
+            done (overrides: l2-fails=K)                 # user overrode an L2 FAIL block
+          ```
+
+        - **L2 status `skipped` / `unavailable` / `partial`** → annotate `done (l2-{status})` and proceed. The composite verdict is informational when L2 couldn't run conclusively; L1 remains authoritative.
+
+     2. Flip the phase row to `done` in the progress table and proceed to context reset guidance.
+   - If FAIL: report failures, then:
+
+     i. **Increment the Attempt column** in the progress table (e.g., `1/{max}` → `2/{max}`).
+
+     ii. **Check evaluation state** — read `.edikt/state/plan-eval/PLAN-{slug}-eval.json` if it exists (create it per step 10c if missing). For each failing criterion, check `fail_count`. If `fail_count >= 3`:
+        ```
+        ⚠️ AC-{id} has failed 3 consecutive times.
+           Last reason: {fail_reason}
+           Consider: rewrite the criterion, adjust the approach, or ask for help.
+        ```
+
+     iii. **Forward failures** — before retrying, include the failing criteria in the generator prompt:
+        ```
+        Previous attempt failed. Fix these: {list of failing AC IDs and reasons}
+        ```
+
+     iv. **Stuck detection** — if the Attempt value has reached `MAX_ATTEMPTS` (e.g., `5/5`), set the phase status to `stuck` and output:
+        ```
+        Phase {n} is stuck after {max} attempts.
+        Options:
+          1. Continue trying (increase max)
+          2. Skip this phase
+          3. Rewrite failing criteria
+          4. Stop and review
+        ```
+        Wait for the user's choice before proceeding.
+
+     v. **Update evaluation state** — after evaluation, update `.edikt/state/plan-eval/PLAN-{slug}-eval.json`:
+        - Read the state file (create it per step 10c if it doesn't exist)
+        - For each criterion the evaluator judged: update `status` (one of `pass | fail | blocked`), `last_evaluated` (ISO date), `fail_reason` (if fail), `block_reason` (if blocked)
+        - Increment `fail_count` for each fail (reset to 0 on pass; do NOT reset or increment on blocked)
+        - Update phase-level `status` and `attempt`
+        - Write back to the same file
+        - **NEVER write state fields into `PLAN-{slug}-criteria.yaml`.** The PASS-path verify gate (step d.1) strict-parses the criteria sidecar and exits 2 on any unknown field — a state write-back there corrupts the sidecar for the gate.
+
+   - If BLOCKED: evaluator could not verify one or more criteria due to a missing capability (Bash denied, test runner unavailable, etc.). This is a capability failure, not a generator failure. Retrying the generator does not help.
+
+     i. **Do NOT increment the Attempt column.** The generator's work may be correct — we simply couldn't verify it.
+
+     ii. **Set the phase status to `blocked`** in the progress table. Do not mark `done`, `stuck`, or advance to the next phase.
+
+     iii. **Output each blocked criterion** with its recovery hint from the evaluator:
+        ```
+        AC-{id}: BLOCKED — {reason}
+          Recovery: {hint from evaluator}
+        ```
+
+     iv. **Output the phase-level recovery prompt:**
+        ```
+        Phase {N} BLOCKED — evaluator could not verify {n} criteria.
+
+        Options:
+          1. Switch to headless mode (recommended):
+             /edikt:config set evaluator.mode headless
+          2. Grant Bash to subagents (session-level):
+             Add "Bash" to permissions.allow in .claude/settings.local.json
+          3. Skip evaluation for this phase (not recommended):
+             /edikt:config set evaluator.phase-end false
+
+        After applying a fix, re-run evaluation for this phase with:
+          /edikt:sdlc:plan --eval-only {N}
+        ```
+
+     v. **Update evaluation state** — for blocked criteria in `.edikt/state/plan-eval/PLAN-{slug}-eval.json`: set `status: blocked`, record `block_reason: {reason from evaluator}`, set `last_evaluated: {ISO date}`. Do NOT increment `fail_count`. Do NOT reset `fail_count`. Update phase-level `status: blocked`. Write back. Never write any of this into the criteria sidecar.
+
+     vi. **Do not proceed to context reset guidance.** Stop and wait for the user to apply a fix.
+
+   Schema note for the state file: phase `status` may be one of `pending | in-progress | pass | fail | blocked | done | stuck | skipped`; criterion `status` is `pending | pass | fail | blocked`, with `block_reason` paralleling `fail_reason`. Full shape: `templates/schemas/plan-eval-state.v1.schema.json`.
+
+2. **If `evaluate: true` AND `evaluator.phase-end` is false:**
+   Skip evaluation. Output: "Phase-end evaluation skipped (evaluator.phase-end: false in config)."
+   The evaluation state file keeps its criteria at `pending` (not evaluated).
+   Proceed directly to context reset guidance.
+
+3. **Context reset guidance** (always, after evaluation or if `evaluate: false`):
+   ```
+   Phase {n} complete. For best results on Phase {n+1}:
+     1. Start a new session
+     2. Run /edikt:context
+     3. Continue with Phase {n+1}
+
+   State is saved in the plan file — nothing is lost.
+   ```
+
+### Sidecar-Only Flow
+
+Invoked when `$ARGUMENTS` contains `--sidecar-only`. Rebuilds the criteria
+sidecar AND the evaluation state file from an existing plan without touching
+the plan. Use when edikt reports "evaluation history not found" after a phase
+completes — this restores retry tracking, failure reasons, and last-checked
+timestamps so the evaluator runs with full context instead of starting from
+scratch every time. Also the one-time migration path for legacy (pre-v0.6.0)
+state-bearing sidecars.
+
+1. **Locate the plan file:**
+   - If a slug follows `--sidecar-only` (e.g. `--sidecar-only PLAN-auth`): find
+     `{paths.plans}/PLAN-auth*.md`. Reject if none found.
+   - If no slug: use the most recent `PLAN-*.md` in `{paths.plans}/` or
+     `docs/product/plans/`. If multiple plans exist and no slug given, list them
+     and ask the user to specify: `Multiple plans found — which one?`
+   - If no plan exists at all: `[FAIL] No plan file found. Run /edikt:sdlc:plan first.`
+
+2. **Read the existing sidecar and state (if any):**
+   - Load `PLAN-{slug}-criteria.yaml` if it exists. This is the spec merge base:
+     preserve `id`, `statement`, `verify` (and any cheat-rate metadata fields) per criterion,
+     plus phase `id`, `name`, `classification`, `completion_promise`.
+   - **Legacy detection:** if the existing sidecar is the pre-v0.6.0 state-bearing
+     shape (has `generated:`, `- phase:` headers, or `status:`/`fail_count:` keys),
+     harvest its state fields (`status`, `fail_count`, `fail_reason`, `block_reason`,
+     `last_evaluated`, phase `attempt`) into the evaluation state file in step 4b —
+     this is the one-time migration — and treat its `id`/`text`/`verify` as the
+     spec merge base (`text` becomes `statement`).
+   - Load `.edikt/state/plan-eval/PLAN-{slug}-eval.json` if it exists; it is the
+     state merge base.
+   - If neither exists: start from scratch (all criteria `status: pending` in the
+     state file).
+
+3. **Extract criteria from the plan markdown:**
+   - For each phase: read the phase number, title, and all acceptance criteria
+     bullet points.
+   - Assign IDs: `AC-{phase}.{seq}` (1-indexed within each phase).
+   - For each criterion:
+     - If a matching `id` exists in the spec merge base: keep its `statement` and
+       `verify`.
+     - If it is a new criterion (not in merge base): `statement` from the plan
+       text; no `verify` yet (omit the key — never `verify: null`).
+   - Classify each phase per step 10b's rule: `testable` only when every
+     criterion has a `verify`; otherwise `operational` or `informational`.
+
+4. **Write the criteria sidecar (spec-only):**
+   - Write `PLAN-{slug}-criteria.yaml` to the same directory as the plan.
+   - Schema: `templates/schemas/plan-criteria.v1.schema.json` — `schema_version: 1`,
+     `plan`, `phases: [{id, name, classification, criteria: [{id, statement, verify}]}]`.
+   - No state fields, ever — `bin/edikt verify` strict-parses this file.
+
+4b. **Write the evaluation state file:**
+   - Write `.edikt/state/plan-eval/PLAN-{slug}-eval.json` (schema:
+     `templates/schemas/plan-eval-state.v1.schema.json`).
+   - Merge per-criterion history by `id`: keep `status`, `fail_count`,
+     `fail_reason`, `block_reason`, `last_evaluated` from the state merge base
+     (or the harvested legacy sidecar); new criteria get `status: "pending"`,
+     `fail_count: 0`.
+   - Phase-level: keep `status`/`attempt` where known; `pending` otherwise.
+
+5. **Output:**
+   ```
+   ✅ Evaluation history rebuilt: {path}
+      {n} phases, {m} acceptance criteria
+
+      Kept from previous history:  {k} checks (retry counts and results preserved)
+      Added fresh:                 {j} new checks (no prior data)
+
+      edikt will now track retries, failure reasons, and timestamps for {plan-name}.
+   ```
+   If a legacy state-bearing sidecar was migrated, append:
+   ```
+      Migrated legacy sidecar → spec-only criteria + .edikt/state/plan-eval/ state file.
+   ```
+
+---
+
+### Eval-Only Flow
+
+Invoked when `$ARGUMENTS` contains `--eval-only N`. This flow skips interview, codebase analysis, pre-flight review, and phase generation — it re-runs only the Phase-End Flow against an existing phase. Use it to recover from BLOCKED verdicts after the user has fixed the underlying cause (e.g. switched `evaluator.mode` to headless).
+
+1. **Parse arguments:**
+   - Extract `N` from `--eval-only N`. Reject if `N` is not a positive integer: output `[FAIL] --eval-only requires a positive integer phase number (e.g. --eval-only 2)` and stop.
+   - If `$ARGUMENTS` also contains a positional task argument alongside `--eval-only`, output `[FAIL] cannot combine --eval-only with a new plan task — use one or the other` and stop.
+   - Extract `--plan {slug}` if present.
+
+2. **Locate the active plan:**
+   - Read `paths.plans` from `.edikt/config.yaml` (default: `docs/plans`). Candidates in order: `{paths.plans}/PLAN-*.md`, `docs/product/plans/PLAN-*.md`.
+   - If `--plan {slug}` was provided: match a file whose name contains `{slug}`. If none: `[FAIL] No plan matching --plan {slug} found in {paths.plans}/ or docs/product/plans/` and stop.
+   - If no `--plan` and exactly one plan file exists: use it.
+   - If no `--plan` and multiple plans exist: list them and output `[FAIL] Multiple plans found. Specify which with --plan {slug}:\n  {list}` and stop.
+   - If no plan file exists: `[FAIL] No plan file found. Run /edikt:sdlc:plan to create one first.` and stop.
+
+3. **Locate phase N in the plan:**
+   - Read the plan's Progress table. Confirm a row for phase N exists. If not: `[FAIL] Phase {N} does not exist in {plan}` and stop.
+   - Read the plan's `## Phase {N}:` section to extract:
+     - Acceptance criteria (list items under `**Acceptance Criteria:**`)
+     - Files modified (from `git diff --name-only` relative to the last commit touching the phase, falling back to the phase's `Context Needed` list)
+
+4. **Invoke the Phase-End Flow** (the existing `### Phase-End Flow` section of this command):
+   - Pass phase number, criteria, and file list
+   - Use the same `evaluator.mode` routing as regular evaluation — headless first if configured, fallback to subagent on headless failure, BLOCKED handling unchanged
+   - All the visible output (banners, BLOCKED per-criterion rows, recovery prompt) is identical
+
+5. **Update state for phase N only:**
+   - Update the progress table row for phase N only — other rows untouched
+   - Update the evaluation state file (`.edikt/state/plan-eval/PLAN-{slug}-eval.json`) for phase N's criteria only — never the criteria sidecar
+   - Do NOT advance to context reset guidance — this is a one-off re-evaluation, not phase completion
+
+6. **Output the verdict:**
+   ```
+   ✓ Phase {N} re-evaluated
+     Previous status: {old status}
+     New status: {new status}
+     {If verdict changed:}
+       Criteria now passing: {list of AC-IDs}
+       Criteria still failing/blocked: {list with reasons}
+   ```
+
+Constraints:
+- Do not duplicate Phase-End Flow logic — always route through that section
+- Do not add new config keys — reuse `evaluator.mode`, `evaluator.model`, `evaluator.phase-end`
+- Do not modify phases other than N
+- Do not run the pre-flight criteria validation (step 9 of main flow) — that is only for new plans
+
+### Completion Promise Rules
+
+Promises are used in automation, so they MUST be shell-safe:
+- ONLY: uppercase letters, numbers, spaces, dots
+- NO: `>`, `<`, `|`, `&`, `$`, backticks, `!`, `'`, `"`, arrows
+- Keep SHORT: 2-4 words max
+- Good: `PHASE 1 COMPLETE`, `MIGRATION DONE`, `API READY`, `TESTS PASSING`
+- Bad: anything with special characters or lowercase
+
+### Artifact Coverage Table
+
+When a plan is generated from a SPEC, every artifact in the spec directory must map to plan coverage:
+
+| Artifact pattern | Required coverage | Action if missing |
+|---|---|---|
+| `fixtures*.yaml` | Phase that creates seed data (SQL script, make target, or programmatic seeding) | Add "Database seeding" phase |
+| `test-strategy.md` | Each test category (unit, integration, e2e, edge cases) mapped to at least one phase | Embed test tasks in implementation phases or add dedicated test phases |
+| `contracts/api*.yaml` | Every `path + method` in the OpenAPI spec appears in at least one phase | Add phase for uncovered endpoints, or expand existing phases |
+| `contracts/events*.yaml` (AsyncAPI) | Every channel/event has a producing phase and consuming phase | Add event handling to relevant phases |
+| `migrations/*.sql` | Each migration has a corresponding phase | Usually already covered — verify |
+| `data-model*.mmd` | Reference only | No phase needed (diagram) |
+| `config-spec.md` | Configuration tasks appear in a phase | Add config setup to relevant phase |
+
+CRITICAL: Artifacts that are generated but never consumed by the plan produce silent failures — features that "complete" but don't work (no seed data, no tests, missing endpoints). The artifact coverage check in step 6b prevents this.
+
+### Domain Signal Detection
+
+See `commands/_shared-agent-routing.md` for the domain signal table and specialist spawning procedure.
+
+### Pre-Flight Severity
+
+- 🔴 Critical: must address before execution (data loss, security breach, broken contract)
+- 🟡 Warning: should address, not blocking
+- 🟢 OK: domain looks healthy
+
+### Pre-Flight Output Format
+
+```
+PRE-FLIGHT REVIEW
+─────────────────────────────────────────────────────
+Domains detected: {list} ({n} of 6 checked)
+
+{AGENT NAME}
+  #1 🔴  {finding} ({file:line if applicable})
+  #2 🟡  {finding}
+  #3 🟢  {positive finding}
+
+{AGENT NAME}
+  #4 🔴  {finding}
+  #5 🟡  {finding}
+
+─────────────────────────────────────────────────────
+{N critical, N warnings}. Which findings should I address?
+(e.g., #1, #4 or "all critical" or "skip")
+```
+
+### Plan File Template
+
+```markdown
+---
+type: plan
+id: PLAN-{slug}
+model: {defaults.plan_model from config, default: claude-sonnet-4-6}
+phases:
+  - id: 1
+    model: {per-phase model override, or omit to inherit plan-level default}
+  - id: 2
+    model: {per-phase model override, or omit to inherit plan-level default}
+---
+
+# Plan: {Title}
+
+## Overview
+**Task:** {description or ticket ID}
+**Total Phases:** {n}
+**Estimated Cost:** ${cost}
+**Created:** {date}
+
+## Progress
+
+| Phase | Status | Attempt | Updated |
+|-------|--------|---------|---------|
+| 1     | pending | 0/{max} | -      |
+| 2     | pending | 0/{max} | -      |
+
+**Phase ids:** a whole number, optionally with a **letter suffix**. `1`, `2`, `12` for the normal sequence; `4b`, `8a` when a phase must be inserted.
+
+**Inserting a phase uses the letter form, not a decimal.** To add work between phases 8 and 9, the new phase is `8a` (then `8b`, `8c`), and every later phase keeps its number. Do NOT renumber — renumbering breaks every reference to later phases in the plan, the criteria sidecar, and any evaluation state already recorded.
+
+**Rule.** `bin/edikt verify --phase` accepts `^[0-9]+[a-z]?$`. Decimals such as `8.5` are rejected.
+
+**Why.** Phase ids are opaque strings end-to-end — nothing in the verify path parses them numerically — so they compare **lexically**. Under lexical comparison `8.10` sorts *before* `8.5`.
+
+**Do NOT relax this to also accept decimals.** It reads as a friendly widening and is not. A plan using decimal inserts reorders silently the moment a tenth insert appears, and the failure surfaces only in long plans, long after the change, looking like a planning mistake rather than a parsing one. Accepting both notations would also give one concept two spellings, and the letter form is the one real plans already use (`04a`, `4b`, `4c`, `6b`, `7a`, `7b`, `11b`).
+
+If a future change genuinely needs decimals, it must first make phase ids **ordered data** rather than strings — parsed and compared numerically everywhere they are sorted. Widening the regex alone is not that change; it is the bug.
+
+**IMPORTANT:** Update this table as phases complete. This table is the persistent state that survives context compaction.
+
+A `blocked` status means evaluation couldn't run — see Status Values table. The phase is NOT verified until re-evaluated successfully (`/edikt:sdlc:plan --eval-only {N}`).
+
+## Model Assignment
+| Phase | Task | Model | Reasoning | Est. Cost |
+|-------|------|-------|-----------|-----------|
+| 1 | {task} | haiku | {why} | $0.01 |
+
+## Execution Strategy
+| Phase | Depends On | Parallel With |
+|-------|-----------|---------------|
+| 1     | None      | 2             |
+| 2     | None      | 1             |
+| 3     | 1, 2      | -             |
+
+## Artifact Flow
+
+| Producing Phase | Artifact | Consuming Phase(s) |
+|-----------------|----------|---------------------|
+| {n} | `{file path}` | {phase numbers} |
+
+## Phase 1: {Title}
+
+**Objective:** {brief description}
+**Model:** `{model}`
+**Max Iterations:** {n}
+**Completion Promise:** `{SHELL SAFE PROMISE}`
+**Evaluate:** {true | false}
+**Dependencies:** {None or phase numbers}
+**Context Needed:**
+- `docs/product/specs/SPEC-NNN/contracts/api-orders.yaml` — API contract from spec artifacts
+- `internal/repository/orders.go` — repository created in Phase 2
+- `docs/architecture/decisions/ADR-NNN.md` — error handling decision
+
+**Acceptance Criteria:**
+- [ ] {Binary assertion — e.g., "Cache adapter implements get/set/delete with TTL parameter"}
+- [ ] {Binary assertion — e.g., "Unit tests cover cache miss, hit, and TTL expiration"}
+- [ ] {Binary assertion — e.g., "Integration test hits real Redis instance"}
+
+**Prompt:**
+```
+{Full detailed implementation instructions.
+Reference specific file paths, patterns to follow, tests to write.
+This is where all the detail goes — be thorough.
+The prompt should be self-contained: someone reading only this section
+should be able to implement the phase without other context.
+
+When complete, output: {COMPLETION PROMISE}
+}
+```
+
+---
+
+{repeat for each phase}
+```

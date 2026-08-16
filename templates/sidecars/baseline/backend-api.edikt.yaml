@@ -1,0 +1,52 @@
+schema_version: 1
+topic: backend-api
+path: templates/sidecars/baseline/backend-api.edikt.yaml
+signals:
+  - api handler
+  - http endpoint
+  - rest endpoint
+  - status code
+  - error response
+  - auth header
+paths:
+  - "**/*handler*.go"
+  - "**/*handler*.ts"
+  - "**/routes/**"
+  - "**/api/**"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "API handlers MUST return structured error responses with a top-level 'error' key on every non-2xx response."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "API error contract"
+    verify: "go test ./... -run TestAPIErrorContract -timeout 30s"
+    verify_kind: behavioral
+    intent: "Every non-2xx HTTP response carries a machine-parseable JSON body containing a top-level 'error' field that clients can use to surface user-facing messages."
+    falsifying_observation: "An integration test posting an invalid payload receives a 400 with a plain-text body and no 'error' key, so the test assertion json.error fails."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/backend-api.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/backend-api.0.sh"
+  - text: "Protected endpoints MUST reject requests missing the Authorization header with a 401 status before any business logic runs."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "auth header contract"
+    verify: "go test ./... -run TestAuthRequired -timeout 30s"
+    verify_kind: behavioral
+    intent: "An unauthenticated caller hitting a protected route receives a 401 and the handler does not touch the database or downstream services."
+    falsifying_observation: "A request with no Authorization header returns 200 with a populated body, proving the handler executed without auth enforcement."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/backend-api.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/backend-api.1.sh"
+prohibitions:
+  - text: "API handlers MUST NOT return untyped 500 errors without recording the underlying error in the application log."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "error logging contract"
+    verify: "grep -rn 'http.Error.*500' . | grep -v 'log\\.' | wc -l | grep -qx '0'"
+    verify_kind: structural

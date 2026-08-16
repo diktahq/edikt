@@ -1,0 +1,49 @@
+schema_version: 1
+topic: frontend-page
+path: templates/sidecars/baseline/frontend-page.edikt.yaml
+signals:
+  - route
+  - page layout
+  - next.js page
+  - app router
+  - page metadata
+paths:
+  - "**/pages/**"
+  - "**/app/**/page.tsx"
+  - "**/app/**/layout.tsx"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Every page route MUST export a metadata object (or generateMetadata function) supplying at minimum a non-empty title and description."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "page metadata contract"
+    verify: "npm test -- --grep 'page metadata'"
+    verify_kind: behavioral
+    intent: "Crawlers and link previews receive a meaningful <title> and meta description for every public route in the application."
+    falsifying_observation: "A test imports the page module and asserts metadata.title is a non-empty string but receives undefined, proving the export is missing."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/frontend-page.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/frontend-page.0.sh"
+  - text: "Pages that fetch user-specific data MUST be wrapped in an auth boundary that redirects unauthenticated visitors to the sign-in route before rendering."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "auth boundary contract"
+    verify: "npm test -- --grep 'auth boundary redirects'"
+    verify_kind: behavioral
+    intent: "An unauthenticated visitor requesting a user-data page is redirected (302/307) to /sign-in and never sees the protected content in the HTML payload."
+    falsifying_observation: "An integration test hits the page without a session cookie and the response body contains the protected component markup instead of the redirect."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/frontend-page.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/frontend-page.1.sh"
+prohibitions:
+  - text: "Page components MUST NOT call client-side data hooks at module scope — hooks belong inside the component body or in a server-side data loader."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no module-scope hooks"
+    verify_kind: structural

@@ -1,0 +1,39 @@
+# Tier-1 → tier-2 orchestration permit list (ADR-052).
+#
+# This file is the AUTHORITATIVE enumeration of tier-2 verbs that tier-1
+# markdown commands may invoke. ADR-029 keeps the CONTRACT (absence
+# detection, frontmatter declaration, exit-code-only consumption); the
+# list itself lives here so adding a verb is an ordinary reviewed diff,
+# not a new ADR per entry — ending the ADR-031/ADR-033 treadmill.
+#
+# Every entry records its provenance. Grouped verbs permit the whole
+# subcommand group under the named parent decision.
+
+schema_version: 1
+verbs:
+  - verb: "verify"            # verify <plan-id> [--phase N] | gov|prd|spec|all
+    provenance: ADR-029
+  - verb: "doctor"
+    provenance: ADR-029
+  - verb: "migrate"
+    provenance: ADR-029
+  - verb: "gov"               # group permit: compile, compile-history,
+    provenance: ADR-033       # gitignore-bootstrap, directive-check,
+                              # benchmark cheat-rate (ADR-040), grade-compile (ADR-044),
+                              # post-flight-scope, reextract (F-092 item 11, EXP-006)
+  - verb: "install"
+    provenance: ADR-029
+  - verb: "upgrade"
+    provenance: ADR-029
+  - verb: "use"
+    provenance: ADR-029
+  - verb: "rollback"
+    provenance: ADR-029
+  - verb: "sidecar"           # group permit: add-manual-directive (ADR-031),
+    provenance: ADR-031       # approve (ADR-039), diff
+  - verb: "next-id"
+    provenance: ADR-029       # pre-exec live-block helper for the :new/:sdlc commands
+  - verb: "hook"              # ack / held / unack (ADR-050) — operator-invoked
+                              # match / probe / report (ADR-060) — invoked by the  edikt-guard:allow
+                              # write-time injection shims, not by an operator
+    provenance: ADR-050       # today; listed for when tier-1 markdown references it

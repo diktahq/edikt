@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CheatRateReport",
+  "description": "Output of bin/edikt gov benchmark cheat-rate. Validated by KnownFields(true) loader.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "sidecar_id", "ran_at", "adversary_model", "verifies", "summary"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "sidecar_id": { "type": "string", "minLength": 1 },
+    "ran_at": { "type": "string", "format": "date-time" },
+    "adversary_model": { "type": "string", "minLength": 1 },
+    "verifies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verify_id", "intent", "verify_kind", "verdict", "majority_runs", "elapsed_ms", "sandbox_path", "adversary_trace_path"],
+        "properties": {
+          "verify_id": { "type": "string" },
+          "intent": { "type": "string" },
+          "verify_kind": { "type": "string", "enum": ["behavioral", "tooling", "structural"] },
+          "verdict": { "type": "string", "enum": ["cheated", "not_cheated", "inconclusive"] },
+          "majority_runs": { "type": "string" },
+          "elapsed_ms": { "type": "integer", "minimum": 0 },
+          "sandbox_path": { "type": "string" },
+          "adversary_trace_path": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "cheated", "inconclusive", "cheat_rate", "inconclusive_rate"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "cheated": { "type": "integer", "minimum": 0 },
+        "inconclusive": { "type": "integer", "minimum": 0 },
+        "cheat_rate": { "type": "number", "minimum": 0.0, "maximum": 1.0 },
+        "inconclusive_rate": { "type": "number", "minimum": 0.0, "maximum": 1.0 }
+      }
+    }
+  }
+}

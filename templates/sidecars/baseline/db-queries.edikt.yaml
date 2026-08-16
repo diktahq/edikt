@@ -1,0 +1,45 @@
+schema_version: 1
+topic: db-queries
+path: templates/sidecars/baseline/db-queries.edikt.yaml
+signals:
+  - sql query
+  - parameterized query
+  - sql injection
+  - db.query
+  - prepared statement
+paths:
+  - "**/db/**"
+  - "**/repositories/**"
+  - "**/queries/**"
+  - "**/*.sql"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Every SQL query that interpolates user-supplied values MUST use parameterized placeholders ($1, ?, :name) — never string concatenation or template literals."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "parameterized query contract"
+    verify: "go test ./... -run TestQueryParameterization -timeout 30s"
+    verify_kind: behavioral
+    intent: "An attacker supplying a payload like \"1; DROP TABLE users--\" through a request parameter cannot alter the executed SQL statement."
+    falsifying_observation: "A test posting a SQL-injection payload to a search endpoint observes the table dropped in the test database, proving the value was concatenated into the query string."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/db-queries.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/db-queries.0.sh"
+prohibitions:
+  - text: "Repository methods MUST NOT construct SQL via fmt.Sprintf, template literals, or string concatenation when any operand originates from request input."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no string-built sql"
+    verify: "grep -rnE 'fmt\\.Sprintf.*(SELECT|INSERT|UPDATE|DELETE)' . 2>/dev/null | wc -l | grep -qx '0'"
+    verify_kind: structural
+  - text: "Queries MUST NOT use SELECT * — list the columns the caller actually consumes."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no select-star"
+    verify_kind: structural

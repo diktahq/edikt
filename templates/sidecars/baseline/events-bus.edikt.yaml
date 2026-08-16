@@ -1,0 +1,51 @@
+schema_version: 1
+topic: events-bus
+path: templates/sidecars/baseline/events-bus.edikt.yaml
+signals:
+  - event publish
+  - event subscribe
+  - event schema
+  - kafka topic
+  - rabbitmq
+  - message bus
+  - event envelope
+paths:
+  - "**/events/**"
+  - "**/messaging/**"
+  - "**/pubsub/**"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Every published event MUST carry a versioned schema identifier (event_type + schema_version) so consumers can route legacy versions to compatibility handlers."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "event versioning contract"
+    verify: "go test ./... -run TestEventSchemaVersion -timeout 30s"
+    verify_kind: behavioral
+    intent: "A consumer of v1 events keeps working when producers start emitting v2 events, because v2 events carry a distinct schema_version that routes to a v2 handler instead of breaking v1 parsing."
+    falsifying_observation: "A test publishes a v2-shaped event and the v1 consumer parses it successfully but silently drops the new required field, proving no version discriminator was checked."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/events-bus.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/events-bus.0.sh"
+  - text: "Event handlers MUST be idempotent — replaying the same event MUST NOT produce duplicate side effects in the database or downstream services."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "idempotency contract"
+    verify: "go test ./... -run TestEventIdempotency -timeout 30s"
+    verify_kind: behavioral
+    intent: "Delivering the same event twice (at-least-once delivery) leaves the system in the same state as delivering it once — no duplicate orders, no double emails, no double charges."
+    falsifying_observation: "A test delivers an OrderPlaced event twice and queries the orders table afterwards, finding two rows with distinct ids, proving the handler created a duplicate."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/events-bus.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/events-bus.1.sh"
+prohibitions:
+  - text: "Producers MUST NOT publish events inside a database transaction — publish after commit or use a transactional outbox."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "outbox or post-commit publish"
+    verify_kind: structural

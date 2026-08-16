@@ -1,0 +1,49 @@
+schema_version: 1
+topic: db-transactions
+path: templates/sidecars/baseline/db-transactions.edikt.yaml
+signals:
+  - transaction
+  - begin commit rollback
+  - tx.begin
+  - isolation level
+  - savepoint
+paths:
+  - "**/db/**"
+  - "**/repositories/**"
+  - "**/services/**"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Every operation that writes to more than one table MUST be wrapped in a single transaction that commits on success and rolls back on any error."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "transaction boundary contract"
+    verify: "go test ./... -run TestTransactionAtomicity -timeout 30s"
+    verify_kind: behavioral
+    intent: "A multi-table write that fails halfway leaves the database in its pre-call state — no partial writes are visible to subsequent queries."
+    falsifying_observation: "A test forces a failure between two writes inside a 'create order' flow and queries the orders and order_items tables afterwards, finding the order row present but no items — the partial write proves no rollback."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/db-transactions.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/db-transactions.0.sh"
+  - text: "Transaction handles MUST be passed explicitly through service-layer call chains — never derived from request-scoped globals or thread-local storage."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "explicit transaction propagation"
+    verify: "go test ./... -run TestTransactionPropagation -timeout 30s"
+    verify_kind: behavioral
+    intent: "A repository method invoked from inside a transaction joins the same transaction rather than opening a new connection that bypasses the outer rollback."
+    falsifying_observation: "A test that forces rollback on the outer transaction observes a write made by an inner repository call persisting in the database — proving the inner call used a separate connection."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/db-transactions.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/db-transactions.1.sh"
+prohibitions:
+  - text: "Code MUST NOT call db.Begin without a matching deferred rollback that runs on every non-commit exit path."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "deferred rollback contract"
+    verify_kind: structural

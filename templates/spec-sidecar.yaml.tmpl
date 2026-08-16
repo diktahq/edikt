@@ -1,0 +1,80 @@
+# yaml-language-server: $schema={{schema_path}}
+schema_version: "1.0"
+type: spec
+id: "{{id}}"
+title: "{{title}}"
+slug: "{{slug}}"
+status: draft
+author: "{{author}}"
+created_at: "{{created_at}}"
+
+# Source — exactly one of source_prd / source_brainstorm / source_prompt is non-null.
+# Set by /edikt:sdlc:spec based on how this SPEC was created.
+source_prd: {{source_prd_or_null}}
+source_brainstorm: {{source_brainstorm_or_null}}
+source_prompt: {{source_prompt_or_null}}
+
+# Coverage of upstream PRD's FRs — emitted only when source_prd is set AND PRD is v2.
+# Maintained by /edikt:sdlc:spec; consumed by /edikt:sdlc:drift.
+# Non-empty uncovered: list blocks drift checks.
+{{source_prd_coverage_block}}
+
+# SPEC requirements (SR-NNN). Each may implement a PRD FR via `implements:`.
+# Each SR MAY carry a `verify:` shell command run by
+# `bin/edikt verify spec <id>`. Exit 0 = SR is satisfied. Omit when no
+# programmatic check exists. /edikt:sdlc:drift folds verify failures into
+# the drift signal.
+requirements:
+  - id: SR-001
+    implements: {{sr_001_implements_or_null}}
+    text: "{{sr_001_text}}"
+    # verify: "<shell command, exit 0 = SR satisfied>"
+
+# Acceptance criteria — pass-through from PRD (source: prd, IDs unchanged)
+# plus spec-only additions (source: spec, SAC-NNN for architectural-layer checks).
+# Each AC MAY carry a `verify:` shell command. Exit 0 = AC passes.
+acceptance_criteria:
+  - id: AC-001-1
+    source: prd
+    fr: FR-001
+    given: "{{ac_001_1_given}}"
+    when: "{{ac_001_1_when}}"
+    then: "{{ac_001_1_then}}"
+    # verify: "<shell command, exit 0 = AC passes>"
+
+# Protections — what must NOT change at the spec layer.
+# Two shapes (same as PRD sidecar):
+#   {ref: INV-NNN, note?: "...", source: prd|spec}
+#   {id: SP-NNN | SSP-NNN, text: "...", source: prd|spec}
+protections: []
+
+# Solution references — diagrams, mockups, prior art.
+# {type: figma|screenshot|url|doc|diagram|prototype|generated, path_or_url, description?, source: prd|spec}
+solution_references: []
+
+# Supersede chain (edit-in-place is default; supersede for ≥50% rewrites).
+supersedes: null
+superseded_by: null
+
+# Deprecation / cancellation fields.
+deprecated_at: null
+deprecated_reason: null
+cancelled_at: null
+cancelled_reason: null
+
+# Revision history — appended by every command-driven mutation.
+revision_history:
+  - at: "{{created_at}}"
+    author: "{{author}}"
+    action: "created"
+    note: "Initial draft"
+
+# User extensions — LLM never writes here; commands never touch.
+extensions: {}
+
+# Sync block — SHA-256 of .md and .yaml at last sync.
+# /edikt:sdlc:spec:resync recomputes after manual edits.
+_sync:
+  md_hash: ""
+  yaml_hash: ""
+  synced_at: ""

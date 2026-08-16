@@ -1,0 +1,50 @@
+schema_version: 1
+topic: frontend-component
+path: templates/sidecars/baseline/frontend-component.edikt.yaml
+signals:
+  - component props
+  - prop interface
+  - accessibility
+  - aria attribute
+  - required prop
+paths:
+  - "**/components/**/*.tsx"
+  - "**/components/**/*.jsx"
+  - "**/src/ui/**"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Every reusable component MUST declare a typed Props interface where required props are non-optional and optional props are explicitly marked with '?'."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "props interface contract"
+    verify: "npm test -- --grep 'Props interface'"
+    verify_kind: behavioral
+    intent: "Consumers of a component get a compile-time error if they omit a required prop, and IDE autocomplete distinguishes required from optional props."
+    falsifying_observation: "A test instantiates the component with the required prop omitted and TypeScript still type-checks, proving the prop was declared as optional."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/frontend-component.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/frontend-component.0.sh"
+  - text: "Interactive components (button, input, link) MUST expose an accessible name via aria-label, aria-labelledby, or visible text content."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "accessibility contract"
+    verify: "npm test -- --grep 'a11y accessible name'"
+    verify_kind: behavioral
+    intent: "Screen-reader users encounter a non-empty accessible name when they focus any interactive component in the design system."
+    falsifying_observation: "An axe-core assertion against the rendered component reports a missing accessible name on the rendered <button> element."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/frontend-component.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/frontend-component.1.sh"
+prohibitions:
+  - text: "Components MUST NOT use 'any' as a prop type — replace with a concrete shape, generic, or unknown plus narrowing."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no any in props"
+    verify: "grep -rn ': any' components/ src/ui/ 2>/dev/null | wc -l | grep -qx '0'"
+    verify_kind: structural

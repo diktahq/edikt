@@ -1,0 +1,97 @@
+# /edikt:context
+
+Loads your project's memory into the current session.
+
+## When to use it
+
+**New session, existing project.** A new session carries nothing forward from the previous conversation. What survives is the compact [auto-memory](#auto-memory) snapshot — project name, stack, active plan, hard invariants. Run `/edikt:context` (or just say "remind yourself") to load the full set on top of it: product spec, active PRDs, current plan phase, every decision and its reasoning, and which rule packs are live.
+
+**After context compaction.** Long sessions hit Claude's context limit and get compacted. Run context to reload what matters.
+
+**Onboarding a teammate.** They open the project, run `/edikt:context`, and Claude is immediately useful — no hand-holding, no re-explaining the architecture.
+
+## What it loads
+
+| Source | What Claude learns |
+|--------|--------------------|
+| `docs/project-context.md` | Project identity, stack, non-negotiables |
+| `docs/product/spec.md` | What you're building and why |
+| `docs/product/prds/` | Active feature requirements |
+| `docs/product/plans/` | Current plan + phase progress |
+| `docs/architecture/decisions/` | Architecture decisions and their reasoning |
+| `docs/architecture/invariants/` | Hard constraints — non-negotiables Claude must never violate |
+| `.edikt/config.yaml` | Ticket system config (Linear/Jira/GitHub) |
+| `.claude/rules/` | Which packs are active; flags manually edited files |
+
+## What it looks like
+
+> **You:** remind yourself about this project
+>
+> **Claude:** *(runs `/edikt:context`)*
+>
+> ```
+> Loaded context for Orders API:
+>
+>   Project:   Go REST API for order management
+>              DDD with bounded contexts (orders, inventory, billing)
+>              Chi router · PostgreSQL · Hexagonal architecture
+>
+>   Active plan: PLAN-bulk-orders
+>   Progress:    Phase 3 of 4 in progress (HTTP handler)
+>
+>   Rules:     code-quality · testing · security
+>              error-handling · go · chi
+>
+>   Decisions: 3 ADRs on file
+>              — hexagonal architecture
+>              — error wrapping strategy
+>              — JWT auth pattern
+>
+>   Product:   spec + 2 active PRDs
+>
+> Ready. What are we working on?
+> ```
+
+## Auto-memory
+
+After running `/edikt:context`, edikt writes a compact snapshot to Claude's auto-memory (`~/.claude/projects/.../memory/MEMORY.md`). This file is automatically loaded at the start of every future session — so Claude knows the project name, stack, active plan, and hard invariants without you running `/edikt:context` first.
+
+The `SessionStart` hook checks if memory is stale (>7 days old) and prompts you to refresh. The memory file is local to your machine, not committed to git.
+
+## You usually don't need to run this manually
+
+The `SessionStart` hook installed by `/edikt:init` fires when you open the project. If auto-memory exists and is fresh, it confirms context is loaded. If memory is missing or stale, it prompts you to run `/edikt:context`. Running it explicitly gives you the full visible output — useful when onboarding a teammate or starting a complex session.
+
+## Arguments
+
+| Argument | Description |
+|----------|-------------|
+| (none) | Load full context (default) |
+| `--depth=full` | Everything: project context, all decisions, all invariants, product, PRDs, plans, rules |
+| `--depth=focused` | Project context, current plan phase, relevant decisions, all invariants, rule names |
+| `--depth=minimal` | Project context, current plan phase title + tasks, all invariants only |
+
+`--depth=full` is the default. On large projects (>15 ADRs or >5 PRDs), edikt suggests `--depth=focused` before proceeding.
+
+## Focused mode (v0.6.0)
+
+`--depth=focused` is now plan-scoped: it scans the active plan's current phase for `PRD-NNN` and `SPEC-NNN` identifiers and loads only the referenced sidecars.
+
+The active plan is the signal for what's being worked on right now. If your phase prompt says "implements PRD-005's FR-002 and FR-003," only `PRD-005`'s sidecar gets loaded — not every PRD in the project. Same for SPECs.
+
+```text
+PRDs (plan-scoped — active phase references):
+  PRD-005 (Webhook delivery) — 5 FRs, 8 ACs — accepted
+  PRD-007 (Retry budget)     — 3 FRs, 5 ACs — accepted
+```
+
+If no PRD or SPEC identifiers appear in the current phase, focused mode falls back to listing all PRD titles without loading their content. `full` and `minimal` modes are unchanged.
+
+This keeps the context budget lean on projects with dozens of PRDs while still surfacing exactly what the current phase needs.
+
+## Natural language triggers
+
+- "remind yourself"
+- "load context"
+- "what's this project?"
+- "catch me up"

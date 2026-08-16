@@ -1,0 +1,74 @@
+# gosec configuration for tools/edikt — SPEC-009 Plan D Phase 1.
+#
+# Documents the project-wide rule exclusions and their rationale.
+# The CI workflow at .github/workflows/sidecar-checks.yml passes the
+# matching --exclude flag to gosec; this file is the single source of
+# truth for WHY each rule is excluded.
+#
+# Adding a new exclusion: append below with a paragraph-style rationale
+# that names the validation pattern, the file(s) that rely on it, and
+# the safeguarding invariant if any.
+#
+# gosec's actual config schema doesn't honor a "suppress" block — this
+# file is documentation. The exclusion mechanism is the CLI flag.
+
+excluded_rules:
+
+  - id: G702
+    name: Command Injection via Taint Analysis
+    rationale: |
+      gosec's taint analyzer flags every `exec.Command` / `exec.CommandContext`
+      callsite where any argument is non-literal, regardless of whether
+      validation runs first. edikt's exec callers ALL flow through the
+      `idvalidate` package (or a per-call equivalent allowlist regex) BEFORE
+      reaching exec — see INV-006 and ADR-029 Rule 3. Specifically:
+
+        - tools/edikt/internal/benchmark/cheatrate/adversary.go:357
+          DispatchAdversary validates SidecarID, AdversaryModel, SandboxPath,
+          Intent, FalsifyingObservation, and VerifyCommand via
+          AdversaryRequest.Validate() (NFKC + allowlist regex + null-byte
+          rejection) BEFORE constructing the args slice. The binary path
+          itself comes from EDIKT_LLM_BIN env var with allowlist fallback.
+
+        - tools/edikt/cmd/tier2_install.go:130, 325, 338
+          `pyBin` / `pip` paths are discovered via PATH lookup of canonical
+          names; `target` / `venvDir` are constructed from project root via
+          filepath.Join. The threat model treats these as trusted (operator
+          machine).
+
+      The remaining false-positive surface is too large to address with
+      per-line `// #nosec` annotations without losing signal-to-noise.
+      Re-evaluate this exclusion if a scanner that understands edikt's
+      validation pattern (e.g. a custom Go ssa pass over idvalidate
+      callsites) becomes available.
+
+  - id: G703
+    name: Path Traversal via Taint Analysis
+    rationale: |
+      Same shape as G702: gosec flags any file operation
+      (`os.WriteFile`, `os.MkdirAll`, `os.Open`, `os.Rename`) whose path
+      argument is non-literal. edikt validates paths at boundaries:
+
+        - sandbox paths: validateSandboxPath in cheatrate/adversary.go
+          (absolute, no traversal, allowlist charset)
+        - cwd-derived paths: filepath.Join under projectRoot or a
+          mktemp tempdir; never a user-string concatenation
+        - sidecar paths: discovered via sidecar.Discover (controlled
+          dir walk) and sidecar.Load (read-only with KnownFields)
+
+      INV-005 covers the integrity dimension (byte-range overlap for
+      managed regions); INV-006 covers the input-validation dimension.
+      The 16 G703 hits in this corpus are all file writes from
+      validated paths.
+
+# Notes for contributors:
+#
+#   - Adding a new exec.Command callsite that DOESN'T go through
+#     idvalidate is a real bug — gosec won't catch it (exclusion is
+#     global), so review at PR time.
+#
+#   - Adding a new file-write callsite where the path comes from
+#     externally-controlled input (HTTP request, hook payload,
+#     untrusted YAML) is a real G703 finding — add an inline
+#     `// #nosec G703 -- <rationale>` and link to the validation
+#     callsite. Don't widen this YAML.

@@ -1,0 +1,583 @@
+// Package govrun contains the compile/check logic for edikt governance.
+// It is called by cmd/gov/compile.go (cobra) and was previously inline in main.go.
+package govrun
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/compile"
+	"github.com/diktahq/edikt/tools/edikt/internal/hash"
+	"github.com/diktahq/edikt/tools/edikt/internal/orphan"
+	"github.com/diktahq/edikt/tools/edikt/internal/parse"
+	"github.com/diktahq/edikt/tools/edikt/internal/render"
+	"github.com/diktahq/edikt/tools/edikt/model"
+	"gopkg.in/yaml.v3"
+)
+
+// CompilerVersion is the version string embedded in compiled output.
+// It mirrors the binary version and is set by the cmd layer before calling Run.
+var CompilerVersion = "0.1.0"
+
+// JSONOutput is the structured output for --json mode (compile.md §Reference JSON format).
+type JSONOutput struct {
+	Status     string         `json:"status"`
+	Topics     []TopicSummary `json:"topics,omitempty"`
+	Invariants []RuleSummary  `json:"invariants,omitempty"`
+	Stats      *CompileStats  `json:"stats,omitempty"`
+	Errors     []string       `json:"errors,omitempty"`
+	Warnings   []string       `json:"warnings,omitempty"`
+}
+
+// TopicSummary is a per-topic entry in JSONOutput.
+type TopicSummary struct {
+	Name       string   `json:"name"`
+	File       string   `json:"file"`
+	Directives int      `json:"directives"`
+	Sources    []string `json:"sources"`
+}
+
+// RuleSummary is a per-rule entry in JSONOutput.
+type RuleSummary struct {
+	Text   string `json:"text"`
+	Source string `json:"source"`
+}
+
+// CompileStats holds aggregate counts for JSONOutput.
+type CompileStats struct {
+	ADRsAccepted    int `json:"adrs_accepted"`
+	ADRsSuperseded  int `json:"adrs_superseded"`
+	INVsActive      int `json:"invs_active"`
+	Guidelines      int `json:"guidelines"`
+	TotalDirectives int `json:"total_directives"`
+	TopicFiles      int `json:"topic_files"`
+}
+
+// ediktConfig is the minimal shape of .edikt/config.yaml that govrun needs.
+// Base is the project-wide doc base (default "docs"). Specs/Prds/Plans paths
+// derive from Base when not explicitly set. Decisions/Invariants/Guidelines
+// keep their historical hardcoded "docs/..." defaults for compat — fixing
+// those to derive from Base is a separate behavioral change.
+type ediktConfig struct {
+	Base  string `yaml:"base"`
+	Paths struct {
+		Decisions  string `yaml:"decisions"`
+		Invariants string `yaml:"invariants"`
+		Guidelines string `yaml:"guidelines"`
+		Specs      string `yaml:"specs"`
+		Prds       string `yaml:"prds"`
+		Plans      string `yaml:"plans"`
+		Discovery  string `yaml:"discovery"`
+	} `yaml:"paths"`
+}
+
+// Config is the exported view of ediktConfig for callers outside govrun
+// (cmd/nextid.go etc.). Mirrors the YAML shape exactly.
+type Config = ediktConfig
+
+// LoadConfig is the exported entry point for reading .edikt/config.yaml.
+// Same behavior as the package-internal loadConfig — returns sensible
+// defaults when the file is absent.
+func LoadConfig(root string) (Config, error) {
+	return loadConfig(root)
+}
+
+// Run executes the governance compile or check operation.
+// root is the project root directory; checkOnly skips writing output files;
+// jsonMode suppresses prose and emits structured JSON to stdout.
+func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
+	cfg, err := loadConfig(root)
+	if err != nil {
+		return fmt.Errorf("load .edikt/config.yaml: %w", err)
+	}
+
+	progress := func(msg string) {
+		if !jsonMode {
+			fmt.Println(msg)
+		}
+	}
+
+	progress("Step 1/5: Reading source documents...")
+
+	// ── Load and filter documents ────────────────────────────────────────────
+	rootFS := os.DirFS(root)
+
+	loadDir := func(dir, kind string) ([]*parse.Document, error) {
+		abs := filepath.Join(root, dir)
+		docs, err := parse.LoadDocuments(rootFS, abs)
+		if err != nil {
+			return nil, fmt.Errorf("load %s (%s): %w", kind, abs, err)
+		}
+		return docs, nil
+	}
+
+	rawADRs, err := loadDir(cfg.Paths.Decisions, "ADRs")
+	if err != nil {
+		return err
+	}
+	rawINVs, err := loadDir(cfg.Paths.Invariants, "INVs")
+	if err != nil {
+		return err
+	}
+	rawGuides, _ := loadDir(cfg.Paths.Guidelines, "guidelines") // may not exist
+
+	var acceptedADRs, supersededADRs []*parse.Document
+	for _, d := range rawADRs {
+		if d.IsIncluded("adr") {
+			acceptedADRs = append(acceptedADRs, d)
+		} else if isSuperseded(d) {
+			supersededADRs = append(supersededADRs, d)
+		}
+	}
+	var activeINVs []*parse.Document
+	for _, d := range rawINVs {
+		if d.IsIncluded("inv") {
+			activeINVs = append(activeINVs, d)
+		}
+	}
+	var includedGuides []*parse.Document
+	for _, d := range rawGuides {
+		if d.IsIncluded("guideline") {
+			includedGuides = append(includedGuides, d)
+		}
+	}
+
+	progress("Step 2/5: Checking for contradictions...")
+
+	// ── Separate invariants from topic sources ───────────────────────────────
+	allDocs := concat(acceptedADRs, activeINVs, includedGuides)
+
+	var invDocs, topicDocs []*parse.Document
+	var warnings []string
+	var errMsgs []string
+
+	for _, d := range allDocs {
+		if !d.Sentinel.Present {
+			warnings = append(warnings, fmt.Sprintf("no sentinel block — delegate to LLM: %s", d.Path))
+			continue
+		}
+		if isINVDoc(d) {
+			invDocs = append(invDocs, d)
+		} else {
+			if len(d.Sentinel.Topics) == 0 {
+				warnings = append(warnings, fmt.Sprintf("no topic: field — delegate to LLM for grouping: %s", d.Path))
+			}
+			topicDocs = append(topicDocs, d)
+		}
+	}
+
+	// ── Fast-path skip ───────────────────────────────────────────────────────
+	progress("Step 3/5: Grouping directives by topic...")
+
+	if !checkOnly {
+		allFresh := true
+		for _, d := range allDocs {
+			if !d.Sentinel.Present {
+				allFresh = false
+				break
+			}
+			sh := hash.SourceHash(d.BodyExcludingSentinel())
+			dh := hash.DirectivesHash(d.Sentinel.Directives)
+			if sh != d.Sentinel.SourceHash || dh != d.Sentinel.DirectivesHash {
+				allFresh = false
+				break
+			}
+		}
+		if allFresh {
+			progress("Fast-path skip: all hashes match — no changes.")
+			if jsonMode {
+				emit(JSONOutput{Status: "skip"})
+			}
+			return nil
+		}
+	}
+
+	// ── Group and build effective rules ──────────────────────────────────────
+	topicMap, _, err := compile.Group(topicDocs)
+	if err != nil {
+		return err
+	}
+
+	var invRules []compile.Rule
+	for _, d := range invDocs {
+		src := compile.SourceID(d.Path)
+		for _, r := range compile.EffectiveRules(d.Sentinel) {
+			invRules = append(invRules, compile.Rule{Text: r, Source: src})
+		}
+	}
+	// The bottom-section "Reminder: Non-Negotiable Constraints" repeats the
+	// invariant directives verbatim for emphasis, not as a truncated summary.
+	// v0.4.3's spec — "repeat invariant directives" — and the slash-command
+	// path both render full text. Earlier 87-char truncation produced
+	// ".../mid-sentence cuts in the rendered governance.md.
+	invRestated := append([]compile.Rule(nil), invRules...)
+
+	// ── Aggregations ─────────────────────────────────────────────────────────
+	//
+	// The signal→file routing table this section used to build was retired with
+	// the tier-3 render (SPEC-011): its rows were unioned per topic, rendered  edikt-guard:allow
+	// into governance.md, and read by a model deciding what to load. The
+	// registry description does that job now, and it is human-approved rather
+	// than a union of extracted keywords. The union itself is gone rather than
+	// left computed-and-unrendered — data nothing consumes is the shape that
+	// made scopeDisplay's defect invisible for months.
+	topicNames := sortedKeys(topicMap)
+
+	reminders, verification := aggregateRemindersAndVerification(allDocs)
+
+	// ── Orphan detection ─────────────────────────────────────────────────────
+	var currentOrphans []string
+	for _, d := range allDocs {
+		if !d.Sentinel.Present || d.Frontmatter.NoDirectives != "" {
+			continue
+		}
+		if len(d.Sentinel.Directives) == 0 && len(d.Sentinel.ManualDirectives) == 0 {
+			currentOrphans = append(currentOrphans, compile.SourceID(d.Path))
+		}
+	}
+	historyPath := filepath.Join(root, ".edikt", "state", "compile-history.json")
+	prior, _ := orphan.ReadState(historyPath)
+	var priorList *[]string
+	if prior != nil {
+		priorList = &prior.OrphanADRs
+	}
+	sc, block, writeHist := orphan.Decide(currentOrphans, priorList)
+	_ = sc
+	for _, id := range currentOrphans {
+		if block {
+			errMsgs = append(errMsgs, fmt.Sprintf("[BLOCK] %s: consecutive compile with same orphan set", id))
+		} else {
+			warnings = append(warnings, fmt.Sprintf("[WARN] %s: no directives and no no-directives reason", id))
+		}
+	}
+
+	// ── Early exit for --check or block ──────────────────────────────────────
+	if checkOnly || block {
+		status := "ok"
+		if block || len(errMsgs) > 0 {
+			status = "error"
+		}
+		if jsonMode {
+			emit(JSONOutput{Status: status, Errors: errMsgs, Warnings: warnings})
+		} else {
+			for _, w := range warnings {
+				fmt.Println("  WARN:", w)
+			}
+			for _, e := range errMsgs {
+				fmt.Println("  ERROR:", e)
+			}
+		}
+		if block || len(errMsgs) > 0 {
+			return fmt.Errorf("compile blocked: %d error(s)", len(errMsgs))
+		}
+		return nil
+	}
+
+	// ── Zero-directive guard (refuses to clobber existing output) ────────────
+	// Counts what the legacy parser actually found. If everything is zero,
+	// don't overwrite governance.md or topic files with an empty skeleton —
+	// the common cause is `--legacy` run after `migrate sidecars --apply`
+	// stripped embedded sentinels, so the in-body parser sees nothing.
+	// The default (sidecar) path is the right tool in that case; refusing
+	// here forces an explicit decision instead of silent data loss
+	// (rc≤7 regression: legacy path clobbered manually-curated reminders).
+	preCount := len(invRules)
+	for _, name := range topicNames {
+		preCount += len(topicMap[name].Rules)
+	}
+	if preCount == 0 {
+		msg := "legacy compile resolved 0 directives — refusing to overwrite existing governance output. " +
+			"Did you mean to run without --legacy? The default (sidecar) path reads .edikt.yaml sidecars directly. " +
+			"If sidecars were intentionally removed, run /edikt:upgrade in Claude Code to inspect the migration plan first."
+		if jsonMode {
+			emit(JSONOutput{Status: "error", Errors: []string{msg}, Warnings: warnings})
+		} else {
+			fmt.Println("  ERROR:", msg)
+		}
+		return fmt.Errorf("legacy compile: zero directives, refusing to clobber")
+	}
+
+	// ── Write output ─────────────────────────────────────────────────────────
+	progress("Step 4/5: Scanning codebase for path patterns...")
+	progress("Step 5/5: Writing governance files...")
+
+	outDir := filepath.Join(root, ".claude", "rules", "governance")
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir governance: %w", err)
+	}
+
+	compiledAt := clk.Now().Format(time.RFC3339)
+	totalDirectives := len(invRules)
+	var summaries []TopicSummary
+
+	for _, name := range topicNames {
+		t := topicMap[name]
+		body, err := render.RenderTopic(render.TopicView{
+			Name:            name,
+			Paths:           t.Paths,
+			Sources:         t.Sources,
+			Rules:           t.Rules,
+			CompiledAt:      compiledAt,
+			CompilerVersion: CompilerVersion,
+		})
+		if err != nil {
+			return fmt.Errorf("render %s: %w", name, err)
+		}
+		if err := writeAtomic(filepath.Join(outDir, name+".md"), body); err != nil {
+			return fmt.Errorf("write %s.md: %w", name, err)
+		}
+		totalDirectives += len(t.Rules)
+		summaries = append(summaries, TopicSummary{
+			Name:       name,
+			File:       "governance/" + name + ".md",
+			Directives: len(t.Rules),
+			Sources:    t.Sources,
+		})
+	}
+
+	indexBody, err := render.RenderIndex(render.IndexView{
+		CompiledAt:        compiledAt,
+		CompilerVersion:   CompilerVersion,
+		ADRCompiled:       len(acceptedADRs),
+		INVCompiled:       len(activeINVs),
+		GuidelineCompiled: len(includedGuides),
+		// Excluded is what was loaded minus what was compiled, per kind.
+		// Subtraction rather than len(supersededADRs): a raw ADR that is
+		// neither included nor superseded — a draft, say — lands in no
+		// bucket above, so counting the superseded slice alone would
+		// under-report the artifacts this file does not cover. The header
+		// claims "excluded", so it must count everything excluded.
+		Excluded: map[string]int{
+			"adr":       len(rawADRs) - len(acceptedADRs),
+			"invariant": len(rawINVs) - len(activeINVs),
+			"guideline": len(rawGuides) - len(includedGuides),
+		},
+		DirectiveCount:    totalDirectives,
+		TopicCount:        len(topicMap),
+		InvariantRules:    invRules,
+		InvariantRestated: invRestated,
+		Reminders:         reminders,
+		Verification:      verification,
+	})
+	if err != nil {
+		return fmt.Errorf("render index: %w", err)
+	}
+	if err := writeAtomic(filepath.Join(root, ".claude", "rules", "governance.md"), indexBody); err != nil {
+		return fmt.Errorf("write governance.md: %w", err)
+	}
+
+	if writeHist {
+		_ = orphan.WriteState(historyPath, currentOrphans, CompilerVersion)
+	}
+
+	// ── Summary ──────────────────────────────────────────────────────────────
+	if jsonMode {
+		var invS []RuleSummary
+		for _, r := range invRules {
+			invS = append(invS, RuleSummary{Text: r.Text, Source: r.Source})
+		}
+		emit(JSONOutput{
+			Status:     "success",
+			Topics:     summaries,
+			Invariants: invS,
+			Stats: &CompileStats{
+				ADRsAccepted:    len(acceptedADRs),
+				ADRsSuperseded:  len(supersededADRs),
+				INVsActive:      len(activeINVs),
+				Guidelines:      len(includedGuides),
+				TotalDirectives: totalDirectives,
+				TopicFiles:      len(topicMap),
+			},
+			Warnings: warnings,
+		})
+	} else {
+		fmt.Println()
+		fmt.Println("✅ Governance compiled")
+		fmt.Println()
+		for _, s := range summaries {
+			fmt.Printf("  governance/%s.md  (%d directives ← %s)\n", s.Name, s.Directives, strings.Join(s.Sources, ", "))
+		}
+		fmt.Printf("\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		fmt.Printf("  %d ADRs + %d invariants + %d guidelines\n", len(acceptedADRs), len(activeINVs), len(includedGuides))
+		fmt.Printf("  → %d topic files + index\n", len(topicMap))
+		fmt.Printf("  → %d total directives\n", totalDirectives)
+		for _, w := range warnings {
+			fmt.Println("  WARN:", w)
+		}
+		fmt.Println()
+		fmt.Println("  Next: /edikt:gov:review to review directive language quality.")
+	}
+	return nil
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+// GovernanceDirs returns the configured paths for ADRs, invariants, and
+// guidelines from .edikt/config.yaml under root. Falls back to defaults
+// (docs/architecture/{decisions,invariants}, docs/guidelines) when the
+// config is absent or unreadable.
+//
+// Use this from any dispatcher that needs to know "where does this project
+// keep its governance" — never hardcode the defaults at a call site,
+// because that silently breaks projects with customized paths.*.
+func GovernanceDirs(root string) []string {
+	cfg, _ := loadConfig(root)
+	return []string{cfg.Paths.Decisions, cfg.Paths.Invariants, cfg.Paths.Guidelines}
+}
+
+func loadConfig(root string) (ediktConfig, error) {
+	var cfg ediktConfig
+	cfg.Base = "docs"
+	cfg.Paths.Decisions = "docs/architecture/decisions"
+	cfg.Paths.Invariants = "docs/architecture/invariants"
+	cfg.Paths.Guidelines = "docs/guidelines"
+
+	data, err := os.ReadFile(filepath.Join(root, ".edikt", "config.yaml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			applyBaseDefaults(&cfg)
+			return cfg, nil
+		}
+		return cfg, err
+	}
+	var raw struct {
+		Base  string `yaml:"base"`
+		Paths struct {
+			Decisions  string `yaml:"decisions"`
+			Invariants string `yaml:"invariants"`
+			Guidelines string `yaml:"guidelines"`
+			Specs      string `yaml:"specs"`
+			Prds       string `yaml:"prds"`
+			Plans      string `yaml:"plans"`
+			Discovery  string `yaml:"discovery"`
+		} `yaml:"paths"`
+	}
+	// SPEC-009 Plan A AC-1.2: loads .edikt/config.yaml paths subset (base + per-section path map).  // edikt-guard:allow
+	// Not *.edikt.yaml. KnownFields off intentional — config is user-extensible.
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return cfg, err
+	}
+	if raw.Base != "" {
+		cfg.Base = raw.Base
+	}
+	if raw.Paths.Decisions != "" {
+		cfg.Paths.Decisions = raw.Paths.Decisions
+	}
+	if raw.Paths.Invariants != "" {
+		cfg.Paths.Invariants = raw.Paths.Invariants
+	}
+	if raw.Paths.Guidelines != "" {
+		cfg.Paths.Guidelines = raw.Paths.Guidelines
+	}
+	if raw.Paths.Specs != "" {
+		cfg.Paths.Specs = raw.Paths.Specs
+	}
+	if raw.Paths.Prds != "" {
+		cfg.Paths.Prds = raw.Paths.Prds
+	}
+	if raw.Paths.Plans != "" {
+		cfg.Paths.Plans = raw.Paths.Plans
+	}
+	if raw.Paths.Discovery != "" {
+		cfg.Paths.Discovery = raw.Paths.Discovery
+	}
+	applyBaseDefaults(&cfg)
+	return cfg, nil
+}
+
+// applyBaseDefaults fills in Specs/Prds/Plans from Base when not explicitly
+// set. Decisions/Invariants/Guidelines are NOT touched here — they keep
+// their historical hardcoded "docs/..." defaults set above.
+func applyBaseDefaults(cfg *ediktConfig) {
+	if cfg.Paths.Specs == "" {
+		cfg.Paths.Specs = cfg.Base + "/product/specs"
+	}
+	if cfg.Paths.Prds == "" {
+		cfg.Paths.Prds = cfg.Base + "/product/prds"
+	}
+	if cfg.Paths.Plans == "" {
+		cfg.Paths.Plans = cfg.Base + "/plans"
+	}
+	if cfg.Paths.Discovery == "" {
+		cfg.Paths.Discovery = cfg.Base + "/product/discovery"
+	}
+}
+
+func isINVDoc(d *parse.Document) bool {
+	return strings.HasPrefix(filepath.Base(d.Path), "INV-")
+}
+
+func isSuperseded(d *parse.Document) bool {
+	return strings.HasPrefix(strings.ToLower(d.Frontmatter.Status), "superseded")
+}
+
+func sortedKeys(m map[string]*compile.Topic) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func concat(slices ...[]*parse.Document) []*parse.Document {
+	var out []*parse.Document
+	for _, s := range slices {
+		out = append(out, s...)
+	}
+	return out
+}
+
+func aggregateRemindersAndVerification(docs []*parse.Document) (reminders, verification []string) {
+	seenR, seenV := map[string]bool{}, map[string]bool{}
+	for _, d := range docs {
+		for _, r := range d.Sentinel.Reminders {
+			if !seenR[r] {
+				seenR[r] = true
+				reminders = append(reminders, r)
+			}
+		}
+		for _, v := range d.Sentinel.Verification {
+			if !seenV[v] {
+				seenV[v] = true
+				verification = append(verification, v)
+			}
+		}
+	}
+	if len(reminders) > 10 {
+		reminders = reminders[:10]
+	}
+	if len(verification) > 15 {
+		verification = verification[:15]
+	}
+	return
+}
+
+func writeAtomic(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func emit(v JSONOutput) {
+	b, _ := json.MarshalIndent(v, "", "  ")
+	fmt.Println(string(b))
+}
+
+// loadFromDir is reserved for future direct use.
+func loadFromDir(fsys fs.FS, dir string) ([]*parse.Document, error) {
+	return parse.LoadDocuments(fsys, dir)
+}
+
+var _ = loadFromDir // suppress unused warning

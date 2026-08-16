@@ -1,0 +1,29 @@
+# Which extraction contract has been validated on the frozen fixture set.
+#
+# `gov reextract` REFUSES to dispatch when the installed prompt_version is not
+# recorded here. A prompt bump reaches the corpus through that verb and no
+# other, so this is where an unvalidated contract stops.
+#
+# VALIDATION IS BY BODIES, NEVER BY COUNTS. Prompt v5 captured its target case
+# correctly and dropped ELEVEN bodies across five fixture artifacts; judged on
+# ADR-040 alone it looked like an improvement, and judged on directive counts it
+# looked like merges.
+schema_version: 1
+validated:
+  - prompt_version: v4
+    validated_at: "2026-08-13"
+    method: >-
+      Body-overlap comparison of a full-corpus re-extraction against the pinned
+      pre-extraction corpus. 27 dropped bodies were found and restored; the
+      corrected gate then reported 0 vanished with anchors re-verified.
+    evidence: test/fixtures/reextraction-baseline/baseline.yaml
+rejected:
+  - prompt_version: v5
+    rejected_at: "2026-08-13"
+    reason: >-
+      Dropped 11 bodies with no counterpart across 5 frozen fixture artifacts
+      (ADR-035 2, ADR-040 2, ADR-053 3, ADR-055 3, GL-002 1). It DID fix its
+      target defect — ADR-040's CI-gating policy was captured, unflagged — which
+      is why the decision rule was pre-committed before the comparison was seen:
+      adopt only if every v4 body has a v5 counterpart. A criterion closed by a
+      prompt that drops content is worse than a recorded residual.

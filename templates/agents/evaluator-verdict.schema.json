@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/evaluator-verdict/v1.json",
+  "title": "edikt evaluator verdict",
+  "description": "Structured output of the evaluator agent. The plan harness rejects PASS unless every criterion that names a shell command has evidence_type='test_run' (evidence gate). evaluator_output carries the specialist-domain envelope subagent-stop.sh reads to resolve gate severity.",
+  "type": "object",
+  "required": ["verdict", "criteria", "meta", "evaluator_output"],
+  "additionalProperties": false,
+  "properties": {
+    "verdict": {
+      "description": "Overall verdict for the phase.",
+      "enum": ["PASS", "BLOCKED", "FAIL"]
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "status", "evidence_type", "evidence"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Criterion identifier from the plan sidecar (e.g. 'C1-tests')."
+          },
+          "status": {
+            "enum": ["met", "unmet", "blocked"],
+            "description": "Per-criterion status. `met` with evidence_type=test_run is required for a PASS verdict to hold when the criterion names a shell command."
+          },
+          "evidence_type": {
+            "enum": ["test_run", "grep", "file_read", "manual"],
+            "description": "Classification of the evidence the evaluator based its decision on. `test_run` means a shell command was executed in this session and its output observed."
+          },
+          "evidence": {
+            "type": "string",
+            "description": "One-line human-readable evidence string. For test_run, include the command and a snippet of its output. For grep, the pattern matched. For file_read, the file and line range. For manual, a short rationale."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional longer note expanding on edge cases, blocker reasons, or context."
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["evaluator_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "evaluator_mode": {
+          "enum": ["headless", "interactive"]
+        },
+        "grandfathered": {
+          "type": "boolean",
+          "description": "True if this verdict was synthesized by upgrade migration for a phase that predated the schema. Grandfathered verdicts bypass the evidence gate on a one-time basis."
+        },
+        "migrated_from": {
+          "type": ["string", "null"],
+          "description": "edikt version this verdict was grandfathered from (e.g. '0.4.3'). Null for native v0.5.0+ verdicts."
+        }
+      }
+    },
+    "evaluator_output": {
+      "description": "Specialist-domain envelope. subagent-stop.sh reads .agent to resolve gates.<agent> threshold and .severity to decide whether to fire.",
+      "type": "object",
+      "required": ["agent", "severity", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "string",
+          "description": "Specialist domain identifier matching .edikt/config.yaml gates.<agent> (e.g. 'security', 'dba', 'sre', 'architect', 'performance', 'api'). Must match the specialist whose findings the evaluator wrapped."
+        },
+        "severity": {
+          "enum": ["critical", "warning", "info"],
+          "description": "Aggregate severity across findings — the maximum of any individual finding's severity. The hook compares this against gates.<agent>'s threshold."
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule", "severity", "description"],
+            "additionalProperties": false,
+            "properties": {
+              "rule": {
+                "type": "string",
+                "description": "Rule identifier or short label (e.g. 'OWASP-A03', 'no-hardcoded-secret')."
+              },
+              "severity": {
+                "enum": ["critical", "warning", "info"]
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable finding description."
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

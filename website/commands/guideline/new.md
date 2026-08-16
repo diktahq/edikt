@@ -1,0 +1,105 @@
+# /edikt:guideline:new
+
+Capture a team guideline — a coding standard or best practice that should be consistently followed but doesn't rise to the level of an invariant.
+
+## Usage
+
+```bash
+/edikt:guideline:new all API responses use camelCase keys
+/edikt:guideline:new                         ← extracts from current conversation
+```
+
+## Guidelines vs invariants
+
+| | Invariant | Guideline |
+|--|-----------|-----------|
+| **Violation** | Causes real harm (data loss, security breach, domain corruption) | Breaks consistency, creates tech debt |
+| **Enforcement** | Non-negotiable | Strong preference |
+| **When to capture** | Hard rules with consequences | Standards and team conventions |
+
+If your rule uses "NEVER" and violation would cause real harm, use [`/edikt:invariant:new`](/commands/invariant/new) instead.
+
+## Two modes
+
+### With argument — define from scratch
+
+```bash
+/edikt:guideline:new all API responses use camelCase keys
+```
+
+edikt creates the guideline with clear language about what it applies to, when to follow it, and any exceptions.
+
+Creates: `docs/guidelines/guideline-{slug}.md`
+
+### No argument — extract from conversation
+
+```bash
+/edikt:guideline:new
+```
+
+Extracts the last team standard or coding convention discussed in the current conversation.
+
+## Template
+
+edikt uses a template to structure the guideline. The template lookup chain:
+
+1. **Project override** — `.edikt/templates/guideline.md` (if present)
+2. **edikt default** — built-in template
+
+The default template produces:
+
+```markdown
+# {topic-name}
+
+## Purpose
+## Rules            ← the sidecar extractor reads this (MUST/NEVER language)
+## Examples
+## When NOT to apply
+```
+
+The `## Rules` section is what the extractor reads. Each bullet must use MUST or NEVER — soft language ("should", "prefer") is rejected with a warning. See [Guidelines](/governance/guidelines) for details. In v0.6.0+ the prose template carries no in-body directives block — the generated directives land in the sibling sidecar shown under [Output](#output-v060).
+
+## Output (v0.6.0)
+
+```text
+docs/guidelines/
+├── guideline-api-response-casing.md           ← prose. you own it.
+└── guideline-api-response-casing.edikt.yaml   ← sidecar. edikt writes it.
+```
+
+After creating the prose `.md`, edikt dispatches the `sidecar-extractor` agent in a forked subagent (`context: fork`) with a locked extraction prompt. The agent reads the Rules section, lifts each MUST/NEVER bullet into a directive, and writes the co-located `<guideline>.edikt.yaml`. The pair is created atomically — if extraction fails, neither file remains.
+
+You'll see:
+
+```text
+✅ Created guideline-api-response-casing.md
+✅ Generated guideline-api-response-casing.edikt.yaml — review it before sharing.
+✅ Verify: 1 of 2 passed.
+```
+
+Each guideline's sidecar is generated in its own fresh subagent context with the same locked prompt. See [Sidecar Architecture](/governance/sidecar) for the data model.
+
+### Post-write verify gate
+
+After both files are on disk, `/edikt:guideline:new` shells to:
+
+```bash
+bin/edikt verify gov <slug>
+```
+
+The runner walks every `directives[].verify` and structured `verification[].verify` declared in the new sidecar and runs each as a shell command. Items without a `verify:` field are recorded as `skipped`. Failure surfaces a warning with per-item details; the artifact is **never auto-deleted**. See [`edikt verify`](/commands/verify) for the full contract.
+
+## Natural language triggers
+
+- "let's add a guideline for X"
+- "capture this as a team convention"
+- "we should always do X"
+- "add a coding standard for X"
+
+## What's next
+
+- [/edikt:guideline:compile](/commands/guideline/compile) — compile into governance directives
+- [/edikt:guideline:review](/commands/guideline/review) — review language quality + directive LLM compliance
+- [Guidelines](/governance/guidelines) — what they are, when to use, vs ADRs vs invariants
+- [Extensibility](/governance/extensibility) — manual directives, suppressed directives, template overrides
+- [/edikt:gov:compile](/commands/gov/compile) — compile all governance into enforcement files

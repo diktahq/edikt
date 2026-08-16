@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/plan-eval-state/v1.json",
+  "title": "edikt plan evaluation state",
+  "description": "Machine-local evaluation state for a plan (.edikt/state/plan-eval/PLAN-<slug>-eval.json). Holds the per-criterion history the pre-v0.6.0 criteria sidecar used to carry (status, fail_count, fail_reason, block_reason, last_evaluated). Written by the in-session evaluator and templates/hooks/phase-end-detector.sh; read by templates/hooks/post-compact.sh. Never read by `bin/edikt verify` — the criteria sidecar (plan-criteria.v1.schema.json) stays spec-only. JSON, not YAML: hooks are POSIX bash with stdlib-only Python, so json.load/json.dump is the only structured read-modify-write they can do. State entries carry state only — statement/verify live in the criteria sidecar, matched by id. .edikt/state/ is gitignored: this history is machine-local; the durable committed record is the verdict JSONs under {paths.plans}/verdicts/.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "plan", "phases"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "plan": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plan identifier, matching the criteria sidecar's plan field."
+    },
+    "last_evaluated": {
+      "type": ["string", "null"],
+      "description": "ISO-8601 timestamp of the most recent evaluation across all phases, or null before the first."
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "criteria"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Matches the criteria sidecar's phases[].id."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "in-progress", "pass", "fail", "blocked", "done", "stuck", "skipped"]
+          },
+          "attempt": {
+            "type": ["string", "null"],
+            "description": "N/M attempt counter mirroring the plan progress table, e.g. \"2/5\"."
+          },
+          "criteria": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "status"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Matches the criteria sidecar's criteria[].id."
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["pending", "pass", "fail", "blocked"]
+                },
+                "fail_count": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fail_reason": {
+                  "type": ["string", "null"]
+                },
+                "block_reason": {
+                  "type": ["string", "null"]
+                },
+                "last_evaluated": {
+                  "type": ["string", "null"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

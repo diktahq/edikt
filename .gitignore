@@ -1,0 +1,53 @@
+website/node_modules
+website/.vitepress/dist
+website/.vitepress/cache
+docs/demo/output/*.gif
+.claude/settings.local.json
+docs/plans/
+.DS_Store
+.idea/
+memory/
+AGENTS.md
+test/experiments/directive-effect/*
+!test/experiments/directive-effect/run.sh
+test/experiments/long-running/*
+!test/experiments/long-running/run.sh
+
+# pytest
+__pycache__/
+.pytest_cache/
+
+# local development sandbox (make dev)
+.sandbox/
+
+# local secrets — never commit
+.env
+.env.local
+
+# Compiled Go binary (ADR-022 — shipped via release assets, never committed)
+bin/edikt
+
+# Python build artifacts (tier-2 tools)
+tools/*/build/
+tools/*/*.egg-info/
+
+# edikt ephemeral state
+# Note: .edikt/state/ and .edikt/worktrees/ are covered by .edikt/.gitignore
+# (shipped by edikt and honored as a nested gitignore) — no need to restate.
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# test run artifacts (not checked in)
+test/integration/benchmarks/results/
+test/integration/failures/
+docs/product/plans/verdicts/
+bin/edikt
+
+# Test-run artifacts inside fixture projects — OUTPUTS only, named
+# precisely. The first version of this rule ignored the whole state/
+# directory and broke test_post_compact: plan-eval/<stem>-eval.json is
+# an INPUT that post-compact.sh reads to report failing criteria, not
+# something a run produces. "It lives under state/" is a claim about
+# location; "the suite writes it" is the claim that matters.
+test/fixtures/projects/*/.edikt/state/.hook-dedup/
+test/fixtures/projects/*/.edikt/state/post-flight/

@@ -1,0 +1,120 @@
+[edikt:start]: # managed by edikt — do not edit this block manually
+## edikt
+
+### Project
+
+{{project_summary}}
+
+### Before Writing Code
+
+1. Read `{{project_context_path}}` for project context
+2. Rules reach you through four surfaces, not one. Compiled governance is
+   deliberately split by *when* each rule is needed:
+   - `.claude/rules/governance.md` — the **ambient core**. Always loaded, every
+     edit. Carries only the non-negotiable constraints plus an index of topics.
+   - `.claude/rules/governance/<topic>.md` — **scoped topic files**. Loaded
+     automatically when you touch a file matching that topic's `paths:` globs.
+     Each carries the topic's reminders and verification checklist.
+   - `.claude/rules/governance/directive-index.yaml` — **write-time delivery**.
+     Path-scoped directives live here and are matched per directive against the
+     file you are actually editing, then injected by the PreToolUse /
+     PostToolUse hooks. A topic file whose Directives region is empty is not a
+     failed compile: its directives are delivered from this index instead.
+   - `.claude/skills/edikt-<topic>/SKILL.md` — **on-demand skill packages**.
+     Loaded when the task calls for the topic rather than when a file is
+     touched, which is how a topic reaches you before anything has been edited.
+     A topic with no scoped rules file at all lives here in full.
+3. If a plan is active, read it in `{{plans_path}}/` — check progress table for current state
+4. If a spec exists, read it in `{{specs_path}}/` — the spec and its artifacts are the engineering blueprint
+5. All paths are configurable in `.edikt/config.yaml` under `paths:`
+
+### Build & Test Commands
+
+```
+# Build
+{{build_command}}
+
+# Test
+{{test_command}}
+
+# Lint
+{{lint_command}}
+```
+
+### edikt Commands
+
+Match the user's intent, not their exact words. These are representative examples — if the meaning is the same, run the command.
+
+| Intent | Examples | Run |
+|--------|----------|-----|
+| Project status / what's next | "what's our status", "where are we", "what's next", "project status", "next steps" | `/edikt:status` |
+| Load project context | "load context", "remind yourself", "what's this project", "give me context" | `/edikt:context` |
+| Create an execution plan | "create a plan", "make a plan", "let's plan this", "plan for X", "plan this ticket", "help me plan", "how should we approach X", "plan [ticket ID]", "continue the plan", "re-plan phase 3", "let's create a plan to fix X", "plan to fix these issues", "plan these changes", "plan this work" | `/edikt:sdlc:plan` |
+| Capture an architecture decision | "save this decision", "record this", "capture that", "write an ADR", "document this decision" | `/edikt:adr:new` |
+| Add a hard constraint | "add an invariant", "that's a hard rule", "never do X", "this must always be true" | `/edikt:invariant:new` |
+| Write a PRD | "write a PRD", "document this feature", "requirements for X", "product requirements" | `/edikt:sdlc:prd` |
+| Write a technical spec | "write a spec", "technical spec for X", "spec this out", "design doc for X" | `/edikt:sdlc:spec` |
+| Run structured discovery | "run discovery", "what don't we know", "discovery doc for X", "scope out the unknowns" | `/edikt:sdlc:discovery` |
+| Review a PRD | "review my PRD", "check the PRD", "score this PRD", "is the PRD any good" | `/edikt:sdlc:prd-review` |
+| Review a spec | "review the spec", "check spec coverage", "does the spec cover the PRD", "score this spec" | `/edikt:sdlc:spec-review` |
+| Generate spec artifacts | "generate artifacts", "create the data model", "generate the contracts", "build the artifacts" | `/edikt:sdlc:artifacts` |
+| Check implementation drift | "check drift", "did we build what we decided", "verify the implementation", "are we on track with the spec" | `/edikt:sdlc:drift` |
+| Compile governance | "compile governance", "update directives", "update the rules" | `/edikt:gov:compile` |
+| Re-extract sidecars through the current contract | "re-extract the corpus", "regenerate sidecars", "re-run the extractor", "refresh extraction quality" | `/edikt:gov:reextract` |
+| Review governance quality | "review governance", "are our ADRs well written", "check governance quality" | `/edikt:gov:review` |
+| Score governance quality | "score governance", "governance health", "directive quality", "how good are our directives" | `/edikt:gov:score` |
+| Advisory re-extraction review | "which sidecars should be regenerated", "advisory review", "are any sidecars stale in quality" | `/edikt:gov:advisory-review` |
+| Grade the compiled output | "grade the compile", "is the compiled governance any good", "score the rendered surfaces", "check for double-loading" | `/edikt:gov:grade-compile` |
+| Stress-test directives | "benchmark the directives", "attack these rules", "do our directives hold under pressure", "cheat rate" | `/edikt:gov:benchmark` |
+| Verify a diff against directives | "verify this diff", "check my changes against governance", "run the governance verifier" | `/edikt:gov:verify-diff` |
+| Review implementation | "review what we built", "post-implementation review", "review this code" | `/edikt:sdlc:code-review` |
+| Post-flight phase review | "post-flight", "run the full review for this phase", "compose the phase review" | `/edikt:sdlc:post-flight` |
+| Security audit | "run a security audit", "check for vulnerabilities", "security check" | `/edikt:sdlc:audit` |
+| Check documentation gaps | "check for doc gaps", "what docs are outdated", "audit documentation" | `/edikt:docs:review` |
+| Validate setup | "check my setup", "is everything configured right", "health check", "run doctor" | `/edikt:doctor` |
+| Initialize project or onboard | "set up edikt", "initialize this project", "onboard this repo", "validate my environment", "onboard me", "team setup" | `/edikt:init` |
+| View or change config | "show config", "change config", "disable quality gates", "set database type", "what can I configure" | `/edikt:config` |
+| Import existing docs | "import existing docs", "onboard these docs", "intake our documentation" | `/edikt:docs:intake` |
+| Update rule packs | "check for rule updates", "are my rules outdated", "update rules" | `/edikt:gov:rules-update` |
+| Sync linter rules | "sync rules from linter", "import linter config", "sync eslint rules" | `/edikt:gov:sync` |
+| Capture mid-session decisions | "capture this", "save this decision", "what did we decide", "mid-session sweep" | `/edikt:capture` |
+| Create a guideline | "add a guideline", "create a team guideline", "document this convention" | `/edikt:guideline:new` |
+| Review guideline quality | "review our guidelines", "check guideline language" | `/edikt:guideline:review` |
+| Generate guideline sidecars | "compile this guideline", "regenerate the guideline sidecar" | `/edikt:guideline:compile` |
+| Generate ADR sentinels | "compile this adr", "generate sentinels for ADR-NNN" | `/edikt:adr:compile` |
+| Review ADR language | "review this adr", "check ADR-NNN quality" | `/edikt:adr:review` |
+| Add a manual directive | "add a directive to ADR-NNN", "enrich this ADR", "the extractor missed a rule" | `/edikt:adr:enrich` |
+| Generate invariant sentinels | "compile this invariant", "generate sentinels for INV-NNN" | `/edikt:invariant:compile` |
+| Review invariant language | "review this invariant", "check INV-NNN quality" | `/edikt:invariant:review` |
+| Approve a pending verify | "approve this verify", "review the pending behavioral verify", "promote the proposal" | `/edikt:sidecar:approve` |
+| Regenerate sidecars after regression | "regenerate the sidecars", "fix the lost directives", "run the regression manifest" | `/edikt:sidecar:regenerate` |
+| End-of-session sweep | "wrap up this session", "end of session", "session summary" | `/edikt:session` |
+| Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
+| Pin config to the active install | "pin the version", "update edikt_version", "sync config to the installed version" | `/edikt:upgrade-pin` |
+| Migrate to sidecars (v0.6.0) | "migrate sidecars", "upgrade my sidecars", "convert legacy ADRs", "run the v0.6.0 migration" | `bin/edikt migrate sidecars --dry-run` then `--apply` |
+| Verify a plan phase | "verify phase N", "run the verify runner", "check phase N criteria", "did phase N actually pass" | `/edikt:verify` (or `bin/edikt verify <plan-id> --phase N`) |
+| Regenerate a golden sidecar fixture *(dev-only)* | "regenerate the golden sidecar", "update the extractor fixture" | `/edikt:test:golden-sidecar` |
+| List or manage agents | "what agents do we have", "list agents", "add the security agent" | `/edikt:agents` |
+| Set up integrations | "setup Linear", "connect Jira", "add MCP server" | `/edikt:mcp` |
+| Brainstorm / explore ideas | "let's brainstorm", "brainstorm this", "explore options for X", "I have an idea", "let's think through X" | `/edikt:brainstorm` |
+| Team onboarding *(deprecated)* | "team onboard" | `/edikt:team` *(redirects to init)* |
+
+### Output Conventions
+
+| Symbol | Meaning |
+|--------|---------|
+| ✅ | Action completed successfully |
+| 🔴 | Critical finding — must fix before shipping |
+| 🟡 | Warning — should fix, not blocking |
+| 🟢 | Healthy / no issues |
+| ⚠ | Needs attention |
+| 🔀 | Routing to specialist agent |
+
+### After Compaction
+
+If context was compacted, the PostCompact hook will re-inject the active plan phase and invariants automatically. If you need full context, run `/edikt:context`.
+
+### Commit Convention
+
+{{commit_convention_block}}
+[edikt:end]: #

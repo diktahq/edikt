@@ -1,0 +1,299 @@
+---
+name: invariant:review
+description: "Review invariant language quality for enforceability"
+effort: high
+argument-hint: "[INV-NNN] — omit to review all active invariants"
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Bash
+---
+
+# edikt:invariant:review
+
+Review invariants for language quality in the Rule section. Checks whether rule statements are specific, actionable, and phrased correctly to achieve reliable compliance when compiled into non-negotiable governance directives.
+
+Invariants compile into the top and bottom of every governance file — they carry the highest compliance weight. Vague invariants are especially harmful.
+
+CRITICAL: Every finding must cite the specific text that fails the check and provide a concrete rewrite. Never flag a rule without showing how to fix it.
+
+## Arguments
+
+- `$ARGUMENTS` — optional invariant ID (e.g., `INV-NNN`). If no argument, reviews all active invariants.
+
+## Instructions
+
+### 0. Config Guard
+
+If `.edikt/config.yaml` does not exist, output:
+```
+No edikt config found. Run /edikt:init to set up this project.
+```
+And stop.
+
+### 1. Resolve Paths
+
+Read `.edikt/config.yaml`. Resolve:
+- Invariants: `paths.invariants` (default: `docs/architecture/invariants`)
+
+### 2. Determine Scope
+
+**With `$ARGUMENTS`** — locate the invariant file matching the given ID. If not found:
+```
+Invariant not found: {id}
+Run: ls {invariants_path}/*.md to see available invariants.
+```
+
+**Without `$ARGUMENTS`** — glob all `*.md` files in `{invariants_path}`. Include `status: active` and files with no status field. Skip `status: revoked`.
+
+If no active invariants found:
+```
+No active invariants found in {invariants_path}.
+```
+
+### 3. Review Each Invariant
+
+Display progress: `Step 1/3: Analyzing invariant language quality...`
+
+For each invariant:
+
+1. Read the `## Rule` section (and the opening sentence beneath the title if there is no Rule section).
+2. Extract all rule statements — sentences or bullets using MUST, NEVER, or similar constraint language.
+3. Score each statement against the Quality Criteria (below) on four dimensions: Specificity, Actionability, Phrasing, Testability. A statement is the weakest rating it receives on any dimension.
+4. For each statement rated `weak` or `vague`, provide a concrete rewrite.
+
+Also check the `## Verification` section:
+- If absent: flag as missing — invariants without verification criteria cannot be enforced reliably.
+- If present but vague ("review the code"): flag and provide a concrete rewrite.
+
+### Quality Criteria
+
+**1. Specificity**
+
+| Rating | Definition |
+|---|---|
+| Strong | Names specific file types, packages, tools, or patterns |
+| Adequate | Describes the constraint clearly without exact syntax |
+| Weak | Uses subjective terms without measurable criteria |
+| Vague | Could mean anything to different readers |
+
+**2. Actionability**
+
+| Rating | Definition |
+|---|---|
+| Strong | One clear prohibition or requirement, no ambiguity |
+| Adequate | Clear intent, minor interpretation needed |
+| Weak | Multiple interpretations possible |
+| Vague | No actionable instruction |
+
+**3. Phrasing**
+
+| Rating | Definition |
+|---|---|
+| Strong | NEVER/MUST (uppercase) with one-clause consequence or reason |
+| Adequate | Clear imperative without emphasis marker |
+| Weak | Soft language ("should", "try to") for a hard constraint |
+| Vague | No imperative, reads as suggestion |
+
+**4. Testability**
+
+| Rating | Definition |
+|---|---|
+| Strong | Verifiable by grep, CI check, or code review with specific criteria |
+| Adequate | Verifiable by reading with clear criteria |
+| Weak | Requires subjective judgment to verify |
+| Vague | Cannot be verified |
+
+### 3b. Review Compiled Directives (LLM Compliance)
+
+Read the invariant's co-located `<name>.edikt.yaml` sidecar. If the sidecar exists, also score the compiled directives for LLM compliance. This is separate from the human-side quality check in step 3 — it measures how well Claude will follow the directive, not how well a human wrote it.
+
+For each directive in the sidecar's `directives[]` list AND each in `manual_directives[]`, score on:
+
+**Token specificity** — count backtick-wrapped code tokens (function names, parameter syntax, file paths, types):
+- 0 tokens = Low, 1-2 = Medium, 3+ = High
+
+**Length** — word count:
+- <10 = too short (flag), 10-30 = good, 30-50 = check if splittable, >50 = split (flag)
+
+**MUST/NEVER** — does the directive use uppercase MUST or NEVER?
+- Present = pass. Absent on an invariant directive = flag (invariants are non-negotiable, they MUST use hard language).
+
+**Grep-ability** — can compliance be checked with a shell command?
+- If yes, propose the command. If no, flag.
+
+**Ambiguity** — could two engineers disagree about whether this directive was followed?
+- If yes, flag with explanation.
+
+**"No exceptions." suffix** — does the directive end with "No exceptions." before the `(ref:)` tag?
+- If the source Statement uses absolute language and the directive lacks "No exceptions.", flag.
+
+Each directive gets a 1-10 score. Directives scoring <5 get a concrete rewrite suggestion.
+
+**Manual directive scoring:** manual directives are user-written and bypass compile quality checks. Hold them to the SAME standard. Flag:
+- Soft language ("should", "prefer", "try to")
+- Missing `(ref:)` suffix
+- Conflicts with auto-generated directives
+
+**Friction risk:** flag directives that contradict common language/framework patterns:
+- "NEVER use goroutines" in a Go project → high friction, suggest naming the alternative
+- "NEVER use global state" with a `var db *sql.DB` in cmd/ → clarify scope (cmd/ exempt)
+
+### 4. Check Sidecar Staleness
+
+Display progress: `Step 2/3: Checking sidecar staleness...`
+
+v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars. Staleness is detected by `bin/edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. The legacy v0.2-v0.4 `content_hash:` field is NOT used — its writer/reader hash mismatch made every freshly-compiled file born-stale.
+
+For each invariant reviewed, run the corpus-wide check once and grep for the artifact:
+
+```bash
+check_output=$(bin/edikt gov compile --check 2>&1)
+inv_stale=$(echo "$check_output" | grep -E "^\s*stale:\s+INV-${NNN}\b" | head -1)
+inv_missing=$(echo "$check_output" | grep -E "INV-${NNN}.*sidecar missing" | head -1)
+```
+
+Report:
+```
+⚠ Stale sidecar: {file} — directive quote no longer matches parent .md line range.
+  Run /edikt:invariant:compile INV-{NNN} to resync.
+```
+```
+⚠ Missing sidecar: {file}
+  Run /edikt:invariant:compile INV-{NNN} to generate.
+```
+
+If the parent `.md` has a legacy v0.2-v0.4 sentinel block (with `content_hash:`), don't try to re-hash it — `/edikt:doctor` flags such files with a migration prompt; review trusts that migration is the correct remedy and treats the file as missing-sidecar rather than stale-sentinel.
+
+### 5. Output Report
+
+Display progress: `Step 3/3: Generating report...`
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ INVARIANT REVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+INV-{NNN}: {Title}
+
+  [strong]   "Every command MUST be a plain .md file — NEVER compiled code,
+              NEVER a build step." (Rule §1)
+  [adequate] "No runtime dependencies" (Rule §2)
+  [weak]     "Code should be well-structured"
+             → Rewrite: "Domain layer MUST NOT import from infrastructure
+               packages — NEVER import Symfony\\*, Doctrine\\*, or HTTP types
+               into domain classes." (Rule §3)
+  [vague]    "Keep things simple"
+             → This is a preference, not an invariant. Remove it or move to
+               docs/guidelines/ as a guideline rule.
+
+  Verification: missing
+  → Add a ## Verification section with a concrete check:
+    "Automated: grep -r 'use Symfony\\\\' src/Domain/ — must return no results"
+
+  Sentinel: current
+
+  Directive Quality (LLM compliance):
+    1. "Every SQL query MUST include tenant_id... No exceptions."
+       Specificity: High (3 tokens) | Length: 18w | MUST: ✓ | Grep: ✓ grep -r tenant_id
+       Score: 9/10
+
+    2. "Logging should include context"
+       Specificity: Low (0 tokens) | Length: 4w (too short) | MUST: ✗ | Grep: ✗
+       Score: 2/10
+       ⚠ Rewrite: "Every slog.Error call MUST include \"tenant_id\", tid. No exceptions."
+
+    Manual directives:
+    1. "Custom rule about X"
+       Specificity: Low | MUST: ✗ uses "should" | (ref:) missing
+       Score: 2/10 — ⚠ needs rewrite
+
+    Directive score: 7.5/10
+
+{next invariant}
+  ...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Summary
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Invariants reviewed: {n}
+
+  Human-side (statement quality):
+    Statements analyzed: {n}
+    Strong: {n} | Adequate: {n} | Weak: {n} | Vague: {n}
+
+  Directive-side (LLM compliance):
+    Directives scored: {n} auto + {m} manual
+    Token specificity: {h} high, {m} medium, {l} low
+    MUST/NEVER: {n}/{total} ({pct}%)
+    Grep-able: {n}/{total} ({pct}%)
+    "No exceptions.": {n}/{total_absolute}
+    Average score: {x}/10
+
+  Sentinels:
+    Current:  {n}
+    Stale:    {n} — run /edikt:invariant:compile to regenerate
+    Missing:  {n} — run /edikt:invariant:compile to generate
+
+  {If weak + vague > 0}:
+  Top recommendations:
+    1. {most impactful fix}
+    2. {second most impactful fix}
+    3. {third most impactful fix}
+
+  {If all strong/adequate}:
+  All invariant statements are enforceable. Invariant language is production-grade.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### 6. Confirm
+
+```
+✅ Invariant review complete: {n} invariants reviewed
+
+Next: Run /edikt:invariant:compile to regenerate stale sentinels, then /edikt:gov:compile.
+```
+
+---
+
+REMEMBER: Invariants are non-negotiable constraints — they appear at the top and bottom of every governance file and carry the highest compliance weight. A vague invariant degrades the entire governance system. The Verification section is required: without it, there's no way to confirm the invariant is being honored. If a statement uses soft language ("should", "prefer"), it is not an invariant — flag it for removal or migration to guidelines.
+
+---
+
+## Sidecar Cross-Check
+
+After the language-quality review completes, run a sidecar cross-check on each invariant. The check is read-only and advisory — it surfaces drift between the prose body and the co-located sidecar but does NOT regenerate or modify either file. The user resolves drift by running `/edikt:invariant:compile` or by editing the prose.
+
+For each reviewed invariant at `{invariants_dir}/INV-NNN-{slug}.md`:
+
+1. **Sidecar presence.** Look for `{invariants_dir}/INV-NNN-{slug}.edikt.yaml`. If absent:
+   ```
+   ⚠️  INV-NNN: no sidecar found — run /edikt:invariant:compile INV-NNN to generate.
+   ```
+   Skip remaining checks for that invariant.
+
+2. **Quote drift (sidecar → prose).** For every entry in `directives[]`, locate each of its `source_excerpts[]` entries' recorded `quote` verbatim in the prose body between that entry's recorded `line_start` and `line_end`. If any quote is not found:
+   ```
+   ⚠️  INV-NNN: sidecar directive #{i} no longer matches body
+       Quote (recorded): "{first 80 chars}…"
+       Recorded location: lines {line_start}–{line_end}
+       Hint: prose body has been edited; run /edikt:invariant:compile INV-NNN to resync.
+   ```
+
+3. **Missing directives (prose → sidecar).** Scan `## Statement` and `## Enforcement` sections for imperative sentences (MUST / MUST NOT / NEVER / ALWAYS / SHOULD) not represented in the sidecar's `directives[].text`. For any unrepresented:
+   ```
+   ⚠️  INV-NNN: prose body contains imperative directive not in sidecar
+       Sentence: "{first 80 chars}…" (line {n})
+       Hint: run /edikt:invariant:compile INV-NNN to refresh the sidecar.
+   ```
+   Use coarse matching (≥60% token overlap or `source_excerpts[]` line-range overlap), not exact-string equality.
+
+4. **In-sync confirmation.** If steps 1–3 surface no findings:
+   ```
+   ✅ INV-NNN: sidecar in sync
+   ```
+
+The cross-check runs after the language-quality review's existing output. It does NOT modify any file.

@@ -1,0 +1,13 @@
+# Tier-2 LLM-shell-out exemption list (ADR-030).
+#
+# Adding a path here requires amending ADR-030. Every entry MUST cite
+# the ADR and a removal deadline immediately above the path.
+#
+# Format: paths are relative to the repo root, one per line.
+# Lines beginning with '#' and blank lines are ignored.
+
+# Phase A subagent dispatch — exempt until v0.7.0 ships the
+# tier-1-orchestrated rewrite per ADR-030 §"Roll-out". The hot path of
+# the two-phase compile retains its claude-CLI dependency for one more
+# minor; refactor target is v0.7.0.
+tools/edikt/internal/phasea/runner.go

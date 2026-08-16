@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/governance-verifier-verdict/v1.json",
+  "title": "edikt governance-verifier verdict (L2)",
+  "description": "Per-directive verdict emitted by the L2 governance-verifier agent. A sibling of the L1 evaluator-verdict schema. Per-directive, no evidence_type discriminator, no BLOCKED — L2 runs in a fresh read-only fork that can always evaluate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdicts", "meta"],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "description": "One entry per directive evaluated. May be empty when the diff matches no directives in the topic file; meta is still required.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["directive_id", "status", "rationale"],
+        "properties": {
+          "directive_id": {
+            "type": "string",
+            "description": "Stable directive identifier. Either an ADR/INV-anchored directive index (e.g. 'INV-NNN.directive[0]') or a topic-anchored directive index (e.g. 'governance-security.directive[3]').",
+            "pattern": "^(ADR|INV)-\\d{3,}\\.directive\\[\\d+\\]$|^[a-z][a-z0-9-]{0,79}\\.directive\\[\\d+\\]$"
+          },
+          "status": {
+            "description": "Per-directive verdict. PASS = diff is consistent with directive (or unrelated). FAIL = diff demonstrably violates directive; cite file/line in evidence. NEEDS_REVIEW = diff plausibly touches directive but cannot be determined without information not in the prompt. There is no BLOCKED — the verifier runs in a fresh read-only fork and can always evaluate.",
+            "enum": ["PASS", "FAIL", "NEEDS_REVIEW"]
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Short human-readable justification. Plain text only — markdown code fences are rejected, preventing shell-content leakage from agent output into downstream systemMessage channels.",
+            "maxLength": 2000,
+            "not": { "pattern": "```" }
+          },
+          "evidence": {
+            "type": "array",
+            "description": "Optional file/line citations. Used for FAIL verdicts to ground the violation in the diff. PASS verdicts may omit this field; FAIL verdicts SHOULD include at least one entry (fixture-tested separately, not schema-enforced).",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["file", "line_range"],
+              "properties": {
+                "file": {
+                  "type": "string",
+                  "description": "Repo-relative path of the file the directive is violated in."
+                },
+                "line_range": {
+                  "type": "string",
+                  "description": "Line span in the diff, e.g. '42-58' or '42'."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "ran_at", "agent_version"],
+      "properties": {
+        "topic": {
+          "type": "string",
+          "description": "Compiled governance topic the directives came from (matches .claude/rules/governance/<topic>.md basename).",
+          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+        },
+        "ran_at": {
+          "type": "string",
+          "description": "ISO 8601 timestamp of the verifier run.",
+          "format": "date-time"
+        },
+        "agent_version": {
+          "type": "string",
+          "description": "Version stamp of the governance-verifier agent template that produced this verdict."
+        }
+      }
+    }
+  }
+}

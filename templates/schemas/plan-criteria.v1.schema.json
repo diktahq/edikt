@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/plan-criteria/v1.json",
+  "title": "edikt plan criteria sidecar",
+  "description": "Spec-only criteria sidecar (PLAN-<slug>-criteria.yaml) consumed by `bin/edikt verify`. Mirrors tools/edikt/internal/verify/schema.go, which strict-decodes (KnownFields) — any field not listed here makes verify exit 2. Evaluation state (status, fail_count, fail_reason, …) does NOT belong in this file; it lives in .edikt/state/plan-eval/PLAN-<slug>-eval.json (see plan-eval-state.v1.schema.json). Two constraints live only in the Go validator, which remains authoritative: phase ids must be unique across the file, and criterion ids must be unique within a phase. Ids and created accept unquoted YAML scalars (numbers, dates) because Go's yaml.v3 coerces scalars into string fields; quoting them is still the recommended style.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "plan", "phases"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Discrete integer version (same convention as gov-sidecar.v1): the shape is a v1-or-v2 contract, not semver-evolved."
+    },
+    "plan": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Plan identifier, e.g. PLAN-sidecar-architecture."
+    },
+    "target_release": {
+      "type": "string"
+    },
+    "created": {
+      "description": "ISO-8601 date. Untyped on purpose: unquoted YAML dates parse as date objects, and the Go decoder accepts them into its string field."
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "classification", "criteria"],
+        "properties": {
+          "id": {
+            "type": ["string", "number"],
+            "description": "Phase identifier, unique across the file. Unquoted numeric ids are accepted (yaml.v3 coerces them to string); quoting (id: \"1\") is the recommended style."
+          },
+          "name": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string",
+            "enum": ["testable", "operational", "informational"],
+            "description": "testable = every criterion carries an executable verify command; operational = observable but not machine-checkable; informational = context only."
+          },
+          "completion_promise": {
+            "type": "string"
+          },
+          "criteria": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "statement"],
+              "properties": {
+                "id": {
+                  "type": ["string", "number"],
+                  "description": "Criterion identifier, unique within the phase, e.g. AC-2.1. Unquoted numeric ids (id: 1.1) are accepted; quoting is the recommended style."
+                },
+                "statement": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "verify": {
+                  "type": "string",
+                  "description": "Shell command exiting 0 when the criterion holds. Required when the phase is testable; omit the key entirely (never verify: null) otherwise."
+                },
+                "verify_kind": {
+                  "type": "string",
+                  "description": "Cheat-rate scoring metadata (structural | behavioral). The Go decoder does not constrain the value."
+                },
+                "intent": {
+                  "type": "string"
+                },
+                "falsifying_observation": {
+                  "type": "string"
+                },
+                "positive_fixture_path": {
+                  "type": "string"
+                },
+                "negative_fixture_path": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "classification": { "const": "testable" }
+          },
+          "required": ["classification"]
+        },
+        "then": {
+          "properties": {
+            "criteria": {
+              "items": {
+                "required": ["id", "statement", "verify"]
+              }
+            }
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Optional DAG edges between phases, keyed by phase id.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "blocks": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "severity": { "type": "string" },
+          "mitigation_phase": { "type": "string" }
+        }
+      }
+    }
+  }
+}

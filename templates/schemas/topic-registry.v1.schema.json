@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/topic-registry/v1.json",
+  "title": "edikt topic registry (.edikt/topics.yaml)",
+  "description": "Human-owned, git-versioned map of topic id -> pinned description. Written ONLY by `bin/edikt sidecar approve --kind topic-description` (the approval ceremony) or the owner's own editor; the compile pipeline treats it as read-only input, the same posture parent .md prose gets. Every rendered surface consumes `description` VERBATIM — no rewriting, summarising, or re-deriving.",
+  "type": "object",
+  "propertyNames": {
+    "pattern": "^[a-z][a-z0-9-]{0,39}$",
+    "description": "The key IS the topic id — identical pattern to the sidecar `topic` field, so registry keys and sidecar topics join without normalisation."
+  },
+  "additionalProperties": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["description", "description_hash", "approved_at"],
+    "properties": {
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 160,
+        "pattern": "^[^\\r\\n]+$",
+        "description": "ONE task-language line (~25 tokens) stating when a task needs this topic — written for routing (\"touching compile internals, sidecar schemas, or render templates\"), not taxonomy. Consumed verbatim by the ambient topic index and skill frontmatter."
+      },
+      "description_hash": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "description": "Hex SHA-256 of `description`'s exact bytes, stamped by the approval ceremony over the bytes the human actually saw. This is NOT redundant with approved_at: a timestamp alone survives a later edit to the description it was stamped for, so an edited line would keep reading as approved when nobody approved it (pre-flight SEC #7). Detection posture on mismatch is FLAG-and-report, not refuse — an unapproved edit is surfaced with a count and a denominator rather than bricking compile over the owner's own in-progress edit to their own file. No whitespace normalisation before hashing: a normaliser would fold away exactly the changes this field exists to notice."
+      },
+      "approved_at": {
+        "type": "string",
+        "format": "date-time",
+        "description": "RFC 3339 UTC timestamp stamped by the approval ceremony. Its presence means a human approved this topic's description; there are no unapproved rows in this file. Pending proposals live in .edikt/state/pending-topic-descriptions/, mirroring the pending-verifies pattern."
+      }
+    }
+  },
+  "examples": [
+    {
+      "compile": {
+        "description": "Changing gov compile, sidecar schemas, Phase A/B internals, or render templates.",
+        "description_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "approved_at": "2026-08-12T16:10:00Z"
+      }
+    }
+  ]
+}

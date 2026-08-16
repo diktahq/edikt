@@ -1,0 +1,513 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/gov-sidecar/v2.json",
+  "title": "edikt governance sidecar (v2 \u2014 multi-anchor)",
+  "description": "The <artifact>.edikt.yaml sidecar co-located next to a governance artifact (ADR, invariant, guideline). v2 replaces v1's singular source_excerpt with source_excerpts[], an ordered list of 1..N anchors per directive. The v1 shape could only record ONE span of prose per directive, so a rule whose meaning is established across separate sentences \u2014 a Decision line naming a thing and a later paragraph defining it \u2014 had nowhere to put the second span. Extraction resolved that by dropping context or by splitting one rule into fragments that each lost the other's meaning. That is a schema-shaped hole, not a prompt defect, and no amount of extractor tuning closes it. Compile reads sidecars verbatim and never mutates the parent .md. source_hash, agent_prompt_version and directives_hash remain forbidden by additionalProperties.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "topic",
+    "path",
+    "signals",
+    "directives"
+  ],
+  "$comment": "v2 \u2014 source_excerpts[] replaces source_excerpt. The singular key is NOT accepted as an alias: additionalProperties:false rejects it, and the Go loader reports it by name so a half-migrated sidecar fails loudly instead of validating with zero anchors. Migration is bin/edikt migrate --to-v2.",
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Sidecar schema version. v2 denotes the multi-anchor shape: directives[] and prohibitions[] carry source_excerpts[] (1..N) instead of v1's singular source_excerpt. A v1 reader cannot interpret a v2 sidecar and must refuse it rather than silently reading zero anchors."
+    },
+    "topic": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,39}$",
+      "description": "Kebab-case topic identifier used to group directives across artifacts during compile. 1\u201340 characters, must start with a lowercase letter, may contain lowercase letters, digits, and hyphens."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relative path (from the project root) to the parent .md artifact this sidecar describes. Validated by /edikt:doctor \u2014 a sidecar whose path doesn't resolve is reported as orphaned."
+    },
+    "body_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "Hex SHA-256 of the parent .md body after whitespace normalization, recorded at extraction time. Powers the BODY DRIFT signal: when this differs from the recomputed digest, prose changed that extraction never saw, so the sidecar may be INCOMPLETE \u2014 distinct from ANCHOR DRIFT, where a recorded quote no longer matches and the sidecar is WRONG. This is NOT the forbidden source_hash field: that field was a fast-path substitute for checking, where a divergence between recorded and computed values was the DEFECT. Here divergence is the PRODUCT \u2014 the field exists precisely to be compared and to disagree. source_hash, agent_prompt_version and directives_hash remain forbidden. Optional: sidecars written before this field existed have no baseline and MUST be reported as UNMEASURED, never as unchanged."
+    },
+    "signals": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9 _.-]*$",
+        "description": "Lowercase signal phrase. Indexed for search and for the benchmark attack corpus; topic routing is the approved registry description, not this set when a task matches the signal."
+      },
+      "description": "Lowercase, deduplicated keyword/phrase signals that route work to this artifact."
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "v1.1 (optional). File-glob patterns scoping where this artifact's directives apply (e.g. 'tools/edikt/**/*.go', 'templates/hooks/**/*.sh'). Glob syntax is doublestar/v4 compatible. Validated as non-empty strings at parse time; full glob-syntax validation deferred to gov:compile."
+    },
+    "scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "planning",
+          "design",
+          "implementation",
+          "review"
+        ]
+      },
+      "uniqueItems": true,
+      "description": "v1.1 (optional). Lifecycle phases during which this artifact's directives are surfaced. Closed enum: planning | design | implementation | review. ADR Decision blocks default to [design, implementation, review]; INV Statements default to [implementation, review]; ADR architectural prohibitions default to [planning, design, review]."
+    },
+    "prohibitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "source_excerpts"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "MUST NOT directive synthesised from a rejected option. Same shape as directives[].text."
+          },
+          "derived_from": {
+            "type": "string",
+            "description": "Provenance hint for the prohibition (e.g., 'rejected_option_b'). Optional; auditability only \u2014 not used by compile."
+          },
+          "verify": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional shell command that returns exit 0 when the prohibition is honored, non-zero when it is violated. Run via `bin/edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
+          },
+          "verify_kind": {
+            "type": "string",
+            "enum": [
+              "behavioral",
+              "tooling",
+              "structural"
+            ],
+            "description": "v1.2 (optional). The enforcement medium of the verify command. behavioral = runs code and asserts a property; tooling = invokes a stable external tool with a fixed rule ID; structural = grep/file-presence over content (only valid when the prohibition's property is itself structural). Layer-independent \u2014 applies to every verify: command regardless of which sidecar carries it."
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "v1.2 (optional). One-line semantic claim of the prohibition, generator-neutral. Consumed by the L2 governance-verifier instead of the raw text. Must read as the assertion without referencing implementation symbols the generator controls."
+          },
+          "falsifying_observation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint."
+          },
+          "human_approved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral, but NOT enforced at compile \u2014 the check is deferred to a later phase (AC-4.3), so an unapproved behavioral verify compiles today. Set by `bin/edikt sidecar approve`."
+          },
+          "positive_fixture_path": {
+            "type": "string",
+            "description": "Path to a script that exits 0 when the directive's behavioral property holds."
+          },
+          "negative_fixture_path": {
+            "type": "string",
+            "description": "Path to a script that exits non-zero when the directive's behavioral property is violated."
+          },
+          "source_excerpts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "line_start",
+                "line_end",
+                "quote"
+              ],
+              "properties": {
+                "line_start": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "1-indexed line in the parent .md where this anchor's source text begins."
+                },
+                "line_end": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "1-indexed line where this anchor's source text ends. Must be >= line_start; range-vs-file-length is checked by doctor and the compile resync pass, not by JSON Schema."
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Verbatim text from the parent .md spanning line_start..line_end. Anchor drift compares this against the live prose; a mismatch means the sidecar is WRONG (distinct from body drift, where it may merely be INCOMPLETE)."
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "statement",
+                    "definition",
+                    "scope",
+                    "rationale",
+                    "exception"
+                  ],
+                  "description": "v2 (optional). What this anchor contributes to the directive. The first anchor is conventionally the statement; later anchors typically carry the definition or scope that the statement alone does not. Advisory metadata \u2014 grading and drift treat all anchors alike."
+                }
+              }
+            },
+            "description": "v2. Ordered anchors (1..N) grounding this prohibition in the parent .md. At least one is required: a prohibition with zero anchors is ungrounded and cannot be drift-checked. Multiple anchors exist so a rule established across separate spans of prose can record every span it depends on, instead of discarding all but one."
+          },
+          "needs_review": {
+            "type": "boolean",
+            "description": "v2 (optional; absent means false). Set by the extractor when a candidate falls in one of the two residual classes the calibrated content-scope rule provably cannot settle from inside a single artifact: (a) an unattributed cross-artifact restatement \u2014 another artifact's rule restated here without citation, indistinguishable from an original rule under extraction's single-artifact isolation; (b) an aspirational obligation in a Consequences section, which has the grammar of a rule and the position of an outcome. It is a REVIEW FLAG, never a suppression: the directive still compiles and still binds, and it is marked for a human to confirm or remove. Routing these to review is the alternative to the two silent failures \u2014 extracting them unmarked, or dropping them unmentioned."
+          },
+          "actor_scope": {
+            "type": "boolean",
+            "description": "v2 (optional; absent means false). ADR-065. Set on a directive/prohibition whose subject is an edikt-internal automated operation (the compilation pipeline, gov:compile, migrate, upgrade) rather than file content a human edit could violate. hook match's write-time MUST-grade selection excludes actor_scope: true entries unconditionally \u2014 that channel only ever observes Claude-Code-mediated Edit/Write calls, which the Go-internal pipeline operations never make, so delivering these as PreToolUse bounces is noise with no enforcement value through this specific surface. Excluded entries still compile and still render in ambient/topic-file surfaces; only write-time PreToolUse delivery is affected. A per-directive, reviewed, deliberate opt-in \u2014 never inferred by the extractor."
+          }
+        }
+      },
+      "description": "v1.1 (optional). MUST NOT directives synthesised from rejected '## Considered Options' (ADRs only). Each entry MUST have a verifiable source_excerpt pointing to a Cons: bullet or rejected-option body in the parent .md. Extractor never invents a prohibition that is not literally present in rejected-option text (see Phase 2 Rule C in templates/agents/sidecar-extractor.md)."
+    },
+    "manual_directives": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "User-authored rules preserved across sidecar regenerations. Always included in the effective rule set. Never overwritten by sidecar-extractor."
+    },
+    "suppressed_directives": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Auto-directives the user rejected. Subtracted from directives[] at gov:compile time. Never overwritten by sidecar-extractor."
+    },
+    "reminders": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Pre-action reminders aggregated into governance.md ## Reminders. Format: 'Before {action} \u2192 {check} (ref: ID)'. Extracted from ## Confirmation (ADRs) and ## Enforcement (INVs)."
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "description": "Legacy bare-string form. Verification checklist item in '[ ] {what to check} (ref: ID)' format. Aggregated into governance.md ## Verification Checklist. Human-readable only \u2014 no programmatic check."
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Verification checklist item \u2014 same content as the bare-string form."
+              },
+              "verify": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Optional shell command that runs the checklist item mechanically. Exit 0 = pass. Used by `bin/edikt verify gov <ID>` to enforce the completion-evidence discipline."
+              }
+            }
+          }
+        ]
+      },
+      "description": "Verification checklist items aggregated into governance.md ## Verification Checklist. Two forms accepted (oneOf): bare string (legacy), or {text, verify?} object (preferred for new entries \u2014 carries the executable check that proves the item)."
+    },
+    "migration_preserved": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "v0.6.x two-phase upgrade baseline (Phase A of the migration-as-cleanup refactor). Populated by `edikt migrate sidecars --apply` with the verbatim content of the legacy [edikt:directives:start] block; consumed by the sidecar-extractor agent on the first compile after migration, then stripped from the sidecar by Phase B (compile). Sidecars in steady state do NOT carry this field. Its presence is a structural signal that the artifact has just been migrated and is awaiting its first canonical extraction.",
+      "properties": {
+        "schema_detected": {
+          "type": "string",
+          "enum": [
+            "v0.5x-full",
+            "v0.5x-partial",
+            "v0.4.3-legacy",
+            "unknown"
+          ],
+          "description": "What the migrator detected the legacy sentinel block to be. Audit-only; extractor uses the structured content below regardless of detection."
+        },
+        "directives": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Legacy directive strings (the sentinel block's directives:[] list, verbatim). Extractor MUST include each of these in its output, verbatim, then synthesize additional directives from prose that aren't already covered."
+        },
+        "manual_directives": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Legacy manual_directives:[] list, verbatim. Extractor MUST output these in the manual_directives field."
+        },
+        "suppressed_directives": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Legacy suppressed_directives:[] list, verbatim. Extractor MUST output these in the suppressed_directives field."
+        },
+        "reminders": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Legacy reminders:[] list, verbatim. Extractor MUST output these in the reminders field."
+        },
+        "verification": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Legacy verification:[] list, verbatim. Extractor MUST output these in the verification field."
+        },
+        "topic": {
+          "type": "string",
+          "description": "Legacy topic if present (v0.5.x sentinels). Extractor MAY use this as a hint when synthesizing the canonical topic field."
+        },
+        "signals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Legacy signals if present (v0.5.x sentinels). Extractor MAY use this as a hint when synthesizing the canonical signals field."
+        }
+      }
+    },
+    "directives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "source_excerpts"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "The directive sentence as it will appear in compiled governance, \u2264 500 characters. Includes its own ref tail (e.g., '(ref: ADR-NNN)'). 500 chars is deliberate headroom \u2014 natural-language rules with multiple clauses routinely run 200\u2013280 chars; rules that would exceed it should be split."
+          },
+          "verify": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional shell command that returns exit 0 when the directive holds, non-zero when it is violated. Run via `bin/edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
+          },
+          "verify_kind": {
+            "type": "string",
+            "enum": [
+              "behavioral",
+              "tooling",
+              "structural"
+            ],
+            "description": "v1.2 (optional). The enforcement medium of the verify command. behavioral = runs code and asserts a property; tooling = invokes a stable external tool with a fixed rule ID; structural = grep/file-presence over content (only valid when the directive's property is itself structural, e.g., 'no go.mod at root'). The mechanism-quality axis; layer-independent and harness-independent. Phase B compile enforces: if `verify` is set, `verify_kind` MUST also be set."
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "v1.2 (optional). One-line semantic claim of the directive, generator-neutral. Consumed by the L2 governance-verifier instead of the raw `text`. Must read as the directive's assertion without referencing implementation symbols the generator controls."
+          },
+          "falsifying_observation": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint."
+          },
+          "human_approved_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral, but NOT enforced at compile \u2014 the check is deferred to a later phase (AC-4.3), so an unapproved behavioral verify compiles today. Set by `bin/edikt sidecar approve`; the tier-1 wrapper captures the user's decision via Claude Code's AskUserQuestion before dispatching the tier-2 binary."
+          },
+          "positive_fixture_path": {
+            "type": "string",
+            "description": "Path to a script that exits 0 when the directive's behavioral property holds."
+          },
+          "negative_fixture_path": {
+            "type": "string",
+            "description": "Path to a script that exits non-zero when the directive's behavioral property is violated."
+          },
+          "source_excerpts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "line_start",
+                "line_end",
+                "quote"
+              ],
+              "properties": {
+                "line_start": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "1-indexed line in the parent .md where this anchor's source text begins."
+                },
+                "line_end": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "1-indexed line where this anchor's source text ends. Must be >= line_start; range-vs-file-length is checked by doctor and the compile resync pass, not by JSON Schema."
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Verbatim text from the parent .md spanning line_start..line_end. Anchor drift compares this against the live prose; a mismatch means the sidecar is WRONG (distinct from body drift, where it may merely be INCOMPLETE)."
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "statement",
+                    "definition",
+                    "scope",
+                    "rationale",
+                    "exception"
+                  ],
+                  "description": "v2 (optional). What this anchor contributes to the directive. The first anchor is conventionally the statement; later anchors typically carry the definition or scope that the statement alone does not. Advisory metadata \u2014 grading and drift treat all anchors alike."
+                }
+              }
+            },
+            "description": "v2. Ordered anchors (1..N) grounding this directive in the parent .md. At least one is required: a directive with zero anchors is ungrounded and cannot be drift-checked. Multiple anchors exist so a rule established across separate spans of prose can record every span it depends on, instead of discarding all but one."
+          },
+          "needs_review": {
+            "type": "boolean",
+            "description": "v2 (optional; absent means false). Set by the extractor when a candidate falls in one of the two residual classes the calibrated content-scope rule provably cannot settle from inside a single artifact: (a) an unattributed cross-artifact restatement \u2014 another artifact's rule restated here without citation, indistinguishable from an original rule under extraction's single-artifact isolation; (b) an aspirational obligation in a Consequences section, which has the grammar of a rule and the position of an outcome. It is a REVIEW FLAG, never a suppression: the directive still compiles and still binds, and it is marked for a human to confirm or remove. Routing these to review is the alternative to the two silent failures \u2014 extracting them unmarked, or dropping them unmentioned."
+          },
+          "actor_scope": {
+            "type": "boolean",
+            "description": "v2 (optional; absent means false). ADR-065. Set on a directive/prohibition whose subject is an edikt-internal automated operation (the compilation pipeline, gov:compile, migrate, upgrade) rather than file content a human edit could violate. hook match's write-time MUST-grade selection excludes actor_scope: true entries unconditionally \u2014 that channel only ever observes Claude-Code-mediated Edit/Write calls, which the Go-internal pipeline operations never make, so delivering these as PreToolUse bounces is noise with no enforcement value through this specific surface. Excluded entries still compile and still render in ambient/topic-file surfaces; only write-time PreToolUse delivery is affected. A per-directive, reviewed, deliberate opt-in \u2014 never inferred by the extractor."
+          }
+        }
+      },
+      "description": "Directive list extracted from the parent .md. May be empty (an artifact with no enforceable directives is reported by /edikt:doctor as a warning, not an error). Note: line_end \u2265 line_start and line_end \u2264 parent_file_line_count are enforced by /edikt:doctor and the compile resync pass \u2014 JSON Schema 2020-12 has no standard cross-property comparator. v1.2 conditional-required constraints are declared here but enforced at Phase B compile time rather than at schema-validation time, because JSON Schema 2020-12 cannot express conditional-required across siblings cleanly. Two of the three are enforced today: verify_kind when verify is set, and falsifying_observation when verify_kind == behavioral. The third \u2014 human_approved_at when verify_kind == behavioral \u2014 is required by contract but NOT checked, its enforcement deliberately deferred to a later phase (AC-4.3)."
+    },
+    "proposed_paths": {
+      "type": "array",
+      "description": "v2 (optional). Paths globs PROPOSED by extraction but not yet human-approved \u2014 they do not scope anything until promoted into paths[] via `bin/edikt sidecar approve --kind paths`. Kept separate from paths[] so an inferred guess can never silently become an enforced scope; an unapproved proposal is unmeasured, not authoritative.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "glob",
+          "evidence"
+        ],
+        "properties": {
+          "glob": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "enum": [
+                "*",
+                "**",
+                "**/*",
+                "**/**"
+              ]
+            },
+            "description": "doublestar/v4-compatible glob. Catch-alls are rejected at the schema level: a glob matching everything scopes nothing and silently re-creates the ambient-load problem this release exists to remove."
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Why this glob was proposed \u2014 the prose or filename observation it came from. Required: a proposal without evidence cannot be reviewed, only rubber-stamped."
+          },
+          "matched_example": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Optional. A real repo path this glob matched at proposal time. The requirement that a proposal match at least one existing file is enforced by the Go validator, which can stat the tree; JSON Schema cannot."
+          }
+        }
+      }
+    },
+    "proposed_removals": {
+      "type": "array",
+      "description": "v2 (optional). Paths globs PROPOSED for removal from an existing paths[] scope, but not yet human-approved — they continue to enforce until promoted (removed) via `bin/edikt sidecar approve --kind paths`. Unlike proposed_paths (extractor-generated), a removal is a reviewed, human-initiated narrowing: nothing infers that a glob is over-broad. At approval time the ceremony computes a coverage preview (files that would lose this artifact's directives) and REFUSES outright if any lost file is literally named in the sidecar's own directive/prohibition text — a narrowing that un-governs a file the text mentions is a defect, not a judgment call.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "glob",
+          "evidence"
+        ],
+        "properties": {
+          "glob": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The glob to remove from paths[]. Must currently be present in paths[]; the ceremony refuses removal of a glob that isn't there rather than silently no-op."
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Why this glob is over-broad relative to what the directive text actually supports — the prose evidence a reviewer can check the coverage preview against."
+          }
+        }
+      }
+    },
+    "proposed_topic_description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160,
+      "pattern": "^[^\\r\\n]+$",
+      "description": "v2 (optional, transient). The extractor's SUGGESTED one-line registry description for this sidecar's topic \u2014 the 'extracted' half of the extracted-then-approved ceremony. It is not a description: no surface renders it, and it reaches .edikt/topics.yaml only through `bin/edikt sidecar approve --kind topic-description`, which stamps a hash over the exact bytes a human approved. Routed out to .edikt/state/pending-topic-descriptions/<topic>.yaml and stripped from the sidecar before steady state, exactly like proposed_paths and migration_preserved."
+    },
+    "paths_approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approved_at",
+        "globs_sha256"
+      ],
+      "description": "v2 (optional). Receipt for a paths approval performed through `bin/edikt sidecar approve --kind paths`. Without it, a sidecar whose paths went through the ceremony is BYTE-IDENTICAL to one where an extractor wrote paths[] directly \u2014 so no gate can tell an approved scope from a declared one, and AC-4.4's 'approved fields survive regeneration byte-intact' asserts a property the data cannot express. Recorded as F-004.",
+      "properties": {
+        "approved_at": {
+          "type": "string",
+          "description": "RFC 3339 UTC timestamp of the approval."
+        },
+        "globs_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "SHA-256 over the sorted approved globs, newline-joined. Content-addressed on purpose: a receipt carrying only a timestamp would still validate after someone edited paths[] by hand afterwards, which is exactly the case it exists to catch."
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,130 @@
+# {{id}}: {{title}}
+
+**Status:** {{status}}
+**Rigor:** {{rigor}}
+**Author:** {{author}}
+**Created:** {{created_at}}
+**Sidecar:** [{{id}}-{{slug}}.yaml](./{{id}}-{{slug}}.yaml) — structured data, source of truth
+
+---
+
+## Problem
+
+{{problem_statement}}
+
+<!-- What breaks without this? State the failure mode, not the feature. -->
+
+## Users
+
+{{user_archetypes}}
+
+<!-- Who has this problem? Be specific — roles, contexts, frequency. -->
+
+## Goals
+
+| Metric | Target | Counter-metric (must not move) |
+|--------|--------|--------------------------------|
+| {{north_metric}} | {{target}} | {{counter_metric}} |
+
+## Non-Goals
+
+{{non_goals}}
+
+<!-- What is explicitly out of scope. Prevents scope creep downstream. -->
+
+## Requirements
+
+<!--
+Requirements are source-of-truth in the .yaml sidecar.
+This section mirrors them for human readability.
+Edit via /edikt:sdlc:prd or /edikt:sdlc:prd:ship, not by hand.
+-->
+
+{{requirements_mirror}}
+
+## Acceptance Criteria
+
+<!--
+ACs are source-of-truth in the .yaml sidecar.
+Given/When/Then format. Stable IDs flow through to SPEC.
+-->
+
+{{acceptance_criteria_mirror}}
+
+## Solution References
+
+{{solution_references}}
+
+<!--
+Mockups, wireframes, references. edikt does not generate these.
+Link to Figma, v0, bolt, screenshots, or paste generated artifacts from Claude.
+-->
+
+## Protections
+
+<!--
+What must NOT change when this ships.
+Links to existing invariants + feature-scoped protections.
+-->
+
+{{protections}}
+
+{{#if team_or_platform}}
+
+## Stakeholders
+
+{{stakeholders}}
+
+## Dependencies
+
+{{dependencies}}
+
+## Rollout Plan
+
+{{rollout_plan}}
+
+{{/if}}
+
+{{#if platform}}
+
+## Non-Functional Requirements
+
+{{nfrs}}
+
+## Risk Register
+
+{{risks}}
+
+## Compatibility Matrix
+
+{{compatibility}}
+
+## Compliance Hooks
+
+{{compliance}}
+
+{{/if}}
+
+## Open Questions
+
+{{open_questions}}
+
+## Evidence & Discovery
+
+{{evidence}}
+
+<!--
+How do you know someone has this problem?
+Discovery work, user interviews, support tickets, hypothesis calls.
+-->
+
+---
+
+**Sidecar:** [{{id}}-{{slug}}.yaml](./{{id}}-{{slug}}.yaml) — structured data for FRs, ACs, status, and revision history.
+
+**Next steps:**
+- Write the technical spec: `/edikt:sdlc:spec {{id}}`
+- Ship requirements as they complete: `/edikt:sdlc:prd:ship FR-NNN`
+- Review PRD quality anytime: `/edikt:sdlc:prd-review {{id}}`
+
+*This PRD follows the edit-in-place lifecycle model.*

@@ -1,0 +1,324 @@
+---
+name: gov:review
+description: "Review governance document language for enforceability and clarity"
+effort: high
+allowed-tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+---
+
+# edikt:gov:review
+
+Review governance documents (ADRs, invariants, guidelines, compiled directives) for language quality. Checks whether directives are specific enough, actionable enough, and phrased correctly to achieve reliable compliance when Claude reads them.
+
+Reviews directive language quality — checks whether directives are specific, actionable, and phrased correctly to achieve reliable compliance. Also detects stale sentinels when source documents have changed since sentinels were last generated.
+
+This is not a structural check (that's `/edikt:doctor`), a contradiction check (that's `/edikt:gov:compile --check`), or sentinel generation (that's `/edikt:gov:compile`).
+
+CRITICAL: Every finding must cite the specific text that fails the check and provide a concrete rewrite. Never flag a directive without showing how to fix it.
+
+## Arguments
+
+- `$ARGUMENTS` — optional scope:
+  - No arguments: review all governance docs + compiled output
+  - `compiled` or `governance.md`: review only the compiled directives file
+  - `ADR-NNN`: review a specific ADR
+  - `INV-NNN`: review a specific invariant
+  - `guidelines`: review all guideline files
+- `--json` — output only the JSON format (see Reference). No progress indicators, no emoji, no prose.
+
+## Instructions
+
+0. If `.edikt/config.yaml` does not exist, output:
+   ```
+   No edikt config found. Run /edikt:init to set up this project.
+   ```
+   And stop.
+
+0b. If `--json` is in `$ARGUMENTS`, output only the JSON format at the end — no progress indicators, no emoji, no prose.
+
+1. Display progress: `Step 1/3: Analyzing directive quality...`
+
+2. Read `.edikt/config.yaml`. Resolve paths from the `paths:` section.
+
+3. Determine scope from `$ARGUMENTS`. If no scope, gather all documents:
+   - ADRs with `status: accepted` from `{paths.decisions}`
+   - Invariants with `status: active` from `{paths.invariants}`
+   - Guidelines from `{paths.guidelines}`
+   - Compiled output from `.claude/rules/governance.md` (if it exists)
+
+4. For each document, extract all directives — lines that instruct Claude to do or not do something. In ADRs, these are in the Decision section. In invariants, the Rule section. In guidelines, all bullet points. In the compiled file, all `- ` lines.
+
+5. Score each directive against the Quality Criteria in the Reference section. A directive can have multiple findings.
+
+5a. **Manual-directive provenance (Phase 8).** For each `manual_directives:` entry in every sidecar in scope, emit:
+
+```
+⚠ Manual directive (no source_excerpt anchor — verify still accurate): "{text}" (sidecar: {path})
+```
+
+Manual directives have no `source_excerpt` line range — they were authored directly via `bin/edikt sidecar add-manual-directive` and cannot be drift-checked against parent prose. Surface every entry once so the reviewer eyeballs each for staleness.
+
+5b. **Directive-quality sub-procedure (shared with `/edikt:gov:compile`).** For each document in scope, run the inline Python script from `commands/gov/_shared-directive-checks.md §Inline Script` once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
+
+```json
+{
+  "adr_id": "<ADR-NNN or INV-NNN>",
+  "directive_body": "<directive line text>",
+  "canonical_phrases": ["<phrase1>", ...],
+  "no_directives_reason": "<value from frontmatter no-directives key, or null>"
+}
+```
+
+Collect all returned warning lines. Surface them inside the per-document review section under a **"Directive-quality checks"** sub-heading:
+
+```
+Directive-quality checks
+  [WARN] ADR-NNN: directive has 2 sentences but no canonical_phrases — run /edikt:adr:review --backfill
+  [WARN] ADR-NNN: canonical_phrase "atomic rename" not found in directive body
+```
+
+If no warnings for a document, omit the sub-heading for that document. These warnings use the exact warning text from `_shared-directive-checks.md` — do not reword them. This ensures byte-identical output with `/edikt:gov:compile` for the same input.
+
+6. Score the compiled output as a whole against the Document-Level Checks in the Reference section.
+
+7. Output the report using the Output Format in the Reference section.
+
+8. For each finding rated `weak` or `vague`, provide a concrete rewrite that passes the check. Use the Rewrite Examples in the Reference section as a model.
+
+9. Output the summary:
+   ```
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    GOVERNANCE REVIEW
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    Documents reviewed: {n}
+    Directives analyzed: {n}
+    Strong: {n} | Adequate: {n} | Weak: {n} | Vague: {n}
+
+    {If weak + vague > 0}:
+    Top recommendations:
+      1. {most impactful fix}
+      2. {second most impactful fix}
+      3. {third most impactful fix}
+
+    {If all strong/adequate}:
+    All directives are enforceable. Governance language is production-grade.
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ```
+
+### Staleness Detection
+
+10. Display progress: `Step 2/3: Checking sidecar staleness...`
+
+11. Run the tier-2 deterministic staleness check. v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars; staleness is detected by `bin/edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. If any quote no longer matches, the sidecar is stale.
+
+    ```bash
+    if ! command -v bin/edikt >/dev/null 2>&1 && ! command -v edikt >/dev/null 2>&1; then
+      echo "error: bin/edikt not found on PATH. Run: edikt install edikt"
+      exit 1
+    fi
+    if check_output=$(bin/edikt gov compile --check 2>&1); then
+      stale_count=0
+      missing_count=0
+    else
+      stale_count=$(echo "$check_output" | grep -cE '^\s*stale:' || true)
+      missing_count=$(echo "$check_output" | grep -cE 'sidecar missing — run' || true)
+    fi
+    ```
+
+    Why this replaces the v0.2.x `content_hash:` mechanism:
+    - The legacy approach hashed everything-above-the-sentinel-marker. Compile's writer computed the hash *before* appending the sentinel + blank-line separator, but the read-time check hashed *after* — write/read disagreed by exactly one trailing newline. Every freshly-compiled file was born stale, forever.
+    - v0.6.0 sidecars don't store a content_hash. Drift is detected via per-directive `source_excerpts[]` `quote` lookups against current `.md` line ranges. Round-trips correctly because no synthesised separator confuses the comparison.
+    - For projects still on the legacy v0.2-v0.4 sentinel schema, `/edikt:doctor` flags them with a one-line migration prompt; `/edikt:gov:review` does not retry the broken hash check.
+
+12. Parse `bin/edikt gov compile --check` output to populate per-document findings:
+    - Each `stale: ADR-NNN — directive[K]: ...` line maps to one stale finding for `ADR-NNN`'s parent `.md`.
+    - Each `<path>: sidecar missing — run /edikt:<kind>:compile` line maps to one missing finding.
+    - Exit code 0 with empty stdout = all current.
+
+13. Display progress: `Step 3/3: Generating report...`
+
+14. Output the sidecar summary:
+    ```
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     SIDECAR STALENESS
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+     Current:  {n} sidecars
+     Stale:    {k} sidecars — run /edikt:gov:compile to resync (Phase A LLM dispatch)
+     Missing:  {m} parent .md files have no sidecar — run /edikt:<kind>:compile <ID> per artifact
+
+     Next: Run /edikt:gov:compile to rebuild governance.md with current sidecars.
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    ```
+
+---
+
+REMEMBER: This command reviews LANGUAGE QUALITY and generates DIRECTIVE SENTINELS. The question is: "If Claude reads this directive, will it know exactly what to do?" Every finding must include the original text and a concrete rewrite. Sentinel blocks are the bridge between human-readable governance and LLM-enforceable rules.
+
+## Reference
+
+### JSON Output Format
+
+```json
+{
+  "status": "reviewed",
+  "documents_reviewed": 8,
+  "directives_analyzed": 45,
+  "ratings": {"strong": 30, "adequate": 10, "weak": 3, "vague": 2},
+  "sentinels": {"current": 6, "missing": 1, "stale": 1}
+}
+```
+
+### Quality Criteria
+
+Score each directive on these dimensions. A directive is the weakest rating it receives on any dimension.
+
+**1. Specificity** — Does it name the exact thing to do or avoid?
+
+| Rating | Definition | Example |
+|---|---|---|
+| Strong | Names specific patterns, functions, or formats | "Use `fmt.Errorf("context: %w", err)` for error wrapping" |
+| Adequate | Describes the behavior clearly without exact syntax | "Wrap errors with context describing the operation that failed" |
+| Weak | Uses subjective terms without measurable criteria | "Write clean error handling code" |
+| Vague | Could mean anything to different readers | "Handle errors properly" |
+
+**2. Actionability** — Can Claude follow this without interpretation?
+
+| Rating | Definition | Example |
+|---|---|---|
+| Strong | One clear action, no ambiguity about what to produce | "Every HTTP handler MUST return `Content-Type: application/json`" |
+| Adequate | Clear intent, minor interpretation needed | "Use consistent error response format across all endpoints" |
+| Weak | Multiple interpretations possible | "Keep the API consistent" |
+| Vague | No actionable instruction | "Think about the user experience" |
+
+**3. Phrasing** — Does it use the right emphasis level?
+
+| Rating | Definition | Example |
+|---|---|---|
+| Strong | NEVER/MUST for hard constraints with one-clause reason | "NEVER hardcode secrets — they persist in git history" |
+| Adequate | Clear imperative without emphasis marker | "Use parameterized queries for all SQL" |
+| Weak | Soft language for a hard constraint | "Try to avoid hardcoding secrets" |
+| Vague | No imperative, reads as suggestion | "It would be good to not hardcode secrets" |
+
+**4. Testability** — Can compliance be verified?
+
+| Rating | Definition | Example |
+|---|---|---|
+| Strong | Verifiable by grep, test, or code review with specific criteria | "All endpoints return `{ "error": "message", "code": "CODE" }` on failure" |
+| Adequate | Verifiable by reading the code with clear criteria | "Error responses include a machine-readable error code" |
+| Weak | Requires subjective judgment to verify | "Error responses should be helpful" |
+| Vague | Cannot be verified | "The system should be reliable" |
+
+### Document-Level Checks
+
+Apply these to the compiled output (`.claude/rules/governance.md`) as a whole:
+
+1. **Directive count**: If > 30 directives, flag as `[!!] {n} directives — exceeds recommended maximum of 30. Claude's compliance degrades with instruction count. Consider consolidating related directives.`
+
+2. **Phrasing consistency**: Check if NEVER/MUST/ALWAYS are used consistently (all uppercase or all mixed). If mixed: `[!!] Inconsistent emphasis — {n} use NEVER (uppercase), {m} use Never (title case). Standardize to uppercase for hard constraints.`
+
+3. **Primacy**: Check if invariants appear first. If not: `[!!] Invariants should be the first section — primacy bias means earlier directives get more attention.`
+
+4. **Single-home rendering** (rewritten 2026-08-16; the prior wording of this criterion was stale against schema v3): schema v3 deliberately does NOT restate content for a U-shaped-attention-curve recency effect — repeating a directive's full text across both a topic file and `directive-index.yaml` was a fixed defect (measured live: 78 of 110 directive lines appearing verbatim in both). "Reinforcement" in v3 comes from precision of delivery (a topic file loads on file-touch; write-time injection fires per matched directive) rather than repetition. Running the OLD wording of this criterion against correct v3 output reports a fixed defect as a live one — do not do that. Check instead for the actual v3 defect class: does any directive's full text appear more than once across `governance.md`'s body, a topic file, and `directive-index.yaml`? If so: `[!!] Directive duplicated across surfaces — "{directive text}" appears in both {surface A} and {surface B}. Scoped directive text has exactly one home: the topic file for a pathless artifact, the index for a paths-declaring one — never both.`
+
+5. **Cross-references**: Check if every directive has a `(ref: ADR-NNN)` or `(ref: INV-NNN)` source. If not: `[!!] {n} directives without source references — traceability is lost.`
+
+6. **Redundancy**: Flag directives that say the same thing in different words. Report: `[!!] Redundant directives: "{directive A}" and "{directive B}" — consolidate into one.`
+
+### Rewrite Examples
+
+```
+BEFORE (vague):
+  "Follow good coding practices" (ref: guidelines/quality.md)
+
+AFTER (strong):
+  "Functions MUST be under 50 lines. Extract helpers when a function
+   does more than one thing." (ref: guidelines/quality.md)
+  Rating: Vague → Strong (specific line count, clear extraction trigger)
+```
+
+```
+BEFORE (weak):
+  "Try to keep the API backward compatible"
+
+AFTER (strong):
+  "NEVER remove or rename existing API fields — add new fields alongside
+   old ones. Removal requires a versioned deprecation period."
+  Rating: Weak → Strong (NEVER + specific behavior + process for exceptions)
+```
+
+```
+BEFORE (weak phrasing for a hard constraint):
+  "Secrets should not be in source code"
+
+AFTER (strong):
+  "NEVER hardcode secrets, API keys, or passwords in source code — use
+   environment variables or a secret manager. Secrets in code persist
+   in git history even after removal."
+  Rating: Weak → Strong (NEVER + enumerated items + reason)
+```
+
+```
+BEFORE (not testable):
+  "The system should handle errors gracefully"
+
+AFTER (testable):
+  "Every API error response MUST return HTTP status code + JSON body with
+   'error' (human message) and 'code' (machine-readable). No stack traces
+   or internal details in production responses."
+  Rating: Vague → Strong (specific format, verifiable by inspection)
+```
+
+### Output Format
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ GOVERNANCE REVIEW
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+{document name} ({n} directives)
+
+  [strong]   "NEVER hardcode secrets — they persist in git history"
+  [adequate] "Use consistent error format across endpoints"
+  [weak]     "Try to keep things backward compatible"
+             → Rewrite: "NEVER remove or rename existing API fields — add new
+               fields alongside old ones. Removal requires a versioned
+               deprecation period."
+  [vague]    "Handle errors properly" (ref: guidelines/quality.md)
+             → Rewrite: "Every catch block MUST do one of: handle (retry,
+               fallback), propagate with context, or log with correlation ID.
+               Empty catch blocks are never acceptable."
+
+{next document}
+  ...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Document-level checks (compiled output)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  [ok]   Directive count: {n} (under 30)
+  [ok]   Phrasing consistency: all NEVER/MUST uppercase
+  [ok]   Primacy: invariants first
+  [ok]   Single-home rendering: no directive duplicated across surfaces
+  [!!]   2 directives without source references
+  [!!]   Redundant: "validate input at boundaries" appears in both
+         ADR-NNN directive and INV-NNN directive — consolidate
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Research Basis
+
+These criteria are grounded in empirical results:
+
+- **EXP-004** (123 runs): well-written rules achieve 100% compliance on invented conventions. Poorly phrased rules were not tested because all edikt rules are already strong — this command catches user-authored governance docs before they degrade the system.
+- **IFEval++ (2025)**: phrasing inconsistency costs 18-31% compliance. Consistent NEVER/MUST phrasing outperforms mixed emphasis.
+- **IFScale (2025)**: primacy bias peaks at 150-200 instructions. Earlier directives get more attention.
+- **Lost in the Middle (Liu et al., 2023)**: 20%+ degradation for content in mid-document positions. U-shaped attention curve supports primacy design — this is why Criterion 3 (invariants first) is a real check on `governance.md`. v3's answer to the RECENCY half of that curve is not restatement (measured live as 78-of-110-line double-loading, now fixed) but precision of delivery: scoped content reaches the reader again at the moment it is relevant — a topic file loading on file-touch, or write-time injection firing per matched directive — rather than a second static copy sitting in a document nobody re-reads on demand.
+- **Anthropic context engineering**: "Informative, yet tight" — every directive must earn its place.

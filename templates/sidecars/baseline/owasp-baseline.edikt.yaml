@@ -1,0 +1,61 @@
+schema_version: 1
+topic: owasp-baseline
+path: templates/sidecars/baseline/owasp-baseline.edikt.yaml
+signals:
+  - owasp
+  - injection
+  - broken auth
+  - xss
+  - csrf
+  - security headers
+  - secrets in code
+  - insecure deserialization
+paths:
+  - "**/*.go"
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "**/*.py"
+  - "**/middleware/**"
+scope:
+  - design
+  - implementation
+  - review
+directives:
+  - text: "Responses MUST set the Content-Security-Policy, X-Content-Type-Options, and Strict-Transport-Security headers via a single shared middleware on every route."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "security headers contract"
+    verify: "go test ./... -run TestSecurityHeaders -timeout 30s"
+    verify_kind: behavioral
+    intent: "An HTTP client requesting any route receives CSP, X-Content-Type-Options: nosniff, and HSTS headers, regardless of which handler served the response."
+    falsifying_observation: "A test issues GET / and inspects the response headers, finding no Content-Security-Policy header and no Strict-Transport-Security header — proving the middleware was missing or not applied to this route."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/owasp-baseline.0.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/owasp-baseline.0.sh"
+  - text: "User-supplied content rendered into HTML MUST be passed through the framework's escape function — never written via innerHTML, dangerouslySetInnerHTML, or string concatenation."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "xss escape contract"
+    verify: "npm test -- --grep 'xss escape'"
+    verify_kind: behavioral
+    intent: "A user storing the string <script>alert(1)</script> as their display name sees the literal characters rendered, not an executed script tag."
+    falsifying_observation: "A test stores <script>alert(1)</script> as a user display name, renders the profile page, and asserts no <script> tag exists in the DOM — but the assertion fails because the raw markup made it through to the rendered HTML."
+    human_approved_at: "2026-05-23T14:00:00Z"
+    positive_fixture_path: "templates/sidecars/baseline/fixtures/positive/owasp-baseline.1.sh"
+    negative_fixture_path: "templates/sidecars/baseline/fixtures/negative/owasp-baseline.1.sh"
+prohibitions:
+  - text: "Source code MUST NOT contain hardcoded credentials, API keys, or private keys — secrets MUST come from environment variables or a secrets manager."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no secrets in code"
+    verify: "grep -rnE '(AKIA[0-9A-Z]{16}|-----BEGIN.*PRIVATE KEY-----)' . 2>/dev/null | wc -l | grep -qx '0'"
+    verify_kind: structural
+  - text: "Code MUST NOT deserialize untrusted input via reflection-driven decoders without a schema validation step."
+    source_excerpt:
+      line_start: 1
+      line_end: 1
+      quote: "no unsafe deserialization"
+    verify_kind: structural

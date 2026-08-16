@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/directive-index/v1.json",
+  "title": "edikt directive index (.claude/rules/governance/directive-index.yaml)",
+  "description": "The hook tier's input: glob -> graded directive entries. Written ONLY by Phase B render (deterministic, sorted); read by `bin/edikt hook match` and by diff-time consumers. Deliberately non-.md so the host's rules loader and post-flight's *.md glob ignore it — this is a machine surface, not a context file. The consumer NEVER re-derives grade and never rewrites text: pinned judgment is consumed verbatim.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "globs"],
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Index contract version. A reader that does not know this version refuses the file rather than guessing its shape (fail-closed), so shape evolution is explicit."
+    },
+    "globs": {
+      "type": "object",
+      "description": "Map of doublestar glob -> the entries scoped to it. An EMPTY map is valid and means 'zero path-scoped directives compiled' — a measured zero. A MISSING FILE is UNMEASURED: the verb errors and the shims fail open.",
+      "propertyNames": {
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9_.*/{},\\[\\]?!-]+$",
+        "description": "Shape allowlist for glob keys — no whitespace, quotes, pipes, backslashes or newlines. Validated at render time AND re-validated by the consuming verb: the index is protected against a tampered managed region, but a consumer that assumes its own input is safe is one managed-region bypass away from being wrong."
+      },
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "grade", "text", "reminders"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9-]{1,63}:[dp][0-9]{2,4}$",
+              "description": "Stable deterministic entry id: <ARTIFACT-ID>:<d|p><1-based zero-padded ordinal within the source sidecar's directives[]/prohibitions[]>. Byte-equal sidecar input yields byte-equal ids, and session dedup keys on this id — so stability is contractual, not cosmetic."
+            },
+            "grade": {
+              "type": "string",
+              "enum": ["must", "advisory"],
+              "description": "PINNED at render time: `must` iff the source artifact is an invariant OR the text carries MUST NOT / NEVER / No exceptions; else `advisory`. Recorded per entry precisely so the hook never re-derives it — grade selects the channel (must -> deny-once bounce, advisory -> additionalContext), and a consumer that re-derived it could silently downgrade an invariant."
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "The compiled directive sentence verbatim from the sidecar, including its (ref: ID) tail — the payload the shim injects."
+            },
+            "intent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Optional; carried through from the sidecar when present so diff-time consumers reading this index keep the intent shape without a second lookup."
+            },
+            "falsifying_observation": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "description": "Optional; travels with intent as a pair (extraction emits both or falls back to text)."
+            },
+            "reminders": {
+              "type": "array",
+              "items": {"type": "string", "minLength": 1},
+              "description": "The source artifact's reminders, delivered at write-touch time. Reminder aggregation re-targets HERE rather than into the ambient core, which is what lets the ambient surface drop its always-on Reminders section without the content vanishing. REQUIRED key; may be empty — an empty list is a measured zero, an absent key is an omission."
+            }
+          }
+        }
+      }
+    }
+  }
+}

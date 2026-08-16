@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/post-flight-report/v1.json",
+  "title": "edikt post-flight composite report",
+  "description": "Composite report emitted by the post-flight-synthesizer. Wraps L1 (criteria verify), L2 (governance verifier), and L3 (specialist) outputs into one deduplicated machine-readable artifact. Persisted to .edikt/state/post-flight/<plan>-<phase>-<ts>.json by commands/sdlc/post-flight.md. Consumed by the plan harness (row-flip gate), doctor, and any future CI surface.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["meta", "l1_summary", "l2_summary", "l3_summary", "findings"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["plan", "phase", "ran_at", "synthesizer_version", "dispatch_mode"],
+      "properties": {
+        "plan": {
+          "type": "string",
+          "description": "Plan slug (basename of PLAN-<slug>.md without extension).",
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "maxLength": 200
+        },
+        "phase": {
+          "type": "integer",
+          "description": "Phase number from the plan progress table.",
+          "minimum": 0,
+          "maximum": 999
+        },
+        "ran_at": {
+          "type": "string",
+          "description": "ISO 8601 timestamp of synthesis.",
+          "format": "date-time"
+        },
+        "synthesizer_version": {
+          "type": "string",
+          "description": "Version stamp of the post-flight-synthesizer agent template that produced this report."
+        },
+        "dispatch_mode": {
+          "description": "How the orchestrator was invoked. auto-hook = phase-end-detector.sh; manual = user-typed /edikt:sdlc:post-flight; stub = EDIKT_POSTFLIGHT_STUB=1 (e2e tests only).",
+          "enum": ["auto-hook", "manual", "stub"]
+        }
+      }
+    },
+    "l1_summary": { "$ref": "#/$defs/layerSummary" },
+    "l2_summary": { "$ref": "#/$defs/layerSummary" },
+    "l3_summary": { "$ref": "#/$defs/layerSummary" },
+    "findings": {
+      "type": "array",
+      "description": "Deduplicated findings from L2 (per-directive FAIL/NEEDS_REVIEW) and L3 (specialist critical/warning/info). May be empty. L1 verdicts are summarized in l1_summary, not in findings.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["file", "line_range", "issue_class", "sources", "description", "severity"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "Repo-relative path the finding cites.",
+            "maxLength": 1000
+          },
+          "line_range": {
+            "type": "string",
+            "description": "Line span in the diff the finding cites, e.g. '42-58' or '42'.",
+            "pattern": "^[0-9]+(-[0-9]+)?$"
+          },
+          "issue_class": {
+            "type": "string",
+            "description": "Short label categorizing the finding (e.g. 'INV-NNN', 'OWASP-A03', 'security', 'no-hardcoded-secret'). Synthesizer must never invent or normalize this value — preserve the source agent's token verbatim.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "sources": {
+            "type": "array",
+            "description": "Origins of the finding as <layer>:<issue_class> strings. When two source findings dedupe to one merged finding, this array lists all origins (e.g. ['l2:INV-NNN', 'l3:security']).",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^(l1|l2|l3):[A-Za-z][A-Za-z0-9._-]{0,99}$"
+            }
+          },
+          "description": {
+            "type": "string",
+            "description": "Plain-text description. Markdown code fences are rejected — agent text must never carry shell content into downstream channels (no-agent-text-into-shell hardening).",
+            "maxLength": 4000,
+            "not": { "pattern": "```" }
+          },
+          "severity": {
+            "description": "Maximum severity across merged sources. critical > warning > info. L2 FAILs default to warning unless an L3 critical covered the same tuple.",
+            "enum": ["critical", "warning", "info"]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "layerSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "description": "Layer-level outcome. passed = clean; failed = at least one fail; skipped = layer intentionally not run; partial = layer ran but some sub-jobs failed (e.g. L3 specialist timeout); unavailable = layer attempted but could not run (claude -p spawn failure, malformed input).",
+          "enum": ["passed", "failed", "skipped", "partial", "unavailable"]
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Per-status counters specific to the layer. L1 has pass/fail/blocked/skipped; L2 has pass/fail/needs_review/skipped; L3 has critical/warning/info/skipped. All fields optional; absence implies 0.",
+          "properties": {
+            "pass":         { "type": "integer", "minimum": 0 },
+            "fail":         { "type": "integer", "minimum": 0 },
+            "blocked":      { "type": "integer", "minimum": 0 },
+            "needs_review": { "type": "integer", "minimum": 0 },
+            "critical":     { "type": "integer", "minimum": 0 },
+            "warning":      { "type": "integer", "minimum": 0 },
+            "info":         { "type": "integer", "minimum": 0 },
+            "skipped":      { "type": "integer", "minimum": 0 }
+          }
+        },
+        "reason": {
+          "type": "string",
+          "description": "Optional explanation for skipped / partial / unavailable. Empty for passed / failed.",
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}
