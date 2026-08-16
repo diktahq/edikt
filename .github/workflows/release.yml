@@ -217,48 +217,20 @@ jobs:
           cat RELEASE_BODY.md
           echo "── END ──"
 
-      - name: Phase 11 acceptance test — install + cross-major upgrade + sidecar migration
-        run: |
-          # Synthesizes a v0.5.x install, seeds two ADRs with v0.5.x in-body
-          # sentinels, overwrites with the just-built v0.6.0 launcher + payload,
-          # runs `migrate sidecars --apply` and `gov compile`, asserts sidecars
-          # present and in-body sentinels gone. Hermetic — no network, runs
-          # against the freshly-built tools/edikt binary.
-          #
-          # The acceptance script reads LAUNCHER_SRC from $PROJECT_ROOT/bin/edikt
-          # (ADR-022: compiled binaries are gitignored, never committed). The
-          # cross-compile step above writes per-platform binaries under
-          # build/${goos}-${goarch}/bin/edikt. Stage linux-amd64 at bin/edikt
-          # for the acceptance test (the runner is ubuntu-latest = linux-amd64).
-          mkdir -p bin
-          cp "$GITHUB_WORKSPACE/build/linux-amd64/bin/edikt" bin/edikt
-          chmod +x bin/edikt
-          if [ ! -x test/release/install-fresh-and-upgrade.sh ]; then
-            echo "::warning::test/release/install-fresh-and-upgrade.sh missing or not executable — skipping acceptance test"
-            exit 0
-          fi
-          bash test/release/install-fresh-and-upgrade.sh
-
-      - name: E2E regression — Family 1 + Family 2 (verification-before-completion gate)
-        run: |
-          # Catches the rc≤7 silent regressions: governanceDirs hardcode,
-          # silent compile, --json null contract, --check silent, migration
-          # silent reminders/verification drop. Failure here means the
-          # release would ship a known regression class.
-          if [ ! -x test/test-e2e-v04-guideline-heavy.sh ]; then
-            echo "::error::E2E regression test missing — refusing to tag without it"
-            exit 1
-          fi
-          # Fixture pins edikt_version: "0.6.0" deliberately — ADR-042's own
-          # directive requires EDIKT_SKIP_VERSION_GATE=1 for CI/tests exercising
-          # a fixture pinned to a historical version, "the same way the verify
-          # trust gate (ADR-041) uses EDIKT_VERIFY_TRUST=1". Missing here since
-          # before the version floor was ever raised past 0.6 — first surfaced
-          # 2026-08-15 cutting v0.7.0-rc2, the third distinct untried-path
-          # failure in this same release run (see F-083/F-085/F-086).
-          EDIKT_BIN="$GITHUB_WORKSPACE/build/linux-amd64/bin/edikt" \
-            EDIKT_SKIP_VERSION_GATE=1 \
-            bash test/test-e2e-v04-guideline-heavy.sh
+      # The Phase 11 acceptance test and the E2E regression suite used to run
+      # here. They can't: this workflow is promoted to the public repo
+      # (INV-017), and test/ is private-by-default and never travels with
+      # it — a gate requiring test/ scripts here would fail on every real
+      # tag by construction, not by catching a real regression. Both now run
+      # as the `release-readiness` job in edikt-dev's own test.yml (tag push)
+      # AND, primarily, as scripts/cut_release.py's local gate against
+      # edikt-dev's checkout before it ever tags either repo — local because
+      # edikt-dev is private and its Actions minutes depend on active
+      # billing (observed failing 2026-08-16), while this workflow keeps
+      # working regardless since public repos get free Actions minutes. This
+      # workflow only builds, signs, and publishes what was already
+      # verified. Asset publishing below is unchanged — still exactly the
+      # payload/checksums/signature set ADR-016 requires.
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
