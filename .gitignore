@@ -7,7 +7,7 @@ docs/plans/
 .DS_Store
 .idea/
 memory/
-AGENTS.md
+/AGENTS.md
 test/experiments/directive-effect/*
 !test/experiments/directive-effect/run.sh
 test/experiments/long-running/*
