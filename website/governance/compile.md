@@ -15,51 +15,7 @@ You write the prose `.md`. The compile pipeline generates the sidecar. **edikt o
 
 ## The sentinel block (legacy in-body format)
 
-Before v0.6.0, every governance document carried an in-body directive sentinel block. It looked like this:
-
-```markdown
-## Enforcement
-
-- grep for raw SQL outside repository/ — must return no results
-- Every repository method has a test rejecting empty tenant
-
-<!-- Directives populated by /edikt:invariant:compile -->
-[edikt:directives:start]: #
-source_hash: "a3b2c1..."
-directives_hash: "9f8e7d..."
-compiler_version: "0.3.0"
-paths:
-  - "**/*.go"
-scope:
-  - implementation
-  - review
-directives:
-  - "Every SQL query MUST include `tenant_id` in the WHERE clause. No exceptions. (ref: INV-012)"
-  - "Every `slog.Error` call MUST include `\"tenant_id\", tid`. No exceptions. (ref: INV-012)"
-reminders:
-  - "Before writing SQL → MUST include `tenant_id` in WHERE clause (ref: INV-012)"
-verification:
-  - "[ ] Every SQL query references `tenant_id` (ref: INV-012)"
-manual_directives: []
-suppressed_directives: []
-[edikt:directives:end]: #
-```
-
-The block contains:
-
-| Field | What it is | Who writes it |
-|---|---|---|
-| `directives:` | Auto-generated rules from the source document | Compile (Claude never sees the human prose — only these) |
-| `reminders:` | Pre-action interrupts: "Before doing X → check Y" | Compile |
-| `verification:` | Self-audit checklist items Claude checks before finishing | Compile |
-| `manual_directives:` | Rules you add by hand that compile missed | You |
-| `suppressed_directives:` | Auto-generated rules you rejected | You |
-| `source_hash` | SHA-256 of the human content (detects body changes) | Compile |
-| `directives_hash` | SHA-256 of the directives list (detects hand-edits) | Compile |
-
-The compile pipeline owns `directives:`, `reminders:`, and `verification:`. You own `manual_directives:` and `suppressed_directives:`. Compile never touches your lists; you never need to touch compile's.
-
-In v0.6.0, this in-body block is replaced by a co-located `<artifact>.edikt.yaml` sidecar. The schema collapses to a single `directives[]` array (per-directive `text` + `source_excerpt`); hashes are recomputed on read and never committed. See [Sidecar Architecture](sidecar). The migration tool lifts existing in-body blocks into sidecars — see [Sidecar Migration](/guides/sidecar-migration).
+Before v0.6.0, every governance document carried its directives in an in-body `[edikt:directives:start]`/`[edikt:directives:end]` block instead of a sidecar — the same lists (`directives:`, `reminders:`, `verification:`, `manual_directives:`, `suppressed_directives:`), embedded in the prose file itself rather than co-located next to it. Sentinels haven't disappeared from edikt — the rendered output surfaces (topic files, `governance.md`, and the managed block in `CLAUDE.md`) still use them to bound the region compile owns — but source documents (ADRs, invariants, guidelines) no longer carry one. See [Sentinel Blocks](sentinels) for the full legacy format and field reference, and [Sidecar Migration](/guides/sidecar-migration) to migrate a pre-v0.6 project.
 
 ## How directives are generated
 
