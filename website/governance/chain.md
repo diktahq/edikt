@@ -46,29 +46,31 @@ The governance chain connects edikt's two systems — architecture governance & 
 
 <line x1="190" y1="292" x2="190" y2="324" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
-<!-- LEFT: Enforcement surface -->
-<rect x="45" y="324" width="290" height="80" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
+<!-- LEFT: Enforcement surface (4 rendered surfaces, compile_schema_version: 3) -->
+<rect x="45" y="324" width="290" height="140" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
 <text x="190" y="348" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Enforcement surface</text>
-<text x="190" y="372" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Compiled directives + rule packs</text>
-<text x="190" y="392" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">.claude/rules/ — auto-loaded every session</text>
+<text x="190" y="370" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Ambient core — every edit</text>
+<text x="190" y="392" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Topic files — on matching edit</text>
+<text x="190" y="414" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Directive index — write-time hook</text>
+<text x="190" y="436" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Skill packages — on-demand</text>
 
-<line x1="190" y1="404" x2="190" y2="436" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
+<line x1="190" y1="464" x2="190" y2="496" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
 <!-- LEFT: Hooks -->
-<rect x="65" y="436" width="250" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
-<text x="190" y="458" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Lifecycle hooks</text>
-<text x="190" y="480" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Context recovery · plan injection · gates</text>
+<rect x="65" y="496" width="250" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
+<text x="190" y="518" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Lifecycle hooks</text>
+<text x="190" y="540" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Context recovery · plan injection · gates</text>
 
-<line x1="190" y1="494" x2="190" y2="526" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
+<line x1="190" y1="554" x2="190" y2="586" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
 <!-- LEFT: Signal detection -->
-<rect x="55" y="526" width="270" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="#A0936D" stroke-width="0.75"/>
-<text x="190" y="548" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="#A0936D">Signal detection</text>
-<text x="190" y="570" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Detects new decisions mid-session</text>
+<rect x="55" y="586" width="270" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="#A0936D" stroke-width="0.75"/>
+<text x="190" y="608" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="#A0936D">Signal detection</text>
+<text x="190" y="630" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Detects new decisions mid-session</text>
 
 <!-- Feedback: signal → decisions -->
-<path d="M55 555 L28 555 L28 160 L55 160" fill="none" stroke="#A0936D" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#arr-stone)"/>
-<text x="18" y="355" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" font-weight="500" fill="#A0936D" transform="rotate(-90 18 355)">new ADR / invariant</text>
+<path d="M55 615 L28 615 L28 160 L55 160" fill="none" stroke="#A0936D" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#arr-stone)"/>
+<text x="18" y="388" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" font-weight="500" fill="#A0936D" transform="rotate(-90 18 388)">new ADR / invariant</text>
 
 <!-- RIGHT: PRD -->
 <rect x="435" y="148" width="270" height="58" rx="6" fill="var(--vp-c-brand-soft)" stroke="var(--vp-c-brand-1)" stroke-width="0.75"/>
@@ -119,10 +121,10 @@ The governance chain connects edikt's two systems — architecture governance & 
 <text x="570" y="696" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#D97706">auto-promote in-progress → implemented</text>
 
 <!-- CROSS: constrains (left → right) -->
-<path d="M335 365 C375 365, 390 263, 435 263" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
-<path d="M335 375 C380 375, 395 458, 435 458" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
-<path d="M335 385 C385 385, 400 565, 435 565" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
-<text x="388" y="340" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600" fill="var(--vp-c-text-2)">constrains</text>
+<path d="M335 375 C375 375, 390 263, 435 263" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
+<path d="M335 400 C380 400, 395 458, 435 458" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
+<path d="M335 425 C385 425, 400 565, 435 565" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
+<text x="388" y="400" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600" fill="var(--vp-c-text-2)">constrains</text>
 
 <!-- CROSS: surfaces (right → left, dashed) -->
 <path d="M435 263 C390 263, 370 170, 325 170" fill="none" stroke="var(--vp-c-brand-1)" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#arr-teal)"/>
