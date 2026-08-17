@@ -117,7 +117,7 @@ layout: home
 <section class="proof reveal">
   <span class="chip"><b>v0.7.0</b> · Cosign-signed releases</span>
   <span class="chip"><b>Elastic-2.0</b> · Open source</span>
-  <span class="chip"><b>Zero</b> runtime dependencies</span>
+  <span class="chip"><b>No build step</b> · No npm, no compiler</span>
   <span class="chip"><b>Plain markdown</b> · You own every file</span>
 </section>
 
@@ -762,7 +762,7 @@ if (typeof document !== 'undefined') {
   if (!rail || !content) return;
   function update() {
     var rect = content.getBoundingClientRect();
-    var total = rect.height - window.innerHeight * 0.6;
+    var total = rect.height - window.innerHeight;
     var scrolled = -rect.top;
     var progress = total > 0 ? Math.min(1, Math.max(0, scrolled / total)) : 0;
     rail.style.setProperty('--progress', progress.toFixed(3));
