@@ -25,7 +25,7 @@ features:
   - title: Natural language, not commands
     details: "Say 'what's our status?' and Claude shows the governance dashboard. Say 'write a PRD for X' and Claude generates structured requirements. Say 'does the implementation match the spec?' and Claude runs drift detection. You talk. edikt handles the rest."
   - title: Governance benchmark
-    details: "Test whether your directives hold under adversarial prompts. /edikt:gov:benchmark runs attack prompts against every directive with a behavioral_signal block and reports PASS/FAIL/SKIP. Measure your directives, not just write them."
+    details: "Test whether your directives hold under adversarial prompts. /edikt:gov:benchmark runs attack prompts against directives with a machine-testable behavioral_signal and reports PASS/FAIL/SKIP — opt-in tooling, currently pending a sidecar-schema extension to reach directives compiled under the current architecture."
   - title: Zero dependencies
     details: "Every file is .md or .yaml. No build step, no runtime, no daemon, no lock-in. curl | bash to install. If you stop using edikt, the files stay — plain markdown you own, read, edit, and version-control."
 ---
