@@ -242,17 +242,23 @@ Each contains:
 
 ## Contradiction detection
 
-Before writing, the command checks for contradictions:
+Before writing, the command checks for contradictions — this runs unconditionally; it isn't a config toggle:
 
 ```text
-CONTRADICTION DETECTED
-  ADR-001: "All persistence uses PostgreSQL"
-  ADR-007: "Use DynamoDB for the event store"
+⚠️  Contradiction detected:
+    ADR-NNN: "Claude Code only — no multi-tool support"
+    ADR-NNN: "Support Cursor for rule distribution"
 
-  Resolve before compiling. Supersede one or reconcile both.
+    Resolve before compiling. Supersede one or reconcile both.
 ```
 
-Invariant conflicts are errors — invariants always win. ADR conflicts are warnings.
+Three kinds of conflict, three different severities:
+
+- **ADR-vs-ADR** — direct contradictions ("use X" vs "never use X"), scope conflicts, approach conflicts. Reported, and compile pauses to ask whether to proceed anyway or abort (outside `--check` mode, which reports and stops without writing).
+- **Guideline vs invariant** — always an error. Invariants are non-negotiable, so the guideline loses.
+- **Guideline vs ADR** — a warning, not a hard stop.
+
+Also checked in the same pass: superseded ADRs still referenced by an active spec or plan.
 
 ## Cross-reference validation
 
