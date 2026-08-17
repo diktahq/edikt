@@ -227,6 +227,7 @@ export default withMermaid(defineConfig({
 
     footer: {
       message: 'Released under the Elastic License 2.0. Free to use, not for resale.',
+      copyright: 'Created by <a href="https://github.com/dcsg" target="_blank" rel="noopener">@dcsg</a>',
     },
 
     search: {
