@@ -22,6 +22,7 @@ Security audit — OWASP scan, secret detection, auth coverage, and vulnerabilit
 | `data` | Data access and storage code only |
 | A file path | Scan a specific file or directory |
 | `--no-edikt` | Run all checks inline without spawning specialist agents |
+| `--json` | Machine-readable output only — no progress indicators, no prose. For CI. |
 
 ## What it does
 

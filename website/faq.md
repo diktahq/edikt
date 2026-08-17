@@ -73,7 +73,7 @@ refusal looks wrong for what you actually meant, reword the directive to genuine
 
 After capturing decisions with "Save this decision" or adding invariants with "That's a hard rule", tell Claude: "Compile governance."
 
-Claude reads your accepted ADRs and active invariants and produces four things under `.claude/rules/`: an always-on core loaded every session, per-topic files (under `.claude/rules/governance/`) that load when you touch matching code, a machine-readable index the write-time hooks read, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format.
+Claude reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on core loaded every session, per-topic files (under `.claude/rules/governance/`) that load when you touch matching code, a machine-readable index the write-time hooks read, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format.
 
 **Command reference:** `/edikt:gov:compile`
 

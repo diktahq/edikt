@@ -11,7 +11,7 @@ Key rules:
 - NEVER leave placeholder code (`// TODO`, `// implement this`, fake returns) in non-draft files
 - Match the patterns already established in the codebase — don't introduce a new style in one file
 - Consider race conditions for any shared state or concurrent access
-- Functions under 40 lines, files under 300 lines
+- Functions under 50 lines — not because of the count itself, but because a function that long is usually doing too much
 - No `utils/`, `helpers/`, or `common/` packages — use domain-specific names
 
 ## testing

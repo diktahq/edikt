@@ -1,6 +1,6 @@
 # edikt gov grade-compile
 
-**Grade the editorial quality of your compiled governance.** An LLM acts as judge, reading the render manifest (`.claude/rules/governance/manifest.yaml`) and the surfaces it lists — ambient core, topic files, skill packages, and the directive index — and scoring the result 0–10 on six dimensions. The grade is advisory — it never changes your governance.
+**Grade the editorial quality of your compiled governance.** An LLM acts as judge, reading every rendered `.md` under the governance directory — ambient core and topic files — and scoring the result 0–10 on six dimensions. The grade is advisory — it never changes your governance.
 
 The six dimensions:
 

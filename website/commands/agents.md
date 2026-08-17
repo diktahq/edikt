@@ -144,7 +144,7 @@ When you run `/edikt:init`, edikt reads `~/.edikt/templates/agents/_registry.yam
 
 ## Customizing agents
 
-Two mechanisms prevent `/edikt:upgrade` from overwriting your changes:
+This is [`/edikt:upgrade`](/commands/upgrade)'s behavior, not `/edikt:agents`'s — documented here because it's what determines whether an edit you make to an installed agent survives the next upgrade. Two mechanisms prevent `/edikt:upgrade` from overwriting your changes:
 
 **File marker** — add `<!-- edikt:custom -->` anywhere in the agent file:
 

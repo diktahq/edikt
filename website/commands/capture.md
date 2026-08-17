@@ -1,6 +1,6 @@
 # /edikt:capture
 
-Capture the current conversation into the right governance artifact — ADR, invariant, guideline, or PRD — without having to decide upfront.
+Mid-session sweep — surfaces uncaptured ADRs, invariants, and documentation gaps in the current conversation before they're lost to compaction. **Read-only**: it surfaces candidates, it doesn't create anything.
 
 ## Usage
 
@@ -10,30 +10,46 @@ Capture the current conversation into the right governance artifact — ADR, inv
 
 ## What it does
 
-Reads the current conversation and classifies what happened:
+Scans the conversation for three signal types:
 
-| Signal | Routes to |
-|--------|-----------|
-| Significant technical choice with trade-offs | [`/edikt:adr:new`](/commands/adr/new) |
-| Hard constraint where violation causes harm | [`/edikt:invariant:new`](/commands/invariant/new) |
-| Team standard or coding convention | [`/edikt:guideline:new`](/commands/guideline/new) |
-| Clearly-defined feature requirement | [`/edikt:sdlc:prd`](/commands/sdlc/prd) |
+| Signal | Surfaced as | Routes to |
+|--------|-------------|-----------|
+| Explicit technical choice with rejected alternatives | ADR candidate | [`/edikt:adr:new`](/commands/adr/new) |
+| Hard constraint where violation causes real harm | Invariant candidate | [`/edikt:invariant:new`](/commands/invariant/new) |
+| Design rationale or decisions missing from project docs | Documentation gap | [`/edikt:docs:review`](/commands/docs/review) |
 
-After classification, edikt shows what it found and confirms before creating anything:
+Every candidate runs through the GL-001 capture gates before being surfaced — burden of proof is on capture, not silence, and a candidate with no real rejected alternative isn't proposed at all. Then it reports what it found:
 
 ```text
-This conversation contains:
-  → A significant technical decision (use Redis for session storage)
-  → A hard constraint (sessions must expire within 24h)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ CAPTURE SWEEP
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Create:
-  1. ADR: use Redis for session storage
-  2. Invariant: sessions must expire within 24h
+ADR Candidates (1 found)
 
-Proceed? (y/n/edit)
+  1. Use Redis for session storage
+     Decision: Redis over in-memory sessions
+     Alternatives considered: in-memory store (doesn't survive restarts)
+     Rationale: sessions must persist across deploys
+     → Run /edikt:adr:new to capture this
+
+Invariant Candidates (1 found)
+
+  1. Sessions must expire within 24h
+     Consequence of violation: stale sessions accumulate, memory grows unbounded
+     → Run /edikt:invariant:new to capture this
+
+Documentation Gaps (0 found)
+
+  None found — no uncaptured decisions in this category.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Capture sweep complete
+
+Next: Run /edikt:adr:new or /edikt:invariant:new for any items above.
 ```
 
-You can confirm, edit the classification, or cancel individual items.
+Nothing gets created automatically — every finding is a prompt to run the command it points at, not an automated write.
 
 ## When to use
 

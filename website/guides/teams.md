@@ -15,9 +15,9 @@ This guide shows the full workflow. One engineer sets up edikt, commits it, and 
 
 ## 1. One engineer sets up, commits — the whole team gets governance
 
-Elena is the engineering lead. The team builds an order management API — Go, Chi, PostgreSQL. She opens the project in Claude Code.
+Elena is the engineering lead. The team builds a support-ticketing API — Go, Chi, PostgreSQL. She opens the project in Claude Code.
 
-<Terminal title="Claude Code — orders-api">
+<Terminal title="Claude Code — tickets-api">
 <T in>/edikt:init</T>
 <T>[1/3] Scanning project...</T>
 <T dim>  Code: Go project, 234 files. Chi framework, PostgreSQL.</T>
@@ -27,7 +27,7 @@ Elena is the engineering lead. The team builds an order management API — Go, C
 <T>Rules (✓ = recommended for your stack):</T>
 <T hi>  [x] code-quality     — naming, correctness guardrails</T>
 <T hi>  [x] testing          — TDD, tautological test prevention</T>
-<T hi>  [x] security         — e-commerce surface detected, timing attacks</T>
+<T hi>  [x] security         — multi-tenant surface detected, timing attacks</T>
 <T hi>  [x] error-handling   — typed errors, context wrapping</T>
 <T hi>  [x] go               — error handling, data races, interfaces</T>
 <T hi>  [x] chi              — thin handlers, middleware</T>
@@ -60,9 +60,9 @@ That commit is the only setup step. Every engineer who pulls this branch gets th
 
 Next morning. Tomasz pulls the latest changes and opens the project in Claude Code. He's never heard of edikt. He doesn't need to.
 
-<Terminal title="Claude Code — orders-api">
+<Terminal title="Claude Code — tickets-api">
 <T>[SessionStart] Loading project context...</T>
-<T>Order Management API — Go + Chi + PostgreSQL</T>
+<T>Ticket Management API — Go + Chi + PostgreSQL</T>
 <T>Active governance:</T>
 <T>  7 rules, 8 agents, 0 compiled directives</T>
 <T>  0 ADRs, 0 invariants (new project)</T>
@@ -70,12 +70,12 @@ Next morning. Tomasz pulls the latest changes and opens the project in Claude Co
 <T hi>  - chore: add edikt governance (Elena, 14h ago)</T>
 <T hi>  - New files: .claude/rules/, .claude/agents/, docs/project-context.md</T>
 <T>What would you like to work on?</T>
-<T in>I need to add a search endpoint for orders. GET /orders with filters for status, date range, and customer ID.</T>
+<T in>I need to add a search endpoint for tickets. GET /tickets with filters for status, date range, and assignee ID.</T>
 <T>I'll build the search endpoint following your service layer pattern.</T>
 <T>Approach:</T>
 <T>- Handler:    Parse query params, validate, call service. No business logic.</T>
-<T>- Service:    OrderSearchService.Search(ctx, filters) — builds query criteria, calls repository</T>
-<T>- Repository: OrderRepository.Search(ctx, criteria) — PostgreSQL query with parameterized filters</T>
+<T>- Service:    TicketSearchService.Search(ctx, filters) — builds query criteria, calls repository</T>
+<T>- Repository: TicketRepository.Search(ctx, criteria) — PostgreSQL query with parameterized filters</T>
 <T>I'll use typed errors: ErrInvalidDateRange, ErrInvalidStatus.</T>
 <T>Pagination via cursor-based approach (not offset) for consistency at scale.</T>
 <T>Starting with the service layer.</T>
@@ -97,10 +97,10 @@ Elena's review comments:
 
 ```
 Elena: "Nice cursor-based pagination choice. One thought — should we
-       add a max page size to prevent someone requesting 10,000 orders?
+       add a max page size to prevent someone requesting 10,000 tickets?
        Maybe cap at 100 with a default of 20."
 
-Elena: "The OrderSearchCriteria value object is clean. Consider adding
+Elena: "The TicketSearchCriteria value object is clean. Consider adding
        a Validate() method so the service doesn't need to check each
        field individually."
 ```
@@ -114,7 +114,7 @@ Elena: "Move the SQL query out of the handler — it should go through
        the service layer."
 
 Elena: "Don't use fmt.Errorf here — we use typed errors. See how
-       the payment handler does it."
+       the assignment handler does it."
 
 Elena: "This string interpolation in the WHERE clause is a SQL injection
        risk. Use parameterized queries."
@@ -134,26 +134,26 @@ The shift isn't incremental. The category of review comment changes. Elena stops
 
 ## 4. Quality gate fires — Claude blocks a security issue
 
-Two weeks in. The team has captured 5 ADRs and compiled them into governance directives. Priya is building the order cancellation endpoint.
+Two weeks in. The team has captured 5 ADRs and compiled them into governance directives. Priya is building the ticket closure endpoint.
 
-<Terminal title="Claude Code — orders-api">
-<T in>Build the order cancellation endpoint. POST /orders/{id}/cancel. Should check that the order is in a cancellable state and update the status.</T>
+<Terminal title="Claude Code — tickets-api">
+<T in>Build the ticket closure endpoint. POST /tickets/{id}/close. Should check that the ticket is in a closeable state and update the status.</T>
 </Terminal>
 
 Claude builds the endpoint. Handler, service, repository — following the pattern. Then:
 
-<Terminal title="Claude Code — orders-api">
+<Terminal title="Claude Code — tickets-api">
 <T err>GATE: security — critical finding</T>
-<T err>  SQL injection risk in order/infrastructure/repository.go:89</T>
-<T err>  — order ID from URL path used in raw SQL string</T>
-<T>  query := "UPDATE orders SET status = 'cancelled' WHERE id = '" + orderID + "'"</T>
+<T err>  SQL injection risk in ticket/infrastructure/repository.go:89</T>
+<T err>  — ticket ID from URL path used in raw SQL string</T>
+<T>  query := "UPDATE tickets SET status = 'closed' WHERE id = '" + ticketID + "'"</T>
 <T warn>This gate must be resolved before proceeding.</T>
 <T>Override this gate? (y/n)</T>
 <T dim>Note: override will be logged with your git identity.</T>
 <T in>No, fix it.</T>
 <T ok>Fixed. Using parameterized query:</T>
-<T>  query := "UPDATE orders SET status = $1 WHERE id = $2"</T>
-<T>  _, err := r.db.Exec(ctx, query, StatusCancelled, orderID)</T>
+<T>  query := "UPDATE tickets SET status = $1 WHERE id = $2"</T>
+<T>  _, err := r.db.Exec(ctx, query, StatusClosed, ticketID)</T>
 <T ok>Gate cleared. Continuing.</T>
 </Terminal>
 
@@ -163,12 +163,12 @@ This is what quality gates do for teams. The security standard isn't a suggestio
 
 If Priya had overridden:
 
-<Terminal title="Claude Code — orders-api">
+<Terminal title="Claude Code — tickets-api">
 <T warn>Override logged.</T>
 <T dim>Gate:       security — SQL injection risk</T>
-<T dim>Engineer:   Priya Sharma (priya@company.com)</T>
+<T dim>Engineer:   Priya Sharma</T>
 <T dim>Timestamp:  2026-03-18T14:32:00Z</T>
-<T hi>File:       order/infrastructure/repository.go:89</T>
+<T hi>File:       ticket/infrastructure/repository.go:89</T>
 <T>Proceeding. This override is visible in the governance dashboard.</T>
 </Terminal>
 
@@ -180,9 +180,9 @@ The override is recorded. Elena sees it when she checks governance status. It's 
 
 End of sprint. Elena checks the state of governance.
 
-<Terminal title="Claude Code — orders-api">
+<Terminal title="Claude Code — tickets-api">
 <T in>What's our status?</T>
-<T>EDIKT STATUS — orders-api</T>
+<T>EDIKT STATUS — tickets-api</T>
 <T>GOVERNANCE HEALTH</T>
 <T>  Rules:        7 active</T>
 <T dim>                code-quality, testing, security, error-handling,</T>
@@ -201,8 +201,8 @@ End of sprint. Elena checks the state of governance.
 <T>ADR SUMMARY</T>
 <T hi>  ADR-001: Cursor-based pagination for all list endpoints</T>
 <T hi>  ADR-002: Typed domain errors, no sentinel errors</T>
-<T hi>  ADR-003: Event-driven order state transitions</T>
-<T hi>  ADR-004: Soft delete for orders, hard delete for drafts</T>
+<T hi>  ADR-003: Event-driven ticket state transitions</T>
+<T hi>  ADR-004: Soft delete for tickets, hard delete for drafts</T>
 <T hi>  ADR-005: UTC timestamps everywhere, convert at API boundary</T>
 <T ok>All governance is current. Last compiled: Mar 19.</T>
 </Terminal>
@@ -219,9 +219,9 @@ She reads it out in the sprint review — two seconds, no prep, nothing to have 
 
 Week 6. A new engineer joins — James, straight out of a bootcamp. His first day, he clones the repo, opens it in Claude Code.
 
-<Terminal title="Claude Code — orders-api">
+<Terminal title="Claude Code — tickets-api">
 <T>[SessionStart] Loading project context...</T>
-<T>Order Management API — Go + Chi + PostgreSQL</T>
+<T>Ticket Management API — Go + Chi + PostgreSQL</T>
 <T>Active governance:</T>
 <T>  7 rules, 8 agents, 7 compiled directives</T>
 <T>  5 ADRs, 1 invariant</T>
@@ -229,21 +229,21 @@ Week 6. A new engineer joins — James, straight out of a bootcamp. His first da
 <T>Key decisions:</T>
 <T hi>  - Cursor-based pagination on all list endpoints (ADR-001)</T>
 <T hi>  - Typed domain errors, no sentinel errors (ADR-002)</T>
-<T hi>  - Event-driven order state transitions (ADR-003)</T>
-<T hi>  - Soft delete for orders (ADR-004)</T>
+<T hi>  - Event-driven ticket state transitions (ADR-003)</T>
+<T hi>  - Soft delete for tickets (ADR-004)</T>
 <T hi>  - UTC timestamps, convert at API boundary (ADR-005)</T>
 <T warn>Invariant: All database migrations require DOWN migrations.</T>
 <T>What would you like to work on?</T>
-<T in>I need to add a field to the order model for tracking delivery estimates. A nullable timestamp.</T>
-<T>I'll add the delivery_estimate field. Here's my approach:</T>
+<T in>I need to add a field to the ticket model for tracking the SLA due date. A nullable timestamp.</T>
+<T>I'll add the sla_due_at field. Here's my approach:</T>
 <T>Domain:</T>
-<T>  - Add DeliveryEstimate *time.Time to the Order entity</T>
+<T>  - Add SLADueAt *time.Time to the Ticket entity</T>
 <T>  - Per ADR-005, this will be stored and returned in UTC. Frontend converts to local time at the API boundary.</T>
 <T>Database:</T>
-<T>  - Migration 012: ALTER TABLE orders ADD COLUMN delivery_estimate TIMESTAMPTZ</T>
-<T>  - DOWN migration: ALTER TABLE orders DROP COLUMN delivery_estimate (per your migration rollback invariant)</T>
+<T>  - Migration 012: ALTER TABLE tickets ADD COLUMN sla_due_at TIMESTAMPTZ</T>
+<T>  - DOWN migration: ALTER TABLE tickets DROP COLUMN sla_due_at (per your migration rollback invariant)</T>
 <T>Repository:</T>
-<T>  - Update OrderRepository.Save and .Find to include the new column</T>
+<T>  - Update TicketRepository.Save and .Find to include the new column</T>
 <T>  - Soft delete (ADR-004) is unaffected — field is nullable</T>
 <T>Shall I proceed?</T>
 </Terminal>

@@ -126,9 +126,9 @@ Compiled directives tell Claude what to do. The benchmark tests whether they hol
 
 > "Run the governance benchmark"
 
-edikt runs attack prompts against every directive with a `behavioral_signal` block — the machine-testable predicate that defines what a violation looks like. Each directive gets PASS, FAIL, or SKIP (no `behavioral_signal` populated yet).
+edikt runs attack prompts against every directive with a `behavioral_signal` block — the machine-testable predicate that defines what a violation looks like. Each directive gets PASS, FAIL, or SKIP (no `behavioral_signal` populated).
 
-The dogfood baseline: 2/2 PASS on INV-001 + INV-002 under Opus 4.7. 15 of 17 directives are pending `behavioral_signal` authoring.
+**Currently inert under the v0.6.0+ sidecar architecture:** `behavioral_signal` was a pre-v0.6.0 in-body-sentinel field and isn't part of the current sidecar schema, so every directive reports SKIP until a schema extension restores it. See [`/edikt:gov:benchmark`](/commands/gov/benchmark) for the current status.
 
 The benchmark is an opt-in tool — install separately:
 
@@ -166,7 +166,7 @@ They also sit upstream of your linter. The best engineering teams don't fix lint
 
 ### Lifecycle hooks
 
-Twenty lifecycle hooks govern the session — ensuring governance stays present throughout, not just at session start. Core hooks include:
+Nine lifecycle hooks govern the session — ensuring governance stays present throughout, not just at session start. Core hooks include:
 
 | Hook | What it does |
 |------|-------------|
@@ -182,7 +182,7 @@ Twenty lifecycle hooks govern the session — ensuring governance stays present 
 
 ### Specialist agents — `.claude/agents/`
 
-20 domain agents matched to your stack. Each applies a specific domain lens.
+18 domain agents matched to your stack. Each applies a specific domain lens.
 
 ```text
 architect    ← system design, ADRs, bounded contexts
@@ -200,8 +200,8 @@ Claude knows your project identity, not just your file structure.
 
 ```text
 docs/project-context.md  ← what the project is, stack, non-negotiables
-docs/decisions/       ← why you chose PostgreSQL, why you went DDD
-docs/invariants/      ← constraints that must NEVER be violated
+docs/architecture/decisions/    ← why you chose your database, why you went with this architecture style
+docs/architecture/invariants/   ← constraints that must NEVER be violated
 ```
 
 Loaded automatically at session start via git-aware hooks.

@@ -129,7 +129,6 @@ The 0% verify coverage is expected on the first compile after migration — addi
 
 Some files mention the in-body sentinel format without using it (the ADRs that defined the format, SPEC files, documentation). Those are excluded by default:
 
-- **Built-in skip list:** `ADR-008-*.md`, `ADR-009-*.md`, and any `SPEC-*.md`.
 - **Code-fence detection:** any sentinel block inside a fenced ` ``` … ``` ` (or `~~~`) region is ignored. A markdown parser walks each file; only document-level (column-0) blocks are lifted.
 - **Frontmatter opt-out:** add `migration: skip` or `documents_legacy_format: true` to a file's frontmatter.
 - **Inline opt-out:** add `<!-- edikt:migration:skip reason="..." -->` near the top of the body.

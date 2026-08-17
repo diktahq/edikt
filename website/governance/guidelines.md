@@ -78,7 +78,7 @@ Guidelines also generate reminders and verification checklist items, the same as
 | Command | What it does |
 |---|---|
 | `/edikt:guideline:new` | Create a new guideline |
-| `/edikt:guideline:compile` | Generate directive sentinel blocks |
+| `/edikt:guideline:compile` | Regenerate the guideline's sidecar (`<slug>.edikt.yaml`) |
 | `/edikt:guideline:review` | Review rule quality + directive LLM compliance |
 
 ## Next steps

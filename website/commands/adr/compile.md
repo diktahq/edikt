@@ -1,14 +1,15 @@
 # /edikt:adr:compile
 
-Regenerate the sidecar for exactly one ADR.
+Regenerate the directive sidecar for one ADR — or every accepted ADR if no argument is given.
 
-In v0.6.0, every ADR has a co-located `<ADR>.edikt.yaml` sidecar that holds compiled directives. `:compile` regenerates that single sidecar in a fresh subagent context with a locked extraction prompt. It does not touch the prose `.md`. It does not run topic-file rendering — that's `gov:compile` Phase B.
+In v0.6.0, every ADR has a co-located `<ADR>.edikt.yaml` sidecar that holds compiled directives. `:compile` regenerates it in a fresh subagent context with a locked extraction prompt. It does not touch the prose `.md`. It does not run topic-file rendering — that's `gov:compile` Phase B.
 
 ## Usage
 
 ```bash
 /edikt:adr:compile ADR-003
 /edikt:adr:compile docs/architecture/decisions/ADR-003-use-postgres-for-persistence.md
+/edikt:adr:compile
 ```
 
 ## Arguments
@@ -16,20 +17,34 @@ In v0.6.0, every ADR has a co-located `<ADR>.edikt.yaml` sidecar that holds comp
 | Argument | Description |
 |----------|-------------|
 | `ADR-NNN` or path | The ADR to recompile |
+| (omitted) | Recompile every accepted ADR |
 
 ## What it does
 
-1. Resolves the ADR path from the ID or argument
-2. Dispatches the `sidecar-extractor` agent (`context: fork`, `model: sonnet`, `maxTurns: 8`, `tools: [Read, Write]`) with a locked prompt
+1. Resolves the ADR path(s) from the ID, path, or (if omitted) every accepted ADR
+2. Dispatches the `sidecar-extractor` agent (`context: fork`, `model: sonnet`, `maxTurns: 8`, `tools: [Read, Write]`) with a locked prompt — at most 2 concurrently when processing all ADRs
 3. The agent reads the Decision section of the prose `.md`
 4. Extracts MUST/NEVER directives, derives `topic` and `signals`, captures `source_excerpts` per directive
 5. Writes `<ADR>.edikt.yaml` (canonical YAML serialization — sorted keys, 2-space indent, LF line endings)
 
-The output is one of:
+For a single target:
 
 ```text
-Regenerated ADR-003-use-postgres-for-persistence.edikt.yaml
-ADR-003-use-postgres-for-persistence.edikt.yaml unchanged
+✅ ADR-003.edikt.yaml — regenerated
+   Source: docs/architecture/decisions/ADR-003-use-postgres-for-persistence.md
+```
+
+For an all-targets run:
+
+```text
+ADR sidecar regeneration:
+  ✅ ADR-001 — regenerated
+  ✅ ADR-002 — unchanged
+  ✅ ADR-003 — unchanged
+  ...
+
+  1 regenerated, 2 unchanged, 0 skipped (superseded/draft).
+  Next: Run /edikt:gov:compile to update the topic-grouped governance files.
 ```
 
 The "unchanged" path is the idempotency contract: running `:compile` twice on an unchanged body produces a byte-equal sidecar.

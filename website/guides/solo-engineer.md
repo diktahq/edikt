@@ -13,9 +13,9 @@ This guide shows the actual workflow. Not summaries. Not feature lists. The conv
 
 ## 1. First init — describe the project, get governance
 
-You have a Go backend for a payment processing service. Chi router, PostgreSQL, hexagonal architecture. You've been running Claude Code on it for two weeks with a hand-maintained CLAUDE.md that's already out of date.
+You have a Go backend for a file-upload processing service. Chi router, PostgreSQL, hexagonal architecture. You've been running Claude Code on it for two weeks with a hand-maintained CLAUDE.md that's already out of date.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>/edikt:init</T>
 <T>[1/3] Scanning project...</T>
 <T dim>  Code: Go project, 89 files. Chi framework, PostgreSQL.</T>
@@ -25,7 +25,7 @@ You have a Go backend for a payment processing service. Chi router, PostgreSQL, 
 <T>Rules (✓ = recommended for your stack):</T>
 <T hi>  [x] code-quality     — naming, correctness guardrails</T>
 <T hi>  [x] testing          — TDD, tautological test prevention</T>
-<T hi>  [x] security         — payment surface detected, timing attacks</T>
+<T hi>  [x] security         — file-handling surface detected, path traversal</T>
 <T hi>  [x] error-handling   — typed errors, context wrapping</T>
 <T hi>  [x] architecture     — hexagonal layer enforcement</T>
 <T hi>  [x] go               — error handling, data races, interfaces</T>
@@ -48,19 +48,19 @@ That took 30 seconds. The rules are in `.claude/rules/`. The agents are in `.cla
 
 Next morning. New session. You don't mention your architecture. You don't remind Claude about error handling. You just describe the work.
 
-<Terminal title="Claude Code — payment-service">
-<T in>I need a new endpoint to handle Stripe webhook events. POST /webhooks/stripe. It should verify the Stripe signature, parse the event, and route to the right handler based on event type. Start with payment_intent.succeeded and payment_intent.payment_failed.</T>
+<Terminal title="Claude Code — upload-service">
+<T in>I need a new endpoint to handle scan-complete webhook events from our malware-scanning provider. POST /webhooks/scan-complete. It should verify the provider's signature, parse the event, and route to the right handler based on event type. Start with scan.completed and scan.failed.</T>
 <T>I'll build the webhook handler following your hexagonal architecture.</T>
 <T>Here's my approach:</T>
-<T>- Domain: WebhookEvent entity + PaymentEventHandler port</T>
-<T>- Application: ProcessWebhookUseCase orchestrates verification → parsing → routing</T>
-<T>- Infrastructure: StripeWebhookAdapter (signature verification), Chi handler (HTTP layer only)</T>
+<T>- Domain: ScanEvent entity + ScanResultHandler port</T>
+<T>- Application: ProcessScanEventUseCase orchestrates verification → parsing → routing</T>
+<T>- Infrastructure: ScanProviderAdapter (signature verification), Chi handler (HTTP layer only)</T>
 <T>The handler won't touch the database directly — it calls through the application layer. Errors will be typed (ErrInvalidSignature, ErrUnknownEventType) with context wrapping per your error-handling rules.</T>
-<T>I'll use the raw request body for signature verification, not the parsed JSON — Stripe requires the raw bytes.</T>
+<T>I'll use the raw request body for signature verification, not the parsed JSON — the provider requires the raw bytes.</T>
 <T>Starting with the domain layer.</T>
 </Terminal>
 
-Claude separated the layers correctly — domain, application, infrastructure. It kept the HTTP handler thin. It used typed errors with context wrapping. It knew about Stripe's raw body requirement. It planned the work from the domain layer outward.
+Claude separated the layers correctly — domain, application, infrastructure. It kept the HTTP handler thin. It used typed errors with context wrapping. It knew about the provider's raw body requirement. It planned the work from the domain layer outward.
 
 You didn't ask for any of that. The rules in `.claude/rules/` told Claude how your project works. The `go.md` rules told it how you write Go. The `architecture.md` rules told it about hexagonal layers. The `error-handling.md` rules told it about typed errors.
 
@@ -70,39 +70,39 @@ Claude read your rules before you asked. No reminding. No re-explaining. The ove
 
 ## 3. Writing a PRD through conversation
 
-Two weeks in. You need Stripe webhook delivery with retry logic — not just receiving webhooks, but sending them to your own consumers. Before writing code, you capture the requirements.
+Two weeks in. You need scan-result delivery with retry logic — not just receiving scan events, but sending them to your own consumers. Before writing code, you capture the requirements.
 
-<Terminal title="Claude Code — payment-service">
-<T in>Write a PRD for webhook delivery to our consumers. We need to send events when payments succeed, fail, or get refunded. Retry logic with backoff. Idempotency so consumers can safely receive the same event twice.</T>
+<Terminal title="Claude Code — upload-service">
+<T in>Write a PRD for scan-result delivery to our consumers. We need to send events when a scan completes, fails, or flags a file. Retry logic with backoff. Idempotency so consumers can safely receive the same event twice.</T>
 <T>Before I draft this, a few questions to ground the requirements in your project:</T>
-<T>1. Delivery target — are consumers external HTTP endpoints (like Stripe's model) or internal services via a message queue?</T>
+<T>1. Delivery target — are consumers external HTTP endpoints or internal services via a message queue?</T>
 <T>2. Retry budget — how many attempts before marking delivery failed? And what's the max delay you'd accept between first failure and final attempt?</T>
 <T>3. Idempotency scope — should idempotency be per-consumer (same event delivered to consumer A twice is deduplicated) or global (same event ID is never processed twice, period)?</T>
-<T>4. Ordering — do consumers need events in order (payment_intent.succeeded always after payment_intent.created) or is out-of-order acceptable with idempotency handling it?</T>
-<T>5. I see your existing PaymentEventHandler port in the domain layer. Should webhook delivery extend this port or be a separate bounded context?</T>
+<T>4. Ordering — do consumers need events in order (scan.completed always after scan.started) or is out-of-order acceptable with idempotency handling it?</T>
+<T>5. I see your existing ScanResultHandler port in the domain layer. Should scan-result delivery extend this port or be a separate bounded context?</T>
 </Terminal>
 
 Notice question 5. Claude read your codebase. It found the existing port and asked whether to extend it or create something new. It's not generating from a template — it's grounding the requirements in what already exists.
 
-<Terminal title="Claude Code — payment-service">
-<T in>External HTTP endpoints, like Stripe's model. 5 retries max, exponential backoff with jitter, max delay 4 hours. Idempotency per-consumer. Out-of-order is fine. Separate bounded context — delivery is its own domain.</T>
+<Terminal title="Claude Code — upload-service">
+<T in>External HTTP endpoints. 5 retries max, exponential backoff with jitter, max delay 4 hours. Idempotency per-consumer. Out-of-order is fine. Separate bounded context — delivery is its own domain.</T>
 <T>Got it. Drafting now.</T>
-<T>PRD-003: Webhook Delivery System</T>
+<T>PRD-003: Scan Result Delivery System</T>
 <T dim>Status: draft</T>
-<T dim>Domain: Webhook Delivery (new bounded context)</T>
+<T dim>Domain: Scan Result Delivery (new bounded context)</T>
 <T>Problem:</T>
-<T>  Consumers of our payment platform have no way to receive real-time notifications when payment events occur. They must poll the API, which increases latency and load.</T>
+<T>  Consumers of our upload platform have no way to receive real-time notifications when a scan event occurs. They must poll the API, which increases latency and load.</T>
 <T>Solution:</T>
-<T>  HTTP webhook delivery system. Consumers register endpoints. The platform delivers events with retry logic and idempotency guarantees.</T>
+<T>  HTTP scan-result delivery system. Consumers register endpoints. The platform delivers events with retry logic and idempotency guarantees.</T>
 <T>Acceptance Criteria:</T>
-<T>  1. Deliver payment_intent.succeeded, payment_intent.payment_failed, charge.refunded events to registered consumer endpoints</T>
+<T>  1. Deliver scan.completed, scan.failed, scan.flagged events to registered consumer endpoints</T>
 <T>  2. Retry failed deliveries: exponential backoff with jitter, 5 attempts max, 4-hour ceiling</T>
 <T>  3. Per-consumer idempotency: same event + same consumer = deduplicated (consumer receives it at most once after success)</T>
 <T>  4. Delivery status tracking: pending → delivering → delivered / failed</T>
 <T>  5. Consumer endpoint registration via API</T>
 <T>  6. Signature verification so consumers can authenticate the source</T>
-<T>  7. Separate bounded context from payment processing</T>
-<T hi>Saved: docs/product/prds/PRD-003-webhook-delivery.md</T>
+<T>  7. Separate bounded context from upload processing</T>
+<T hi>Saved: docs/product/prds/PRD-003-scan-result-delivery.md</T>
 <T>Review and tell me what to change, or accept it and we'll move to the spec.</T>
 <T in>Accept it.</T>
 <T>PRD-003 accepted. Ready for spec when you are.</T>
@@ -116,7 +116,7 @@ The requirements survive context compaction. They're in `docs/product/prds/`. To
 
 ## 4. Spec interview — Claude asks codebase-aware questions
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>Write a spec for PRD-003</T>
 <T>Routing to architect for spec generation.</T>
 <T>Before I write the spec, I've scanned your codebase and have questions:</T>
@@ -129,10 +129,10 @@ The requirements survive context compaction. They're in `docs/product/prds/`. To
 
 Every question references something real in your codebase. The migration tool. The database driver. An existing ADR. The middleware stack. The test setup. Claude isn't guessing — it read the project before asking.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>Yes to all. Use pgx transactions for the outbox. Delivery attempts should carry the originating request ID.</T>
 <T>Spec generated.</T>
-<T>SPEC-003: Webhook Delivery System</T>
+<T>SPEC-003: Scan Result Delivery System</T>
 <T dim>Source PRD:  PRD-003</T>
 <T dim>Status:      draft</T>
 <T dim>References:  ADR-001 (error handling), ADR-002 (database conventions)</T>
@@ -149,7 +149,7 @@ Every question references something real in your codebase. The migration tool. T
 <T>Database:</T>
 <T>  3 tables: consumer_endpoints, delivery_outbox, delivery_attempts</T>
 <T>  Migrations: goose sequential, following existing convention</T>
-<T hi>Saved: docs/product/specs/SPEC-003-webhook-delivery/spec.md</T>
+<T hi>Saved: docs/product/specs/SPEC-003-scan-result-delivery/spec.md</T>
 <T>Review it. I'll generate artifacts once you accept.</T>
 <T in>Accept.</T>
 <T>SPEC-003 accepted.</T>
@@ -161,10 +161,10 @@ Every question references something real in your codebase. The migration tool. T
 
 ## 5. Pre-flight review — specialist agents catch what you'd miss
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>Create a plan for SPEC-003</T>
 <T>Breaking SPEC-003 into implementation phases.</T>
-<T>PLAN-003: Webhook Delivery System</T>
+<T>PLAN-003: Scan Result Delivery System</T>
 <T>  Phase 1: Domain layer — entities, value objects, ports</T>
 <T>  Phase 2: Database — migrations, outbox table, repositories</T>
 <T>  Phase 3: Application layer — use cases, retry scheduling</T>
@@ -193,7 +193,7 @@ Every question references something real in your codebase. The migration tool. T
 
 The DBA caught the missing rollback migration. The security agent caught a secret generation issue. The QA agent caught a missing test case. These are the things you'd catch in code review — except they were caught before a single line was written.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>Fix the migration rollback, add the index, add the created_at column, and generate secrets server-side. The rest I'll address during implementation.</T>
 <T>Updated. Plan ready for execution.</T>
 <T>Phase 1 is active. Start when ready.</T>
@@ -207,9 +207,9 @@ Five minutes to catch a migration without a rollback. After implementation, that
 
 ## 6. The drift check — does the implementation match what was decided?
 
-Three days later. All six phases are complete. The webhook delivery system is built. Before you open a PR, you verify.
+Three days later. All six phases are complete. The scan-result delivery system is built. Before you open a PR, you verify.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>Does the implementation match the spec for SPEC-003?</T>
 <T>Running drift detection against the full governance chain.</T>
 <T>Comparing: PRD-003 → SPEC-003 → artifacts → implementation</T>
@@ -218,7 +218,7 @@ Three days later. All six phases are complete. The webhook delivery system is bu
 <T ok>  14 compliant          2 likely compliant</T>
 <T err>   1 diverged           0 unknown</T>
 <T>PRD ACCEPTANCE CRITERIA</T>
-<T ok>  [compliant] Deliver payment events to registered endpoints</T>
+<T ok>  [compliant] Deliver scan events to registered endpoints</T>
 <T ok>  [compliant] Retry with exponential backoff, 5 attempts, 4h cap</T>
 <T ok>  [compliant] Per-consumer idempotency</T>
 <T ok>  [compliant] Delivery status tracking</T>
@@ -244,7 +244,7 @@ Three days later. All six phases are complete. The webhook delivery system is bu
 
 One divergence. The retry scheduler uses exponential backoff but forgot the jitter. The spec said jitter. The implementation doesn't have it. File path, line number, clear action.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T in>Fix the jitter.</T>
 <T>Updated delivery/infrastructure/retry_scheduler.go — added +/-20% jitter to calculateBackoff() using crypto/rand for uniform distribution.</T>
 <T>Re-running drift check...</T>
@@ -265,30 +265,29 @@ Zero drift. What was decided is what got built.
 
 During implementation, you made a choice: transactional outbox over event-driven messaging. Claude's `Stop` hook noticed.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T>Decision signal detected:</T>
-<T>  You chose transactional outbox pattern over event-driven messaging (Kafka/NATS) for webhook delivery reliability.</T>
+<T>  You chose transactional outbox pattern over event-driven messaging (Kafka/NATS) for scan-result delivery reliability.</T>
 <T>Rationale detected:</T>
 <T>  - Eliminates message broker dependency</T>
 <T>  - Guarantees delivery atomicity with domain writes</T>
 <T>  - Simpler operational model for current scale</T>
 <T>Save this as an ADR? (y/n)</T>
 <T in>Yes.</T>
-<T>ADR-003: Transactional Outbox for Webhook Delivery</T>
+<T>ADR-003: Transactional Outbox for Scan Result Delivery</T>
 <T dim>Status: accepted</T>
 <T hi>Saved: docs/architecture/decisions/ADR-003-transactional-outbox.md</T>
 <T in>Compile governance.</T>
 <T>Reading all accepted ADRs and active invariants...</T>
-<T hi>Governance compiled: .claude/rules/governance.md</T>
-<T>  3 ADRs  ->  4 directives</T>
-<T>  1 invariant -> 1 directive</T>
+<T hi>✅ Governance compiled</T>
+<T>  governance/architecture.md</T>
+<T>    ← ADR-001 (§Error handling, §Layer boundaries)</T>
+<T>    ← ADR-003 (§Webhook delivery)</T>
+<T>  governance/database.md</T>
+<T>    ← ADR-002 (§Migrations)</T>
+<T>    ← INV-001 (§Schema changes)</T>
+<T>  3 ADRs + 1 invariant → 2 topic files + index</T>
 <T>  5 total directives</T>
-<T>Directives:</T>
-<T>  1. Use typed errors with context wrapping (ADR-001)</T>
-<T>  2. Follow goose sequential migration conventions (ADR-002)</T>
-<T>  3. Use transactional outbox for async event delivery (ADR-003)</T>
-<T>  4. Hexagonal architecture: no domain imports from infrastructure (ADR-001)</T>
-<T>  5. All database schema changes require DOWN migrations (INV-001)</T>
 <T>Claude will follow these directives automatically in every session.</T>
 </Terminal>
 
@@ -302,10 +301,10 @@ The decision you made today is now enforcement tomorrow. Not a doc someone might
 
 Thursday morning. New session. You haven't opened this project since Tuesday.
 
-<Terminal title="Claude Code — payment-service">
+<Terminal title="Claude Code — upload-service">
 <T>[SessionStart] Loading project context...</T>
-<T>Payment Processing Service — Go + Chi + PostgreSQL</T>
-<T dim>Last session: Tue Mar 18 — completed webhook delivery system</T>
+<T>Upload Processing Service — Go + Chi + PostgreSQL</T>
+<T dim>Last session: Tue Mar 18 — completed scan-result delivery system</T>
 <T>Active governance:</T>
 <T>  7 rules, 8 agents, 5 compiled directives</T>
 <T>  3 ADRs (error handling, DB conventions, transactional outbox)</T>

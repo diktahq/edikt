@@ -23,10 +23,10 @@ Before upgrading the project, edikt checks if a newer version is available on Gi
 - **No network** — warns and continues with the installed version.
 
 ```text
-📦 edikt 0.2.0 is available (you have 0.1.3).
+📦 edikt v0.7.1 is available (you have v0.7.0).
 
   Update now:
-    curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
+    curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.1/install.sh | bash
 
   Then re-run /edikt:upgrade to apply changes to this project.
   To skip this check: /edikt:upgrade --offline

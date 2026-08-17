@@ -107,6 +107,7 @@ All default to `true`. The governance core (rules, compile, drift) is always on.
 | `features.signal-detection` | `true` | Stop hook — detect uncaptured ADR/invariant candidates |
 | `features.plan-injection` | `true` | UserPromptSubmit hook — inject active plan phase into every prompt |
 | `features.quality-gates` | `true` | SubagentStop hook — block on critical findings from gate agents |
+| `features.evidence-gate` | `warn` | PreToolUse verify-gate hook — completion-claim gate posture. Valid values: `block`, `warn`, `educate`, `disabled` |
 
 ### `evaluator.*` — Evaluator configuration
 
@@ -179,6 +180,16 @@ Severity ordering: `critical (3) > warning (2) > info (1)`. The gate fires when 
 
 See [Configuring Evaluator Gates](/guides/evaluator-gates) for the worked example and [Quality Gates](/governance/gates) for the override flow and audit log.
 
+### `ids.*` — Artifact-ID patterns
+
+Override for projects with custom or component-coded artifact-ID schemes.
+
+| Key | Default | Valid values | Used by | Description |
+|-----|---------|-------------|---------|-------------|
+| `ids.fr_pattern` | `^FR-\d{3,}$` | any valid regex | prd, spec, spec-review | Functional requirement ID pattern. Component-coded IDs like `FR-PR-001` require e.g. `^FR-[A-Z]+-\d{3,}$` |
+| `ids.sr_pattern` | `^SR-\d{3,}$` | any valid regex | spec | Spec requirement ID pattern. Override alongside `ids.fr_pattern` when the project uses a component-coded scheme |
+| `ids.ac_pattern` | `^AC-\d{3,}-\d+$` | any valid regex | prd, spec | Acceptance criterion ID pattern. The middle segment mirrors the FR number, so a custom `ids.fr_pattern` usually needs a matching AC pattern (e.g. `^AC-[A-Z]+-\d{3,}-\d+$`) |
+
 ### `defaults.*` — Defaults for plan and execution
 
 | Key | Default | Valid values | Description |
@@ -190,6 +201,7 @@ See [Configuring Evaluator Gates](/guides/evaluator-gates) for the worked exampl
 | Key | Default | Valid values | Description |
 |-----|---------|-------------|-------------|
 | `hooks.pre-push-security` | `true` | `true`, `false` | Pre-push secret scanning. Disable with `false` or one-time skip with `EDIKT_SECURITY_SKIP=1`. |
+| `hooks.injection.bounce_budget` | `8` | integer ≥ 1 (a value below 1 is refused — 0 would mean enforcement never blocks) | Caps how many times one directive set may bounce (deny) a write within a session. Once spent, a write that would otherwise be denied proceeds instead, delivered as advisory `additionalContext` naming the still-applicable directives rather than a deny — MUST-grade enforcement is not unconditional past this budget for the rest of the session. |
 
 ### `headless.*` — CI/headless mode
 

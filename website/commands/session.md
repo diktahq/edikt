@@ -35,7 +35,7 @@ Updated:  PLAN-004 phase 2 → done
 
 Possible captures:
   💡 ADR: exponential backoff over fixed retry intervals — clear trade-off discussed
-     → Run /edikt:adr to capture
+     → Run /edikt:adr:new to capture
 
   📄 Doc gap: POST /webhooks/retry — new endpoint not in API docs
      → Run /edikt:docs to review

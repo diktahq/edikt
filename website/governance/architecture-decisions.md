@@ -105,7 +105,7 @@ See [Extensibility](extensibility) for the full extension surface.
 | Command | What it does |
 |---|---|
 | `/edikt:adr:new` | Create a new ADR from natural language input |
-| `/edikt:adr:compile` | Generate directive sentinel blocks |
+| `/edikt:adr:compile` | Regenerate the ADR's sidecar (`<ADR>.edikt.yaml`) |
 | `/edikt:adr:review` | Review language quality + directive LLM compliance |
 
 ## Next steps

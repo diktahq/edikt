@@ -2,6 +2,8 @@
 
 Adversarial directive testing. Runs attack prompts against every governance directive that has a `behavioral_signal` block and reports which directives hold under pressure.
 
+**Currently inert under the v0.6.0+ sidecar architecture.** `behavioral_signal` and `canonical_phrases` were pre-v0.6.0 in-body-sentinel fields — they're not part of the current `gov-sidecar.v2` schema, so the filter below matches nothing and every directive reports `SKIP`. This command needs a schema extension (tracked, not yet built) before it tests anything again. The rest of this page describes the intended behavior for when that lands.
+
 This is an **opt-in command** — it requires a separate install before use.
 
 ## Install
@@ -37,10 +39,10 @@ Only directives with a populated `behavioral_signal` block are testable. Directi
 ```text
 17 directives found
   2 testable (behavioral_signal present)
-  15 SKIP (no behavioral_signal — run /edikt:adr:review --backfill to expand coverage)
+  15 SKIP (no behavioral_signal)
 ```
 
-To make more directives testable, run `/edikt:adr:review --backfill` to populate `canonical_phrases` and `behavioral_signal` on existing ADRs.
+`/edikt:adr:review --backfill` used to populate these fields but is deprecated under v0.6.0+ — `canonical_phrases` isn't part of the current sidecar schema, so it short-circuits with a deprecation message instead of writing anything. Until the schema is extended, this pre-flight count will show 0 testable directives on any current-architecture project.
 
 ### Pre-flight confirmation
 
@@ -122,7 +124,7 @@ FAIL results do not produce a non-zero exit. The benchmark measures your directi
 ## Known limitations
 
 - **Discriminative power against stubbed models is a lower bound.** The parity tests in `test/integration/benchmarks/` use a stubbed model that always refuses. This verifies signal wiring and report generation, but not real-world effectiveness. Real-world attack-prompt quality is only validated by running against a live model.
-- **Only `behavioral_signal`-populated directives are testable.** many directives ship without `behavioral_signal` initially. This is expected — backfill is an ongoing process.
+- **Only `behavioral_signal`-populated directives are testable.** Under the current sidecar schema, that's effectively none — see the note at the top of this page.
 - **One attack suite per signal type.** The four attack templates cover the four signal types. A directive with a novel enforcement predicate will SKIP until a matching template exists.
 
 ## Natural language triggers
@@ -134,6 +136,6 @@ FAIL results do not produce a non-zero exit. The benchmark measures your directi
 
 ## What's next
 
-- [/edikt:adr:review --backfill](/commands/adr/review) — populate `canonical_phrases` and `behavioral_signal` on existing ADRs
+- [/edikt:adr:review](/commands/adr/review) — `--backfill` is deprecated under v0.6.0+; see that page for why
 - [/edikt:adr:new](/commands/adr/new) — new ADRs capture `behavioral_signal` via interview prompts
 - [Sentinel Blocks](/governance/sentinels) — `behavioral_signal` schema reference

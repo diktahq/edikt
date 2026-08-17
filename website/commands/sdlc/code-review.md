@@ -20,6 +20,7 @@ Post-implementation specialist review — routes to relevant domain agents based
 | `--branch` | Review all changes on this branch |
 | A file path | Review a specific file or directory |
 | `--no-edikt` | Run all domain reviews inline without spawning specialist agents |
+| `--json` | Machine-readable output only — no progress indicators, no prose. For CI. |
 
 ## What it does
 
@@ -57,6 +58,8 @@ SECURITY
 ─────────────────────────────────────────────────────
 2 findings (1 critical). Address before shipping?
 ```
+
+If an active spec exists for the reviewed code, the review automatically appends a "DRIFT CHECK" section running `/edikt:sdlc:drift`'s logic scoped to that spec — no separate command needed. If no spec exists, this step is skipped silently.
 
 ## Severity model
 

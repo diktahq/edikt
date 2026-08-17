@@ -61,14 +61,23 @@ Guidelines that use hedging language are skipped:
 
 ## Sidecar regeneration
 
-`:compile` regenerates exactly one `<guideline>.edikt.yaml` sidecar in a fresh subagent context. The output is one of:
+`:compile` regenerates exactly one `<guideline>.edikt.yaml` sidecar in a fresh subagent context. For a single target:
 
 ```text
-Regenerated error-handling.edikt.yaml
-error-handling.edikt.yaml unchanged
+✅ error-handling.edikt.yaml — regenerated
 ```
 
-Idempotent: running twice on an unchanged body produces a byte-equal sidecar (canonical YAML serialization). The agent prompt is locked; each artifact compiles in its own forked subagent (`context: fork`) so there is no cross-artifact contamination.
+For an all-targets run:
+
+```text
+  ✅ error-handling — regenerated
+  ✅ http-handlers — unchanged
+  ...
+
+  1 regenerated, 1 unchanged.
+```
+
+The agent prompt is locked; each artifact compiles in its own forked subagent (`context: fork`) so there is no cross-artifact contamination. Byte-equal regeneration on an unchanged body is the goal, but unlike ADR/invariant compile — where the canonical serializer has shipped — guideline compile's canonical form is still approximate, so "unchanged" isn't yet a hard guarantee here.
 
 You usually don't need to run this directly. `/edikt:gov:compile` Phase A auto-resyncs stale sidecars by dispatching this command per guideline.
 

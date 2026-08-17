@@ -88,6 +88,28 @@ Report saved: docs/reports/drift-SPEC-005-2026-03-20.md
 2 diverged finding(s). Want me to prioritize them?
 ```
 
+### Fixture characterization status
+
+When `fixtures.yaml` declares expected outputs for unit tests, the report adds a section after the findings table breaking them into **characterized** (verified against a real run, with a `verified_at` date) and **aspirational** (a target contract not yet verified):
+
+```text
+§ Fixture characterization status
+
+  Characterized (12):
+    happy-path-checkout.json  ✓ verified 2026-03-18
+    ...
+
+  Aspirational (3):
+    retry-exhausted.json
+      target: Phase 4
+      contract: webhook delivery gives up after 5 attempts
+    ...
+
+  Aspirational debt: 3/15 (20%) — 🟡 Low aspirational debt
+```
+
+Aspirational debt is a warning, not an error — the emoji tier scales from "✅ All fixtures characterized" (0%) through "🔴 High aspirational debt" (over 50%). If the spec has no `fixtures.yaml` expected-outputs section, this part of the report is skipped silently.
+
 ## Persisted reports
 
 The report is saved to `docs/reports/` automatically:

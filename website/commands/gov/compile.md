@@ -268,17 +268,6 @@ This also runs in `/edikt:gov:review` when scoring sidecars.
 
 Reports contradictions, conflicts, sidecar staleness, and directive counts without writing any files. Exits 1 if any sidecar is stale (use `/edikt:gov:compile` without flags to resync).
 
-## Migration from v0.1.x
-
-If you have an existing flat `governance.md` from v0.1.x, running `/edikt:gov:compile` automatically migrates to the new format:
-
-1. Detects the old format
-2. Generates topic files from existing directives
-3. Replaces the flat file with the new index
-4. Reports what changed
-
-For best results, run `/edikt:gov:review` first to generate directive sentinel blocks in your source documents.
-
 ## Orphan ADR detection
 
 Compile detects ADRs with no directives and no `no-directives:` reason field.
@@ -289,7 +278,7 @@ Compile detects ADRs with no directives and no `no-directives:` reason field.
 2. Second consecutive compile with the same orphan (or a superset) — blocks with exit ≠ 0.
 
 Resolve by:
-- Adding a directive sentinel block to the ADR (`/edikt:adr:compile`)
+- Regenerating the ADR's sidecar with directives (`/edikt:adr:compile`)
 - Or marking the ADR with `no-directives: <reason ≥ 10 chars>` in its frontmatter (for ADRs that are deliberately non-directive, e.g., purely contextual records)
 
 **State persistence:**
@@ -306,14 +295,9 @@ Before writing, compile invokes the shared directive-quality sub-procedure (`com
 
 These checks are warn-only. Hard-fail is targeted for a future release.
 
-## Extended sentinel fields
+## `canonical_phrases` and `behavioral_signal` (legacy, currently inert)
 
-The compile parser now reads two new optional fields from sentinel blocks:
-
-- `canonical_phrases:` — forwarded into the compiled governance topic file verbatim; consumed by the directive-quality checks
-- `behavioral_signal:` — stored for `/edikt:gov:benchmark`; not included in `.claude/rules/` output
-
-Missing fields are treated as `[]` / `{}` — fully backward-compatible.
+These two fields existed on the pre-v0.6.0 in-body sentinel block. They are **not** part of the current `gov-sidecar.v2` schema (see the sidecar shape under [Sidecar reads](#sidecar-reads-v0-6-0) above — no such fields) and compile does not read or forward them. `/edikt:gov:benchmark`'s behavioral-signal filter currently has nothing to match against and short-circuits to "all skipped." See [Sentinel Blocks](/governance/sentinels) for the legacy field reference.
 
 ## Migration check (v0.6.0)
 
@@ -336,6 +320,6 @@ Run after:
 
 ## What's next
 
-- [/edikt:gov:review](/commands/gov/review) — generate directive sentinels and review language quality
+- [/edikt:gov:review](/commands/gov/review) — review directive quality and check for contradictions
 - [/edikt:adr:new](/commands/adr/new) — capture an architecture decision
 - [/edikt:invariant:new](/commands/invariant/new) — add a hard constraint

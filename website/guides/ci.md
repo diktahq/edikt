@@ -69,7 +69,7 @@ headless:
 
 | Check | Command | What it catches |
 |---|---|---|
-| Compile | `/edikt:gov:compile --check` | ADR contradictions, guideline conflicts, missing sentinels |
+| Compile | `/edikt:gov:compile --check` | ADR contradictions, guideline conflicts, stale/missing sidecars |
 | Drift | `/edikt:sdlc:drift` | Implementation diverging from spec |
 | Audit | `/edikt:sdlc:audit` | Security vulnerabilities, OWASP gaps |
 | Doctor | `/edikt:doctor` | Stale rules, missing hooks, config issues |

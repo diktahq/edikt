@@ -18,20 +18,13 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 
 ## 1. Install
 
-::: warning Installation is currently pending the 0.7.0 release
-`diktahq/edikt`'s public releases stop at **v0.4.5** — no release with assets exists for any version
-since. There is no install command this page can give you today that both works and installs a
-current, supported version. This resolves once 0.7.0 publishes release assets to the public repo.
-:::
-
-If you need a working install today, the last public release still installs — note this is
-pre-Go-rewrite and unsigned, missing every hardening change from v0.5.0 onward:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.0/install.sh | bash
 ```
 
-**Switching versions after install** (once a current release publishes):
+Installs the v0.7.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
+
+**Switching versions after install:**
 
 ```bash
 edikt list                 # show installed versions
@@ -42,7 +35,13 @@ edikt rollback              # revert to the previous version
 
 For the full upgrade flow with sidecar migration, status checks, and prompts, run `/edikt:upgrade` from inside Claude Code instead. The mechanics of each launcher subcommand — `install`, `use`, `rollback`, `prune`, `list`, pin management — are documented in [Keeping edikt Up to Date](guides/upgrading.md#payload-version-management).
 
-v0.4.5's installer uses a different fetch model (raw git-tag), so its `--ref` only resolves to other v0.4.x tags. v0.5.x is retracted.
+**Staying on the v0.4 line:** if your project isn't ready for the sidecar architecture (introduced in v0.6.0, current through v0.7.0), v0.4.x still installs from [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install.sh | bash
+```
+
+v0.4.5's installer uses a different fetch model (raw git-tag, not release assets), so its `--ref` only resolves to other v0.4.x tags, not v0.7.x. v0.5.x is retracted.
 
 ## 2. Run `/edikt:init`
 
@@ -70,7 +69,7 @@ edikt scans your codebase automatically — languages, frameworks, linters, exis
   Test:       make test
   Lint:       golangci-lint (.golangci-lint.yaml)
   AI config:  CLAUDE.md (34 lines)
-  Docs:       3 ADRs in docs/decisions/
+  Docs:       3 ADRs in docs/architecture/decisions/
   Commits:    conventional commits detected
   Governance: verikt.yaml detected — architecture pack skipped
 ```
@@ -145,7 +144,7 @@ edikt generates everything and shows progress:
   ✓ Project context docs/project-context.md
   ✓ Rules           6 packs → .claude/rules/
   ✓ Agents          5 specialists → .claude/agents/
-  ✓ Hooks           .claude/settings.json (20 behaviors)
+  ✓ Hooks           .claude/settings.json (9 behaviors)
   ✓ CLAUDE.md       updated
   ✓ Directories     docs/architecture/, docs/plans/, docs/product/
 ```
@@ -223,8 +222,8 @@ your-project/
 │   ├── architecture/
 │   │   ├── decisions/           # ADRs (with README)
 │   │   └── invariants/          # hard constraints (with README)
+│   ├── plans/                   # execution plans (with README)
 │   └── product/
-│       ├── plans/               # execution plans (with README)
 │       ├── prds/                # requirements (with README)
 │       └── specs/               # specifications (with README)
 ├── .edikt/
@@ -232,11 +231,11 @@ your-project/
 └── .claude/
     ├── rules/                   # guardrails Claude reads automatically
     ├── agents/                  # specialist agents (stack-matched)
-    ├── settings.json            # 20 automatic behaviors
+    ├── settings.json            # 9 automatic behaviors
     └── CLAUDE.md                # project block + natural language triggers
 ```
 
-**Automatic behaviors (20 lifecycle hooks):**
+**Automatic behaviors (9 lifecycle hooks):**
 
 | Behavior | What happens |
 |----------|-------------|

@@ -12,7 +12,7 @@ Check for outdated rule packs and update them to the latest version from the edi
 
 Compares the version of each installed `.claude/rules/*.md` file against the edikt template registry. For any outdated pack, downloads the latest version and replaces the installed file.
 
-Manually edited rule files (no `<!-- edikt:generated -->` marker) are never overwritten — edikt skips them and notes the manual edit.
+Manually edited rule files (no `<!-- edikt:generated -->` marker) are never overwritten without explicit confirmation — edikt skips them by default and notes the manual edit, and will only overwrite one if you explicitly ask to include it (`y` at the "update anyway?" prompt).
 
 ## Output
 

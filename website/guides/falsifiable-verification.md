@@ -1,6 +1,6 @@
 # Falsifiable verification
 
-Most governance tooling trusts the agent's word. It marks a task done because the agent *said* it was done. edikt v0.6.0 stops doing that: a completion claim only counts if there is **fresh, executable evidence** for it in the same turn — and the check that produces that evidence has to be one an agent can't trivially fake.
+Most governance tooling trusts the agent's word. It marks a task done because the agent *said* it was done. edikt v0.7.0 stops doing that: a completion claim only counts if there is **fresh, executable evidence** for it in the same turn — and the check that produces that evidence has to be one an agent can't trivially fake.
 
 This guide covers the verification layer end to end: executable `verify:` commands, the behavioral/tooling/structural grading, the pre-edit gate, intent-aware diff review, the cheat-rate benchmark, and the post-flight pipeline that ties them together.
 

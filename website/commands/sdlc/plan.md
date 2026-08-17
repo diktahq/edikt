@@ -33,6 +33,9 @@ Or describe the task inline:
 | `SPEC-NNN` | Uses the spec and its accepted artifacts as primary planning context |
 | `PLAN-NNN` | Continue, re-plan, or create a sub-plan for an existing plan |
 | `--no-review` | Skip the pre-flight specialist review after the plan is written |
+| `--eval-only {phase}` | Re-run evaluation for a specific phase without re-running the generator — recovers from a `blocked` verdict after fixing the underlying cause. Cannot combine with a positional task argument. |
+| `--plan {slug}` | Optional companion to `--eval-only` — names the plan file by slug when multiple plans exist |
+| `--sidecar-only [PLAN-slug]` | Rebuild the evaluation-history sidecar for an existing plan without changing the plan itself. Merges into any partially-existing history rather than overwriting it. |
 
 ## Full plan vs quick plan
 
@@ -137,7 +140,7 @@ Plans track how many times each phase has been attempted. The progress table inc
 | 2     | in-progress | 2/5 | 2026-04-11 |
 | 3     | pending | 0/5   | — |
 
-Six statuses: `pending`, `in-progress`, `evaluating`, `done`, `stuck`, `skipped`.
+Seven statuses: `pending`, `in-progress`, `evaluating`, `blocked`, `done`, `stuck`, `skipped`. `blocked` means the evaluator couldn't verify the phase at all — a missing capability like Bash being denied or the test runner being unavailable — distinct from `stuck`, which means verification ran and failed repeatedly.
 
 After each evaluation failure, the attempt count increments and the failing criteria are forwarded to the next attempt. If the same criterion fails 3 consecutive times, an escalation warning surfaces. At max attempts (configurable via `evaluator.max-attempts`, default 5), the phase goes `stuck` with four options: continue trying, skip, rewrite criteria, or stop.
 

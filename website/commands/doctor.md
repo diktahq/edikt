@@ -40,7 +40,7 @@ For every ADR, invariant, and guideline `.md`, doctor verifies the co-located `<
 | `ORPHAN` | Hard fail | A `.edikt.yaml` exists with no sibling `.md` |
 | `MISSING` | Hard fail | A governance `.md` has no co-located sidecar |
 | `PATH MISMATCH` | Hard fail | The sidecar's `path:` field doesn't resolve to the sibling `.md` |
-| Schema validation | Hard fail | Sidecar fails `templates/schemas/gov-sidecar.v1.schema.json` |
+| Schema validation | Hard fail | Sidecar fails `templates/schemas/gov-sidecar.v2.schema.json` |
 | `directives: []` | Soft warning | Sidecar exists but has no directives — sidecar may need regeneration |
 
 ```text
