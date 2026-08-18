@@ -7,7 +7,6 @@ The governance chain connects edikt's two systems — architecture governance & 
 <defs>
 <marker id="arr-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
 <marker id="arr-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="var(--vp-c-brand-1)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
-<marker id="arr-stone" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#A0936D" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
 <marker id="arr-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#D97706" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
 <marker id="arr-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#8B5CF6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker>
 </defs>
@@ -47,30 +46,27 @@ The governance chain connects edikt's two systems — architecture governance & 
 <line x1="190" y1="292" x2="190" y2="324" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
 <!-- LEFT: Enforcement surface (4 rendered surfaces, compile_schema_version: 3) -->
-<rect x="45" y="324" width="290" height="140" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
-<text x="190" y="348" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Enforcement surface</text>
-<text x="190" y="370" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Ambient core — every edit</text>
-<text x="190" y="392" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Topic files — on matching edit</text>
-<text x="190" y="414" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Directive index — write-time hook</text>
-<text x="190" y="436" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Skill packages — on-demand</text>
+<rect x="45" y="324" width="290" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
+<text x="190" y="346" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Enforcement surface</text>
+<text x="190" y="368" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Ambient · topic · directive-index · skill</text>
 
-<line x1="190" y1="464" x2="190" y2="496" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
+<line x1="190" y1="382" x2="190" y2="414" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
 <!-- LEFT: Hooks -->
-<rect x="65" y="496" width="250" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
-<text x="190" y="518" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Lifecycle hooks</text>
-<text x="190" y="540" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Context recovery · plan injection · gates</text>
+<rect x="65" y="414" width="250" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
+<text x="190" y="436" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Lifecycle hooks</text>
+<text x="190" y="458" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Context recovery · plan injection · gates</text>
 
-<line x1="190" y1="554" x2="190" y2="586" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
+<line x1="190" y1="472" x2="190" y2="504" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
 <!-- LEFT: Signal detection -->
-<rect x="55" y="586" width="270" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="#A0936D" stroke-width="0.75"/>
-<text x="190" y="608" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="#A0936D">Signal detection</text>
-<text x="190" y="630" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Detects new decisions mid-session</text>
+<rect x="55" y="504" width="270" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-brand-1)" stroke-width="0.75"/>
+<text x="190" y="526" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-brand-1)">Signal detection</text>
+<text x="190" y="548" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--vp-c-text-1)">Detects new decisions mid-session</text>
 
-<!-- Feedback: signal → decisions -->
-<path d="M55 615 L28 615 L28 160 L55 160" fill="none" stroke="#A0936D" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#arr-stone)"/>
-<text x="18" y="388" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" font-weight="500" fill="#A0936D" transform="rotate(-90 18 388)">new ADR / invariant</text>
+<!-- Feedback: signal → decisions (same relationship as "surfaces decisions" on the right — teal, same legend entry) -->
+<path d="M55 533 L28 533 L28 160 L55 160" fill="none" stroke="var(--vp-c-brand-1)" stroke-width="1.2" stroke-dasharray="5 3" marker-end="url(#arr-teal)"/>
+<text x="18" y="347" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" font-weight="500" fill="var(--vp-c-brand-1)" transform="rotate(-90 18 347)">new ADR / invariant</text>
 
 <!-- RIGHT: PRD -->
 <rect x="435" y="148" width="270" height="58" rx="6" fill="var(--vp-c-brand-soft)" stroke="var(--vp-c-brand-1)" stroke-width="0.75"/>
@@ -98,15 +94,13 @@ The governance chain connects edikt's two systems — architecture governance & 
 <rect x="435" y="420" width="270" height="80" rx="6" fill="var(--vp-c-brand-soft)" stroke="var(--vp-c-brand-1)" stroke-width="0.75"/>
 <text x="570" y="440" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-brand-1)">Plan + pre-flight</text>
 <text x="570" y="462" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">⬡ specialists + evaluator pre-flight</text>
-<text x="570" y="482" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="var(--vp-c-text-2)">criteria sidecar · context handoff · iteration tracking</text>
 
 <line x1="570" y1="500" x2="570" y2="528" stroke="var(--vp-c-brand-1)" stroke-width="1.5" marker-end="url(#arr-teal)"/>
 
 <!-- RIGHT: Execute -->
 <rect x="435" y="528" width="270" height="80" rx="6" fill="var(--vp-c-brand-soft)" stroke="var(--vp-c-brand-1)" stroke-width="0.75"/>
-<text x="570" y="548" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-brand-1)">Execute</text>
+<text x="570" y="548" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-brand-1)">Execute + post-flight</text>
 <text x="570" y="570" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-2)">governed session · quality gates · evaluator</text>
-<text x="570" y="590" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="var(--vp-c-text-2)">gate overrides → events.jsonl · headless evaluation</text>
 
 <!-- Evaluator loop: execute → plan (retry) -->
 <path d="M705 558 L730 558 L730 458 L705 458" fill="none" stroke="#D97706" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr-amber)"/>
@@ -121,9 +115,9 @@ The governance chain connects edikt's two systems — architecture governance & 
 <text x="570" y="696" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="11" fill="#D97706">auto-promote in-progress → implemented</text>
 
 <!-- CROSS: constrains (left → right) -->
-<path d="M335 375 C375 375, 390 263, 435 263" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
-<path d="M335 400 C380 400, 395 458, 435 458" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
-<path d="M335 425 C385 425, 400 565, 435 565" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
+<path d="M335 344 C375 344, 390 263, 435 263" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
+<path d="M335 354 C380 354, 395 458, 435 458" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
+<path d="M335 366 C385 366, 400 565, 435 565" fill="none" stroke="var(--vp-c-text-2)" stroke-width="1.2" marker-end="url(#arr-slate)"/>
 <text x="388" y="400" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" font-weight="600" fill="var(--vp-c-text-2)">constrains</text>
 
 <!-- CROSS: surfaces (right → left, dashed) -->
@@ -144,7 +138,7 @@ The governance chain connects edikt's two systems — architecture governance & 
 <text x="162" y="870" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Enforcement constrains lifecycle</text>
 
 <line x1="440" y1="870" x2="472" y2="870" stroke="var(--vp-c-brand-1)" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arr-teal)"/>
-<text x="482" y="870" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Lifecycle surfaces new decisions</text>
+<text x="482" y="870" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">A session surfaces new decisions</text>
 
 <line x1="120" y1="898" x2="152" y2="898" stroke="#D97706" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#arr-amber)"/>
 <text x="162" y="898" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Evaluator retry + lifecycle transitions</text>
@@ -180,7 +174,7 @@ Two systems working together:
 
 **Architecture governance & compliance** — ADRs, invariants, and guidelines are your current engineering decisions. They compile into four rendered surfaces under `.claude/rules/`: an always-loaded ambient core, per-topic files, a glob-keyed `directive-index.yaml` that drives write-time enforcement, and a manifest — see [Compile](compile) for the full render model. edikt's writes are confined to co-located `<artifact>.edikt.yaml` sidecars and the compiled surfaces above. The prose `.md` you author is never touched by `gov:compile` — the boundary between human-owned and tool-owned bytes is structural, not definitional. See [Sidecar Architecture](sidecar).
 
-**Agentic SDLC governance** — (Brainstorm) → (Discovery) → PRD → Spec → Artifacts → Plan → Execute → Drift. Brainstorm and discovery are optional, conditional entry points — an idea can go straight to a PRD. Each step feeds the next. Each is constrained by compiled decisions and produces new ones.
+**Agentic SDLC governance** — (Brainstorm) → (Discovery) → PRD → Spec → Artifacts → Plan → Execute → Drift. Brainstorm and discovery are optional, conditional entry points — an idea can go straight to a PRD. Each step feeds the next. Each is constrained by compiled decisions and produces new ones. PRDs and specs use the same split as ADRs and invariants: a narrative `.md` for humans plus a co-located `.yaml` sidecar that's the actual structured source of truth — FRs, ACs, coverage mappings, revision history. See [Traceability](#traceability) below for what's really in each.
 
 They connect at three points:
 - Governance **constrains** the spec — existing ADRs and invariants inform the technical design
@@ -246,6 +240,8 @@ requirement, and the chain records why.
 
 Then you execute. Claude builds with enforced standards, the active plan phase injected on every prompt.
 
+Each phase's completion triggers post-flight — a composite review, not a single check. L1 is the phase's own criteria-verify verdict. L2 asks whether the phase's diff violates any compiled ADR or invariant. L3 routes the same diff to the domain specialists the changed files call for (`/edikt:sdlc:code-review`, also invocable standalone anytime you want a second opinion). A synthesizer dedupes all three into one report before the phase can flip to `done`.
+
 > "Does the implementation match the spec?"
 
 Claude runs drift detection — comparing what got built against the PRD acceptance criteria, spec requirements, artifact contracts, and ADR compliance.
@@ -256,7 +252,7 @@ The full sequence, with the two optional entry points in parentheses:
 (brainstorm) → (discovery) → PRD → spec → artifacts → plan → execute → drift detection
 ```
 
-**Command references:** `/edikt:brainstorm`, `/edikt:sdlc:discovery`, `/edikt:sdlc:prd`, `/edikt:sdlc:spec`, `/edikt:sdlc:artifacts`, `/edikt:sdlc:plan`, `/edikt:sdlc:drift`
+**Command references:** `/edikt:brainstorm`, `/edikt:sdlc:discovery`, `/edikt:sdlc:prd`, `/edikt:sdlc:spec`, `/edikt:sdlc:artifacts`, `/edikt:sdlc:plan`, `/edikt:sdlc:post-flight`, `/edikt:sdlc:code-review`, `/edikt:sdlc:drift`
 
 ## State machine
 
@@ -267,7 +263,7 @@ Each step in the chain has a status. The chain enforces a strict progression: ea
 | PRD | `draft` → `accepted` | spec requires `accepted` PRD |
 | Spec | `draft` → `accepted` | spec-artifacts requires `accepted` spec |
 | Artifacts | `draft` → `accepted` (per artifact) | plan requires `accepted` artifacts |
-| Plan | `draft` → `in-progress` → `complete` | Execution proceeds phase by phase |
+| Plan phases | `pending` → `in-progress` → `done` (or `blocked`/`stuck`/`skipped`) | Execution proceeds phase by phase; post-flight gates each phase's `done` transition |
 | Drift report | generated on demand | Closes the loop — accepted vs. built |
 
 Attempting to write a spec on a draft PRD produces a hard block:
@@ -297,14 +293,16 @@ This isn't a suggestion. The gate exists because a draft PRD represents unresolv
 
 **Plan** — phased execution with pre-flight specialist review. Each phase is reviewed by the domain agents before any code is written.
 
+**Post-flight report** — composite of the phase's criteria-verify verdict (L1), a governance-diff check against compiled ADRs and invariants (L2), and specialist findings (L3), deduplicated by a synthesizer. Saved per phase to `.edikt/state/post-flight/`.
+
 **Drift report** — comparison of implementation against spec, PRD acceptance criteria, artifact contracts, ADR decisions, and invariants. Saved to the spec folder.
 
 ## Traceability
 
-Every artifact in the chain carries references to what it came from:
+Every artifact in the chain carries references to what it came from — but the identity fields you see in a `.md`'s frontmatter are only half the story. PRDs and specs each pair their narrative `.md` with a co-located `.yaml` sidecar, and the sidecar is where the actual traceability data — requirements, acceptance criteria, coverage mappings — lives. Same split as ADRs and invariants, applied to the SDLC side.
 
 ```yaml
-# spec frontmatter
+# spec.md frontmatter — identity and references only
 type: spec
 id: SPEC-005
 source_prd: PRD-005
@@ -315,7 +313,28 @@ status: accepted
 ```
 
 ```yaml
-# artifact frontmatter
+# spec.yaml — the sidecar, structured source of truth
+source_prd_coverage:
+  prd: PRD-005
+  covered:
+    - fr: FR-001
+      by: [SR-001, SR-002]
+  deferred: []
+  uncovered: []
+acceptance_criteria:
+  - id: AC-001-1        # passed through from the PRD, byte-equal, never renumbered
+    fr: FR-001
+    given: "..."
+    when: "..."
+    then: "..."
+  - id: SAC-001          # added by the spec itself — architectural-layer criteria
+    source: spec
+```
+
+Every PRD `FR-NNN` must be covered by at least one spec `SR-NNN`, deferred with a stated reason, or explicitly listed as uncovered — nothing falls through silently. The spec's own `SPEC-{NNN}` folder holds `spec.md` + `spec.yaml` side by side; `/edikt:sdlc:spec-review` re-checks this coverage any time the spec is hand-edited after generation.
+
+```yaml
+# artifact frontmatter — no separate sidecar; this is the whole record
 type: artifact
 artifact_type: data-model
 spec: SPEC-005
@@ -323,7 +342,7 @@ status: draft
 reviewed_by: dba
 ```
 
-When drift detection runs, it follows these references backward through the chain — checking implementation against artifacts, artifacts against spec, spec against PRD acceptance criteria.
+When drift detection runs, it follows these references backward through the chain — checking implementation against artifacts, artifacts against the spec's FR coverage, spec against PRD acceptance criteria.
 
 ## Why this matters
 
