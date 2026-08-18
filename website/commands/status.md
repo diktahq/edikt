@@ -10,7 +10,7 @@ Just ask:
 > "where are we?"
 > "what's next?"
 
-Claude runs `/edikt:status` automatically.
+The model runs `/edikt:status` automatically.
 
 ## What it shows
 

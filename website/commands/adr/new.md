@@ -11,7 +11,7 @@ Capture an Architecture Decision Record — from scratch or extracted from the c
 
 ## What is an ADR?
 
-An Architecture Decision Record captures a significant technical choice with its context, reasoning, alternatives considered, and consequences. Unlike comments in code, ADRs survive refactoring and give future teammates (and Claude) the "why" behind decisions.
+An Architecture Decision Record captures a significant technical choice with its context, reasoning, alternatives considered, and consequences. Unlike comments in code, ADRs survive refactoring and give future teammates (and the model) the "why" behind decisions.
 
 ## Two modes
 
@@ -49,7 +49,7 @@ Skipping any prompt produces empty values — `canonical_phrases: []` or `behavi
 
 ## Proactive suggestions
 
-You don't need to remember to run this. The `Stop` hook installed by `/edikt:init` watches every Claude response for significant technical choices with trade-offs. When it detects one, Claude ends its response with:
+You don't need to remember to run this. The `Stop` hook installed by `/edikt:init` watches every response for significant technical choices with trade-offs. When it detects one, it ends the response with:
 
 ```text
 💡 This looks like an ADR — run `/edikt:adr:new` to capture it.

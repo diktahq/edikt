@@ -14,9 +14,9 @@ List, install, and manage specialist agent templates.
 
 ## What are specialist agents?
 
-Specialist agents are role-based Claude configurations installed in `.claude/agents/`. Each agent has a defined domain, trigger conditions that tell Claude when to delegate to it, and constraints that keep it focused. No agent has a fixed model — the model is assigned per plan phase based on task complexity (see [Model selection](/guides/specialist-agents#model-selection-per-phase-not-per-agent)).
+Specialist agents are role-based configurations installed in `.claude/agents/`. Each agent has a defined domain, trigger conditions that tell the model when to delegate to it, and constraints that keep it focused. No agent has a fixed model — the model is assigned per plan phase based on task complexity (see [Model selection](/guides/specialist-agents#model-selection-per-phase-not-per-agent)).
 
-When Claude sees a task that matches an agent's domain, it delegates automatically. You can also invoke any agent directly by name.
+When the model sees a task that matches an agent's domain, it delegates automatically. You can also invoke any agent directly by name.
 
 ## Available agents
 
@@ -188,7 +188,7 @@ tools:
 You are a {domain} specialist...
 ```
 
-The `description:` field is what Claude reads to decide when to delegate. Make it specific and include trigger conditions.
+The `description:` field is what the model reads to decide when to delegate. Make it specific and include trigger conditions.
 
 ## Natural language triggers
 

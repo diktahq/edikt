@@ -1,6 +1,6 @@
 # Rule Packs
 
-edikt's rule packs are guardrails against specific mistakes Claude makes — not a collection of best-practice opinions. Each pack targets a category of error: hallucinated APIs, placeholder code, race conditions, tautological tests, timing attacks. Architecture opinions belong in ADRs (or verikt, if you use it). Rule packs are about correctness.
+edikt's rule packs are guardrails against specific mistakes the model makes — not a collection of best-practice opinions. Each pack targets a category of error: hallucinated APIs, placeholder code, race conditions, tautological tests, timing attacks. Architecture opinions belong in ADRs (or verikt, if you use it). Rule packs are about correctness.
 
 Each rule is a single `.md` file installed to `.claude/rules/` with `paths:` frontmatter so it only activates on relevant files. All packs are at version 0.1.0.
 
@@ -23,7 +23,7 @@ Every rule in every pack follows a four-level phrasing system:
 | `Prefer` | Strong default — deviate only with explicit justification |
 | `Consider` | Contextual suggestion — apply when it makes the code clearer |
 
-`NEVER` and `MUST` rules are enforced as invariants. `Prefer` and `Consider` rules are guidance Claude applies with judgment.
+`NEVER` and `MUST` rules are enforced as invariants. `Prefer` and `Consider` rules are guidance the model applies with judgment.
 
 ## All Packs
 
@@ -69,13 +69,13 @@ Every rule in every pack follows a four-level phrasing system:
 
 ## Path scoping
 
-Each rule pack declares a `paths:` glob in its frontmatter. Claude only loads the rule when editing a file that matches. This means:
+Each rule pack declares a `paths:` glob in its frontmatter. The model only loads the rule when editing a file that matches. This means:
 
 - The Go rule pack never fires when you're editing TypeScript
 - The security pack fires on both `.go` and `.sql` files (SQL is a security surface)
 - The SEO pack fires on `.html`, `.tsx`, `.vue`, `.astro`, and `.md` but not `.go`
 
-Path scoping keeps context lean — Claude loads only the rules relevant to the file being edited.
+Path scoping keeps context lean — the model loads only the rules relevant to the file being edited.
 
 Framework packs declare a `parent:` field pointing to their language pack. Installing `chi` also ensures `go` is active. Installing `nextjs` ensures `typescript` is active.
 

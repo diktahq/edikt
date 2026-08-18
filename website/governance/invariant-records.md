@@ -8,7 +8,7 @@ edikt formalizes architectural invariants as a governance artifact with a commit
 
 ADRs have been formalized since [Michael Nygard's 2011 post](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions). The concept of architectural *invariants* has existed in computer science since at least [Hoare logic](https://en.wikipedia.org/wiki/Hoare_logic) in the 1960s — conditions that must hold before and after every operation. But the *documentation format* for architectural invariants was never standardized. Every team that documents invariants invents their own format.
 
-edikt formalizes them: a committed template contract, a committed lifecycle, and compile pipeline integration that turns invariants into directives Claude follows automatically.
+edikt formalizes them: a committed template contract, a committed lifecycle, and compile pipeline integration that turns invariants into directives the model follows automatically.
 
 ## How Invariant Records differ from ADRs
 
@@ -101,7 +101,7 @@ Per ADR-066's single-home rule, a directive renders in exactly one of those two 
 
 ## Why directive language matters
 
-Experiments showed that *how* the directive is phrased changes whether Claude follows it. The compile pipeline produces directives optimized for LLM compliance:
+Experiments showed that *how* the directive is phrased changes whether the model follows it. The compile pipeline produces directives optimized for LLM compliance:
 
 ```
 Prose (low compliance):

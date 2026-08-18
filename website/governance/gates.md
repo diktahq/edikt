@@ -2,7 +2,7 @@
 
 Quality gates are enforcement checkpoints. When a specialist agent detects a critical finding during a plan phase, review, or audit, it blocks progression until the finding is resolved.
 
-You don't trigger gates. They fire automatically — via the SubagentStop hook when an agent completes work, via pre-flight review when a plan phase begins, or via an explicit audit. When a gate fires, Claude presents it.
+You don't trigger gates. They fire automatically — via the SubagentStop hook when an agent completes work, via pre-flight review when a plan phase begins, or via an explicit audit. When a gate fires, the model presents it.
 
 ## What they catch
 
@@ -55,7 +55,7 @@ GATE OVERRIDE
   Reason:     development environment only — will be removed before merge
 ```
 
-Override activity is visible in the governance dashboard. Ask Claude "what's our status?" to see gate history.
+Override activity is visible in the governance dashboard. Ask "what's our status?" to see gate history.
 
 ## Configuring gates
 
@@ -82,13 +82,13 @@ Gates are checked at three points:
 
 2. **SubagentStop hook** — after each specialist agent completes work during execution, findings are evaluated. Critical findings pause execution.
 
-3. **Explicit audit** — ask Claude to run a security and quality audit. All relevant agents scan the current implementation.
+3. **Explicit audit** — ask for a security and quality audit. All relevant agents scan the current implementation.
 
 **Command reference:** `/edikt:sdlc:audit`
 
 ## Re-fire prevention
 
-After you override a finding, it won't fire again for the rest of your session. A session is a single Claude Code invocation — when you close Claude and reopen it, the override expires and the gate fires again (reminding you the issue is still there).
+After you override a finding, it won't fire again for the rest of your session. A session is a single Claude Code invocation — when you close it and reopen it, the override expires and the gate fires again (reminding you the issue is still there).
 
 Overrides are stored in `~/.edikt/gate-overrides.jsonl` and cleared by the SessionStart hook at the beginning of each session.
 
@@ -124,7 +124,7 @@ When all three hold, the hook emits:
   Run: bin/edikt verify <plan-id> --phase <N> to verify before declaring done.
 ```
 
-The message uses `systemMessage` only — **never `decision: block`**. The user is the final judge; the warning is advisory. Plan-id and phase are parsed with a strict allowlist regex and double-validated in bash before flowing into the JSON template (no raw message text ever reaches the Claude-facing channel). See [features.quality-gates](/governance/features#quality-gates) for the opt-out.
+The message uses `systemMessage` only — **never `decision: block`**. The user is the final judge; the warning is advisory. Plan-id and phase are parsed with a strict allowlist regex and double-validated in bash before flowing into the JSON template (no raw message text ever reaches the model-facing channel). See [features.quality-gates](/governance/features#quality-gates) for the opt-out.
 
 ## Pre-edit gate
 

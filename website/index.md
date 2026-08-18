@@ -10,7 +10,7 @@ layout: home
 <section class="hero">
   <span class="eyebrow">Architecture governance for agentic engineering</span>
   <h1>Your coding standards, enforced. Your decisions, remembered.</h1>
-  <p class="lede">Capture an architecture decision once. edikt compiles it into a directive Claude follows automatically — every session, every engineer, without you saying it twice.</p>
+  <p class="lede">Capture an architecture decision once. edikt compiles it into a directive the model follows automatically — every session, every engineer, without you saying it twice.</p>
   <div class="ctas">
     <a class="btn btn-primary" href="/getting-started">Get started — 5 minutes →</a>
     <a class="btn btn-ghost" href="/what-is-edikt">What is edikt?</a>
@@ -41,7 +41,7 @@ layout: home
       </li>
       <li>
         <span class="beat-num">2</span>
-        <div><strong>edikt remembers.</strong><span class="beat-text">Every Claude session in this repo reads it automatically from here on — no re-explaining, no wiki to check.</span></div>
+        <div><strong>edikt remembers.</strong><span class="beat-text">Every session in this repo reads it automatically from here on — no re-explaining, no wiki to check.</span></div>
       </li>
       <li>
         <span class="beat-num">3</span>
@@ -67,7 +67,7 @@ layout: home
 
 <section class="problem reveal">
   <span class="eyebrow">The gap</span>
-  <p>Claude has memory. <span class="fade">It doesn't have governance.</span><br>Every session starts from zero — and a decision your team made yesterday gets quietly contradicted today.</p>
+  <p>The model has memory. <span class="fade">It doesn't have governance.</span><br>Every session starts from zero — and a decision your team made yesterday gets quietly contradicted today.</p>
 </section>
 
 <section class="clauses">
@@ -75,7 +75,7 @@ layout: home
 
 <article class="clause reveal">
   <h2>Decisions stop living only in your head</h2>
-  <p class="benefit">Write an architecture decision as plain prose. edikt compiles it into a directive Claude reads automatically, before it writes a line of code — no re-explaining, no pinned Slack message, no wiki nobody opens.</p>
+  <p class="benefit">Write an architecture decision as plain prose. edikt compiles it into a directive the model reads automatically, before it writes a line of code — no re-explaining, no pinned Slack message, no wiki nobody opens.</p>
   <p class="detail">/edikt:gov:compile → reads accepted decisions, checks for contradictions between them, renders enforcement. Update one, recompile. <span class="must">One source of truth</span>, not a doc that drifts from the code.</p>
 </article>
 
@@ -102,8 +102,8 @@ layout: home
 <section class="segment reveal">
   <div class="card">
     <span class="eyebrow who">For teams running Claude Code together</span>
-    <p>One engineer installs edikt and commits it. Every teammate's Claude session inherits the same standards from that point on — code review stops catching formatting and starts catching design decisions, whether it's your best engineer's session or the one who joined this week.</p>
-    <p class="mechanism">The rules live as markdown and YAML in the repo, committed like any other source file — every teammate's Claude reads them automatically at the start of every session, no separate setup step.</p>
+    <p>One engineer installs edikt and commits it. Every teammate's session inherits the same standards from that point on — code review stops catching formatting and starts catching design decisions, whether it's your best engineer's session or the one who joined this week.</p>
+    <p class="mechanism">The rules live as markdown and YAML in the repo, committed like any other source file — the model reads them automatically for every teammate, at the start of every session, no separate setup step.</p>
     <div class="roster">
       <span class="roster-avatar">JD</span>
       <span class="roster-avatar">MK</span>
@@ -111,7 +111,7 @@ layout: home
       <span class="roster-caption">Same <span class="adr-chip">ADR-014</span>, every one of their sessions — including the engineer who joined this week.</span>
     </div>
   </div>
-  <p class="secondary"><strong>Working solo?</strong> Same mechanism, just you and Claude staying in sync from one session to the next — no re-explaining your own architecture back to yourself. <strong>Running a consultancy?</strong> Install once, and every client engagement inherits the same standards from day one.</p>
+  <p class="secondary"><strong>Working solo?</strong> Same mechanism, just you and the model staying in sync from one session to the next — no re-explaining your own architecture back to yourself. <strong>Running a consultancy?</strong> Install once, and every client engagement inherits the same standards from day one.</p>
 </section>
 
 <section class="proof reveal">
@@ -123,7 +123,7 @@ layout: home
 
 <section class="closing reveal">
   <span class="eyebrow">Start here</span>
-  <h2>Five minutes, and Claude stops forgetting what you decided.</h2>
+  <h2>Five minutes, and the model stops forgetting what you decided.</h2>
   <div class="ctas">
     <a class="btn btn-primary" href="/getting-started">Get started — 5 minutes →</a>
     <a class="btn btn-ghost" href="/what-is-edikt">What is edikt?</a>

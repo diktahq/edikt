@@ -42,7 +42,7 @@ Extracts the last hard constraint discussed in the current conversation.
 
 ## Proactive suggestions
 
-The `Stop` hook watches every Claude response for hard constraint signals. When it detects one, Claude suggests:
+The `Stop` hook watches every response for hard constraint signals. When it detects one, it suggests:
 
 ```text
 💡 This is an invariant — run `/edikt:invariant:new` to capture it.

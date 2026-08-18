@@ -178,7 +178,7 @@ Two systems working together:
 
 They connect at three points:
 - Governance **constrains** the spec — existing ADRs and invariants inform the technical design
-- Compiled **directives are active** during plan and execution — Claude follows them automatically
+- Compiled **directives are active** during plan and execution — the model follows them automatically
 - Drift **verifies** the implementation against governance — did we build what we decided?
 
 The details of each mechanism have their own pages:
@@ -190,13 +190,13 @@ The details of each mechanism have their own pages:
 
 ## The conversation that drives it
 
-You don't type commands in sequence — you tell Claude what you need, and Claude runs the right step.
+You don't type commands in sequence — you say what you need, and the model runs the right step.
 
 The chain doesn't have to start at the PRD. When the idea itself isn't settled yet, two optional steps come before it — neither is mandatory, and they don't have to be used together.
 
 > "Let's brainstorm this"
 
-Claude opens a free-form, project-grounded conversation, pulling in specialist agents as relevant topics surface. When the conversation converges, you choose what it becomes: a PRD, a spec — brainstorm can formalize straight into either one — or just a saved brainstorm doc (`BRAIN-NNN`) to pick up later. Discovery is not a required stop in between.
+The model opens a free-form, project-grounded conversation, pulling in specialist agents as relevant topics surface. When the conversation converges, you choose what it becomes: a PRD, a spec — brainstorm can formalize straight into either one — or just a saved brainstorm doc (`BRAIN-NNN`) to pick up later. Discovery is not a required stop in between.
 
 > "Run discovery on this" (fresh, or `/edikt:sdlc:discovery BRAIN-003` to lift a saved brainstorm)
 
@@ -206,19 +206,19 @@ From here, the chain most people mean when they say "the governance chain":
 
 > "Write a PRD for Stripe webhook delivery with retry logic and idempotency"
 
-Claude generates structured requirements with acceptance criteria grounded in your project context. Review it, mark it accepted.
+The model generates structured requirements with acceptance criteria grounded in your project context. Review it, mark it accepted.
 
 > "Write a spec for PRD-005"
 
-Claude checks that PRD-005 is accepted, then routes to `architect`, scans your codebase and ADRs, and generates a technical specification. The spec references the PRD and any relevant ADRs.
+The model checks that PRD-005 is accepted, then routes to `architect`, scans your codebase and ADRs, and generates a technical specification. The spec references the PRD and any relevant ADRs.
 
 > "Generate spec artifacts for SPEC-005"
 
-Claude produces the implementable outputs: data model, API contracts, migrations, test strategy. Each artifact references the spec it came from.
+The model produces the implementable outputs: data model, API contracts, migrations, test strategy. Each artifact references the spec it came from.
 
 > "Create a plan for SPEC-005"
 
-Claude breaks the spec into phases, routes each to specialist agents for pre-flight review, and returns findings before any code is written.
+The model breaks the spec into phases, routes each to specialist agents for pre-flight review, and returns findings before any code is written.
 
 ::: tip What pre-flight and revision actually catch
 Two things worth knowing before you get here. First: pre-flight criteria
@@ -238,13 +238,13 @@ deliver exactly once" test will. When it does, the spec gets a new
 requirement, and the chain records why.
 :::
 
-Then you execute. Claude builds with enforced standards, the active plan phase injected on every prompt.
+Then you execute. The model builds with enforced standards, the active plan phase injected on every prompt.
 
 Each phase's completion triggers post-flight — a composite review, not a single check. L1 is the phase's own criteria-verify verdict. L2 asks whether the phase's diff violates any compiled ADR or invariant. L3 routes the same diff to the domain specialists the changed files call for (`/edikt:sdlc:code-review`, also invocable standalone anytime you want a second opinion). A synthesizer dedupes all three into one report before the phase can flip to `done`.
 
 > "Does the implementation match the spec?"
 
-Claude runs drift detection — comparing what got built against the PRD acceptance criteria, spec requirements, artifact contracts, and ADR compliance.
+The model runs drift detection — comparing what got built against the PRD acceptance criteria, spec requirements, artifact contracts, and ADR compliance.
 
 The full sequence, with the two optional entry points in parentheses:
 
@@ -374,6 +374,6 @@ draft → accepted → in-progress → implemented → superseded
 
 You don't have to use the full chain for every piece of work. For ad hoc tasks, edikt's rules and hooks govern the session without PRD or spec. The chain is for features where traceability matters — where you need to verify that implementation matches intent.
 
-For new features, the chain is the right default. Tell Claude what you want to build, let it generate acceptance criteria, review and accept it, then proceed. If the feature itself isn't defined yet, start earlier — with a brainstorm to explore it, or a discovery doc if it has unknowns worth resolving before writing requirements.
+For new features, the chain is the right default. Describe what you want to build, let the model generate acceptance criteria, review and accept it, then proceed. If the feature itself isn't defined yet, start earlier — with a brainstorm to explore it, or a discovery doc if it has unknowns worth resolving before writing requirements.
 
 See [/edikt:brainstorm](/commands/brainstorm), [/edikt:sdlc:discovery](/commands/sdlc/discovery), [/edikt:sdlc:prd](/commands/sdlc/prd), [/edikt:sdlc:spec](/commands/sdlc/spec), [/edikt:sdlc:artifacts](/commands/sdlc/artifacts), [/edikt:sdlc:plan](/commands/sdlc/plan), [/edikt:sdlc:drift](/commands/sdlc/drift).

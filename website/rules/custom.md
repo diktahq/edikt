@@ -80,7 +80,7 @@ Rules specific to the billing bounded context.
 - All billing events publish to the `billing.events` topic with the charge ID as the partition key.
 ```
 
-Claude reads this file automatically when editing files matching `internal/billing/**/*.go`.
+The model reads this file automatically when editing files matching `internal/billing/**/*.go`.
 
 **Writing effective custom rules:**
 - Use MUST/NEVER for hard constraints, with a one-clause reason
@@ -90,13 +90,13 @@ Claude reads this file automatically when editing files matching `internal/billi
 
 ## Linter-based rules
 
-If your project has linter configs (`.golangci-lint.yaml`, `.eslintrc`, `ruff.toml`, `.rubocop.yml`, `biome.json`), edikt can translate them into Claude rule packs:
+If your project has linter configs (`.golangci-lint.yaml`, `.eslintrc`, `ruff.toml`, `.rubocop.yml`, `biome.json`), edikt can translate them into rule packs:
 
 ```
 /edikt:gov:sync
 ```
 
-This creates `.claude/rules/linter-{name}.md` files that teach Claude what your linter enforces — so it writes code that passes linting on the first try instead of fixing violations after the fact.
+This creates `.claude/rules/linter-{name}.md` files that teach the model what your linter enforces — so it writes code that passes linting on the first try instead of fixing violations after the fact.
 
 ## Monorepo rules
 
@@ -110,7 +110,7 @@ For monorepos with different standards per package, scope rules using `paths:` f
 └── web.md                       ← web/**/*.{ts,tsx}
 ```
 
-Each rule file only loads when Claude edits files matching its path pattern. A Go backend rule won't load when editing TypeScript frontend code.
+Each rule file only loads when the model edits files matching its path pattern. A Go backend rule won't load when editing TypeScript frontend code.
 
 ## Community rule packs
 

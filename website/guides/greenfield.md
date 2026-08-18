@@ -1,6 +1,6 @@
 # Greenfield Projects
 
-**The problem:** You're starting fresh. You want Claude to follow your architecture from commit one — not drift into whatever patterns it defaults to.
+**The problem:** You're starting fresh. You want the model to follow your architecture from commit one — not drift into whatever patterns it defaults to.
 
 edikt is at its best here. Describe what you're building once. Everything gets installed before you write a line of code.
 
@@ -32,10 +32,10 @@ Shows all available rules and agents with recommended items checked. Toggle by n
 
 ## What changes immediately
 
-Before edikt, Claude would write:
+Before edikt, the model would write:
 
 ```go
-// Claude's default: flat structure, mixed concerns
+// Default: flat structure, mixed concerns
 func HandleCreateOrder(w http.ResponseWriter, r *http.Request) {
     var order Order
     json.NewDecoder(r.Body).Decode(&order)
@@ -48,7 +48,7 @@ func HandleCreateOrder(w http.ResponseWriter, r *http.Request) {
 After `/edikt:init` with DDD + Go rules:
 
 ```go
-// Claude reads architecture.md + go.md before writing
+// Reads architecture.md + go.md before writing
 func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
     cmd, err := h.decoder.Decode(r)
     if err != nil {
@@ -63,7 +63,7 @@ func (h *OrderHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-The handler delegates. Errors are returned. Business logic lives in the service layer. Not because you told Claude — because it read the rules.
+The handler delegates. Errors are returned. Business logic lives in the service layer. Not because you told the model — because it read the rules.
 
 ## What gets generated
 

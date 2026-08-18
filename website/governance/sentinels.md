@@ -157,11 +157,11 @@ effective_rules = (directives - suppressed_directives) ∪ manual_directives
 
 ## Hash-based caching
 
-Compile doesn't call Claude when nothing changed:
+Compile doesn't call the model when nothing changed:
 
 | State | Condition | What happens |
 |---|---|---|
-| **Clean** | Both hashes match stored values | Skip — no Claude call, no writes |
+| **Clean** | Both hashes match stored values | Skip — no model call, no writes |
 | **Body changed** | `source_hash` doesn't match | Regenerate directives from new body |
 | **Hand-edited** | `source_hash` matches but `directives_hash` doesn't | Interactive interview to resolve |
 | **Fresh** | No sentinel block exists | First-time generation |
@@ -178,7 +178,7 @@ docs/architecture/decisions/ADR-003-hexagonal.md
   ├── ## Context (human)
   ├── ## Decision (human — compile reads this)
   ├── ## Consequences (human)
-  └── [edikt:directives:start/end] (Claude — compile writes this)
+  └── [edikt:directives:start/end] (the model — compile writes this)
 ```
 
 One file, two audiences, clearly separated by the sentinel markers.

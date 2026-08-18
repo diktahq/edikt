@@ -27,7 +27,7 @@ edikt ships a full security audit of itself — 48 findings across Critical / Hi
 
 ## Layer 1 — Stop hook signals (while building)
 
-The `Stop` hook watches every Claude response for security-sensitive domains. When it detects one, Claude ends its response with:
+The `Stop` hook watches every response for security-sensitive domains. When it detects one, it ends the response with:
 
 ```text
 🔒 Security-sensitive domain — run `/edikt:sdlc:audit` before shipping this feature.

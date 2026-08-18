@@ -1,6 +1,6 @@
 # /edikt:gov:sync
 
-Translate linter configs into Claude rule packs — so Claude enforces the same standards your linter does.
+Translate linter configs into rule packs — so the model enforces the same standards your linter does.
 
 ## Usage
 
@@ -29,9 +29,9 @@ Translate linter configs into Claude rule packs — so Claude enforces the same 
 
 ## What it does
 
-Reads your existing linter configs (golangci-lint, ESLint, Ruff, RuboCop, Biome, PHP CS Fixer) and generates `.claude/rules/linter-*.md` files that teach Claude the same rules — with plain-English explanations of why each rule exists.
+Reads your existing linter configs (golangci-lint, ESLint, Ruff, RuboCop, Biome, PHP CS Fixer) and generates `.claude/rules/linter-*.md` files that teach the model the same rules — with plain-English explanations of why each rule exists.
 
-The result: Claude writes code that passes your linter on the first attempt, not after several correction rounds.
+The result: the model writes code that passes your linter on the first attempt, not after several correction rounds.
 
 ## Supported linters
 
@@ -46,7 +46,7 @@ The result: Claude writes code that passes your linter on the first attempt, not
 
 ## Monorepo support
 
-In monorepos with per-package linter configs, edikt generates one rule file per config and scopes each with a `paths:` frontmatter key (see [Generated file format](#generated-file-format)) — so a package's rules only load when Claude touches a file under that package.
+In monorepos with per-package linter configs, edikt generates one rule file per config and scopes each with a `paths:` frontmatter key (see [Generated file format](#generated-file-format)) — so a package's rules only load when the model touches a file under that package.
 
 ## Generated file format
 

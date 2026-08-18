@@ -52,7 +52,7 @@ Nothing built in this session — no captures needed.
 
 ## PreCompact integration
 
-The PreCompact hook (triggered automatically before Claude compacts context) reminds you:
+The PreCompact hook (triggered automatically before the model compacts context) reminds you:
 
 ```text
 ⚠️ Context compacting. (1) Update your active plan's progress table NOW.

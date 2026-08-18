@@ -1,6 +1,6 @@
 # /edikt:gov:review
 
-Review governance documents for language quality. Checks whether ADRs, invariants, guidelines, and compiled directives are specific enough, actionable enough, and phrased correctly to achieve reliable compliance when Claude reads them.
+Review governance documents for language quality. Checks whether ADRs, invariants, guidelines, and compiled directives are specific enough, actionable enough, and phrased correctly to achieve reliable compliance when the model reads them.
 
 This is a language quality review — not a structural check ([`/edikt:doctor`](/commands/doctor)) or a contradiction check ([`/edikt:gov:compile --check`](/commands/gov/compile)).
 
@@ -91,7 +91,7 @@ The sub-procedure covers:
 
 ## Why this matters
 
-edikt's experiments ([EXP-001](/experiments/exp-001-rule-compliance) and [EXP-002](/experiments/exp-002-extended-compliance)) ran 123 eval scenarios and showed that well-written rules achieve 100% compliance on conventions Claude has never seen in training. The rule text is the mechanism — not the enforcement layer on top. This means governance quality is directly proportional to how well the documents are written.
+edikt's experiments ([EXP-001](/experiments/exp-001-rule-compliance) and [EXP-002](/experiments/exp-002-extended-compliance)) ran 123 eval scenarios and showed that well-written rules achieve 100% compliance on conventions the model has never seen in training. The rule text is the mechanism — not the enforcement layer on top. This means governance quality is directly proportional to how well the documents are written.
 
 A vague directive like "handle errors properly" compiles into a vague governance rule. A specific directive like "every catch block MUST handle, propagate, or log — no empty catches" compiles into an enforceable one.
 

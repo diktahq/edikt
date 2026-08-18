@@ -40,7 +40,7 @@ Compares recent code changes against existing documentation to find public surfa
 
 ## Proactive suggestions
 
-The `Stop` hook watches every Claude response for doc gap signals. When a new route, env var, or service is added, Claude ends its response with:
+The `Stop` hook watches every response for doc gap signals. When a new route, env var, or service is added, it ends the response with:
 
 ```text
 📄 Doc gap: POST /webhooks/retry — new endpoint. Run `/edikt:docs:review` to review.

@@ -4,7 +4,7 @@ edikt commands are organized by namespace. Each namespace groups related command
 
 ## Governance
 
-Compile and maintain the rules Claude follows.
+Compile and maintain the rules the model follows.
 
 | Command | What it does |
 |---------|-------------|
@@ -15,7 +15,7 @@ Compile and maintain the rules Claude follows.
 | [`/edikt:gov:grade-compile`](/commands/gov/grade-compile) | Score the current compile output for quality across coherence, conciseness, and four other dimensions |
 | [`/edikt:gov:verify-diff`](/commands/gov/verify-diff) | Judge whether a diff actually implements what a directive's `verify:` field claims |
 | [`/edikt:gov:rules-update`](/commands/gov/rules-update) | Check for outdated rule packs and update them |
-| [`/edikt:gov:sync`](/commands/gov/sync) | Translate linter configs into Claude rule packs |
+| [`/edikt:gov:sync`](/commands/gov/sync) | Translate linter configs into rule packs |
 | [`/edikt:gov:score`](/commands/gov/score) | Aggregate governance quality scoring |
 | [`/edikt:gov:benchmark`](/commands/gov/benchmark) | Adversarial directive testing — opt-in install via `./bin/edikt install benchmark` |
 
@@ -95,7 +95,7 @@ Surfaces that run as `bin/edikt` subcommands. Slash commands invoke most of thes
 
 ## You don't need to remember them
 
-After `/edikt:init`, Claude responds to how you naturally talk. You don't need to think about which command to run — just say what you need.
+After `/edikt:init`, the model responds to how you naturally talk. You don't need to think about which command to run — just say what you need.
 
 > "what's our status?" → `/edikt:status`
 > "let's plan this" → `/edikt:sdlc:plan`

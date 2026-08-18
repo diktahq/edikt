@@ -1,10 +1,10 @@
 # Drift Detection
 
-Drift detection is the verification step that closes the governance chain. Ask Claude whether the implementation matches the spec, and it compares what you decided to build against what you actually built.
+Drift detection is the verification step that closes the governance chain. Ask whether the implementation matches the spec, and it compares what you decided to build against what you actually built.
 
 ## How to run it
 
-After implementing a feature, ask Claude:
+After implementing a feature, ask:
 
 > "Does the implementation match the spec for SPEC-005?"
 
@@ -14,7 +14,7 @@ Or to narrow the scope:
 
 > "Run a drift check on the artifact contracts for SPEC-005"
 
-Claude runs the check and returns a structured report.
+The model runs the check and returns a structured report.
 
 **Command reference:** `/edikt:sdlc:drift SPEC-005`
 

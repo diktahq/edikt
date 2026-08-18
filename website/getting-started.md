@@ -9,7 +9,7 @@ description: "Install edikt, run /edikt:init, and govern your Claude Code sessio
 
 After running `/edikt:init`, your project gets:
 
-- **Rules** that Claude reads before writing any code — matched to your stack
+- **Rules** that the model reads before writing any code — matched to your stack
 - **Specialist agents** (architect, QA, security, DBA) you can invoke by name
 - **Automatic behaviors** — code auto-formatted on edit, context refreshed each session, decisions captured when you make them
 - **A governance chain** — PRD → Spec → Plan → Code, with drift detection
@@ -51,7 +51,7 @@ Open any project in Claude Code — new or existing — and run:
 /edikt:init
 ```
 
-Init runs in three steps. You talk to Claude naturally throughout — no CLI flags, no config files to edit.
+Init runs in three steps. You talk to it naturally throughout — no CLI flags, no config files to edit.
 
 ---
 
@@ -167,11 +167,11 @@ edikt generates everything and shows progress:
 
 What just changed:
 
-  Before edikt, Claude writes code with no project standards,
+  Before edikt, the model writes code with no project standards,
   no architecture awareness, and forgets everything between sessions.
 
-  Now Claude reads your 6 rule packs before writing any code.
-  Try it — ask Claude to write a function and watch it follow
+  Now the model reads your 6 rule packs before writing any code.
+  Try it — ask it to write a function and watch it follow
   your project's error handling and testing patterns.
 
   Commit .edikt/, .claude/, and docs/ to git — your team gets
@@ -183,25 +183,25 @@ What just changed:
 
 ## 3. Start working
 
-From this point, every Claude session in this project reads your rules before writing code, knows your project identity, and enforces standards automatically.
+From this point, every session in this project reads your rules before writing code, knows your project identity, and enforces standards automatically.
 
 **Start the governance chain:**
 
 > "Write a PRD for [feature name]"
 
-Claude generates structured requirements with acceptance criteria. Accept it, then continue: "Write a spec for PRD-001", "Create a plan for SPEC-001". Each step feeds the next.
+The model generates structured requirements with acceptance criteria. Accept it, then continue: "Write a spec for PRD-001", "Create a plan for SPEC-001". Each step feeds the next.
 
 **Capture decisions as you go:**
 
 > "Save this decision"
 
-Claude persists it as an ADR with enforcement-grade language. Then say "Compile governance" to update the directives Claude follows automatically.
+The model persists it as an ADR with enforcement-grade language. Then say "Compile governance" to update the directives it follows automatically.
 
 **Check governance health:**
 
 > "What's our status?"
 
-Claude shows the governance dashboard — rules, agents, chain status, gate activity, signals.
+The model shows the governance dashboard — rules, agents, chain status, gate activity, signals.
 
 ### For teams
 
@@ -229,22 +229,21 @@ your-project/
 ├── .edikt/
 │   └── config.yaml              # governance configuration
 └── .claude/
-    ├── rules/                   # guardrails Claude reads automatically
+    ├── rules/                   # guardrails the model reads automatically
     ├── agents/                  # specialist agents (stack-matched)
     ├── settings.json            # 9 automatic behaviors
     └── CLAUDE.md                # project block + natural language triggers
 ```
 
-**Automatic behaviors (9 lifecycle hooks):**
+**Automatic behaviors (15 lifecycle hooks):**
 
 | Behavior | What happens |
 |----------|-------------|
 | Session refresh | Surfaces what changed since last session |
-| Governance check | Validates setup before Claude writes code |
+| Governance check | Validates setup before the model writes code |
 | Auto-format | Formats code after every edit |
 | Decision detection | Suggests ADR capture when decisions are made |
 | Plan injection | Injects active plan phase on every prompt |
-| Context preservation | Preserves plan state before compaction |
 | Context recovery | Recovers plan + invariants after compaction |
 | Agent logging | Logs agent activity, enforces quality gates |
 | Rule tracking | Logs which rule packs load each session |
@@ -259,4 +258,4 @@ All behaviors are [configurable](/governance/features) — set any to `false` in
 
 ## What's next
 
-- [Cheatsheet](cheatsheet.md) — every slash command on one page, with the natural-language phrases Claude routes to each one
+- [Cheatsheet](cheatsheet.md) — every slash command on one page, with the natural-language phrases that route to each one

@@ -6,20 +6,20 @@ Loads your project's memory into the current session.
 
 **New session, existing project.** A new session carries nothing forward from the previous conversation. What survives is the compact [auto-memory](#auto-memory) snapshot — project name, stack, active plan, hard invariants. Run `/edikt:context` (or just say "remind yourself") to load the full set on top of it: product spec, active PRDs, current plan phase, every decision and its reasoning, and which rule packs are live.
 
-**After context compaction.** Long sessions hit Claude's context limit and get compacted. Run context to reload what matters.
+**After context compaction.** Long sessions hit the model's context limit and get compacted. Run context to reload what matters.
 
-**Onboarding a teammate.** They open the project, run `/edikt:context`, and Claude is immediately useful — no hand-holding, no re-explaining the architecture.
+**Onboarding a teammate.** They open the project, run `/edikt:context`, and the model is immediately useful — no hand-holding, no re-explaining the architecture.
 
 ## What it loads
 
-| Source | What Claude learns |
+| Source | What the model learns |
 |--------|--------------------|
 | `docs/project-context.md` | Project identity, stack, non-negotiables |
 | `docs/product/spec.md` | What you're building and why |
 | `docs/product/prds/` | Active feature requirements |
 | `docs/product/plans/` | Current plan + phase progress |
 | `docs/architecture/decisions/` | Architecture decisions and their reasoning |
-| `docs/architecture/invariants/` | Hard constraints — non-negotiables Claude must never violate |
+| `docs/architecture/invariants/` | Hard constraints — non-negotiables the model must never violate |
 | `.edikt/config.yaml` | Ticket system config (Linear/Jira/GitHub) |
 | `.claude/rules/` | Which packs are active; flags manually edited files |
 
@@ -54,7 +54,7 @@ Loads your project's memory into the current session.
 
 ## Auto-memory
 
-After running `/edikt:context`, edikt writes a compact snapshot to Claude's auto-memory (`~/.claude/projects/.../memory/MEMORY.md`). This file is automatically loaded at the start of every future session — so Claude knows the project name, stack, active plan, and hard invariants without you running `/edikt:context` first.
+After running `/edikt:context`, edikt writes a compact snapshot to the model's auto-memory (`~/.claude/projects/.../memory/MEMORY.md`). This file is automatically loaded at the start of every future session — so the model knows the project name, stack, active plan, and hard invariants without you running `/edikt:context` first.
 
 The `SessionStart` hook checks if memory is stale (>7 days old) and prompts you to refresh. The memory file is local to your machine, not committed to git.
 

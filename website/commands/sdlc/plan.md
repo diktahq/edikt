@@ -54,7 +54,7 @@ Explicit `/edikt:sdlc:plan` invocations with a SPEC, ticket, or PLAN reference s
 
 ## Plan mode
 
-This command requires an interactive interview. If you (or Claude) are in plan mode (`/plan`), the interview will be silently skipped — Claude will describe what it would do instead of actually doing it, producing a low-quality plan. Exit plan mode first, then run `/edikt:sdlc:plan`.
+This command requires an interactive interview. If you (or the model) are in plan mode (`/plan`), the interview will be silently skipped — the model will describe what it would do instead of actually doing it, producing a low-quality plan. Exit plan mode first, then run `/edikt:sdlc:plan`.
 
 This applies to all edikt commands that interview the user: `init`, `sdlc:plan`, `sdlc:prd`, `sdlc:spec`, `sdlc:artifacts`, `adr:new`, `invariant:new`, `docs:intake`.
 
@@ -158,7 +158,7 @@ At phase boundaries, edikt recommends starting a fresh session. Context resets o
 
 ## Why it matters
 
-Plans survive context compaction. The progress table in the plan file is the persistent state. When context gets compacted in a long session, Claude re-reads the plan and knows exactly where things stand — without losing progress.
+Plans survive context compaction. The progress table in the plan file is the persistent state. When context gets compacted in a long session, the model re-reads the plan and knows exactly where things stand — without losing progress.
 
 ## Iteration tracking
 

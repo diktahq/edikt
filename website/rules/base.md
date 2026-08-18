@@ -4,7 +4,7 @@ Base rules apply to all files in your project. Four are enabled by default; six 
 
 ## code-quality
 
-Guards against the most common Claude mistakes: hallucinating APIs, leaving placeholder code, drifting from established codebase patterns, introducing race conditions, ignoring edge cases, and over-engineering.
+Guards against the most common mistakes the model makes: hallucinating APIs, leaving placeholder code, drifting from established codebase patterns, introducing race conditions, ignoring edge cases, and over-engineering.
 
 Key rules:
 - NEVER use an API without verifying it exists in the codebase or library — don't hallucinate method signatures

@@ -46,7 +46,7 @@ features:
 
 ### signal-detection
 
-After every Claude response, scans for uncaptured architectural decisions and suggests `/edikt:adr:new` or `/edikt:invariant:new`. Disable if the suggestions feel noisy or your team captures decisions through a different process.
+After every response, scans for uncaptured architectural decisions and suggests `/edikt:adr:new` or `/edikt:invariant:new`. Disable if the suggestions feel noisy or your team captures decisions through a different process.
 
 ```yaml
 features:
@@ -55,7 +55,7 @@ features:
 
 ### plan-injection
 
-Injects the active plan's current phase into every prompt so Claude always knows where it is in the execution plan. Disable if you're not using plans or prefer to load context manually.
+Injects the active plan's current phase into every prompt so the model always knows where it is in the execution plan. Disable if you're not using plans or prefer to load context manually.
 
 ```yaml
 features:

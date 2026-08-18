@@ -87,7 +87,7 @@ RELIABILITY
 
 ## Proactive suggestions
 
-The `Stop` hook watches for security-sensitive domains — auth, payments, PII, tokens, cryptography. When detected, Claude adds:
+The `Stop` hook watches for security-sensitive domains — auth, payments, PII, tokens, cryptography. When detected, it adds:
 
 ```text
 🔒 Security-sensitive domain — run `/edikt:sdlc:audit` before shipping this feature.

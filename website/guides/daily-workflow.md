@@ -1,6 +1,6 @@
 # Daily Workflow
 
-The problem edikt solves is session-to-session drift — Claude forgetting your standards, losing your decisions, starting over every time. The daily workflow is how you prevent that.
+The problem edikt solves is session-to-session drift — the model forgetting your standards, losing your decisions, starting over every time. The daily workflow is how you prevent that.
 
 ```text
 Start session → Load context → Build → Review → Capture → End session
@@ -12,7 +12,7 @@ Most of this is automatic. The explicit steps are one command each.
 
 ## 1. Starting a session
 
-**The problem without edikt:** You open Claude Code, start describing what you want to build, and realize five messages in that Claude has no idea about your architecture or patterns.
+**The problem without edikt:** You open Claude Code, start describing what you want to build, and realize five messages in that the model has no idea about your architecture or patterns.
 
 **What happens automatically with edikt:**
 
@@ -35,13 +35,13 @@ If nothing significant changed:
 /edikt:context
 ```
 
-This loads your project context, active plan, decisions, invariants, and installed rules into Claude's session. After this, Claude knows your project — not just your files.
+This loads your project context, active plan, decisions, invariants, and installed rules into the model's session. After this, the model knows your project — not just your files.
 
 ---
 
 ## 2. Planning work
 
-**The problem without edikt:** You describe a feature, Claude starts coding, and halfway through you discover the migration is missing a rollback, there's no index on the query column, and the API contract breaks a mobile client.
+**The problem without edikt:** You describe a feature, the model starts coding, and halfway through you discover the migration is missing a rollback, there's no index on the query column, and the API contract breaks a mobile client.
 
 **With edikt:**
 ```bash
@@ -169,7 +169,7 @@ Possible captures:
 ─────────────────────────────────────────────────────
 ```
 
-Capture what matters. What you save in `docs/architecture/decisions/` is available to Claude in every future session.
+Capture what matters. What you save in `docs/architecture/decisions/` is available to the model in every future session.
 
 ---
 

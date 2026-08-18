@@ -7,7 +7,7 @@ description: "The full conversation: from first client init to engineer rotation
 
 Every new client project starts from zero. No governance, no methodology in place, no way to ensure your engineers follow the same standards they used on the last engagement. The senior engineer who built the patterns on project A rotates off, and the engineer who replaces them starts from scratch.
 
-You have a methodology. Your consultancy knows how to build software. But Claude doesn't know any of it — and there's no mechanism for that knowledge to persist from one engagement to the next.
+You have a methodology. Your consultancy knows how to build software. But the model doesn't know any of it — and there's no mechanism for that knowledge to persist from one engagement to the next.
 
 This guide shows the full workflow. Same methodology across every client project. Different stacks, different decisions, same governed output.
 
@@ -169,9 +169,9 @@ Anya opens project B in Claude Code. She's never seen this codebase.
 <T>Starting with the server component.</T>
 </Terminal>
 
-Anya went from Go with DDD and event sourcing to TypeScript with Next.js and Zustand. Different language. Different framework. Different architecture. But the governance loaded instantly — she knows the decisions, the constraints, the invariants. She didn't ask Kai how the project works. She didn't read a wiki. Claude told her.
+Anya went from Go with DDD and event sourcing to TypeScript with Next.js and Zustand. Different language. Different framework. Different architecture. But the governance loaded instantly — she knows the decisions, the constraints, the invariants. She didn't ask Kai how the project works. She didn't read a wiki. The model told her.
 
-Every decision Anya's predecessors made on this project is reflected in Claude's approach. The server-first component strategy. The scoped Zustand store. The existing WebSocket manager. The financial data invariant. Claude referenced three ADRs and one invariant — without Anya asking about any of them.
+Every decision Anya's predecessors made on this project is reflected in the model's approach. The server-first component strategy. The scoped Zustand store. The existing WebSocket manager. The financial data invariant. It referenced three ADRs and one invariant — without Anya asking about any of them.
 
 This is the moment for consultancies. An engineer rotates onto a project they've never touched, and their first session produces code that follows every decision the team made before they arrived. No ramp-up week. No "ask Kai how this works." The governance is in the repo.
 
@@ -211,7 +211,7 @@ Anya is mid-implementation. She needs to decide how to handle WebSocket disconne
 <T>Claude will follow these directives automatically in every session.</T>
 </Terminal>
 
-Anya commits. Tomorrow, when Kai opens the project, his Claude session knows about the stale data pattern. When the next engineer builds the portfolio positions widget, Claude will implement the same disconnection handling without being told. The decision Anya made today is enforcement for every engineer from this point forward.
+Anya commits. Tomorrow, when Kai opens the project, his agent session knows about the stale data pattern. When the next engineer builds the portfolio positions widget, the model will implement the same disconnection handling without being told. The decision Anya made today is enforcement for every engineer from this point forward.
 
 **Command references:** `/edikt:adr`, `/edikt:gov:compile`
 

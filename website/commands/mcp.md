@@ -1,6 +1,6 @@
 # /edikt:mcp
 
-Connect Claude to project management tools via MCP (Model Context Protocol).
+Connect the model to project management tools via MCP (Model Context Protocol).
 
 ## Usage
 
@@ -13,7 +13,7 @@ Connect Claude to project management tools via MCP (Model Context Protocol).
 
 ## What is MCP?
 
-MCP (Model Context Protocol) is Claude Code's integration system. It lets Claude natively access external tools — reading tickets, creating issues, browsing PRs — without copy-pasting context.
+MCP (Model Context Protocol) is Claude Code's integration system. It lets the model natively access external tools — reading tickets, creating issues, browsing PRs — without copy-pasting context.
 
 edikt generates `.mcp.json` in your project root with server configurations. Commit it to git — your team inherits the server config. Each person adds their own API keys locally.
 

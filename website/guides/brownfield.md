@@ -1,6 +1,6 @@
 # Existing Projects
 
-**The problem:** Your project has been running for months. Claude has no idea about the patterns you've established, the ADRs you've made, or the invariants your system depends on. Every session it guesses.
+**The problem:** Your project has been running for months. The model has no idea about the patterns you've established, the ADRs you've made, or the invariants your system depends on. Every session it guesses.
 
 edikt audits what you have and installs guardrails that match.
 
@@ -36,7 +36,7 @@ Toggle rules on/off, then confirm.
 
 ## The difference it makes
 
-Here's Claude before edikt on an established Go project:
+Here's the model before edikt on an established Go project:
 
 ```go
 // Asked to add a new repository method
@@ -59,7 +59,7 @@ func (r *OrderRepo) FindByStatus(ctx context.Context, status string) ([]Order, e
 }
 ```
 
-Context propagation. Error wrapping. Return value. Claude got there because it read the rules, not because you corrected it again.
+Context propagation. Error wrapping. Return value. The model got there because it read the rules, not because you corrected it again.
 
 ## Capturing what already exists
 
@@ -71,7 +71,7 @@ Your project has implicit decisions baked into the code. Surface them:
 /edikt:invariant payments table is append-only, never update or delete rows
 ```
 
-These become ADRs and invariants in `docs/`. Claude reads them in every future session. The decisions stop living only in your head.
+These become ADRs and invariants in `docs/`. The model reads them in every future session. The decisions stop living only in your head.
 
 If you have scattered docs — READMEs, old ADR folders, wiki pages — bring them in:
 ```bash

@@ -6,19 +6,19 @@ This guide explains what agents are, how routing works, how they interact with r
 
 ## What agents are
 
-Specialist agents are Claude subagents with a defined domain focus. Each agent has:
+Specialist agents are subagents with a defined domain focus. Each agent has:
 
-- A `description:` field that tells Claude when to activate it
+- A `description:` field that tells the model when to activate it
 - Domain expertise scoped to one area (database, security, frontend, etc.)
 - Constraints that keep it from straying outside its domain
 
-Agents don't replace Claude — they add specialist focus. Claude is the engineer running the session. Agents are the specialists who review plans and code, and implement self-contained tasks in their domain.
+Agents don't replace the model — they add specialist focus. The model is the engineer running the session. Agents are the specialists who review plans and code, and implement self-contained tasks in their domain.
 
 ## Two types of agents
 
 **Advisory agents** (read-only) — review plans and code, return findings with severity levels. They never write code. This keeps invocations fast and non-destructive. (`pm` is the one advisor that writes anything: it authors PRDs, and nothing else.)
 
-**Implementation agents** (read and write) — both review AND implement. Claude delegates self-contained implementation tasks to them.
+**Implementation agents** (read and write) — both review AND implement. The model delegates self-contained implementation tasks to them.
 
 | Type | Agents |
 |------|--------|
@@ -88,7 +88,7 @@ See [Evaluator](/governance/evaluator) for the full mode comparison and configur
 
 ## How routing works
 
-Claude routes to agents using their `description:` field. Each description includes trigger conditions:
+The model routes to agents using their `description:` field. Each description includes trigger conditions:
 
 ```yaml
 # dba agent description
@@ -97,11 +97,11 @@ description: "Reviews and implements database schema, migrations,
   schema files are modified."
 ```
 
-When Claude sees you working on a migration file, it reads this description and delegates to the dba agent.
+When the model sees you working on a migration file, it reads this description and delegates to the dba agent.
 
 Three routing paths:
 
-**Auto-routing** — Claude reads file context and the agent descriptions, delegates when there's a match.
+**Auto-routing** — the model reads file context and the agent descriptions, delegates when there's a match.
 
 **Command routing** — edikt's commands route to the right specialists automatically:
 
@@ -152,9 +152,9 @@ Agents and rule packs serve different purposes and work at different levels:
 | **What** | Static coding standards | Dynamic specialist review |
 | **Language** | Language-specific (go.md, typescript.md) | Language-agnostic (dba reviews any SQL) |
 
-They work together: the Go rule pack teaches Claude Go patterns. The backend agent reviews whether those patterns were applied correctly. The rule pack prevents violations. The agent catches what the rules missed.
+They work together: the Go rule pack teaches the model Go patterns. The backend agent reviews whether those patterns were applied correctly. The rule pack prevents violations. The agent catches what the rules missed.
 
-**Example:** Your Go rule pack says "always wrap errors with context." Your backend agent reviews a PR and catches a bare `return err` — even though the rule told Claude not to do this, the agent catches it in review.
+**Example:** Your Go rule pack says "always wrap errors with context." Your backend agent reviews a PR and catches a bare `return err` — even though the rule told it not to do this, the agent catches it in review.
 
 ## Severity model
 
@@ -229,7 +229,7 @@ Complexity-to-model mapping:
 | Critical review (security, schema, API contracts) | High | opus |
 | Routine review (formatting, naming, small fixes) | Low | sonnet or haiku |
 
-When agents run outside a plan (ad-hoc review, direct delegation), Claude uses its default model from the main conversation.
+When agents run outside a plan (ad-hoc review, direct delegation), they use the default model from the main conversation.
 
 ## Managing agents
 
@@ -270,7 +270,7 @@ tools:
 You are a {domain} specialist with deep knowledge of...
 ```
 
-The `description:` field is what Claude reads to decide when to delegate, so make it specific and state the trigger condition explicitly.
+The `description:` field is what the model reads to decide when to delegate, so make it specific and state the trigger condition explicitly.
 
 ## Agent memory
 

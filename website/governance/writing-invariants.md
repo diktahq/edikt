@@ -269,7 +269,7 @@ The constraint must be **total**. Any phrasing like "scoped by tenant except in 
 - **Logging events "not attached to a tenant"** because they're "system events, not user events". Every event is a tenant event until proven otherwise; mark truly global events explicitly.
 - **Admin interfaces that assume the admin has god-mode access.** Admin users still have a tenant scope (the admin org); cross-tenant access happens only through explicit impersonation flows, not by bypassing the filter.
 
-> **Why Anti-patterns names specific traps**: raw SQL outside the repository, tenant ID from request body, JOINs without scoping both sides. Each is a concrete mistake Claude (or a human) can make without realizing. Concrete counter-examples are more effective than abstract warnings.
+> **Why Anti-patterns names specific traps**: raw SQL outside the repository, tenant ID from request body, JOINs without scoping both sides. Each is a concrete mistake the model (or a human) can make without realizing. Concrete counter-examples are more effective than abstract warnings.
 
 **Enforcement**
 
@@ -277,7 +277,7 @@ The constraint must be **total**. Any phrasing like "scoped by tenant except in 
 - **Repository layer unit tests**: every repository method has a test that verifies it rejects a query constructed without a tenant filter. The test fixture explicitly passes an empty tenant ID and expects an error.
 - **Route middleware**: requests without a valid tenant-bearing session are rejected at the edge, before reaching any handler. Missing tenant context is a 401, not a silent default.
 - **Log schema validation**: a CI check ensures every structured log event includes `tenant_id`. Log events without the field fail the build.
-- **edikt directive** loaded into Claude's context: "Every data access must be tenant-scoped. Every log line must include `tenant_id`. No exceptions. If you think you've found an exception, you haven't — ask before writing it."
+- **edikt directive** loaded into the model's context: "Every data access must be tenant-scoped. Every log line must include `tenant_id`. No exceptions. If you think you've found an exception, you haven't — ask before writing it."
 - **Code review checklist**: any PR touching request handling, database access, logging, or background jobs requires explicit reviewer acknowledgment of tenant scoping. Implemented as a PR template checkbox.
 
 Six enforcement mechanisms. Defense in depth. A single mistake in any one layer is caught by another.
@@ -396,7 +396,7 @@ The constraint applies **uniformly**. It is not enough to store money as `Decima
 - **Database schema linter**: migrations containing `float`, `real`, `double`, or `double precision` types on columns with money-like names (`price`, `amount`, `total`, `balance`, `fee`, `cost`, `revenue`, `tax`, etc.) fail the pre-push hook. Implemented as a grep-based check on migration files.
 - **Type-check rule**: CI fails if any function parameter or return type for money-related symbol names is a `float`, `double`, or language-native numeric float type. Implemented via the language's type checker or a custom AST rule.
 - **API schema validation**: OpenAPI / JSON Schema definitions reject `"type": "number"` with float format for money-related fields; require `"type": "string"` or integer with explicit minor-unit semantics.
-- **edikt directive** loaded into Claude's context: "Money is always decimal or integer cents. Never use float, double, or JavaScript Number for currency values. If in doubt about a type, check the underlying IEEE 754 representation before accepting it."
+- **edikt directive** loaded into the model's context: "Money is always decimal or integer cents. Never use float, double, or JavaScript Number for currency values. If in doubt about a type, check the underlying IEEE 754 representation before accepting it."
 - **Code review checklist**: PRs touching pricing, billing, financial aggregations, tax calculations, or any monetary display require explicit reviewer acknowledgment of fixed-point handling.
 
 Five enforcement mechanisms across database, type system, API contract, LLM context, and human review. Each catches a different class of mistake.
@@ -415,11 +415,11 @@ Compiled directives for this invariant live in a co-located sidecar at `INV-902-
 
 ## Writing for LLM compliance
 
-The invariant you write is for humans. The directive the compile pipeline produces is for Claude. Both matter, but they fail differently — a well-written invariant with poorly compiled directives won't be followed. These rules help the compile pipeline produce effective directives from your invariant.
+The invariant you write is for humans. The directive the compile pipeline produces is for the model. Both matter, but they fail differently — a well-written invariant with poorly compiled directives won't be followed. These rules help the compile pipeline produce effective directives from your invariant.
 
 ### Use absolute language in the Statement
 
-The compile pipeline detects absolute quantifiers in your Statement ("every", "all", "total", "no ... exception") and appends "No exceptions." to the generated directive. This prevents Claude from rationalizing edge cases.
+The compile pipeline detects absolute quantifiers in your Statement ("every", "all", "total", "no ... exception") and appends "No exceptions." to the generated directive. This prevents the model from rationalizing edge cases.
 
 ```
 Statement that triggers reinforcement:
@@ -442,26 +442,26 @@ The Enforcement section is where literal code tokens should appear. Compile lift
 Weak enforcement:
   "Log calls should include tenant context."
   → Directive: "Log calls MUST include tenant context. (ref: INV-942)"
-  → Claude doesn't know WHAT to type.
+  → The model doesn't know WHAT to type.
 
 Strong enforcement:
   "Every slog.Info, slog.Warn, slog.Error call includes \"tenant_id\", tid."
   → Directive: "Every slog.Info, slog.Warn, slog.Error call MUST include \"tenant_id\", tid. (ref: INV-942)"
-  → Claude knows exactly what to type.
+  → The model knows exactly what to type.
 ```
 
-Pre-registered experiments on Claude Opus 4.6 showed that literal code tokens in directives produce measurably higher compliance than abstract descriptions — especially on greenfield code and new domains where Claude has no existing patterns to copy.
+Pre-registered experiments on Claude Opus 4.6 showed that literal code tokens in directives produce measurably higher compliance than abstract descriptions — especially on greenfield code and new domains where the model has no existing patterns to copy.
 
 ### Provide grep-verifiable checks
 
-The compile pipeline generates verification checklist items from your Enforcement section. If you name a concrete check, it becomes a self-audit item Claude runs before finishing:
+The compile pipeline generates verification checklist items from your Enforcement section. If you name a concrete check, it becomes a self-audit item the model runs before finishing:
 
 ```
 Enforcement: "grep -rn tenant_id internal/repository/ — every query must match"
 → Checklist: "[ ] Every SQL query in internal/repository/ references tenant_id (ref: INV-942)"
 ```
 
-Invariants with grep-verifiable enforcement produce higher compliance because Claude can check its own work mechanically.
+Invariants with grep-verifiable enforcement produce higher compliance because the model can check its own work mechanically.
 
 ### Check directive quality with `/edikt:gov:score`
 

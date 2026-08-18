@@ -9,7 +9,7 @@ Every engineer on your team uses Claude Code. Every engineer prompts it differen
 
 Code review has become standards enforcement. That's not your job. That's a governance problem.
 
-This guide shows the full workflow. One engineer sets up edikt, commits it, and every engineer on the team gets governed Claude sessions from that point forward.
+This guide shows the full workflow. One engineer sets up edikt, commits it, and every engineer on the team gets a governed session from that point forward.
 
 ---
 
@@ -81,9 +81,9 @@ Next morning. Tomasz pulls the latest changes and opens the project in Claude Co
 <T>Starting with the service layer.</T>
 </Terminal>
 
-Tomasz didn't mention the service layer pattern. He didn't mention typed errors. He didn't mention keeping business logic out of handlers. Claude read `.claude/rules/architecture.md`, `.claude/rules/error-handling.md`, and `.claude/rules/chi.md` — automatically, before writing anything.
+Tomasz didn't mention the service layer pattern. He didn't mention typed errors. He didn't mention keeping business logic out of handlers. The model read `.claude/rules/architecture.md`, `.claude/rules/error-handling.md`, and `.claude/rules/chi.md` — automatically, before writing anything.
 
-This is the moment for teams. Every engineer's Claude session produces the same architecture, the same patterns, the same error handling. Not because they prompt the same way. Because the governance is in the repo.
+This is the moment for teams. Every engineer's agent session produces the same architecture, the same patterns, the same error handling. Not because they prompt the same way. Because the governance is in the repo.
 
 ---
 
@@ -126,13 +126,13 @@ Elena: "We discussed using cursor-based pagination in standup last week.
        This is offset-based."
 ```
 
-Five comments. All standards enforcement. All things Claude should have gotten right on its own.
+Five comments. All standards enforcement. All things the model should have gotten right on its own.
 
 The shift isn't incremental. The category of review comment changes. Elena stops catching basics and starts evaluating design. The team's code review actually improves the codebase instead of policing it.
 
 ---
 
-## 4. Quality gate fires — Claude blocks a security issue
+## 4. Quality gate fires — the model blocks a security issue
 
 Two weeks in. The team has captured 5 ADRs and compiled them into governance directives. Priya is building the ticket closure endpoint.
 
@@ -140,7 +140,7 @@ Two weeks in. The team has captured 5 ADRs and compiled them into governance dir
 <T in>Build the ticket closure endpoint. POST /tickets/{id}/close. Should check that the ticket is in a closeable state and update the status.</T>
 </Terminal>
 
-Claude builds the endpoint. Handler, service, repository — following the pattern. Then:
+The model builds the endpoint. Handler, service, repository — following the pattern. Then:
 
 <Terminal title="Claude Code — tickets-api">
 <T err>GATE: security — critical finding</T>
@@ -248,7 +248,7 @@ Week 6. A new engineer joins — James, straight out of a bootcamp. His first da
 <T>Shall I proceed?</T>
 </Terminal>
 
-Claude referenced three ADRs and one invariant. It knew about UTC timestamps, migration rollbacks, and soft deletes — not because James told it, but because the team's governance was committed to the repo six weeks ago.
+The model referenced three ADRs and one invariant. It knew about UTC timestamps, migration rollbacks, and soft deletes — not because James told it, but because the team's governance was committed to the repo six weeks ago.
 
 James's first PR arrives with the right patterns. Elena's review is about the feature, not the formatting. The onboarding checklist just got shorter.
 
@@ -262,9 +262,9 @@ With edikt, the governance is the wiki. It's enforced, not referenced. It's curr
 
 The dynamic shifts in three places.
 
-**Code review** stops being standards enforcement. When every engineer's Claude reads the same rules and follows the same ADRs, the baseline is handled before the PR opens. What's left is the work that actually matters: evaluating design decisions, questioning trade-offs, catching logic errors.
+**Code review** stops being standards enforcement. When every engineer's agent reads the same rules and follows the same ADRs, the baseline is handled before the PR opens. What's left is the work that actually matters: evaluating design decisions, questioning trade-offs, catching logic errors.
 
-**Onboarding** stops being knowledge transfer. The new engineer's Claude session is as governed as the senior engineer's. The patterns are enforced, the decisions are documented, the invariants are active. Tribal knowledge becomes committed governance.
+**Onboarding** stops being knowledge transfer. The new engineer's agent session is as governed as the senior engineer's. The patterns are enforced, the decisions are documented, the invariants are active. Tribal knowledge becomes committed governance.
 
 **Consistency** stops being a function of who's prompting. The engineer who writes great prompts and the engineer who writes "add a search endpoint" both get architecture-compliant output. The rules don't care how you ask. They fire every time.
 

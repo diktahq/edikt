@@ -65,7 +65,7 @@ Gating is the orchestrator's job. This command never returns non-zero on a FAIL 
 
 - **Tier-1 markdown only.** No new Go binary verb. No `bin/edikt verify-diff` exists.
 - **Safe JSON construction.** Every JSON object the command emits is constructed via `python3 -c 'import json,sys; print(json.dumps(...))'` with values passed as separate argv elements. Shell-string concatenation of JSON is forbidden.
-- **No agent text into Claude-facing channels.** Agent verdict text is persisted to a JSON report file. It is never interpolated into a `systemMessage` or any other Claude-facing channel by this command. Downstream callers that surface verdict text must follow the same rule.
+- **No agent text into model-facing channels.** Agent verdict text is persisted to a JSON report file. It is never interpolated into a `systemMessage` or any other model-facing channel by this command. Downstream callers that surface verdict text must follow the same rule.
 - **Input validation.** Every external value — ref range, topic name, file path — is NFKC-normalized + allowlist-validated before it reaches shell argv, a path, or a prompt. Untrusted values flow as separate argv elements, never concatenated into evaluated strings.
 - **Hermetic tests.** The `test/test-gov-verify-diff.sh` e2e is hermetic: tmpdir-staged, no host `~/.claude/` reads, runs under `EDIKT_VERIFIER_STUB=1`.
 

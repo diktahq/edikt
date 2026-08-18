@@ -1,13 +1,13 @@
 ---
 title: "edikt for Solo Engineers"
-description: "The full conversation: from first init to compound governance. Watch edikt turn Claude from a stateless tool into a governed engineering partner."
+description: "The full conversation: from first init to compound governance. Watch edikt turn the model from a stateless tool into a governed engineering partner."
 ---
 
 # edikt for Solo Engineers
 
-You own the full cycle. Requirements, architecture, implementation, testing, shipping. Every decision is yours. And every decision lives in your head — which means Claude doesn't have it next session.
+You own the full cycle. Requirements, architecture, implementation, testing, shipping. Every decision is yours. And every decision lives in your head — which means the model doesn't have it next session.
 
-This guide shows the actual workflow. Not summaries. Not feature lists. The conversation between you and Claude, from first init to the moment governance starts compounding.
+This guide shows the actual workflow. Not summaries. Not feature lists. The conversation between you and the model, from first init to the moment governance starts compounding.
 
 ---
 
@@ -40,13 +40,13 @@ You have a Go backend for a file-upload processing service. Chi router, PostgreS
 <T>Start building — describe what you want. Rules and agents are active.</T>
 </Terminal>
 
-That took 30 seconds. The rules are in `.claude/rules/`. The agents are in `.claude/agents/`. The hooks are in `.claude/settings.json`. Everything Claude needs to follow your standards is installed where Claude actually reads it — not in a wiki, not in a doc you'll forget to update.
+That took 30 seconds. The rules are in `.claude/rules/`. The agents are in `.claude/agents/`. The hooks are in `.claude/settings.json`. Everything the model needs to follow your standards is installed where it actually reads it — not in a wiki, not in a doc you'll forget to update.
 
 ---
 
-## 2. The moment Claude follows the rules without being told
+## 2. The moment the model follows the rules without being told
 
-Next morning. New session. You don't mention your architecture. You don't remind Claude about error handling. You just describe the work.
+Next morning. New session. You don't mention your architecture. You don't remind the model about error handling. You just describe the work.
 
 <Terminal title="Claude Code — upload-service">
 <T in>I need a new endpoint to handle scan-complete webhook events from our malware-scanning provider. POST /webhooks/scan-complete. It should verify the provider's signature, parse the event, and route to the right handler based on event type. Start with scan.completed and scan.failed.</T>
@@ -60,11 +60,11 @@ Next morning. New session. You don't mention your architecture. You don't remind
 <T>Starting with the domain layer.</T>
 </Terminal>
 
-Claude separated the layers correctly — domain, application, infrastructure. It kept the HTTP handler thin. It used typed errors with context wrapping. It knew about the provider's raw body requirement. It planned the work from the domain layer outward.
+The model separated the layers correctly — domain, application, infrastructure. It kept the HTTP handler thin. It used typed errors with context wrapping. It knew about the provider's raw body requirement. It planned the work from the domain layer outward.
 
-You didn't ask for any of that. The rules in `.claude/rules/` told Claude how your project works. The `go.md` rules told it how you write Go. The `architecture.md` rules told it about hexagonal layers. The `error-handling.md` rules told it about typed errors.
+You didn't ask for any of that. The rules in `.claude/rules/` told the model how your project works. The `go.md` rules told it how you write Go. The `architecture.md` rules told it about hexagonal layers. The `error-handling.md` rules told it about typed errors.
 
-Claude read your rules before you asked. No reminding. No re-explaining. The overhead stops here.
+The model read your rules before you asked. No reminding. No re-explaining. The overhead stops here.
 
 ---
 
@@ -82,7 +82,7 @@ Two weeks in. You need scan-result delivery with retry logic — not just receiv
 <T>5. I see your existing ScanResultHandler port in the domain layer. Should scan-result delivery extend this port or be a separate bounded context?</T>
 </Terminal>
 
-Notice question 5. Claude read your codebase. It found the existing port and asked whether to extend it or create something new. It's not generating from a template — it's grounding the requirements in what already exists.
+Notice question 5. The model read your codebase. It found the existing port and asked whether to extend it or create something new. It's not generating from a template — it's grounding the requirements in what already exists.
 
 <Terminal title="Claude Code — upload-service">
 <T in>External HTTP endpoints. 5 retries max, exponential backoff with jitter, max delay 4 hours. Idempotency per-consumer. Out-of-order is fine. Separate bounded context — delivery is its own domain.</T>
@@ -114,7 +114,7 @@ The requirements survive context compaction. They're in `docs/product/prds/`. To
 
 ---
 
-## 4. Spec interview — Claude asks codebase-aware questions
+## 4. Spec interview — the model asks codebase-aware questions
 
 <Terminal title="Claude Code — upload-service">
 <T in>Write a spec for PRD-003</T>
@@ -127,7 +127,7 @@ The requirements survive context compaction. They're in `docs/product/prds/`. To
 <T>5. Testing: your existing test setup uses testcontainers-go for PostgreSQL integration tests. I'll follow that for delivery tests. Confirm?</T>
 </Terminal>
 
-Every question references something real in your codebase. The migration tool. The database driver. An existing ADR. The middleware stack. The test setup. Claude isn't guessing — it read the project before asking.
+Every question references something real in your codebase. The migration tool. The database driver. An existing ADR. The middleware stack. The test setup. The model isn't guessing — it read the project before asking.
 
 <Terminal title="Claude Code — upload-service">
 <T in>Yes to all. Use pgx transactions for the outbox. Delivery attempts should carry the originating request ID.</T>
@@ -265,7 +265,7 @@ Zero drift. What was decided is what got built.
 
 ## 7. Decision capture — governance that compiles itself
 
-During implementation, you made a choice: transactional outbox over event-driven messaging. Claude's `Stop` hook noticed.
+During implementation, you made a choice: transactional outbox over event-driven messaging. The `Stop` hook noticed.
 
 <Terminal title="Claude Code — upload-service">
 <T>Decision signal detected:</T>
@@ -293,13 +293,13 @@ During implementation, you made a choice: transactional outbox over event-driven
 <T>Claude will follow these directives automatically in every session.</T>
 </Terminal>
 
-The decision you made today is now enforcement tomorrow. Not a doc someone might read. A directive Claude loads automatically, every session, before writing code.
+The decision you made today is now enforcement tomorrow. Not a doc someone might read. A directive the model loads automatically, every session, before writing code.
 
 **Command references:** `/edikt:adr`, `/edikt:gov:compile`
 
 ---
 
-## 8. Next session — Claude already knows everything
+## 8. Next session — the model already knows everything
 
 Thursday morning. New session. You haven't opened this project since Tuesday.
 
@@ -322,10 +322,10 @@ Thursday morning. New session. You haven't opened this project since Tuesday.
 <T>Want me to write a PRD for this, or is it small enough to go straight to implementation?</T>
 </Terminal>
 
-Claude referenced ADR-003 (which you captured two days ago), your error handling rules, and your migration invariant. Without being asked. Without being reminded. The governance is working.
+The model referenced ADR-003 (which you captured two days ago), your error handling rules, and your migration invariant. Without being asked. Without being reminded. The governance is working.
 
 This is the compound effect. The first session after `/edikt:init` is better. The tenth session is substantially better. Each ADR compounds into enforcement. Each spec becomes a drift detection baseline. Each decision you capture makes the next session smarter.
 
-A hand-maintained CLAUDE.md decays the moment you forget to update it. edikt's governance accumulates. You still make every call. edikt makes sure Claude remembers them.
+A hand-maintained CLAUDE.md decays the moment you forget to update it. edikt's governance accumulates. You still make every call. edikt makes sure the model remembers them.
 
 **Command reference:** `/edikt:status`

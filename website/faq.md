@@ -15,7 +15,7 @@ No. edikt generates `.claude/CLAUDE.md` (inside the `.claude/` directory), not t
 
 ## What's the difference between edikt and just writing a CLAUDE.md?
 
-A hand-written CLAUDE.md is a suggestion Claude reads once. edikt compiles your decisions into path-conditional rules, lifecycle hooks, and quality gates that fire without anyone remembering to invoke them — and on a team, that removes the per-engineer discipline a shared CLAUDE.md depends on.
+A hand-written CLAUDE.md is a suggestion the model reads once. edikt compiles your decisions into path-conditional rules, lifecycle hooks, and quality gates that fire without anyone remembering to invoke them — and on a team, that removes the per-engineer discipline a shared CLAUDE.md depends on.
 
 A CLAUDE.md drifts. A governance layer compounds.
 
@@ -31,7 +31,7 @@ The sequence from intent to implementation to verification. You drive it through
 - "Write a spec for PRD-005" → technical specification from the accepted PRD
 - "Generate spec artifacts for SPEC-005" → data model, API contracts, migrations, test strategy
 - "Create a plan for SPEC-005" → phased execution with specialist pre-flight review
-- Execute — Claude builds with enforced standards
+- Execute — the model builds with enforced standards
 - "Does the implementation match the spec?" → drift detection closes the loop
 
 Brainstorm and discovery are entry points, not required stops — an idea can go straight to a PRD. From the PRD on, each step references the one before it, and each must be accepted before the next begins.
@@ -41,7 +41,7 @@ Brainstorm and discovery are entry points, not required stops — an idea can go
 
 ## What's drift detection?
 
-Ask Claude "does the implementation match the spec for SPEC-005?" and it compares the implementation against the technical specification and the original PRD. It identifies divergences — features that were specified but not built, patterns that were decided but not followed, acceptance criteria that aren't covered by tests.
+Ask "does the implementation match the spec for SPEC-005?" and it compares the implementation against the technical specification and the original PRD. It identifies divergences — features that were specified but not built, patterns that were decided but not followed, acceptance criteria that aren't covered by tests.
 
 Drift detection is the verification step that closes the governance chain.
 
@@ -49,7 +49,7 @@ Drift detection is the verification step that closes the governance chain.
 
 ## What are quality gates?
 
-When a specialist agent detects a critical finding — a hardcoded secret, a migration without a rollback, an API breaking change — Claude presents it to you and blocks progression. You can override the gate, but overrides are logged with your git identity.
+When a specialist agent detects a critical finding — a hardcoded secret, a migration without a rollback, an API breaking change — the model presents it to you and blocks progression. You can override the gate, but overrides are logged with your git identity.
 
 Gates fire automatically via the SubagentStop hook and pre-flight review. You don't trigger them.
 
@@ -71,19 +71,19 @@ refusal looks wrong for what you actually meant, reword the directive to genuine
 
 ## How do I compile governance?
 
-After capturing decisions with "Save this decision" or adding invariants with "That's a hard rule", tell Claude: "Compile governance."
+After capturing decisions with "Save this decision" or adding invariants with "That's a hard rule", say: "Compile governance."
 
-Claude reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on core loaded every session, per-topic files (under `.claude/rules/governance/`) that load when you touch matching code, a machine-readable index the write-time hooks read, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format.
+edikt reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on core loaded every session, per-topic files (under `.claude/rules/governance/`) that load when you touch matching code, a machine-readable index the write-time hooks read, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format.
 
 **Command reference:** `/edikt:gov:compile`
 
 ## Does edikt replace my linter or CI pipeline?
 
-No. edikt works upstream — it tells Claude the standards before code is written, so violations are prevented rather than caught. Your linter still runs. Your CI still validates. edikt's job is to make the linter boring.
+No. edikt works upstream — it tells the model the standards before code is written, so violations are prevented rather than caught. Your linter still runs. Your CI still validates. edikt's job is to make the linter boring.
 
 ## Can I use edikt on a team?
 
-Yes. Commit the generated files. Every teammate using Claude Code gets identical governance — same standards, same agents, same decisions, same quality gates. No per-developer setup, no drift.
+Yes. Commit the generated files. Every teammate gets identical governance — same standards, same agents, same decisions, same quality gates. No per-developer setup, no drift.
 
 ## Can I use edikt across multiple projects?
 
@@ -105,7 +105,7 @@ edikt has tracked every Claude Code platform change since rules were introduced.
 
 ## Does it work with Cursor or other AI tools?
 
-The knowledge base (project-context.md, ADRs, specs, product docs) is plain markdown that works anywhere. But the governance loop — lifecycle hooks, path-conditional rules, quality gates, specialist agents, slash commands — only works in Claude Code. See [Why Claude Code only](/what-is-edikt#why-claude-code-only) for the full breakdown.
+The knowledge base (project-context.md, ADRs, specs, product docs) is plain markdown that works anywhere. But the governance loop — lifecycle hooks, path-conditional rules, quality gates, specialist agents, slash commands — currently only works in Claude Code, the most advanced harness for the primitives that loop depends on. Claude Code today — other harnesses are the stated direction, not a closed door. See [Why Claude Code today](/what-is-edikt#why-claude-code-today) for the full breakdown.
 
 ## How do I update rules after changing config?
 

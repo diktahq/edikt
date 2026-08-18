@@ -1,10 +1,10 @@
 # Architecture Decision Records
 
-Architecture Decision Records (ADRs) document the decisions behind your architecture. They're the historical record of *why* your system is built the way it is — captured once, immutable after acceptance, and compiled into directives Claude follows every session.
+Architecture Decision Records (ADRs) document the decisions behind your architecture. They're the historical record of *why* your system is built the way it is — captured once, immutable after acceptance, and compiled into directives the model follows every session.
 
 ADRs were formalized by [Michael Nygard in 2011](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions) as lightweight records of significant architectural decisions. The format has since been adopted widely — Joel Parker Henderson maintains a [comprehensive collection](https://github.com/joelparkerhenderson/architecture-decision-record) of templates and examples.
 
-edikt adopts ADRs as a first-class governance artifact and extends them with a compile pipeline that transforms decisions into enforcement directives Claude follows automatically.
+edikt adopts ADRs as a first-class governance artifact and extends them with a compile pipeline that transforms decisions into enforcement directives the model follows automatically.
 
 ## ADRs vs Invariant Records vs Guidelines
 
@@ -63,10 +63,11 @@ The `## Decision` section is what the extractor reads. It pulls every enforceabl
 
 ```
 Decision section (human, 150 lines):
-  "Build edikt as a lean context engine targeting Claude Code exclusively.
-   Other tools lack path-conditional rules, hooks, slash commands..."
+  "Build edikt as a lean context engine for coding harnesses, starting
+   with Claude Code — it has path-conditional rules, hooks, and slash
+   commands other harnesses still lack..."
 
-Compiled directive (Claude, 1 line):
+Compiled directive (the model, 1 line):
   "All public API routes MUST be versioned under /vN/. NEVER break
    a published contract. (ref: ADR-001)"
 ```

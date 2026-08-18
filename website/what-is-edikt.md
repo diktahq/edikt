@@ -7,17 +7,17 @@ description: "edikt governs your architecture and compiles your engineering deci
 
 **The governance layer for agentic engineering.**
 
-Claude Code has memory. It doesn't have governance. Auto memory is local — never shared, never reviewed, never consistent across a team. Architectural decisions made last month live in Slack threads or nowhere. Standards exist in a CLAUDE.md file that drifts the moment someone forgets to update it.
+AI coding agents have memory. They don't have governance. That memory is local — never shared, never reviewed, never consistent across a team. Architectural decisions made last month live in Slack threads or nowhere. Standards exist in a memory file (`CLAUDE.md`, on Claude Code — edikt's current harness, with others planned) that drifts the moment someone forgets to update it.
 
-The result: every engineer's Claude works differently. Same team, same codebase, different output. Decisions contradicted. Patterns ignored. Technical debt generated at machine speed.
+The result: every engineer's agent works differently. Same team, same codebase, different output. Decisions contradicted. Patterns ignored. Technical debt generated at machine speed.
 
 edikt governs your architecture and compiles your engineering decisions into automatic enforcement. It governs the Agentic SDLC from requirements to verification. It doesn't tell you what to build. It ensures that what you decided to build is what actually gets built.
 
 ## The problem
 
-You've told Claude your patterns. You've explained your architecture. You've corrected the same mistakes ten times. And then a new session starts, and you do it all over again.
+You've told your agent your patterns. You've explained your architecture. You've corrected the same mistakes ten times. And then a new session starts, and you do it all over again.
 
-This isn't a Claude problem. It's a governance problem. Claude is stateless by default. Without enforcement, every session starts from zero.
+This isn't a model problem. It's a governance problem. Models are stateless by default. Without enforcement, every session starts from zero.
 
 <Terminal title="Claude Code — without edikt">
 <T in>build the payment handler</T>
@@ -30,9 +30,9 @@ This isn't a Claude problem. It's a governance problem. Claude is stateless by d
 <T dim>// Tomorrow. New session. Same mistakes.</T>
 </Terminal>
 
-Not because Claude is incapable. Because there's no governance — no enforcement, no persistent decisions, no feedback loop.
+Not because the model is incapable. Because there's no governance — no enforcement, no persistent decisions, no feedback loop.
 
-And on a team, the problem multiplies. Five engineers, five different Claude sessions, five different interpretations of "follow the coding standards." The output looks like it came from five different organizations. Code review becomes standards enforcement — catching what Claude should have known, every PR, every day.
+And on a team, the problem multiplies. Five engineers, five different agent sessions, five different interpretations of "follow the coding standards." The output looks like it came from five different organizations. Code review becomes standards enforcement — catching what the model should have known, every PR, every day.
 
 ## The fix is structural, not conversational
 
@@ -44,7 +44,7 @@ You can't fix a stateless tool by talking to it more. You fix it by installing g
 
 Describe your project once, in plain language. edikt infers the architecture from that description, reads what's already in the repo, picks the rules that match, and generates everything — you confirm and adjust. It doesn't interrogate you. The alternative is twenty yes/no questions in a configuration wizard, and a wizard produces a worse result for a structural reason: it can only ask what its authors anticipated, and you answer from memory, out of context, about a codebase the wizard never looked at. One good description beats a questionnaire.
 
-edikt installs your standards where Claude reads them automatically — before writing a single line of code.
+edikt installs your standards where the model reads them automatically — before writing a single line of code.
 
 <Terminal title="Claude Code — with edikt">
 <T in>build the payment handler</T>
@@ -58,7 +58,7 @@ edikt installs your standards where Claude reads them automatically — before w
 
 The reminders disappear. The standards stick.
 
-A CLAUDE.md is a suggestion Claude reads once. `.claude/rules/` is enforcement Claude follows on every file, every session — without being reminded.
+A CLAUDE.md is a suggestion the model reads once. `.claude/rules/` is enforcement it follows on every file, every session — without being reminded.
 
 Ready to try it? [Get Started — 5 minutes](/getting-started)
 
@@ -66,7 +66,7 @@ Ready to try it? [Get Started — 5 minutes](/getting-started)
 
 edikt delivers governance through two systems that reinforce each other.
 
-**Architecture governance & compliance** captures your architecture decisions, detects new ones mid-session, and compiles everything into enforcement Claude reads automatically — architecture choices, constraints, conventions, and correctness standards.
+**Architecture governance & compliance** captures your architecture decisions, detects new ones mid-session, and compiles everything into enforcement the model reads automatically — architecture choices, constraints, conventions, and correctness standards.
 
 **Agentic SDLC governance** governs the full lifecycle from requirements to verification — PRD, spec, artifacts, plan, execute, drift detection — with specialist review at every critical step.
 
@@ -88,23 +88,23 @@ Each step feeds the next. Each must be accepted before the next begins. [What ch
 
 ## The governance loop
 
-While the two systems handle what gets decided and what gets built, the governance loop handles enforcement throughout each session. While Claude works, edikt governs — automatically, every session:
+While the two systems handle what gets decided and what gets built, the governance loop handles enforcement throughout each session. While the model works, edikt governs — automatically, every session:
 
-- Claude writes a file → auto-formatted via PostToolUse hook
-- Claude makes a decision → signal detected, ADR capture suggested → compile updates directives
+- The model writes a file → auto-formatted via PostToolUse hook
+- The model makes a decision → signal detected, ADR capture suggested → compile updates directives
 - Context compaction hits → plan phase and invariants re-injected automatically
 - Plan phase starts → specialist agents review before the first line is written
 - Security gate fires → critical finding blocks progression until resolved
 - Feature shipped → drift detection verifies it matches the spec and ADRs
 - New engineer joins → same standards, same agents, same decisions, day one
 
-These aren't prompts. They're Claude Code platform primitives — lifecycle hooks that fire automatically, path-conditional rules that gate on file type, and quality gates that block progression. edikt uses Claude Code's enforcement surface, not its conversation surface.
+These aren't prompts. They're platform primitives — lifecycle hooks that fire automatically, path-conditional rules that gate on file type, and quality gates that block progression. edikt uses the harness's enforcement surface, not its conversation surface. Today that harness is Claude Code.
 
 ## What edikt installs
 
 ### Compiled governance directives
 
-Tell Claude to compile your governance directives after capturing decisions:
+Tell it to compile your governance directives after capturing decisions:
 
 > "Compile governance"
 
@@ -122,7 +122,7 @@ Update an ADR, recompile. One source of truth, one compile pass.
 
 ### Governance benchmark — `/edikt:gov:benchmark`
 
-Compiled directives tell Claude what to do. The benchmark tests whether they hold under adversarial prompts.
+Compiled directives tell the model what to do. The benchmark tests whether they hold under adversarial prompts.
 
 > "Run the governance benchmark"
 
@@ -160,21 +160,20 @@ What gets enforced without being told:
 
 Base rules (code-quality, testing, security, error-handling) apply to every language. Language and framework rules layer on top — Go, TypeScript, Python, React, Next.js, Chi, and more. edikt detects your stack and picks the right combination.
 
-Compiled governance and rule packs share the same enforcement surface — `.claude/rules/`. Together they define everything Claude must follow.
+Compiled governance and rule packs share the same enforcement surface — `.claude/rules/`. Together they define everything the model must follow.
 
-They also sit upstream of your linter. The best engineering teams don't fix linting violations — they never write them in the first place. Not because they suppress warnings, but because the standard is understood before the code exists. That distinction is the whole argument: a linter is a detector. It runs after the fact, reports what is already wrong, and charges a correction round every time it fires — Claude writes, the linter complains, Claude rewrites. Rules move the standard to the other side of the keystroke. Claude reads them before it writes, so the code arrives already conforming. The linter stays as a safety net and rarely fires. The goal isn't fewer lint errors. The goal is not writing lint errors.
+They also sit upstream of your linter. The best engineering teams don't fix linting violations — they never write them in the first place. Not because they suppress warnings, but because the standard is understood before the code exists. That distinction is the whole argument: a linter is a detector. It runs after the fact, reports what is already wrong, and charges a correction round every time it fires — the model writes, the linter complains, the model rewrites. Rules move the standard to the other side of the keystroke. The model reads them before it writes, so the code arrives already conforming. The linter stays as a safety net and rarely fires. The goal isn't fewer lint errors. The goal is not writing lint errors.
 
 ### Lifecycle hooks
 
-Nine lifecycle hooks govern the session — ensuring governance stays present throughout, not just at session start. Core hooks include:
+15 lifecycle hooks govern the session — ensuring governance stays present throughout, not just at session start. The ones most relevant day to day:
 
 | Hook | What it does |
 |------|-------------|
 | SessionStart | Surfaces what changed since last session, relevant agents |
-| PreToolUse | Validates governance setup before Claude writes code |
+| PreToolUse | Validates governance setup before the model writes code |
 | PostToolUse | Auto-formats code after every edit |
 | Stop | Detects uncaptured decisions, suggests ADR capture |
-| PreCompact | Preserves plan state before context compaction |
 | PostCompact | Recovers context after compaction |
 | UserPromptSubmit | Injects active plan phase on every prompt |
 | SubagentStop | Logs agent activity and enforces quality gates |
@@ -185,23 +184,23 @@ Nine lifecycle hooks govern the session — ensuring governance stays present th
 18 domain agents matched to your stack. Each applies a specific domain lens.
 
 ```text
-architect    ← system design, ADRs, bounded contexts
-security         ← OWASP, threat modeling, auth patterns
-dba          ← schema design, migration safety, N+1 queries
-api             ← API contracts, versioning, breaking changes
-qa               ← testing strategy, coverage, flaky tests
+architect  ← system design, ADRs, bounded contexts
+security   ← OWASP, threat modeling, auth patterns
+dba        ← schema design, migration safety, N+1 queries
+api        ← API contracts, versioning, breaking changes
+qa         ← testing strategy, coverage, flaky tests
 ```
 
 Used in plan pre-flight review, review, and audit — or called directly.
 
 ### Project memory — `docs/`
 
-Claude knows your project identity, not just your file structure.
+The model knows your project identity, not just your file structure.
 
 ```text
-docs/project-context.md  ← what the project is, stack, non-negotiables
-docs/architecture/decisions/    ← why you chose your database, why you went with this architecture style
-docs/architecture/invariants/   ← constraints that must NEVER be violated
+docs/project-context.md        ← what the project is, stack, non-negotiables
+docs/architecture/decisions/   ← why you chose your database, why you went with this architecture style
+docs/architecture/invariants/  ← constraints that must NEVER be violated
 ```
 
 Loaded automatically at session start via git-aware hooks.
@@ -218,7 +217,7 @@ Structured requirements with acceptance criteria, generated from your descriptio
 
 > "Write a spec for PRD-005"
 
-Claude routes to `architect`, scans your codebase, and reads your existing ADRs before generating a technical specification from the accepted PRD — architecture decisions, trade-offs, alternatives considered.
+edikt routes to `architect`, scans your codebase, and reads your existing ADRs before generating a technical specification from the accepted PRD — architecture decisions, trade-offs, alternatives considered.
 
 **Planning execution:**
 
@@ -239,7 +238,7 @@ Fix the migration gap now. Takes 5 minutes. Would have taken an hour after.
 
 **Quality gates:**
 
-These fire automatically — you don't trigger them. When a specialist agent detects a critical finding during execution, Claude presents the gate:
+These fire automatically — you don't trigger them. When a specialist agent detects a critical finding during execution, the model presents the gate:
 
 <Terminal title="Quality gate">
 <T err>GATE: security — critical finding</T>
@@ -253,7 +252,7 @@ These fire automatically — you don't trigger them. When a specialist agent det
 
 > "Does the implementation match the spec?"
 
-Claude compares what got built against the PRD acceptance criteria, spec requirements, artifact contracts, and ADR compliance.
+It compares what got built against the PRD acceptance criteria, spec requirements, artifact contracts, and ADR compliance.
 
 <Terminal title="Drift report — SPEC-005">
 <T>SUMMARY</T>
@@ -286,11 +285,11 @@ Claude compares what got built against the PRD acceptance criteria, spec require
 
 ## For teams
 
-Commit `.claude/` and `docs/` to your repo. Every engineer using Claude Code gets identical governance from the first session — no setup, no per-developer configuration.
+Commit `.claude/` and `docs/` to your repo. Every engineer gets identical governance from the first session — no setup, no per-developer configuration.
 
-What this means for code review: the standards violations stop arriving. When every engineer's Claude follows the same rules, the same architecture decisions, and the same quality gates, code review shifts from catching formatting and pattern violations to evaluating design decisions. The baseline is handled.
+What this means for code review: the standards violations stop arriving. When every engineer's agent follows the same rules, the same architecture decisions, and the same quality gates, code review shifts from catching formatting and pattern violations to evaluating design decisions. The baseline is handled.
 
-What this means for onboarding: a new engineer opens the project, runs Claude Code, and gets the same governance as the engineer who set it up six months ago. The standards, the decisions, the agents — all there. No tribal knowledge. No "ask Marcus how we do error handling here."
+What this means for onboarding: a new engineer opens the project, runs Claude Code (edikt's current harness), and gets the same governance as the engineer who set it up six months ago. The standards, the decisions, the agents — all there. No tribal knowledge. No "ask Marcus how we do error handling here."
 
 No drift between teammates. The junior engineer follows the architecture from day one.
 
@@ -310,20 +309,23 @@ Maintenance is low by design. Rules update when you run the install script again
 
 [See how it works on your first project — Getting Started](/getting-started)
 
-## Why Claude Code only
+## Why Claude Code today
 
-edikt is built on Claude Code's platform primitives. Other tools don't have them.
+Claude Code today — Codex and other harnesses next. edikt's governance loop depends on platform primitives: path-conditional rules, lifecycle hooks that can actually block a write (not just observe it), slash commands, and sub-agent orchestration. "Quality gates" isn't a separate platform primitive any of these harnesses expose — it's what edikt builds on top of blocking hooks plus specialist agents, on any harness that has both.
 
-| Feature | Claude Code | Cursor | Copilot | Windsurf |
-|---------|:-----------:|:------:|:-------:|:--------:|
-| Path-conditional rules | Yes | No | No | No |
-| Lifecycle hooks (20 types) | Yes | No | No | No |
-| Pre-compact recovery | Yes | No | No | No |
-| Slash commands | Yes | No | No | No |
-| Specialist agents | Yes | No | No | No |
-| Quality gates | Yes | No | No | No |
+**Researched from public documentation, August 2026 — this space moves fast, treat this as a snapshot, not a permanent scorecard:**
 
-The knowledge base (project-context.md, ADRs, specs, docs) is plain markdown that works anywhere. The governance loop only works in Claude Code.
+| Feature | Claude Code | Codex | Cursor | Copilot | Windsurf |
+|---------|:-----------:|:-----:|:------:|:-------:|:--------:|
+| Path-conditional rules | Yes | Partial — directory-scoped `AGENTS.md`, not glob patterns | Yes — `.mdc` glob frontmatter | Yes — `applyTo` glob instructions | Yes — glob trigger mode |
+| Lifecycle hooks that can block | Yes | Yes — 11 event types, blocking confirmed on 5 of them | Yes — 18 event types, hooks can return `continue: false` | Partial — hooks found, only confirmed for logging/audit | Not found |
+| Compaction-aware recovery | Partial — `PostCompact` only, no `PreCompact` | **Yes — both `PreCompact` and `PostCompact`, can even prevent compaction** | Has `preCompact`; recovery behavior unconfirmed | Not found | Not found |
+| Slash commands | Yes | Yes — 40+ built-in | Yes — custom commands since v1.6 | Yes — built-in + custom agent commands | Yes — workflows as `/name` |
+| Sub-agent orchestration | Yes — 18-agent roster, plan-integrated | Yes — 136+ agent definitions across 10 categories | Yes — Subagents (v2.4, Jan 2026), parallel dispatch | Yes — custom agents + Fleet mode | Not found |
+
+Sources: [Codex hooks](https://learn.chatgpt.com/docs/hooks) · [Codex AGENTS.md](https://developers.openai.com/codex/guides/agents-md) · [Codex slash commands](https://developers.openai.com/codex/cli/slash-commands) · [Cursor Rules](https://cursor.com/docs/rules) · [Cursor Hooks](https://cursor.com/docs/hooks) · [Cursor Subagents](https://cursor.com/changelog/2-4) · [GitHub Copilot custom instructions](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions) · [GitHub Copilot custom agents](https://docs.github.com/en/copilot/how-tos/copilot-sdk/features/custom-agents) · [Windsurf Workflows](https://docs.windsurf.com/windsurf/cascade/workflows) · [Windsurf Rules](https://www.skillwright.app/blog/windsurf-rules-guide)
+
+The honest read: rules and slash commands are table stakes across the field now — that's not a moat. Blocking hooks and multi-agent orchestration are where it gets uneven, and Codex looks the most complete of the four on exactly those two — which is the concrete reason it's the named "next," not just the next-best-known name. The knowledge base (project-context.md, ADRs, specs, docs) is plain markdown that already works on any of them. What edikt hasn't built yet is the governance loop running natively on anything but Claude Code — that's an integration project, not a research problem, and this table is the argument for why Codex is where that project starts.
 
 ---
 

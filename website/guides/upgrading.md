@@ -112,7 +112,7 @@ agents:
 
 **Rule packs** — Rule packs are versioned. Outdated packs are updated. Manually edited files are always skipped.
 
-**CLAUDE.md sentinels** — v0.1.1 migrates CLAUDE.md section markers from HTML comments (`<!-- edikt:start -->`) to visible text markers (`[edikt:start]: #`). Claude Code v2.1.72+ hides HTML comments, so the old markers were invisible to Claude. Upgrade detects and migrates automatically.
+**CLAUDE.md sentinels** — v0.1.1 migrates CLAUDE.md section markers from HTML comments (`<!-- edikt:start -->`) to visible text markers (`[edikt:start]: #`). Claude Code v2.1.72+ hides HTML comments, so the old markers were invisible to the model. Upgrade detects and migrates automatically.
 
 ---
 

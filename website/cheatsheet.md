@@ -102,7 +102,7 @@ You're mid-session, deep in a feature. You want to know where things stand:
 
 You didn't type `/edikt:status`. You just asked.
 
-You come back after the weekend and want Claude to catch up:
+You come back after the weekend and want the model to catch up:
 
 > **You:** remind yourself about this project
 
@@ -171,7 +171,7 @@ If you later edit the ADR's prose:
 
 ## Where this comes from
 
-Claude Code matches intent, not exact words. The trigger table in your project's `CLAUDE.md` — inside the managed block between the `[edikt:start]` and `[edikt:end]` markers — is the canonical source, and Claude reads it every session.
+Claude Code matches intent, not exact words. The trigger table in your project's `CLAUDE.md` — inside the managed block between the `[edikt:start]` and `[edikt:end]` markers — is the canonical source, and the model reads it every session.
 
 Add your own rows to that table for anything you find yourself repeating:
 
