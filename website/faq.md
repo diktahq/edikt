@@ -128,7 +128,7 @@ This reverts `~/.edikt/current` to the previous generation. Note: rollback is pa
 Yes. Run from inside the project directory:
 
 ```bash
-edikt upgrade --pin v0.7.0
+edikt upgrade --pin v0.7.1
 ```
 
 The pin is stored in `~/.edikt/lock.yaml` (global mode) or `.edikt/lock.yaml` (project mode). Subsequent `edikt upgrade` calls are no-ops until you clear it with `edikt upgrade --pin clear`.

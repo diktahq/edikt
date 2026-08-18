@@ -151,7 +151,9 @@ Every question references something real in your codebase. The migration tool. T
 <T>  Migrations: goose sequential, following existing convention</T>
 <T hi>Saved: docs/product/specs/SPEC-003-scan-result-delivery/spec.md</T>
 <T>Review it. I'll generate artifacts once you accept.</T>
-<T in>Accept.</T>
+<T in>Before I accept — does the idempotency check use 409 or 422 for duplicate deliveries?</T>
+<T>Checked: your errors package has no 409 handling anywhere. Every other conflict in this API returns 422 Unprocessable Entity (internal/errors/http.go). The spec said 409 — that was wrong. Fixed: idempotent duplicate deliveries now return 422, matching your existing convention.</T>
+<T in>Good catch. Accept.</T>
 <T>SPEC-003 accepted.</T>
 </Terminal>
 

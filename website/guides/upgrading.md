@@ -1,7 +1,7 @@
 # Keeping edikt Up to Date
 
-::: tip Current entry point — and the only one
-**v0.7.0** is the entry point and the only public upgrade path. `diktahq/edikt`'s releases stop at **v0.4.5**: v0.5.x was retracted (ADR-042) and v0.6.0 has a git tag but no published release, so neither is installable. If you have an installed project, it's on v0.4.x. Run `/edikt:upgrade` and it carries you straight to v0.7.0 in one pass — the migration and schema-upgrade steps handle the full jump uniformly.
+::: tip Current entry point
+**v0.7.1** is the current release and the entry point for upgrading. `diktahq/edikt`'s prior public releases stopped at **v0.4.5** — v0.5.x was retracted (ADR-042) and v0.6.0 was never published — but v0.7.0 restarted the release line and it, along with v0.7.1, is fully installable. If you have an installed project on v0.4.x, run `/edikt:upgrade` and it carries you straight to v0.7.1 in one pass — the migration and schema-upgrade steps handle the full jump uniformly.
 :::
 
 edikt has two layers that need updating separately: the **global templates** (installed on your machine) and the **project configuration** (committed in each repo).
@@ -26,7 +26,7 @@ edikt_version: "0.1.0"
 ### Step 1 — Update global templates
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.7.1/install.sh | bash
 ```
 
 This takes ~10 seconds. Your commands, templates, and `~/.edikt/VERSION` are now current.
@@ -118,7 +118,7 @@ agents:
 
 ## Earlier versions
 
-Nobody upgrading today lands on these, and `/edikt:upgrade` applies whatever migrations they introduced as part of the single v0.4.x → v0.7.0 pass. They're recorded for context, not as recipes to follow.
+Nobody upgrading today lands on these, and `/edikt:upgrade` applies whatever migrations they introduced as part of the single v0.4.x → v0.7.1 pass. They're recorded for context, not as recipes to follow.
 
 **v0.2.0** — replaced the flat `governance.md` with topic-grouped rule files, gave every agent template `maxTurns` / `disallowedTools` / `effort`, and added four hook events. `/edikt:gov:compile` performs the format migration itself; there was never a manual step.
 
@@ -149,13 +149,14 @@ edge cases.
 
 ---
 
-## Upgrading to v0.7.0 — the real path, v0.4.x → v0.7.0 directly
+## Upgrading to v0.7 — the real path, v0.4.x → v0.7.1 directly
 
-**This is the upgrade path that actually applies to you.** `diktahq/edikt`'s only public releases stop
-at v0.4.5 — v0.5.x and v0.6.0 were never published. If you're on a real, installed project today, you're
-on v0.4.x, and `/edikt:upgrade` carries you straight to v0.7.0 in one run: the v0.6.0-era sentinel
-migration above, the v0.7.0 sidecar schema upgrade, and a recompile under v0.7.0's corrected grading —
-all in one pass, no intermediate version to install separately.
+**This is the upgrade path that actually applies to you.** `diktahq/edikt`'s releases were retracted or
+unpublished between v0.4.5 and v0.7.0 — v0.5.x and v0.6.0 were never published. If you're on a real,
+installed project today and haven't upgraded since, you're on v0.4.x, and `/edikt:upgrade` carries you
+straight to v0.7.1 in one run: the v0.6.0-era sentinel migration above, the v0.7.0 sidecar schema
+upgrade, and a recompile under v0.7.0's corrected grading — all in one pass, no intermediate version to
+install separately.
 
 **Read this before you run it, not after — one change here isn't a migration step at all.** Grading now
 reads the actual obligation strength of what you wrote (RFC-2119 modal force: MUST/SHALL/REQUIRED,
@@ -169,13 +170,13 @@ enforcing what they say. If a refusal looks wrong, reword the directive rather t
 **Recommended upgrade steps:**
 
 ```text
-1. Update launcher:  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.4.5/install.sh | bash
+1. Update launcher:  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/v0.7.1/install.sh | bash
 2. Re-run upgrade:   /edikt:upgrade
                       (auto-runs sentinel migration, schema v1→v2 upgrade, and compile)
 3. Review the result: /edikt:doctor
 4. Spot-check a few directives your team wrote as bare "MUST" statements — expect them to
    now grade `must` and enforce at write time, correctly, if that's what you intended.
-5. Commit:           git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.7.0"
+5. Commit:           git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.7.1"
 ```
 
 Full detail — the exact refusal messages, the sidecar schema v1→v2 change, and recovery paths — is in
@@ -214,8 +215,8 @@ edikt rollback
 Stay on a specific version:
 
 ```bash
-edikt use v0.7.0        # activate v0.7.0 immediately
-edikt upgrade --pin v0.7.0  # fetch v0.7.0 and pin it
+edikt use v0.7.1        # activate v0.7.1 immediately
+edikt upgrade --pin v0.7.1  # fetch v0.7.1 and pin it
 ```
 
 When pinned, `edikt upgrade` is a no-op until you clear the pin:
@@ -234,7 +235,8 @@ Output:
 
 ```
   v0.4.3
-* v0.7.0   (current)
+  v0.7.0
+* v0.7.1   (current)
 ```
 
 ### Pruning old versions

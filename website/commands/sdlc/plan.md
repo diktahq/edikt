@@ -93,6 +93,36 @@ Add BulkOrder aggregate and CreateBulkOrder command...
 Implement BulkOrderRepository with transaction support...
 ```
 
+## What pre-flight review actually catches
+
+Pre-flight isn't cosmetic — two failure modes it's specifically built to
+catch:
+
+```text
+Pre-flight criteria validation — Phase 3 (HTTP handler)
+
+  AC-3.2: BLOCKED
+    Claimed: "duplicate order creation returns 409 Conflict"
+    No 409 response exists anywhere in this codebase's error handling —
+    every other idempotency conflict returns 422 Unprocessable Entity
+    (see internal/errors/http.go). Rewrite to match the existing convention
+    and add a verify: command.
+```
+
+The criterion gets rewritten before the plan is generated — matching the
+codebase's real convention, with a `verify:` command that actually checks
+the response code. That's pre-flight doing its job: catching a
+plausible-sounding but wrong detail before it becomes a phase's acceptance
+criterion.
+
+The second failure mode isn't caught by any review — it shows up while
+writing the test for one of the plan's own criteria. A bulk-import worker
+can pass every code review and still leave orphaned rows if its context
+gets cancelled mid-import; the gap surfaces only when someone writes the
+"partial import cleans up on cancel" test and watches it fail. When that
+happens, the phase gains a new criterion, the criteria sidecar updates, and
+the phase re-verifies before moving to `done`.
+
 ## Artifact coverage (v0.2.0)
 
 When a plan is generated from a SPEC that has artifacts (from `/edikt:sdlc:artifacts`), edikt verifies every artifact has plan coverage:

@@ -22,7 +22,7 @@ layout: home
       <button class="install-copy" type="button" aria-label="Copy install command">Copy</button>
     </div>
     <div class="install-code-row">
-      <code id="install-curl" role="tabpanel"><span class="prompt">$</span> curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.0/install.sh | bash</code>
+      <code id="install-curl" role="tabpanel"><span class="prompt">$</span> curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.1/install.sh | bash</code>
       <code id="install-brew" role="tabpanel" hidden><span class="prompt">$</span> brew install diktahq/tap/edikt</code>
     </div>
   </div>
@@ -115,7 +115,7 @@ layout: home
 </section>
 
 <section class="proof reveal">
-  <span class="chip"><b>v0.7.0</b> · Cosign-signed releases</span>
+  <span class="chip"><b>v0.7.1</b> · Cosign-signed releases</span>
   <span class="chip"><b>Elastic-2.0</b> · Open source</span>
   <span class="chip"><b>No build step</b> · No npm, no compiler</span>
   <span class="chip"><b>Plain markdown</b> · You own every file</span>

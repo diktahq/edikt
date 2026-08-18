@@ -19,10 +19,10 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 ## 1. Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.0/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.1/install.sh | bash
 ```
 
-Installs the v0.7.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
+Installs the v0.7.1 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
 
 **Switching versions after install:**
 
@@ -35,7 +35,7 @@ edikt rollback              # revert to the previous version
 
 For the full upgrade flow with sidecar migration, status checks, and prompts, run `/edikt:upgrade` from inside Claude Code instead. The mechanics of each launcher subcommand — `install`, `use`, `rollback`, `prune`, `list`, pin management — are documented in [Keeping edikt Up to Date](guides/upgrading.md#payload-version-management).
 
-**Staying on the v0.4 line:** if your project isn't ready for the sidecar architecture (introduced in v0.6.0, current through v0.7.0), v0.4.x still installs from [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only):
+**Staying on the v0.4 line:** if your project isn't ready for the sidecar architecture (introduced in v0.6.0, current through v0.7.1), v0.4.x still installs from [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install.sh | bash

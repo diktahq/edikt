@@ -563,11 +563,30 @@ stage_launcher() {
     fi
   else
     # Download the tarball (or raw launcher if LAUNCHER_IS_TARBALL=0 via override).
+    # _extract_dir is created here, before the download, and the
+    # tarball is downloaded INTO it (not into .edikt/bin/) so it is never
+    # physically inside the final install location and is removed as a side
+    # effect of removing _extract_dir on every exit path below.
+    #
+    # A genuine external signal (SIGTERM, or Ctrl-C during curl | bash)
+    # bypasses every one of those explicit exit-path cleanups — bash's
+    # default on receiving one while blocked on a foreground child (curl,
+    # tar) is to terminate immediately, before any subsequent rm -rf runs.
+    # The trap below closes exactly that gap, scoped to TERM/INT only (never
+    # EXIT — a blanket EXIT trap would also fire on this function's own
+    # normal successful return, which is a different, already-handled case).
+    # It is disarmed (trap - TERM INT) at every one of this branch's existing
+    # rm -rf "$_extract_dir" call sites, so it never lingers to misfire after
+    # $_extract_dir has already been removed or reused.
+    _extract_dir=$(mktemp -d)
+    trap '[ -n "$_extract_dir" ] && rm -rf "$_extract_dir"' TERM INT
     _download="$stage"
     if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
-      _download="${stage}.tar.gz"
+      _download="${_extract_dir}/payload.tar.gz"
     fi
     if ! curl -fsSL --retry 2 --max-time 30 "$LAUNCHER_URL" -o "$_download"; then
+      trap - TERM INT
+      rm -rf "$_extract_dir"
       error "failed to download launcher from $LAUNCHER_URL"
       error "retry: re-run install.sh; or pass --ref <different-tag>"
       return $EX_NETWORK
@@ -584,7 +603,9 @@ stage_launcher() {
       _ref_tmp=$(mktemp)
       printf '%s\n' "$EDIKT_LAUNCHER_SHA256" > "$_ref_tmp"
       if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
-        rm -f "$_ref_tmp" "$_download"
+        rm -f "$_ref_tmp"
+        trap - TERM INT
+        rm -rf "$_extract_dir"
         return $EX_NETWORK
       fi
       rm -f "$_ref_tmp"
@@ -603,7 +624,9 @@ stage_launcher() {
         _ref_tmp=$(mktemp)
         awk -v name="$_expected_name" '$2 == name || $2 == ("*" name) {print; exit}' "$_sums_tmp" > "$_ref_tmp"
         if [ ! -s "$_ref_tmp" ]; then
-          rm -f "$_ref_tmp" "$_sums_tmp" "$_download"
+          rm -f "$_ref_tmp" "$_sums_tmp"
+          trap - TERM INT
+          rm -rf "$_extract_dir"
           if [ "${EDIKT_INSTALL_INSECURE:-0}" = "1" ]; then
             warn "SHA256SUMS did not contain $_expected_name — proceeding without per-launcher verification (EDIKT_INSTALL_INSECURE=1)"
             EDIKT_INSECURE_BANNER=1
@@ -614,13 +637,17 @@ stage_launcher() {
           fi
         else
           if ! _verify_launcher_checksum "$_observed" "$_ref_tmp"; then
-            rm -f "$_ref_tmp" "$_sums_tmp" "$_download"
+            rm -f "$_ref_tmp" "$_sums_tmp"
+            trap - TERM INT
+            rm -rf "$_extract_dir"
             return $EX_NETWORK
           fi
           rm -f "$_ref_tmp" "$_sums_tmp"
         fi
       elif [ "$_cosign_rc" -eq 1 ]; then
-        rm -f "$_sums_tmp" "$_download"
+        rm -f "$_sums_tmp"
+        trap - TERM INT
+        rm -rf "$_extract_dir"
         return $EX_NETWORK
       else
         rm -f "$_sums_tmp"
@@ -628,7 +655,8 @@ stage_launcher() {
           warn "cosign unavailable or SHA256SUMS.sig.bundle missing for $TAG — proceeding without signature verification (EDIKT_INSTALL_INSECURE=1)"
           EDIKT_INSECURE_BANNER=1
         else
-          rm -f "$_download"
+          trap - TERM INT
+          rm -rf "$_extract_dir"
           error "cosign not available or SHA256SUMS.sig.bundle missing for $TAG."
           error "install cosign (https://docs.sigstore.dev/cosign/installation) or set EDIKT_INSTALL_INSECURE=1 to bypass (NOT recommended)."
           return $EX_NETWORK
@@ -638,22 +666,23 @@ stage_launcher() {
 
     # Extract bin/edikt (Go binary) from the tarball.
     if [ "$LAUNCHER_IS_TARBALL" = "1" ]; then
-      _extract_dir=$(mktemp -d)
-      # Cache the tarball path for install_launcher to also extract edikt-shell.
-      _LAUNCHER_TARBALL_CACHED="$_download"
       if ! tar -xzf "$_download" -C "$_extract_dir" bin/edikt 2>/dev/null; then
-        rm -rf "$_extract_dir" "$_download"
+        trap - TERM INT
+        rm -rf "$_extract_dir"
         error "launcher tarball does not contain bin/edikt"
         return $EX_NETWORK
       fi
       if [ ! -f "$_extract_dir/bin/edikt" ]; then
-        rm -rf "$_extract_dir" "$_download"
+        trap - TERM INT
+        rm -rf "$_extract_dir"
         error "bin/edikt missing from extracted launcher tarball"
         return $EX_NETWORK
       fi
       mv "$_extract_dir/bin/edikt" "$stage"
+      trap - TERM INT
       rm -rf "$_extract_dir"
-      # Note: $_download is cleaned up by stage_launcher when LAUNCHER_IS_TARBALL=1.
+      # $_download lived inside $_extract_dir, so it was removed above as a
+      # side effect of removing its containing staging directory.
     fi
   fi
   if [ ! -s "$stage" ]; then
@@ -695,9 +724,26 @@ install_launcher() {
   mkdir -p "$EDIKT_ROOT/bin" || return $EX_PERMISSION
 
   tmp="$EDIKT_ROOT/bin/edikt.tmp.$$"
-  if ! stage_launcher "$tmp"; then
+  # NOT `if ! stage_launcher "$tmp"; then` — $? inside that then-branch
+  # reflects the negation's own result (always 0), not stage_launcher's
+  # real exit code. NOT a bare `stage_launcher "$tmp"` statement either —
+  # under this script's `set -e`, an unprotected command's non-zero return
+  # aborts the whole script immediately, before $? can even be read. A
+  # plain (non-negated) if/else is the documented set -e exception that
+  # avoids both: it doesn't trigger set -e on failure, and $? in the else
+  # branch correctly reflects stage_launcher's own real exit code.
+  if stage_launcher "$tmp"; then
+    _rc=0
+  else
+    _rc=$?
+  fi
+  if [ "$_rc" -ne 0 ]; then
+    # Capture stage_launcher's real exit code BEFORE the cleanup below —
+    # `|| true` on the next line makes $? read as 0 (success) if this were
+    # read after it, silently masking the failure and letting the caller
+    # proceed as if the launcher had installed correctly.
     rm -f "$tmp" 2>/dev/null || true
-    return $?
+    return $_rc
   fi
   if [ -f "$EDIKT_ROOT/bin/edikt" ]; then
     cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true

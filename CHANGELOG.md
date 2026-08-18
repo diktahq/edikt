@@ -1,5 +1,40 @@
 # edikt changelog
 
+## v0.7.1 (2026-08-17)
+
+Patch release fixing real defects found by an end-to-end install smoke test
+run against the published v0.7.0 release assets (curl and brew paths).
+
+### Fixed
+
+- **`install.sh` left a stray tarball behind after every successful
+  install.** `stage_launcher()` downloaded the launcher release tarball
+  directly into `.edikt/bin/` instead of a temp staging directory, and never
+  cleaned it up on the success path — reproducible on 2 of 2 clean installs.
+  Now stages in a dedicated `mktemp -d` directory and removes it on every
+  exit path, success included.
+- **A genuine `SIGTERM` or Ctrl-C during install could bypass cleanup.** The
+  fix above only ran on the script's own normal control flow; an external
+  interrupt mid-download skipped it entirely. A `TERM`/`INT`-scoped signal
+  trap now guarantees the staging directory is removed even on a real
+  interrupt, without the downsides of a blanket `trap ... EXIT`.
+- **A checksum-mismatch install printed a confusing second error.**
+  `install_launcher()` was silently reporting success even when the launcher
+  install actually failed (a `return $?` was reading an unrelated cleanup
+  command's exit code instead of the real one), causing a generic "No such
+  file or directory" crash to follow the real, already-printed error.
+- **`edikt upgrade`'s "what's new" summary couldn't find `CHANGELOG.md`.**
+  The release workflow's payload tarball never packaged it, even though the
+  upgrade command already expected to read it from `~/.edikt/CHANGELOG.md`.
+
+### Known limitation (unchanged from v0.7.0, now documented)
+
+- Direct `Edit`/`Write` to `settings.json` is still denied by design — the
+  JSON-region managed-hash verifier isn't built yet. `commands/upgrade.md`
+  now documents the sanctioned workaround (merge via `Bash`, not
+  `Edit`/`Write`). Tracked for a future version:
+  `docs/internal/issues/settings-json-managed-region-verifier-unimplemented.md`.
+
 ## v0.7.0 (2026-08-14)
 
 > **MIGRATION REQUIRED**

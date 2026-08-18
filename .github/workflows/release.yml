@@ -115,8 +115,13 @@ jobs:
           # The repo VERSION may lag (e.g. an rc suffix) — the tag is authoritative.
           printf '%s\n' "${VERSION}" > VERSION
           # Payload tarball: everything the launcher fetches on first install.
+          # CHANGELOG.md is included so `bin/edikt upgrade` can read
+          # ~/.edikt/CHANGELOG.md for its "what's new" summary (commands/
+          # upgrade.md expects it there) — without it, every upgrade silently
+          # has nothing to show, even though real release notes exist (this
+          # same file, extracted into the GitHub Release body above).
           tar -czf "edikt-payload-v${VERSION}.tar.gz" \
-            templates/ commands/ install.sh VERSION
+            templates/ commands/ install.sh VERSION CHANGELOG.md
           echo "Payload tarball entry count: $(tar -tzf "edikt-payload-v${VERSION}.tar.gz" | wc -l)"
           # Verify the stamped VERSION inside the tarball matches the release tag
           # (payload-side counterpart of the binary version-stamp guard above).

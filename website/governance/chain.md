@@ -226,6 +226,24 @@ Claude produces the implementable outputs: data model, API contracts, migrations
 
 Claude breaks the spec into phases, routes each to specialist agents for pre-flight review, and returns findings before any code is written.
 
+::: tip What pre-flight and revision actually catch
+Two things worth knowing before you get here. First: pre-flight criteria
+validation reads the spec's acceptance criteria literally, against your
+actual codebase — not against what sounds plausible. If SPEC-005 claims a
+duplicate webhook delivery returns `409 Conflict`, but your error package
+has no such response and every other conflict in the API returns `422
+Unprocessable Entity`, pre-flight flags it before a plan phase inherits the
+wrong criterion.
+
+Second: some gaps don't show up in review at all — they show up while
+writing the test. A retry scheduler can pass every code review and still
+have no protection against double-delivery if the worker crashes and
+restarts mid-retry. That's the kind of gap a "does the retry stop after N
+attempts" test won't catch, but a "does a mid-retry crash-restart still
+deliver exactly once" test will. When it does, the spec gets a new
+requirement, and the chain records why.
+:::
+
 Then you execute. Claude builds with enforced standards, the active plan phase injected on every prompt.
 
 > "Does the implementation match the spec?"

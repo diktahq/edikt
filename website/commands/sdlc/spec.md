@@ -127,6 +127,28 @@ Sections:
 
 Review the spec. Change `status: draft` to `status: accepted` when ready to proceed.
 
+### Specs get revised before proceeding — that's expected
+
+A spec's first draft isn't the final word. Two things commonly change it
+before a plan gets generated:
+
+- Pre-flight criteria validation checks acceptance criteria against your
+  actual codebase, not just against what sounds right. A criterion claiming
+  "duplicate webhook delivery returns `409 Conflict`" gets flagged if your
+  errors package has no such response and every other conflict path in the
+  API already returns `422` — rewritten to match reality, with a `verify:`
+  command that actually exercises it.
+- Writing the test for an acceptance criterion sometimes surfaces a design
+  gap no one caught reading the spec — e.g. a retry worker with no
+  protection against double-delivery on crash-restart. That's not a review
+  failure; it's what verification is for. The spec picks up a new
+  requirement, gets implemented, and gets re-verified.
+
+Each revision is a `revision_history` entry in the spec's `.yaml` sidecar —
+not silently overwritten. `status: accepted` doesn't mean "the first draft
+was right." It means "this is what we're building," with the paper trail of
+how it got there.
+
 Then run `/edikt:sdlc:artifacts` to generate the implementable artifacts.
 
 ```
