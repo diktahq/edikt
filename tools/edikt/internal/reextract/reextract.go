@@ -581,10 +581,21 @@ type StatusReport struct {
 }
 
 // Status reports what a resumed batch would do, without dispatching.
+//
+// An unresolvable extraction contract version degrades PromptVersion to
+// ExtractorPromptVersionUnknown rather than failing the whole report — the
+// same way the real dispatch path (govrun/twophase.go) already treats the
+// identical resolution failure as non-fatal. Before this, Status() was the
+// one caller that turned "the agent resolves, just not project-locally"
+// into a hard error, which upgrade.md §7's own contract then reads as "the
+// status check failed" and silently skips its re-extraction offer entirely
+// (INV-013: a control with a subject it could not fully observe must say  edikt-guard:allow
+// so, not fail outright — see F4,
+// docs/internal/issues/agentmodel-resolver-no-global-fallback.md).
 func Status(root string) (*StatusReport, error) {
 	promptVersion, err := phasea.ResolveExtractorPromptVersion(root)
 	if err != nil {
-		return nil, fmt.Errorf("cannot determine the extraction contract version (%s): %w", promptVersion, err)
+		promptVersion = phasea.ExtractorPromptVersionUnknown
 	}
 	pairs, err := discoverEligible(root)
 	if err != nil {

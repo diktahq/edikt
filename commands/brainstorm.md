@@ -12,7 +12,10 @@ allowed-tools:
   - Bash
   - Agent
   - AskUserQuestion
+tier_2_dependency: edikt next-id brain
+on_absent: skip-with-warning
 ---
+!`${HOME}/.edikt/bin/edikt next-id brain`
 
 # edikt:brainstorm
 
@@ -176,11 +179,22 @@ Resolve the brainstorms path from `.edikt/config.yaml` (`paths.brainstorms`, def
 
 Create the directory if it doesn't exist.
 
-Count existing brainstorm files to determine the next number:
+**Determine the next BRAIN number.** The correct next number is provided at the top of this prompt in the `<!-- edikt:live -->` block (from `bin/edikt next-id brain`). Use it exactly — do not guess or count files yourself.
+
+**Absence fallback (this command's frontmatter declares `on_absent: skip-with-warning`).** If no `<!-- edikt:live -->` block is present, the tier-2 binary is not on PATH. Check explicitly:
 ```bash
-COUNT=$(ls {brainstorms_path}/BRAIN-*.md 2>/dev/null | wc -l | tr -d ' ')
-NEXT=$(printf "%03d" $((COUNT + 1)))
+command -v edikt >/dev/null 2>&1 || command -v bin/edikt >/dev/null 2>&1
 ```
+If the check fails, emit exactly:
+```
+⚠ brainstorm numbering skipped edikt: binary not on PATH.
+  Install with: edikt install (or run install.sh to install the Go binary).
+  Falling back to a directory scan for the next BRAIN number.
+```
+Then compute the fallback yourself — **max, never count**, so deletions and gaps never re-issue a live ID:
+1. Scan `{brainstorms_path}/BRAIN-*.md` (file-form) AND `{brainstorms_path}/BRAIN-*/` (directory-form) for the `NNN` numeric suffix in each name.
+2. If `docs/internal/brainstorms/` exists and differs from `{brainstorms_path}`, scan it too — a project's history can hold two brainstorm locations that number independently, and a fallback that reads only one location risks re-issuing a number already live in the other.
+3. Take the maximum numeric suffix found across all of the above, add 1, zero-pad to 3 digits.
 
 Write to `{brainstorms_path}/BRAIN-{NNN}-{slug}.md` using the Brainstorm Artifact Template in the Reference section.
 

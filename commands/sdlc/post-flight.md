@@ -25,13 +25,13 @@ The completion-evidence check at the diff timeframe. The other layers verify tha
 /edikt:sdlc:post-flight <plan>                          # phase auto-detected from active plan state
 ```
 
-Plan name and phase are validated against an allowlist regex (NFKC-normalized, casefolded, stripped) before any shell interpolation — input-validation defense.
+Plan name and phase are validated against an allowlist regex (NFKC-normalized, stripped — case preserved, never casefolded) before any shell interpolation — input-validation defense.
 
 ## Inputs and contract
 
-- **Plan slug** — basename of `<plans-dir>/PLAN-<slug>.md` without extension. Allowlist: `^[A-Za-z0-9._-]+$`, length ≤ 200.
+- **Plan slug** — basename of `<plans-dir>/PLAN-<slug>.md` without extension. Allowlist: `^[A-Za-z0-9._-]+$`, length ≤ 200. Mixed case is preserved — the value is NFKC-normalized and stripped, but never casefolded, so it round-trips into filesystem paths exactly as the caller typed it. (This resolves a prior contradiction: this line always allowed `A-Za-z`, but Step 1's implementation casefolded to lowercase before matching — see Step 1 below.)
 - **Phase number** — non-negative integer (0–999). When omitted, resolved from the plan's progress table (the most recent `done` row, or `in-progress` if no row has flipped to done yet).
-- **L1 verdict** — the most recent file under `.edikt/state/verify/plan-<plan>-phase-<N>-*.json` (latest by timestamp). Must conform to `templates/agents/evaluator-verdict.schema.json`. On missing/malformed: exit 1 with `{"status":"error","reason":"L1 verdict malformed or missing"}` — the post-flight pipeline NEVER fabricates an L1 outcome.
+- **L1 verdict** — the most recent file under `.edikt/state/verify/` matching `{stem}-phase-{N}-*.json` (latest by timestamp), where `{stem}` is tried against BOTH naming forms defined in `templates/hooks/_plan-naming.sh`: `edikt_plan_stem` (keeps the `PLAN-` prefix) and `edikt_plan_id` (drops it). The two families are not interchangeable — see that file's header comment — so both are globbed and whichever form has matches wins. Must conform to `templates/schemas/verify-report.v1.schema.json` — the schema `bin/edikt verify` actually writes for files under `.edikt/state/verify/`. (`templates/agents/evaluator-verdict.schema.json` governs a different artifact — the phase-completion evaluator's verdict — and is NOT the schema for this directory.) On missing/malformed: exit 1 with `{"status":"error","reason":"L1 verdict malformed or missing"}` — the post-flight pipeline NEVER fabricates an L1 outcome.
 
 ## Skip semantics (informational)
 
@@ -67,22 +67,32 @@ case " $ARGUMENTS " in
   *" --phase "*) PHASE_RAW=$(echo "$ARGUMENTS" | sed -nE 's/.*--phase[= ]+([^ ]+).*/\1/p') ;;
 esac
 
-# Allowlist validation (NFKC + casefold + strip + regex).
+# THE ONE DEFINITION of plan-state filenames lives in _plan-naming.sh — source
+# it rather than re-deriving stems/ids inline (see that file's header for why).
+. "${EDIKT_HOOK_DIR:-$HOME/.edikt/hooks}/_plan-naming.sh"
+
+# Allowlist validation (NFKC + strip + regex). NEVER casefold: the plan slug
+# is used verbatim to construct filesystem paths ("<plans-dir>/PLAN-${PLAN}.md",
+# L1 verdict globs, the composite report path), and this file's own "Inputs
+# and contract" section above has always allowed mixed case (`A-Za-z`).
+# Casefolding here silently disagreed with that contract — fixed by dropping
+# it, not by lowercasing the contract.
 PLAN=$(python3 -c '
 import sys, unicodedata, re
-v = unicodedata.normalize("NFKC", sys.argv[1]).casefold().strip()
-if not re.match(r"^[a-z0-9._-]{1,200}$", v):
+v = unicodedata.normalize("NFKC", sys.argv[1]).strip()
+if not re.match(r"^[A-Za-z0-9._-]{1,200}$", v):
     sys.exit(1)
 sys.stdout.write(v)
 ' "$PLAN_RAW") || {
     python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"plan slug fails allowlist","input":sys.argv[1]}))' "$PLAN_RAW"
     exit 1
 }
+PLAN_FILE="<plans-dir>/PLAN-${PLAN}.md"
 
 if [ -n "$PHASE_RAW" ]; then
     PHASE=$(python3 -c '
 import sys, unicodedata, re
-v = unicodedata.normalize("NFKC", sys.argv[1]).casefold().strip()
+v = unicodedata.normalize("NFKC", sys.argv[1]).strip()
 if not re.match(r"^[0-9]{1,3}$", v):
     sys.exit(1)
 sys.stdout.write(v)
@@ -101,12 +111,33 @@ for line in text.splitlines():
     m = re.match(r"^\|\s*([0-9]+)\s*\|\s*(done|in-progress)\s*", line, re.I)
     if m: last = m.group(1)
 print(last or "")
-' "<plans-dir>/PLAN-${PLAN}.md") || PHASE=""
+' "$PLAN_FILE") || PHASE=""
     if [ -z "$PHASE" ]; then
         python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"could not auto-detect phase from plan"}))'
         exit 1
     fi
 fi
+```
+
+### 1a. Resolve the L1 verdict path
+
+```bash
+# Try both naming forms from _plan-naming.sh — the state families on disk
+# are not interchangeable (phase-start SHAs drop the PLAN- prefix, verify
+# reports have been observed keeping it). Glob both, take the newest match
+# by filename timestamp across whichever form actually has files.
+STEM_ID=$(edikt_plan_id "$PLAN_FILE")      # e.g. "v072-defect-sweep"
+STEM_FULL=$(edikt_plan_stem "$PLAN_FILE")  # e.g. "PLAN-v072-defect-sweep"
+
+L1_VERDICT_PATH=$(ls -t ".edikt/state/verify/${STEM_ID}-phase-${PHASE}-"*.json \
+                        ".edikt/state/verify/${STEM_FULL}-phase-${PHASE}-"*.json \
+                        2>/dev/null | head -1)
+
+if [ -z "$L1_VERDICT_PATH" ] || ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$L1_VERDICT_PATH" 2>/dev/null; then
+    python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"L1 verdict malformed or missing"}))'
+    exit 1
+fi
+# L1_VERDICT_PATH must conform to templates/schemas/verify-report.v1.schema.json.
 ```
 
 ### 2. Kill-switch checks (env var first, then config)
@@ -131,14 +162,23 @@ fi
 ### 3. Resolve the diff
 
 ```bash
-# Prefer phase-start SHA captured by the plan harness on row-flip-to-in-progress
-#. Fall back to HEAD~1..HEAD.
-SHA_FILE=".edikt/state/phase-start-${PLAN}-${PHASE}.sha"
+# Prefer phase-start SHA captured by the plan harness on row-flip-to-in-progress.
+# Fall back to HEAD~1..HEAD — loudly, since a silent fallback can under- or
+# over-capture the diff when the phase's commits don't align with HEAD~1.
+#
+# SHA_FILE path comes from the same accessor plan.md's row-flip step uses
+# (templates/hooks/_plan-naming.sh, sourced in Step 1) — never re-derive it
+# inline with a casefolded PLAN, which drifts from the file plan.md actually
+# writes.
+SHA_FILE="$(edikt_phase_start_sha "$PLAN_FILE" "$PHASE")"
+DIFF_FALLBACK=""
 if [ -f "$SHA_FILE" ]; then
     START_SHA=$(cat "$SHA_FILE" | tr -d '[:space:]')
     RANGE="${START_SHA}..HEAD"
 else
     RANGE="HEAD~1..HEAD"
+    DIFF_FALLBACK="HEAD~1..HEAD"
+    echo "⚠ post-flight: no phase-start SHA at ${SHA_FILE} — falling back to ${DIFF_FALLBACK}. This can under- or over-capture the phase's diff if its commits don't align with HEAD~1..HEAD." >&2
 fi
 
 # Changed files, binary-filtered.
@@ -357,6 +397,8 @@ print(json.dumps({
 
 ### 12. Stdout summary + exit
 
+`diff_fallback` surfaces the Step 3 fallback loudly in the command's own output contract — `null` when the phase-start SHA was found, `"HEAD~1..HEAD"` when it wasn't (matching the ⚠ line already printed in Step 3). This field is part of the stdout summary only; it is NOT added to the persisted composite report, whose `meta` object is schema-locked (`additionalProperties: false` in `templates/agents/post-flight-report.schema.json`).
+
 ```bash
 python3 -c '
 import json, sys
@@ -366,8 +408,9 @@ print(json.dumps({
     "phase": int(sys.argv[2]),
     "report_json": sys.argv[3],
     "report_md": sys.argv[4],
-    "elapsed_ms": int(sys.argv[5])
-}, indent=2))' "$PLAN" "$PHASE" "$REPORT_JSON_PATH" "$REPORT_MD_PATH" "$ELAPSED_MS"
+    "elapsed_ms": int(sys.argv[5]),
+    "diff_fallback": (sys.argv[6] or None)
+}, indent=2))' "$PLAN" "$PHASE" "$REPORT_JSON_PATH" "$REPORT_MD_PATH" "$ELAPSED_MS" "$DIFF_FALLBACK"
 
 rm -f "$DIFF_FILE"
 exit 0

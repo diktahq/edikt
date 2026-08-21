@@ -874,6 +874,7 @@ paths:
   plans: docs/plans
   specs: docs/product/specs
   prds: docs/product/prds
+  brainstorms: docs/brainstorms
   guidelines: docs/guidelines
   reports: docs/reports
   project-context: docs/project-context.md
@@ -1036,46 +1037,46 @@ Do NOT invent or modify hook filenames — the template contains the correct pat
 **Directories** — Create all directories from paths config. Add a minimal README.md to each governance directory:
 
 ```markdown
-<!-- docs/architecture/decisions/README.md -->
+<!-- {paths.decisions}/README.md -->
 # Architecture Decisions
 
-Capture decisions with: "save this decision" or /edikt:adr
+Capture decisions with: "save this decision" or /edikt:adr:new
 
 Format: ADR-NNN-title.md
 ```
 
 ```markdown
-<!-- docs/architecture/invariants/README.md -->
+<!-- {paths.invariants}/README.md -->
 # Invariants
 
-Capture hard constraints with: "that's a hard rule" or /edikt:invariant
+Capture hard constraints with: "that's a hard rule" or /edikt:invariant:new
 
 Format: INV-NNN-title.md
 ```
 
 ```markdown
-<!-- docs/plans/README.md -->
+<!-- {paths.plans}/README.md -->
 # Plans
 
-Create execution plans with: "let's plan this" or /edikt:plan
+Create execution plans with: "let's plan this" or /edikt:sdlc:plan
 
 Format: PLAN-NNN-title.md
 ```
 
 ```markdown
-<!-- docs/product/prds/README.md -->
+<!-- {paths.prds}/README.md -->
 # Product Requirements
 
-Write PRDs with: "write a PRD for X" or /edikt:prd
+Write PRDs with: "write a PRD for X" or /edikt:sdlc:prd
 
 Format: PRD-NNN-title.md
 ```
 
 ```markdown
-<!-- docs/product/specs/README.md -->
+<!-- {paths.specs}/README.md -->
 # Technical Specifications
 
-Write specs with: "write a spec for X" or /edikt:spec
+Write specs with: "write a spec for X" or /edikt:sdlc:spec
 
 Format: SPEC-NNN-title/spec.md
 ```
@@ -1142,6 +1143,10 @@ On a fresh install the `sidecar-extractor` agent was written to `.claude/agents/
 SIDECAR_COUNT=0
 for f in {paths.decisions}/ADR-*.md {paths.invariants}/INV-*.md {paths.guidelines}/*.md; do
   [ -f "$f" ] || continue
+  # Skip README/index stubs — they are navigation files, not governed artifacts.
+  case "$(basename "$f")" in
+    README.md|readme.md|index.md) continue ;;
+  esac
   base="${f%.md}"
   if [ -f "$base.edikt.yaml" ]; then continue; fi
   # Dispatch the per-artifact :compile (which dispatches the locked sidecar-extractor agent).
@@ -1163,6 +1168,12 @@ If `SIDECAR_COUNT == 0` (no artifacts present yet — common in greenfield), ski
 
 **Important:** never write sidecars for documentation-mention artifacts. The migration tool encodes the canonical skip-list; honor whatever it skips.
 
+**Conditional compile** — if `SIDECAR_COUNT > 0`, or any `*.edikt.yaml` already exists under `{paths.decisions}`, `{paths.invariants}`, or `{paths.guidelines}` (pre-existing sidecars from an earlier run/adopt), run `/edikt:gov:compile` now and print:
+```
+  ✓ Governance    compiled
+```
+Otherwise (no sidecars generated and none pre-existing — pure greenfield with no artifacts yet), skip the compile and keep the existing reminder from the paragraph above.
+
 ### 5. Summary
 
 ```
@@ -1176,6 +1187,8 @@ If `SIDECAR_COUNT == 0` (no artifacts present yet — common in greenfield), ski
   Hooks:   auto-format on edit, context on session start,
            plan injection on every prompt, compaction recovery,
            decision detection on session end
+  {If gov:compile ran in §4b}: Governance: compiled
+  {Else}: Governance: run /edikt:gov:compile once you've captured your first ADR or invariant
 
   {If imported}: Imported: 3 ADRs from docs/decisions/
 

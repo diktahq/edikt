@@ -167,6 +167,29 @@ func TestNextID_NoConfig_Discovery(t *testing.T) {
 	}
 }
 
+func TestNextID_NoConfig_Brain(t *testing.T) {
+	root := t.TempDir()
+	t.Chdir(root)
+	got := runAndCapture(t, "brain")
+	if !strings.Contains(got, "BRAIN-001") || !strings.Contains(got, "(none yet)") {
+		t.Errorf("no-config brain: missing BRAIN-001/(none yet) in %q", got)
+	}
+}
+
+func TestNextID_Brain_BaseDerivedPath(t *testing.T) {
+	withProject(t, "base: docs\n", map[string]string{
+		"docs/brainstorms/BRAIN-001-foo.md": "x",
+		"docs/brainstorms/BRAIN-002-bar.md": "x",
+	})
+	got := runAndCapture(t, "brain")
+	if !strings.Contains(got, "Next BRAIN number: BRAIN-003") {
+		t.Errorf("brain count off, got %q", got)
+	}
+	if !strings.Contains(got, "BRAIN-001-foo,BRAIN-002-bar") {
+		t.Errorf("brain listing not sorted/joined, got %q", got)
+	}
+}
+
 func TestNextID_PRD_BaseDerivedPath(t *testing.T) {
 	// Base override: prds defaults to {base}/product/prds.
 	withProject(t, "base: notes\n", map[string]string{
@@ -222,6 +245,9 @@ func TestNextID_UnknownKind_Errors(t *testing.T) {
 	if !strings.Contains(err.Error(), "unknown kind") {
 		t.Errorf("error message should name the unknown kind, got %q", err.Error())
 	}
+	if !strings.Contains(err.Error(), "brain") {
+		t.Errorf("error message should list brain among the known kinds, got %q", err.Error())
+	}
 }
 
 // ── Helper ───────────────────────────────────────────────────────────────────
@@ -253,6 +279,25 @@ func TestNextID_Spec_MaxPlusOne_WithGapsAndDuplicates(t *testing.T) {
 	}
 	if !strings.Contains(got, "WARNING: duplicate SPEC numbers: SPEC-001") {
 		t.Errorf("duplicate SPEC-001 ids must be surfaced, got %q", got)
+	}
+}
+
+func TestNextID_Brain_MaxPlusOne_FileAndDirMixed(t *testing.T) {
+	// File-form (BRAIN-NNN-*.md) and directory-form (BRAIN-NNN-*/) entries
+	// must both count toward max-based numbering, and a directory needs no
+	// inner file (unlike spec's dirGlob, which requires spec.md inside).
+	withProject(t, "paths:\n  brainstorms: docs/brainstorms\n", map[string]string{
+		"docs/brainstorms/BRAIN-002-foo.md":    "x",
+		"docs/brainstorms/BRAIN-002-dup/.keep": "x", // duplicate number 002, dir form
+		"docs/brainstorms/BRAIN-003-bar.md":    "x",
+		"docs/brainstorms/BRAIN-010-baz/.keep": "x", // bare dir, no inner spec-like file required
+	})
+	got := runAndCapture(t, "brain")
+	if !strings.Contains(got, "Next BRAIN number: BRAIN-011") {
+		t.Errorf("next must be max+1 across file+dir forms (BRAIN-011), got %q", got)
+	}
+	if !strings.Contains(got, "WARNING: duplicate BRAIN numbers: BRAIN-002") {
+		t.Errorf("duplicate BRAIN-002 (file+dir) must be surfaced, got %q", got)
 	}
 }
 

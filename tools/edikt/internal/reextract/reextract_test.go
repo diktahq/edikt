@@ -535,6 +535,39 @@ func TestReextractFailureIsResumableNotSticky(t *testing.T) {
 	}
 }
 
+// TestStatus_UnresolvableAgentDegradesRatherThanFails — F4,
+// docs/internal/issues/agentmodel-resolver-no-global-fallback.md.
+//
+// Before this fix, Status() hard-failed the whole report ("cannot determine
+// the extraction contract version") whenever the sidecar-extractor agent
+// wasn't project-local — even when eligible/done/remaining counts are
+// perfectly well-defined independent of it. That hard failure is what made
+// /edikt:upgrade §7's own contract ("if the status check fails ... say
+// nothing further") turn a resolvable-elsewhere agent into total silence.
+// Status() must now degrade PromptVersion to UNKNOWN and still report.
+func TestStatus_UnresolvableAgentDegradesRatherThanFails(t *testing.T) {
+	root := newCorpus(t, 3)
+	// Remove the project-local agent newCorpus installs — simulating a
+	// project whose agents resolve globally instead.
+	if err := os.Remove(filepath.Join(root, phasea.ExtractorAgentRelPath)); err != nil {
+		t.Fatal(err)
+	}
+	// Isolate from whatever the test machine's real Claude profile has
+	// installed — this test's premise is "nothing resolves anywhere".
+	t.Setenv("CLAUDE_HOME", t.TempDir())
+
+	st, err := Status(root)
+	if err != nil {
+		t.Fatalf("expected Status() to degrade rather than fail, got error: %v", err)
+	}
+	if st.PromptVersion != phasea.ExtractorPromptVersionUnknown {
+		t.Fatalf("got PromptVersion %q, want %q", st.PromptVersion, phasea.ExtractorPromptVersionUnknown)
+	}
+	if st.Eligible != 3 {
+		t.Fatalf("got Eligible %d, want 3 — counts must still be reported despite the unresolvable agent", st.Eligible)
+	}
+}
+
 func readJSON(t *testing.T, path string, v any) {
 	t.Helper()
 	b, err := os.ReadFile(path)

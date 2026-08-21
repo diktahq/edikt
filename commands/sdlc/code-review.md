@@ -44,9 +44,9 @@ CRITICAL: NEVER spawn agents for domains not detected from the changed files —
 
 9. Spawn all applicable specialist agents concurrently in a single message (multiple Agent tool calls). Each agent prompt must include: the git diff or relevant file contents, the specific review lens for that domain from the Reference section, and the expected output format with severities. If a dispatch fails with `Agent type '<slug>' not found` but `.claude/agents/<slug>.md` exists, use the fallback in `commands/_shared-agent-routing.md` § "Fallback: agent installed this session".
 
-10. After specialist review, check if an active spec exists:
+10. After specialist review, check if an active spec exists. Resolve `{specs_dir}` from `paths.specs` in `.edikt/config.yaml` (default: `docs/product/specs`). If `.edikt/config.yaml` is not found, output `No edikt config found. Run /edikt:init to set up this project.` and skip the drift check:
    ```bash
-   ls {specs_dir}/SPEC-*/spec.md 2>/dev/null | head -1
+   ls -t {specs_dir}/SPEC-*/spec.md 2>/dev/null | head -1
    ```
    If a spec exists, run drift detection using `/edikt:sdlc:drift` logic with `--scope=spec` and append findings under a "DRIFT CHECK" section. If no spec exists, skip silently.
 

@@ -49,6 +49,7 @@ var installCmd = &cobra.Command{
 			stampPayloadVersion(targetDir, tag)
 			writeManifest(targetDir, tag, "")
 			emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": tag})
+			reportInstallNotActivated(ediktRoot, tag)
 			return nil
 		}
 
@@ -105,8 +106,32 @@ var installCmd = &cobra.Command{
 		stampPayloadVersion(targetDir, tag)
 		writeManifest(targetDir, tag, computedSHA)
 		emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": tag})
+		reportInstallNotActivated(ediktRoot, tag)
 		return nil
 	},
+}
+
+// reportInstallNotActivated tells the operator explicitly that `install`
+// staged a version but did not activate it, and names the command that
+// does — install and use are deliberately separate verbs (install stages a
+// payload; use flips `current` to point at it), but that split was
+// previously silent: `edikt version` kept reporting the prior tag after a
+// successful install with no message explaining why, easy to mistake for
+// the install itself having failed to take effect (F11,
+// docs/internal/issues/install-does-not-report-or-perform-activation.md).
+// `edikt use <tag>` already existed before this fix; only the missing
+// pointer to it is new.
+func reportInstallNotActivated(ediktRoot, tag string) {
+	activeTag := ""
+	if lf, err := readLock(ediktRoot); err == nil {
+		activeTag = lf.Active
+	}
+	if activeTag == tag {
+		// Already active (e.g. re-running install over the current version) —
+		// nothing to point at.
+		return
+	}
+	fmt.Fprintf(os.Stderr, "installed %s (not activated — run `edikt use %s` to activate)\n", tag, tag)
 }
 
 // stampPayloadVersion ensures versions/<tag>/VERSION matches the installed

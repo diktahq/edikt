@@ -108,6 +108,11 @@ func TestRunTwoPhase_RecordsExtractorAgentModel(t *testing.T) {
 func TestRunTwoPhase_UnknownExtractorModelIsReportedNotSubstituted(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
 	t.Setenv(phasea.ExtractorModelEnv, "claude-opus-5")
+	// F4/F5: ResolveExtractorAgentModel also falls back to the active
+	// Claude profile's agents/ dir. Point CLAUDE_HOME at an empty sandbox
+	// so this test's "deliberately no agent file" premise holds regardless
+	// of what the machine running it actually has installed.
+	t.Setenv("CLAUDE_HOME", t.TempDir())
 
 	root := stageNeverInitialised(t) // deliberately no agent file
 	var errBuf, outBuf bytes.Buffer

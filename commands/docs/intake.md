@@ -24,14 +24,22 @@ Exit plan mode first, then run the command again.
 
 ## Instructions
 
-### 1. Verify edikt is Initialized
+### 1. Verify edikt is Initialized and Resolve Paths
 
 Check for `.edikt/config.yaml`. If not found:
 ```
 No edikt config found. Run /edikt:init to set up this project.
 ```
 
-Read config to get `base:` directory.
+Read config to get the `base:` directory, then resolve paths from the `paths:` section:
+
+- Decisions: `paths.decisions` (default: `docs/architecture/decisions`)
+- Invariants: `paths.invariants` (default: `docs/architecture/invariants`)
+- Plans: `paths.plans` (default: `docs/plans`)
+- Product requirements: `paths.prds` (default: `docs/product/prds`)
+- Specs: `paths.specs` (default: `docs/product/specs`)
+
+`{base}/reference/` and `{base}/archive/` remain base-derived throughout this command — there is no `paths.reference` or `paths.archive` config key.
 
 ### 2. Scan for Existing Docs
 
@@ -70,11 +78,11 @@ Organize found docs into edikt categories:
 Found {n} documentation files:
 
   Architecture / Decisions:
-    docs/adr/001-use-postgres.md     → {base}/decisions/001-use-postgres.md
+    docs/adr/001-use-postgres.md     → {paths.decisions}/001-use-postgres.md
 
   Product / Requirements:
-    docs/product-spec.md             → {base}/product/spec.md
-    docs/requirements/feature-x.md   → {base}/product/prds/feature-x.md
+    docs/product-spec.md             → {paths.specs}/ (see SPEC-NNN/spec.md convention; migrate manually)
+    docs/requirements/feature-x.md   → {paths.prds}/feature-x.md
 
   Reference:
     docs/api.md                      → {base}/reference/api.md
@@ -108,7 +116,7 @@ These could consolidate into a single PLAN-{NNN}-{slug}.md with a phases table.
 
 Options:
   [1] Consolidate into PLAN-{NNN}-{slug}.md (preserves all content as phases)
-  [2] Keep separate — copy as-is to {base}/plans/
+  [2] Keep separate — copy as-is to {paths.plans}/
   [3] Skip — don't move plan files
 ```
 
@@ -137,10 +145,10 @@ Options:
 
    **Completion promise:** `{PHASE TITLE DONE}`
    ```
-3. Save to `{base}/plans/PLAN-{NNN}-{slug}.md`
+3. Save to `{paths.plans}/PLAN-{NNN}-{slug}.md`
 4. Track original plan files for the archive step
 
-**If keeping separate:** copy files as-is to `{base}/plans/`.
+**If keeping separate:** copy files as-is to `{paths.plans}/`.
 
 ### 5. Execute Moves
 
@@ -172,16 +180,16 @@ Update project-context.md with this information? (y/n)
 
   Organized: {n} files
   Copied to:
-    {base}/decisions/     — {count} decision records
-    {base}/invariants/    — {count} invariants
-    {base}/plans/         — {count} plans {(consolidated) if applicable}
-    {base}/product/prds/  — {count} product requirements
+    {paths.decisions}/    — {count} decision records
+    {paths.invariants}/   — {count} invariants
+    {paths.plans}/        — {count} plans {(consolidated) if applicable}
+    {paths.prds}/         — {count} product requirements
     {base}/reference/     — {count} reference docs
 
   Project context updated: {yes/no}
 ```
 
-### 9. Archive Originals
+### 8. Archive Originals
 
 After displaying the summary, offer cleanup for all copied files:
 

@@ -283,8 +283,10 @@ Features deferred, approaches rejected, scope boundaries.}
 
 ## Acceptance Criteria
 
-- AC-001: {Criterion} — Verify: {automated test, command, or review method}
-- AC-002: {Criterion} — Verify: {method}
+Pass-through PRD criteria keep their sidecar id verbatim (`AC-{FR}-{seq}`, e.g. `AC-001-1`); criteria this spec adds for architectural-layer checks use `SAC-NNN` (spec acceptance criteria) and MUST NOT renumber, rewrite, or merge PRD ACs. See "AC pass-through with stable IDs" below.
+
+- AC-001-1: {Criterion, copied verbatim from the PRD sidecar} — Verify: {automated test, command, or review method, copied verbatim if the PRD AC carried one}
+- SAC-001: {Criterion this spec adds — architectural layer only} — Verify: {method}
 
 ## Testing Strategy
 

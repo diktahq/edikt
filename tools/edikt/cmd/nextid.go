@@ -39,6 +39,7 @@ Kinds:
   adr       — next ADR-NNN + list of existing ADR files
   inv       — next INV-NNN + list of existing INV files
   discovery — next DISCOVERY-NNN + list of existing DISCOVERY files
+  brain     — next BRAIN-NNN + list of existing BRAIN files/dirs
   plan      — most recently-edited plan + its in-progress phase row
 
 If .edikt/config.yaml is absent (no project context), emits the minimal
@@ -107,10 +108,12 @@ func runNextID(out io.Writer, kind string) error {
 		return emitListing(out, root, cfg.Paths.Invariants, listingINV)
 	case "discovery":
 		return emitListing(out, root, cfg.Paths.Discovery, listingDiscovery)
+	case "brain":
+		return emitListing(out, root, cfg.Paths.Brainstorms, listingBrain)
 	case "plan":
 		return emitActivePlan(out, root, cfg.Paths.Plans)
 	default:
-		return fmt.Errorf("unknown kind %q (want one of: spec, prd, adr, inv, discovery, plan)", kind)
+		return fmt.Errorf("unknown kind %q (want one of: spec, prd, adr, inv, discovery, brain, plan)", kind)
 	}
 }
 
@@ -129,10 +132,12 @@ func emitNoConfigFallback(out io.Writer, kind string) error {
 		fmt.Fprint(out, wrapLive("Next INV number: INV-001\nExisting invariants: (none yet)\n")) // edikt-guard:allow user-bootstrap output
 	case "discovery":
 		fmt.Fprint(out, wrapLive("Next DISCOVERY number: DISCOVERY-001\nExisting discoveries: (none yet)\n")) // edikt-guard:allow user-bootstrap output
+	case "brain":
+		fmt.Fprint(out, wrapLive("Next BRAIN number: BRAIN-001\nExisting brainstorms: (none yet)\n")) // edikt-guard:allow user-bootstrap output
 	case "plan":
 		// Plan emits nothing when no config — matches the shell.
 	default:
-		return fmt.Errorf("unknown kind %q (want one of: spec, prd, adr, inv, discovery, plan)", kind)
+		return fmt.Errorf("unknown kind %q (want one of: spec, prd, adr, inv, discovery, brain, plan)", kind)
 	}
 	return nil
 }
@@ -140,10 +145,11 @@ func emitNoConfigFallback(out io.Writer, kind string) error {
 // listingKind packages the per-kind details for the listing flavor of
 // the command (spec/prd/adr/inv share the same shape).
 type listingKind struct {
-	idPrefix string // "SPEC", "PRD", "ADR", "INV"
-	dirGlob  bool   // true for spec (SPEC-NNN is a directory containing spec.md)
-	header   string // label for "Next X number:"
-	footer   string // label for "Existing Xs:"
+	idPrefix  string // "SPEC", "PRD", "ADR", "INV", "BRAIN"
+	dirGlob   bool   // true for spec (SPEC-NNN is a directory containing spec.md)
+	fileOrDir bool   // true for brain (BRAIN-NNN-*.md files AND BRAIN-NNN-*/ dirs both count, no inner-file check)
+	header    string // label for "Next X number:"
+	footer    string // label for "Existing Xs:"
 }
 
 var (
@@ -152,6 +158,7 @@ var (
 	listingADR       = listingKind{idPrefix: "ADR", dirGlob: false, header: "Next ADR number", footer: "Existing ADRs"}
 	listingINV       = listingKind{idPrefix: "INV", dirGlob: false, header: "Next INV number", footer: "Existing invariants"}
 	listingDiscovery = listingKind{idPrefix: "DISCOVERY", dirGlob: false, header: "Next DISCOVERY number", footer: "Existing discoveries"}
+	listingBrain     = listingKind{idPrefix: "BRAIN", fileOrDir: true, header: "Next BRAIN number", footer: "Existing brainstorms"}
 )
 
 func emitListing(out io.Writer, root, relDir string, k listingKind) error {
@@ -222,8 +229,10 @@ func artifactNum(name, prefix string) (int, bool) {
 
 // listArtifacts returns the sorted list of artifact names matching the
 // kind's pattern. For dirGlob=true (spec), matches subdirectories named
-// SPEC-* that contain a spec.md. For dirGlob=false, matches *.md files
-// named <prefix>-* and strips the .md extension.
+// SPEC-* that contain a spec.md. For fileOrDir=true (brain), matches BOTH
+// NAME.md files and NAME/ directories named <prefix>-* — a directory needs
+// no inner file, unlike spec's dirGlob mode. Otherwise (plain file mode),
+// matches *.md files named <prefix>-* and strips the .md extension.
 func listArtifacts(absDir string, k listingKind) ([]string, error) {
 	entries, err := os.ReadDir(absDir)
 	if err != nil {
@@ -239,7 +248,8 @@ func listArtifacts(absDir string, k listingKind) ([]string, error) {
 		if !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		if k.dirGlob {
+		switch {
+		case k.dirGlob:
 			if !e.IsDir() {
 				continue
 			}
@@ -248,7 +258,17 @@ func listArtifacts(absDir string, k listingKind) ([]string, error) {
 				continue
 			}
 			names = append(names, name)
-		} else {
+		case k.fileOrDir:
+			if e.IsDir() {
+				// No inner-file requirement — a bare BRAIN-NNN-*/ dir counts.
+				names = append(names, name)
+				continue
+			}
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			names = append(names, strings.TrimSuffix(name, ".md"))
+		default:
 			if e.IsDir() {
 				continue
 			}

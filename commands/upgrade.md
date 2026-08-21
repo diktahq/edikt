@@ -494,26 +494,28 @@ For each hook type, check two things: (1) is the content correct, and (2) is it 
 **Migration check — inline bash vs. script references:**
 If any `type: command` hook has its logic inline (a long bash string) rather than referencing `$HOME/.edikt/hooks/*.sh`, it is outdated regardless of content. Note: "using inline bash — migrate to script reference".
 
-**Content checks:**
+**Content checks — per hook TYPE, whether it exists at all:**
 - `SessionStart`: command should reference `$HOME/.edikt/hooks/session-start.sh` — if not → outdated
 - `PreToolUse`: must be present with `Write|Edit` matcher — if missing → missing
 - `PostToolUse`: must be present with `Write|Edit` matcher — if missing → missing
 - `Stop`: must be type:command referencing `$HOME/.edikt/hooks/stop-hook.sh` — if type:prompt or inline → outdated
-- `PreCompact`: command should reference `$HOME/.edikt/hooks/pre-compact.sh` — if not → outdated
 - `UserPromptSubmit`: must be present — if missing → missing (v4: injects active plan phase)
 - `PostCompact`: must be present — if missing → missing (v4: re-injects context after compaction)
 - `SubagentStop`: must be present — if missing → missing (v4: logs agent activity + quality gates)
 - `InstructionsLoaded`: must be present — if missing → missing (v4: logs rule pack loading)
 
+**Content checks — per hook script BASENAME, even when the type already exists.** Type presence alone does not mean the type is current: a project's `PreToolUse`/`PostToolUse` typically predate a release that added a new script *within* an already-present type, and a type-level check alone reports nothing to do while the new script never installs — this is exactly what happened on a real downstream 0.7.1 upgrade: `verify-gate.sh` and both `inject-directives-{pre,post}.sh` never installed because `PreToolUse`/`PostToolUse` already existed, and `doctor` then pointed back at this same upgrade command as the (non-working) remedy. For every hook type present in `$EDIKT_TEMPLATES/settings.json.tmpl`, collect the set of command basenames the template registers for that type (across every matcher/`if` group within it) and the set actually present in `.claude/settings.json` for that type (same). Any template basename absent from the installed set → outdated (missing entry), even though the type itself is present.
+
 For each outdated or missing hook, note what changed in plain English:
 - "SessionStart: inline bash → migrate to `$HOME/.edikt/hooks/session-start.sh`"
 - "PostToolUse: missing (auto-formats files after edits)"
+- "PreToolUse: missing entry `verify-gate.sh` (write-time completion gate) — type already present, this script was never added"
+- "PostToolUse: missing entry `inject-directives-post.sh` (write-time directive delivery) — type already present, this script was never added"
 - "UserPromptSubmit: missing (v4 — injects active plan phase into every prompt)"
 - "PostCompact: missing (v4 — re-injects plan + invariants after compaction)"
 - "SubagentStop: missing (v4 — logs agent activity, quality gates)"
 - "InstructionsLoaded: missing (v4 — logs which rule packs load)"
 - "Stop: outdated format (may cause JSON validation error) → migrate to `$HOME/.edikt/hooks/stop-hook.sh`"
-- "PreCompact: inline bash → migrate to `$HOME/.edikt/hooks/pre-compact.sh`"
 
 #### 2b. CLAUDE.md — content-currency check, provenance-first (ADR-067)  edikt-guard:allow
 
@@ -849,33 +851,47 @@ In every case emit:
 upgrade_agent_conflict_resolved { agent: slug, resolution: "a" | "k" | "m" | "s" }
 ```
 
-**Legacy Classifier Fallback (pre-v0.6.0 agents only — retained verbatim from v0.4.3).**
+**Legacy Classifier Fallback (pre-v0.6.0 agents only — the v0.4.3 classification heuristic, preserved).**
 
-Do NOT simplify or refactor this block. It is exercised byte-for-byte by `test_upgrade_legacy_agent_uses_classifier` and preserves the exact behavior shipped in commit `d81f6e3`.
+The core heuristic below (additions/deletions via line-set comparison, the PURE EXPANSION / PATH SUBSTITUTION / USER DIVERGENCE buckets) is retained verbatim from v0.4.3, commit `d81f6e3`, and is exercised byte-for-byte by `test_upgrade_legacy_agent_uses_classifier`. Do NOT simplify or refactor the heuristic itself. Two things around it are fixed, both real defects found on a downstream upgrade, neither a change to the heuristic's own decision rule: **what gets fed into it** (the template side must be stack-filtered, same as the installed side already is — see the stack-filter step below) and **one guard added before it finalizes USER DIVERGENCE** (the prior-template-match check below). Preserving "exact behavior" means preserving the classification outcome for correctly-fed input, not perpetuating a feed that was wrong.
 
 For each agent that lacks `edikt_template_hash` in its frontmatter and is NOT customized, compare content hashes — NOT modification times:
 ```bash
-template_hash=$(md5 -q "$EDIKT_TEMPLATES/agents/{slug}.md" 2>/dev/null || md5sum "$EDIKT_TEMPLATES/agents/{slug}.md" 2>/dev/null | awk '{print $1}')
+# Materialize a stack-filtered copy of the template BEFORE hashing/diffing.
+# The raw template on disk still carries every <!-- edikt:stack:... -->
+# block; a project's installed file only carries the ones matching its
+# configured stack (install already filters before writing it). Comparing
+# the raw template against a correctly-filtered install produces a
+# constant, spurious divergence on every upgrade for every stack-gated
+# agent (backend.md, frontend.md, qa.md each carry several such blocks) —
+# this is the same apply_stack_filter(config.stack) the provenance-first
+# flow's Step 5/6/7 already runs before every one of its comparisons.
+FILTERED_TEMPLATE=$(mktemp)
+apply_stack_filter "$EDIKT_TEMPLATES/agents/{slug}.md" config.stack > "$FILTERED_TEMPLATE"
+
+template_hash=$(md5 -q "$FILTERED_TEMPLATE" 2>/dev/null || md5sum "$FILTERED_TEMPLATE" 2>/dev/null | awk '{print $1}')
 installed_hash=$(md5 -q .claude/agents/{slug}.md 2>/dev/null || md5sum .claude/agents/{slug}.md 2>/dev/null | awk '{print $1}')
 ```
 
 - If customized → skip (note as "custom — skipped")
 - If hashes differ → **compute the diff** and classify (see below)
-- If hashes match → up to date
+- If hashes match → up to date, remove `$FILTERED_TEMPLATE`
 
 **Classify the diff (for each divergent agent):**
 
-Run `diff -u "$EDIKT_TEMPLATES/agents/{slug}.md" .claude/agents/{slug}.md` and count:
+Run `diff -u .claude/agents/{slug}.md "$FILTERED_TEMPLATE"` — installed FIRST, filtered template SECOND — and count:
 - **Additions** (lines starting with `+`): content in the template but NOT in the installed file. These are template expansions (new sections, new bullets, new formatters).
 - **Deletions** (lines starting with `-`): content in the installed file but NOT in the template. These are either user customizations or content that was removed from the template.
 - **Path substitutions**: lines where only a file path differs (e.g., `docs/architecture/decisions/` → `adr/`). Detect by checking if the removed line matches a default path from `$EDIKT_TEMPLATES/.edikt/config.yaml` AND the added line matches the user's configured path in `.edikt/config.yaml`.
 
 Classify into three buckets:
-- **PURE EXPANSION**: only additions, no deletions (except trivial whitespace). Safe to apply — the template added content.
+- **PURE EXPANSION**: only additions, no deletions (except trivial whitespace). Safe to apply — the template added content. Write `$FILTERED_TEMPLATE`'s content to the installed path.
 - **PATH SUBSTITUTION**: deletions match the user's configured paths. Safe to apply if we re-substitute paths after upgrade. For now: flag as USER DIVERGENCE.
-- **USER DIVERGENCE**: deletions exist that aren't just path substitutions. The installed file has content the template doesn't — likely user customization. Require explicit confirmation with diff preview.
+- **USER DIVERGENCE** *(before finalizing this bucket, run the prior-template-match check below — it can reclassify to PURE EXPANSION)*: deletions exist that aren't just path substitutions. The installed file has content the template doesn't — likely user customization. Require explicit confirmation with diff preview.
 
-When a legacy classifier run ends with a decision (auto-apply, keep, or skip), emit `upgrade_agent_replaced` / `upgrade_agent_preserved` with the matching fields plus `reason: "legacy_classifier"` so downstream events.jsonl analysis can distinguish provenance-path resolutions from legacy-path resolutions.
+**Prior-template-match check (runs only when the diff above would otherwise land in USER DIVERGENCE).** The heuristic above cannot tell "this is an older template version, never edited" from "this is a real project customization" — both look identical to it as raw deletions. Before prompting the user to adjudicate a conflict that may not exist: for each version directory under `~/.edikt/versions/*/templates/agents/{slug}.md` (skip the current version, already checked above), materialize `apply_stack_filter(that_version's_template, config.stack)` and compare byte-for-byte against the installed file. If ANY prior version matches, the installed file is an un-edited old template, not a real edit — reclassify as PURE EXPANSION (write `$FILTERED_TEMPLATE`'s content, same as the auto-apply case) instead of prompting. If NO prior version matches (including when no prior versions remain on disk at all — retention is not guaranteed, see `edikt prune`), keep the safe, conservative USER DIVERGENCE default: absence of a match means "we don't know," never "therefore it was edited."
+
+When a legacy classifier run ends with a decision (auto-apply, keep, or skip), emit `upgrade_agent_replaced` / `upgrade_agent_preserved` with the matching fields plus `reason: "legacy_classifier"` (or `reason: "legacy_classifier_prior_template_match"` for a reclassification by the check above, so downstream events.jsonl analysis can distinguish the two) so analysis can distinguish provenance-path resolutions from legacy-path resolutions.
 
 Do NOT touch agents that have no matching template (user-created agents) or that are marked as custom.
 
@@ -996,7 +1012,7 @@ Hooks (.claude/settings.json)
   ⬆  SessionStart   — inline bash → script reference
   ⬆  PostToolUse    — missing, will add auto-format hook
   ⬆  Stop           — fix "Prompt hook condition was not met" error (ok:false → ok:true always)
-  ⬆  PreCompact     — inline bash → script reference
+  ⬆  PreToolUse     — missing entry verify-gate.sh (type already present, script was never added)
 
 Agents (.claude/agents/)
   ⬆  dba.md   — template added 12 lines (pure expansion, safe to apply)
@@ -1083,10 +1099,12 @@ Upgrade cancelled — no changes made.
 
 Read the current `.claude/settings.json`. Read the template.
 
-For each outdated hook, replace ONLY that hook's entry — do not touch other hooks or non-hook settings (like `permissions`). Merge carefully:
+Merge at the individual command-BASENAME level, never by replacing a whole hook type's array — a whole-array replace silently discards user-added entries under that type, and a type-level "already present, skip" check silently leaves out any template basename the installed array doesn't yet have (§2a above). Two passes: add what §2a found missing, then remove what a release retired (never a user's own addition):
 
 ```python
 # Pseudocode
+import os.path
+
 settings = read_json('.claude/settings.json')
 template_text = read_file('$EDIKT_TEMPLATES/settings.json.tmpl')
 
@@ -1097,9 +1115,61 @@ hook_dir = f"{HOME}/.edikt/hooks"   # global mode (or {project}/.edikt/hooks for
 template_text = template_text.replace("${EDIKT_HOOK_DIR}", hook_dir)
 template_hooks = json.loads(template_text)['hooks']
 
-for hook_type in ['SessionStart', 'PreToolUse', 'PostToolUse', 'Stop', 'PreCompact']:
-    if hook_type needs upgrade:
-        settings['hooks'][hook_type] = template_hooks[hook_type]
+def basename(command):
+    return os.path.basename(command)
+
+# ── Pass 1: add every template basename missing from the installed set,
+# for EVERY hook type the template declares — not a hardcoded subset, so a
+# future template addition never goes stale here the way an enumerated list
+# would. Grouped by (matcher, if) selector, so an unconditional group's
+# commands never land inside a filtered one or vice versa.
+for hook_type, template_groups in template_hooks.items():
+    installed_groups = settings.setdefault('hooks', {}).setdefault(hook_type, [])
+    installed_basenames = {
+        basename(h['command'])
+        for group in installed_groups
+        for h in group.get('hooks', [])
+    }
+    for template_group in template_groups:
+        selector = (template_group.get('matcher'), template_group.get('if'))
+        missing = [h for h in template_group.get('hooks', [])
+                   if basename(h['command']) not in installed_basenames]
+        if not missing:
+            continue
+        target = next((g for g in installed_groups
+                        if (g.get('matcher'), g.get('if')) == selector), None)
+        if target is None:
+            target = {k: v for k, v in template_group.items() if k != 'hooks'}
+            target['hooks'] = []
+            installed_groups.append(target)
+        target['hooks'].extend(missing)
+        for h in missing:
+            report(f"{hook_type}: added {basename(h['command'])} (new in this template)")
+
+# ── Pass 2: remove a RETIRED edikt hook — one this release's template no
+# longer ships anywhere under its type AND whose script file no longer
+# exists on disk. Ownership is decided by directory, not by "was it in the
+# template last time": a command whose directory resolves under hook_dir is
+# edikt's own; anything else (a real user-added hook, wherever it points)
+# is NEVER touched by this pass, template membership or not.
+template_basenames_by_type = {
+    hook_type: {basename(h['command']) for g in groups for h in g.get('hooks', [])}
+    for hook_type, groups in template_hooks.items()
+}
+for hook_type, groups in list(settings.get('hooks', {}).items()):
+    for group in groups:
+        kept = []
+        for h in group.get('hooks', []):
+            cmd = h['command']
+            owned_by_edikt = os.path.dirname(cmd) == hook_dir
+            still_shipped = basename(cmd) in template_basenames_by_type.get(hook_type, set())
+            file_exists = os.path.exists(cmd)
+            if owned_by_edikt and not still_shipped and not file_exists:
+                report(f"{hook_type}: removed {basename(cmd)} (retired from the template, file no longer exists)")
+                continue
+            kept.append(h)
+        group['hooks'] = kept
+    settings['hooks'][hook_type] = [g for g in groups if g.get('hooks')]
 
 # Sanity check before writing — block any leftover placeholders.
 serialized = json.dumps(settings)
@@ -1107,7 +1177,7 @@ assert "${EDIKT_HOOK_DIR}" not in serialized, "settings.json still contains unsu
 write_json('.claude/settings.json', settings)
 ```
 
-**Never remove** hooks that exist in `settings.json` but not in the template (the user may have added their own). This upgrade never overwrites user-added hooks — it only updates or adds what the template defines.
+**Never remove** a hook command whose directory does not resolve under `hook_dir` (the user may have added their own, wherever it points) — Pass 2 above is the one narrow, ownership-checked exception: an edikt-owned command (`hook_dir`-resolved) whose basename this release no longer ships anywhere, and whose file no longer exists, is retired, not user-added, and gets removed with the removal reported. This upgrade never overwrites user-added hooks — everything else it only updates or adds.
 
 #### Agents
 

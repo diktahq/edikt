@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/claudepaths"
 )
 
 // resolveEdiktRoot returns the active EDIKT_ROOT using the same priority
@@ -81,17 +83,13 @@ func resolveEdiktRoot() (string, error) {
 // 1. $CLAUDE_HOME — edikt's explicit override
 // 2. $CLAUDE_CONFIG_DIR — Claude Code's own profile selector
 // 3. $HOME/.claude — global default
+//
+// Delegates to internal/claudepaths, the single shared definition of this
+// chain — internal/phasea's extractor-agent resolvers use the same one, so
+// `doctor`'s agent-drift check and `gov reextract --status` can't drift
+// apart on where "the active Claude profile" is.
 func resolveClaudeRoot() string {
-	if ch := os.Getenv("CLAUDE_HOME"); ch != "" {
-		return ch
-	}
-	if ccd := os.Getenv("CLAUDE_CONFIG_DIR"); ccd != "" {
-		return ccd
-	}
-	if home := os.Getenv("HOME"); home != "" {
-		return filepath.Join(home, ".claude")
-	}
-	return filepath.Join("/", ".claude")
+	return claudepaths.ResolveClaudeRoot()
 }
 
 // claudeConfigDirMismatch reports whether $CLAUDE_CONFIG_DIR is set but does

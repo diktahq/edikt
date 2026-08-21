@@ -12,6 +12,19 @@ allowed-tools:
 
 You are performing an end-of-session sweep. Your job is to summarize what happened this session and surface any missed captures (ADRs, invariants, doc gaps) before context is lost.
 
+## Step 0: Resolve Paths
+
+Read `.edikt/config.yaml`. If not found, output:
+
+```
+No edikt config found. Run /edikt:init to set up this project.
+```
+
+And stop. Otherwise resolve paths from the `paths:` section:
+
+- Plans: `paths.plans` (default: `docs/plans`)
+- Decisions: `paths.decisions` (default: `docs/architecture/decisions`)
+
 ## Step 1: What changed (git)
 
 Run these commands to understand what happened this session:
@@ -32,10 +45,10 @@ And stop.
 
 ## Step 2: Plan progress
 
-Find the most recently modified plan file under `docs/plans/`:
+Find the most recently modified plan file under `{paths.plans}/`:
 
 ```bash
-ls -t docs/plans/*.md 2>/dev/null | head -1
+ls -t {paths.plans}/*.md 2>/dev/null | head -1
 ```
 
 Read it and check if any phases have moved to `done` or `in-progress` recently (look at the progress table and updated timestamps). Report what changed, or "no plans updated" if nothing moved.
@@ -48,7 +61,7 @@ Review the current conversation context for decision language:
 Then check existing ADRs:
 
 ```bash
-ls docs/decisions/*.md 2>/dev/null || ls docs/architecture/decisions/*.md 2>/dev/null
+ls {paths.decisions}/*.md 2>/dev/null || ls docs/architecture/decisions/*.md 2>/dev/null
 ```
 
 Read the ADR list. Only flag a decision as a possible ADR if:

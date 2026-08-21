@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -367,6 +366,10 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 		// settings.json placeholder + hook-path resolution check. Check both
 		// global (~/.claude/settings.json) and the project-local
 		// (.claude/settings.json) if we're inside a project.
+		// hookPathProjectRoot is what $CLAUDE_PROJECT_DIR/${CLAUDE_PROJECT_DIR}
+		// resolve against below — best-effort; an unresolvable cwd here just
+		// means that substitution is a no-op, same as before this existed.
+		hookPathProjectRoot, _ := os.Getwd()
 		for _, candidate := range []string{
 			filepath.Join(claudeRoot, "settings.json"),
 			filepath.Join(".", ".claude", "settings.json"),
@@ -375,7 +378,7 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			if err != nil {
 				continue
 			}
-			hpErr, hpWarn := runHookPathCheck(candidate, string(data), os.Stdout)
+			hpErr, hpWarn := runHookPathCheck(candidate, string(data), hookPathProjectRoot, os.Stdout)
 			errN += hpErr
 			warnN += hpWarn
 		}
@@ -399,9 +402,6 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 
 // checkPayloadIntegrity reads SHA256SUMS and verifies each listed file.
 // Returns a list of tampered file paths and any I/O error.
-// hookCommandRe pulls the command string out of a settings.json hook entry.
-var hookCommandRe = regexp.MustCompile(`"command"\s*:\s*"([^"]+)"`)
-
 func checkPayloadIntegrity(dir, sumsPath string) ([]string, error) {
 	f, err := os.Open(sumsPath)
 	if err != nil {

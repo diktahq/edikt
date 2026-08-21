@@ -67,13 +67,14 @@ type CompileStats struct {
 type ediktConfig struct {
 	Base  string `yaml:"base"`
 	Paths struct {
-		Decisions  string `yaml:"decisions"`
-		Invariants string `yaml:"invariants"`
-		Guidelines string `yaml:"guidelines"`
-		Specs      string `yaml:"specs"`
-		Prds       string `yaml:"prds"`
-		Plans      string `yaml:"plans"`
-		Discovery  string `yaml:"discovery"`
+		Decisions   string `yaml:"decisions"`
+		Invariants  string `yaml:"invariants"`
+		Guidelines  string `yaml:"guidelines"`
+		Specs       string `yaml:"specs"`
+		Prds        string `yaml:"prds"`
+		Plans       string `yaml:"plans"`
+		Discovery   string `yaml:"discovery"`
+		Brainstorms string `yaml:"brainstorms"`
 	} `yaml:"paths"`
 }
 
@@ -449,13 +450,14 @@ func loadConfig(root string) (ediktConfig, error) {
 	var raw struct {
 		Base  string `yaml:"base"`
 		Paths struct {
-			Decisions  string `yaml:"decisions"`
-			Invariants string `yaml:"invariants"`
-			Guidelines string `yaml:"guidelines"`
-			Specs      string `yaml:"specs"`
-			Prds       string `yaml:"prds"`
-			Plans      string `yaml:"plans"`
-			Discovery  string `yaml:"discovery"`
+			Decisions   string `yaml:"decisions"`
+			Invariants  string `yaml:"invariants"`
+			Guidelines  string `yaml:"guidelines"`
+			Specs       string `yaml:"specs"`
+			Prds        string `yaml:"prds"`
+			Plans       string `yaml:"plans"`
+			Discovery   string `yaml:"discovery"`
+			Brainstorms string `yaml:"brainstorms"`
 		} `yaml:"paths"`
 	}
 	// SPEC-009 Plan A AC-1.2: loads .edikt/config.yaml paths subset (base + per-section path map).  // edikt-guard:allow
@@ -487,13 +489,16 @@ func loadConfig(root string) (ediktConfig, error) {
 	if raw.Paths.Discovery != "" {
 		cfg.Paths.Discovery = raw.Paths.Discovery
 	}
+	if raw.Paths.Brainstorms != "" {
+		cfg.Paths.Brainstorms = raw.Paths.Brainstorms
+	}
 	applyBaseDefaults(&cfg)
 	return cfg, nil
 }
 
-// applyBaseDefaults fills in Specs/Prds/Plans from Base when not explicitly
-// set. Decisions/Invariants/Guidelines are NOT touched here — they keep
-// their historical hardcoded "docs/..." defaults set above.
+// applyBaseDefaults fills in Specs/Prds/Plans/Discovery/Brainstorms from Base
+// when not explicitly set. Decisions/Invariants/Guidelines are NOT touched
+// here — they keep their historical hardcoded "docs/..." defaults set above.
 func applyBaseDefaults(cfg *ediktConfig) {
 	if cfg.Paths.Specs == "" {
 		cfg.Paths.Specs = cfg.Base + "/product/specs"
@@ -506,6 +511,9 @@ func applyBaseDefaults(cfg *ediktConfig) {
 	}
 	if cfg.Paths.Discovery == "" {
 		cfg.Paths.Discovery = cfg.Base + "/product/discovery"
+	}
+	if cfg.Paths.Brainstorms == "" {
+		cfg.Paths.Brainstorms = cfg.Base + "/brainstorms"
 	}
 }
 

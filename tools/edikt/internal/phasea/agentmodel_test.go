@@ -94,6 +94,12 @@ func TestResolveExtractorAgentModel_UnknownNeverFallsBack(t *testing.T) {
 			}
 			// Set both fallbacks to values the function must NOT return.
 			t.Setenv(ExtractorModelEnv, "claude-opus-5")
+			// F4/F5: ResolveExtractorAgentModel also falls back to the
+			// active Claude profile's agents/ dir. Point CLAUDE_HOME at an
+			// empty sandbox so this test's "nothing resolves" premise holds
+			// regardless of what the machine running it actually has
+			// installed under its real Claude config.
+			t.Setenv("CLAUDE_HOME", t.TempDir())
 
 			got, err := ResolveExtractorAgentModel(root)
 			if err == nil {
@@ -106,6 +112,79 @@ func TestResolveExtractorAgentModel_UnknownNeverFallsBack(t *testing.T) {
 				t.Fatalf("fell back to a default (%q) instead of reporting UNKNOWN", got)
 			}
 		})
+	}
+}
+
+// F4/F5 — docs/internal/issues/agentmodel-resolver-no-global-fallback.md.
+// A project with no project-local .claude/agents/sidecar-extractor.md must
+// still resolve when the agent is installed under the active Claude
+// profile's own agents/ dir — the same location doctor's agent-drift check
+// already looks at. Before this fix, both resolvers were project-local
+// only and returned a hard error here.
+func TestResolveExtractorAgentModel_FallsBackToClaudeRoot(t *testing.T) {
+	root := t.TempDir() // no .claude/agents/ under here at all
+	claudeHome := t.TempDir()
+	agentPath := filepath.Join(claudeHome, "agents", "sidecar-extractor.md")
+	if err := os.MkdirAll(filepath.Dir(agentPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, []byte("---\nname: sidecar-extractor\nmodel: sonnet\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_HOME", claudeHome)
+
+	got, err := ResolveExtractorAgentModel(root)
+	if err != nil {
+		t.Fatalf("expected fallback resolution to succeed, got error: %v", err)
+	}
+	if got != "sonnet" {
+		t.Fatalf("got %q, want %q", got, "sonnet")
+	}
+}
+
+func TestResolveExtractorPromptVersion_FallsBackToClaudeRoot(t *testing.T) {
+	root := t.TempDir()
+	claudeHome := t.TempDir()
+	agentPath := filepath.Join(claudeHome, "agents", "sidecar-extractor.md")
+	if err := os.MkdirAll(filepath.Dir(agentPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, []byte("---\nname: sidecar-extractor\nprompt_version: 3\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_HOME", claudeHome)
+
+	got, err := ResolveExtractorPromptVersion(root)
+	if err != nil {
+		t.Fatalf("expected fallback resolution to succeed, got error: %v", err)
+	}
+	if got != "v3" {
+		t.Fatalf("got %q, want %q", got, "v3")
+	}
+}
+
+// Project-local must still win when BOTH locations resolve — the fallback
+// is a last resort, not a competing source of truth.
+func TestResolveExtractorAgentModel_ProjectLocalTakesPrecedenceOverFallback(t *testing.T) {
+	root := t.TempDir()
+	writeAgent(t, root, "---\nname: sidecar-extractor\nmodel: opus\n---\n")
+
+	claudeHome := t.TempDir()
+	agentPath := filepath.Join(claudeHome, "agents", "sidecar-extractor.md")
+	if err := os.MkdirAll(filepath.Dir(agentPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(agentPath, []byte("---\nname: sidecar-extractor\nmodel: sonnet\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_HOME", claudeHome)
+
+	got, err := ResolveExtractorAgentModel(root)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "opus" {
+		t.Fatalf("got %q, want project-local %q (fallback must not shadow project-local)", got, "opus")
 	}
 }
 

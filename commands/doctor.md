@@ -26,7 +26,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 1. Read `.edikt/config.yaml`. If not found, output `[FAIL] No edikt config found. Run /edikt:init to set up this project.` and stop.
 
-2. Extract `base:` directory from config (default: `docs`).
+2. Extract `base:` directory from config (default: `docs`). Also extract the `paths:` block (`paths.decisions`, `paths.invariants`, `paths.plans`, `paths.specs`, etc.) — each governance check below resolves against its configured path, falling back to a `{base}`-derived default only when the specific key is absent.
 
 3. Run all checks in parallel where possible. Use the check definitions in the Reference section below. For each check, report `[ok]`, `[!!]`, or `[FAIL]` as defined there.
 
@@ -80,16 +80,16 @@ python3 -c "import yaml; yaml.safe_load(open('.edikt/config.yaml'))" 2>&1 || ech
 
 **Decisions:**
 ```bash
-ls {base}/decisions/*.md 2>/dev/null | wc -l
+ls {paths.decisions}/*.md 2>/dev/null | wc -l
 ```
-- `[ok] {base}/decisions/ — {n} ADRs`
-- `[!!]` if directory missing or empty — suggest `/edikt:intake` or creating first ADR
+- `[ok] {paths.decisions}/ — {n} ADRs`
+- `[!!]` if directory missing or empty — suggest `/edikt:docs:intake` or creating first ADR
 
 **Invariants:**
 ```bash
-ls {base}/invariants/*.md 2>/dev/null | wc -l
+ls {paths.invariants}/*.md 2>/dev/null | wc -l
 ```
-- `[ok] {base}/invariants/ — {n} invariants`
+- `[ok] {paths.invariants}/ — {n} invariants`
 - `[ok]` if empty (invariants are optional) — note "none defined"
 
 **Rules:**
@@ -189,16 +189,18 @@ stop_prompt = stop.get('prompt', '') if stop.get('type') == 'prompt' else ''
 - `[!!] Stop hook causes blocking error — run /edikt:upgrade` if prompt uses `{"ok": false, "reason":` to deliver signals (causes "Prompt hook condition was not met" error)
 
 **Product spec:**
-- Check if `{base}/product/spec.md` exists
-- `[ok]` if present
-- `[!!]` if missing — suggest `/edikt:intake` to onboard existing specs
+```bash
+ls {paths.specs}/SPEC-*/spec.md 2>/dev/null | wc -l
+```
+- `[ok] {paths.specs}/ — {n} specs` if any found
+- `[!!]` if none found — suggest `/edikt:docs:intake` to onboard existing specs
 
 **Plans:**
 ```bash
-ls {base}/product/plans/PLAN-*.md {base}/plans/PLAN-*.md 2>/dev/null
+ls {paths.plans}/PLAN-*.md 2>/dev/null
 ```
 - `[ok] {n} plans found` — list active ones
-- `[!!] No PLAN-*.md found` — suggest `/edikt:plan`
+- `[!!] No PLAN-*.md found` — suggest `/edikt:sdlc:plan`
 
 **Auto-memory:**
 ```bash
@@ -607,14 +609,14 @@ Check the decision graph for consistency. Read all ADRs, invariants, and specs:
  [ok]   edikt {version} (installed: {installed})
  [ok]   .edikt/config.yaml valid
  [ok]   {base}/project-context.md exists
- [ok]   {base}/decisions/ — {n} ADRs
- [ok]   {base}/invariants/ — {n} invariants
+ [ok]   {paths.decisions}/ — {n} ADRs
+ [ok]   {paths.invariants}/ — {n} invariants
  [ok]   .claude/rules/ — {n} packs installed
  [ok]   CLAUDE.md has edikt sentinel
  [ok]   SessionStart hook
  [ok]   Stop hook (artifact suggestions)
  [ok]   PreCompact hook
- [ok]   {base}/product/spec.md exists
+ [ok]   {paths.specs}/ — {n} specs
  [ok]   {n} plans found
  [ok]   {n} agents installed in .claude/agents/
  [ok]   Memory: {n} days old, {lines}/200 lines

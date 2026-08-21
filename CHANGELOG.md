@@ -1,5 +1,163 @@
 # edikt changelog
 
+## v0.7.2 (2026-08-19)
+
+A defect sweep sourced from the 2026-08-19 strategic review (§5, D1–D14) and
+the BRAIN-006..009 verification passes (N1–N6), plus a handful of post-flight
+naming/schema bugs and a brainstorm allocator collision found while verifying
+those brainstorms. Bug fixes only — D3 (the one architectural item in the
+review) is deferred; see below. A second sweep, sourced from a real
+downstream upgrade field report, follows in its own **Fixed** section below.
+
+### Fixed
+
+- **Path resolution.** `docs:intake`, `doctor`, `session`, and `code-review`
+  hardcoded `{base}/decisions`, `{base}/invariants`, `docs/plans`, and similar
+  paths instead of honoring the configured `paths.*` keys, so imported ADRs
+  and invariants could be invisible to compile, doctor under-counted
+  decisions/invariants/plans against a project's real layout, and the drift
+  command's spec pick was alphabetical rather than recency-ordered
+  (`ls | head -1` vs `ls -t | head -1`). All four commands now resolve
+  `paths.decisions`, `paths.invariants`, `paths.plans`, and `paths.specs`
+  explicitly. `doctor` also drops its stale `/edikt:intake` suggestion in
+  favor of the real `/edikt:docs:intake` name, and `intake.md`'s section
+  numbering no longer skips a section.
+- **Init fixes.** `/edikt:init` never ran `/edikt:gov:compile` after
+  generating governance, so a fresh init ended in the exact "compile pending"
+  state `doctor` immediately flags — init's §4b now runs a conditional
+  compile whenever sidecars exist. Init's config template omitted the
+  `brainstorms` path key that `config.md` documents, so it's now written by
+  default. The five generated README stubs (and the brownfield guide's
+  manual-capture walkthrough) taught dead command names
+  (`/edikt:adr`, `/edikt:invariant`, `/edikt:plan`, …) instead of the real
+  `:new`/`sdlc:` forms — both now print commands that actually run. The
+  guideline sidecar-extraction glob matched `README.md`/`index.md` alongside
+  real guidelines, dispatching the extractor at non-guideline files; it now
+  skips them.
+- **Dead `/edikt:team` route removed.** `templates/CLAUDE.md.tmpl` and the
+  live `CLAUDE.md` both routed "team onboard" to `/edikt:team`, a command
+  file that has never existed — not deprecated, just dead. The trigger row
+  now points at `/edikt:init` directly, and the three tests that pinned the
+  old row (`test-v031-team-consolidation.sh` and two upgrade
+  3-way-merge/safe-replace pytest cases) were updated to the new literal.
+- **Brainstorm ID allocation.** `/edikt:brainstorm` allocated the next
+  `BRAIN-NNN` id by counting existing files rather than taking the max
+  in-use number, so a gap or an out-of-order deletion could mint a
+  colliding id. Allocation now goes through a new `bin/edikt next-id brain`
+  (max-based, aware of both file-form `BRAIN-NNN-slug.md` and directory-form
+  `BRAIN-NNN-slug/` entries), with a max-based prose fallback when the
+  binary is unavailable.
+- **Spec AC-form consistency.** `spec.md`'s prose acceptance-criteria
+  template showed `AC-001` while its own YAML sidecar example used
+  `AC-001-1`, an internal contradiction. The prose template now matches the
+  sidecar: pass-through PRD criteria keep `AC-{FR}-{seq}` verbatim, and
+  criteria the spec itself adds use `SAC-NNN`.
+- **Post-flight L1 contract.** `post-flight.md` expected lowercase
+  `plan-<slug>` L1 verdict filenames while `bin/edikt verify` actually
+  writes `PLAN-` case — a mismatch that only happened to work on
+  case-insensitive filesystems and would silently fail to find L1 verdicts
+  on Linux CI. It now sources the single naming definition in
+  `templates/hooks/_plan-naming.sh` and tries both known forms. The L1
+  schema reference was pointing at the wrong artifact; it now validates
+  against `templates/schemas/verify-report.v1.schema.json`, a new schema
+  artifact that pins the actual shape `bin/edikt verify` writes. The
+  HEAD~1..HEAD diff fallback used to degrade silently; it now surfaces a
+  `diff_fallback` field and a visible warning in the command's output.
+- **Docs truth fixes.** The v0.6.0 CHANGELOG entry claimed an "init style
+  detection" feature that was never actually implemented in `init.md`; the
+  claim is removed with a dated correction note. `website/guides/brownfield.md`
+  advertised audit output edikt doesn't produce and used the same dead
+  command names as the README stubs above; both are corrected.
+  `docs/internal/assumptions.md` was titled "Harness Assumptions" but
+  contains only model assumptions — retitled with a note distinguishing it
+  from `docs/architecture/assumptions.md`. The Claude Code parity doc's
+  `SubagentStart` row was marked unshipped even though it's registered in
+  `settings.json.tmpl`; corrected to shipped.
+
+### Fixed (second sweep — real downstream `dev`→0.7.1 upgrade field report)
+
+Nine defects found on an actual `dcsg/bok-services` upgrade run (24 ADRs, 15
+invariants, 39 sidecars), triaged and fixed against this repo's own source
+rather than the report's own diagnosis — three of its twelve findings turned
+out to already be handled or to name a command that already shipped; see
+`docs/internal/audits/TRIAGE-2026-08-20-bok-services-071.md` for the full
+classification.
+
+- **`migrate to-v2` no longer credits an unvalidated pass as "already v2."**
+  `WouldConvertToV2`/`ConvertFileToV2` only ever detected the ABSENCE of v1
+  markers, never the PRESENCE of what v2 requires — a hand-authored metadata
+  card carrying neither reached the "already v2" bucket unvalidated, exactly
+  how two malformed sidecars on the field-report corpus passed `migrate to-v2
+  --dry-run` as current while `doctor` correctly flagged them SCHEMA INVALID
+  on the same run. Reuses `sidecar.Discover`'s own `Load()` result — the same
+  call doctor's check makes — so a file that fails to load now lands in a
+  new `invalid` bucket instead.
+- **`/edikt:upgrade` merges hooks by basename, not by whole-type presence.**
+  A project with `PreToolUse`/`PostToolUse` already registered (true for
+  nearly every pre-0.7.1 install) got nothing added when the template's
+  script list under those types grew — `verify-gate.sh` and both
+  `inject-directives-{pre,post}.sh` silently never installed, and `doctor`'s
+  own remedy ("Run `/edikt:upgrade` to install it") would not have worked,
+  since upgrade never diffed below the type level. The merge is now a
+  two-pass, basename-level algorithm: add any template command missing from
+  an existing type, then separately retire a hook only when it's edikt-owned,
+  no longer shipped anywhere, and its file no longer exists on disk (closing
+  a related gap where `pre-compact.sh`, retired since v0.5.0/ADR-014, stayed
+  registered into a permanent, non-self-healing `doctor` ERROR).
+- **§2c's legacy agent classifier's diff feed, not its v0.4.3 rule, was
+  wrong.** Three defects around the pre-v0.6.0 fallback path, the
+  classification rule itself unchanged: the prescribed `diff -u` had its
+  `+`/`-` backwards relative to the very next line of prose; the classifier
+  diffed the raw template against a stack-FILTERED install, producing a
+  constant spurious USER DIVERGENCE for every stack-gated agent
+  (`backend.md`, `frontend.md`, `qa.md`); and it had no way to tell "this
+  installed file matches an older, unedited template version" from "this is
+  a real edit" — both looked like the same raw deletions. Fixed the diff
+  direction, materialize a stack-filtered template before comparing (the
+  same `apply_stack_filter` the provenance-first path's own Step 5 already
+  runs), and check retained prior template versions before finalizing
+  USER DIVERGENCE.
+- **`doctor` resolves `$CLAUDE_PROJECT_DIR` hook commands instead of
+  mis-extracting them.** The hook-path checker's command extractor was a
+  regex, escape-blind by construction — a hook quoted as
+  `"$CLAUDE_PROJECT_DIR"/.claude/hooks/foo.sh` (reproducible live against
+  this repo's own `tools/edikt/.claude/settings.json`) degraded to a lone
+  captured backslash, reported as a false ERROR on a legitimate, existing
+  hook. Replaced the regex with the JSON decode doctor's own basename checks
+  already use, which resolves escapes correctly by construction, and added
+  `$CLAUDE_PROJECT_DIR`/`${CLAUDE_PROJECT_DIR}` expansion alongside the
+  existing `$HOME` handling.
+- **`gov reextract --status` degrades instead of hard-failing when the
+  sidecar-extractor agent isn't project-local.** The resolver
+  (`internal/phasea/agentmodel.go`) was project-local-only with no fallback;
+  `Status()` treated that as fatal even though the identical resolution
+  failure is already non-fatal on the real dispatch path. It now falls back
+  to the active Claude profile's `agents/` directory — the same location
+  `doctor`'s own agent-drift check already covers, via a newly-shared
+  `internal/claudepaths` resolver — and `Status()` degrades `PromptVersion`
+  to `UNKNOWN` rather than failing the whole report. Closes the case where
+  `/edikt:upgrade` §7's own "if the status check fails, say nothing further"
+  contract turned a perfectly resolvable agent into silent, invisible
+  skipping of the re-extraction offer.
+- **`edikt install` reports when it did not activate the version it
+  staged.** Install and `use` are deliberately separate verbs, but install's
+  success path printed nothing about that split — `edikt version` correctly
+  kept reporting the prior tag, with no explanation, easy to mistake for the
+  install having failed. Install now prints `installed <tag> (not activated
+  — run \`edikt use <tag>\` to activate)` unless the installed tag is
+  already active.
+
+### Deferred
+
+- **D3 — `runner.go`'s `claude -p` shellout (ADR-030/INV-012 tension).** The
+  owner ruling on this sweep was "whatever is better and more reliable for
+  userland, no regressions," which resolves to deferring the rewrite rather
+  than rushing it into this patch. The exempt-file entry for
+  `tools/edikt/internal/phasea/runner.go` is re-anchored: the removal
+  deadline moves to v0.8.0, pending the Phase A re-orchestration decision
+  tracked in BRAIN-009 Q8 (pure tier-1 Task dispatch vs. a host-dispatch
+  abstraction that still shells out). The rewrite gets its own cycle.
+
 ## v0.7.1 (2026-08-17)
 
 Patch release fixing real defects found by an end-to-end install smoke test
@@ -454,7 +612,7 @@ edikt can now adapt to existing projects. The compile pipeline supports a **thre
 - **Three-list schema:** every compiled sentinel block now carries `directives:` (auto-generated), `manual_directives:` (user-authored), and `suppressed_directives:` (user-rejected). The merge formula `effective = (directives - suppressed) ∪ manual` gives users full control over what ships without losing compile automation. Hash-based caching (`source_hash` + `directives_hash`) skips Claude calls when nothing changed.
 - **Invariant Records:** formalized the governance artifact for non-negotiable constraints. Formalized "Invariant Records" as the governance artifact for hard constraints (short form: INV). Template follows Statement/Rationale/Enforcement structure. Compile extracts directives from the Statement section, preserving declarative absolute language.
 - **Extensibility plumbing:** template lookup chain (`project .edikt/templates/` → inline fallback), `/edikt:guideline:compile` command, auto-chain (`<artifact>:new` runs `<artifact>:compile`).
-- **Init style detection:** detects project style (flat, layered, monorepo) during init. Adapt mode for existing `.edikt/` directories. Template-less refusal for v0.3.0+ projects.
+- **Init adapt mode:** adapt mode for existing `.edikt/` directories. Template-less refusal for v0.3.0+ projects. (corrected 2026-08-19: style detection was never shipped)
 - **Flexible prose input:** ADR/invariant/guideline creation accepts natural language with automatic reference extraction to existing governance.
 - **Doctor + upgrade integration:** doctor reports template overrides and stale hashes. Upgrade respects project templates.
 

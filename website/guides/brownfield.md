@@ -17,8 +17,6 @@ edikt audits what you have and installs guardrails that match.
 edikt detected:
   Language:     Go 1.22 (go.mod)
   Framework:    Chi v5 (go.mod)
-  Architecture: Layered (handler/ service/ repository/)
-  Test setup:   Go testing + testify (found 47 test files)
   Lint config:  .golangci-lint.yaml found
   Git history:  847 commits over 14 months
 
@@ -66,9 +64,9 @@ Context propagation. Error wrapping. Return value. The model got there because i
 Your project has implicit decisions baked into the code. Surface them:
 
 ```bash
-/edikt:adr we use repository pattern for all data access
-/edikt:adr all monetary amounts use decimal not float64
-/edikt:invariant payments table is append-only, never update or delete rows
+/edikt:adr:new we use repository pattern for all data access
+/edikt:adr:new all monetary amounts use decimal not float64
+/edikt:invariant:new payments table is append-only, never update or delete rows
 ```
 
 These become ADRs and invariants in `docs/`. The model reads them in every future session. The decisions stop living only in your head.

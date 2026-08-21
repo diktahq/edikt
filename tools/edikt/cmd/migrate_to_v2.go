@@ -48,7 +48,7 @@ byte-intact.`,
 		if err != nil {
 			return err
 		}
-		var converted, already, absent []string
+		var converted, already, invalid, absent []string
 		for _, p := range pairs {
 			if p.SidecarPath == "" {
 				continue
@@ -73,23 +73,36 @@ byte-intact.`,
 				}
 				if would {
 					converted = append(converted, p.ArtifactID)
-				} else {
-					already = append(already, p.ArtifactID)
+					continue
 				}
+			} else {
+				changed, cerr := sidecar.ConvertFileToV2(p.SidecarPath)
+				if cerr != nil {
+					return cerr
+				}
+				if changed {
+					converted = append(converted, p.ArtifactID)
+					continue
+				}
+			}
+			// WouldConvertToV2/ConvertFileToV2 only detect the ABSENCE of v1
+			// markers — they never check for the PRESENCE of what v2 requires.
+			// A file that is neither v1 nor v2 (e.g. a hand-authored metadata
+			// card) reaches here indistinguishably from a genuinely valid v2
+			// file. "Nothing to convert" is not the same claim as "already
+			// valid" (INV-013) — credit the pass only if the sidecar actually  edikt-guard:allow
+			// loads. p.LoadErr is Discover's own sidecar.Load() result, the
+			// same call doctor's SCHEMA INVALID check makes, so the two
+			// commands judge one corpus by one rule instead of two.
+			if p.LoadErr != nil {
+				invalid = append(invalid, fmt.Sprintf("%s (%s)", p.ArtifactID, p.LoadErr))
 				continue
 			}
-			changed, cerr := sidecar.ConvertFileToV2(p.SidecarPath)
-			if cerr != nil {
-				return cerr
-			}
-			if changed {
-				converted = append(converted, p.ArtifactID)
-			} else {
-				already = append(already, p.ArtifactID)
-			}
+			already = append(already, p.ArtifactID)
 		}
 		sort.Strings(converted)
 		sort.Strings(already)
+		sort.Strings(invalid)
 
 		verb := "converted"
 		if migrateToV2DryRun {
@@ -97,10 +110,13 @@ byte-intact.`,
 		}
 		// INV-013: report the denominator, not just the hits. "0 converted" out  edikt-guard:allow
 		// of 0 discovered is a broken scan; out of 60 it is a finished migration.
-		fmt.Fprintf(os.Stderr, "migrate to-v2: %s %d of %d sidecar(s); %d already v2, %d artifact(s) have no sidecar\n",
-			verb, len(converted), len(converted)+len(already), len(already), len(absent))
+		fmt.Fprintf(os.Stderr, "migrate to-v2: %s %d of %d sidecar(s); %d already v2, %d invalid (neither v1 nor v2 — needs manual repair), %d artifact(s) have no sidecar\n",
+			verb, len(converted), len(converted)+len(already)+len(invalid), len(already), len(invalid), len(absent))
 		for _, id := range converted {
 			fmt.Fprintf(os.Stderr, "  + %s\n", id)
+		}
+		for _, id := range invalid {
+			fmt.Fprintf(os.Stderr, "  ! %s\n", id)
 		}
 		if len(pairs) == 0 {
 			return fmt.Errorf("no sidecars discovered under %s — nothing was measured, "+

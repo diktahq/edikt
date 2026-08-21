@@ -1,0 +1,97 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://edikt.dev/schemas/verify-report/v1.json",
+  "title": "VerifyReport",
+  "description": "Report written by tools/edikt/internal/verify/reporter.go (verify.Report) after `bin/edikt verify` runs a plan's criteria sidecar. Written as a pair of files, JSON + human-readable .txt, under .edikt/state/verify/. Filename convention: for a single-phase run, `<PlanID>-phase-<N>-<timestamp>.json` (and matching .txt); for a full run across all phases, `<PlanID>-all-<timestamp>.json`. <timestamp> is UTC, formatted `20060102T150405Z` (Go reference layout). This schema pins the JSON sibling only; the .txt file is a rendered, non-machine-readable summary. Consumed by commands/sdlc/post-flight.md's L1 (criteria verify) stage, which globs this directory for the most recent report matching the active plan and phase.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_id", "phase", "ran_at", "ran_by", "git_sha", "summary", "criteria"],
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The plan identifier this report was run against, e.g. PLAN-v072-defect-sweep. Matches the criteria sidecar's plan field and the <PlanID> filename segment."
+    },
+    "phase": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The phase id this run covered (e.g. \"3\"), or the literal string \"all\" for a full-plan run across every phase. Drives which filename form WriteReports uses."
+    },
+    "ran_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp (RFC 3339) when the run started."
+    },
+    "ran_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "\"<user>@<host>\" identity of whoever/whatever invoked the runner, or \"?\" for either component that could not be resolved."
+    },
+    "git_sha": {
+      "type": "string",
+      "description": "The git commit SHA the working tree was at when the run executed. May be empty when run outside a git repo."
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "failed", "skipped", "timeout", "total"],
+      "description": "Aggregate counts across criteria, computed by Report.BuildSummary from the criteria list — never hand-authored.",
+      "properties": {
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "timeout": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "description": "Per-criterion outcome, one entry per AC in the plan's criteria sidecar, in sidecar order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "statement", "status", "duration_ms", "stdout_excerpt", "stderr_excerpt", "exit_code"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Criterion id, e.g. AC-3.1, matching the criteria sidecar."
+          },
+          "statement": {
+            "type": "string",
+            "description": "Human-readable statement of what the criterion asserts, copied from the criteria sidecar."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "timeout",
+              "skipped: operational",
+              "skipped: informational",
+              "skipped: suppressed"
+            ],
+            "description": "Outcome of running the criterion's verify command under bash -c."
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Wall-clock time the verify command took to run, in milliseconds."
+          },
+          "stdout_excerpt": {
+            "type": "string",
+            "description": "Captured stdout excerpt from the verify command (empty string when not applicable, e.g. passed/skipped)."
+          },
+          "stderr_excerpt": {
+            "type": "string",
+            "description": "Captured stderr excerpt from the verify command (empty string when not applicable)."
+          },
+          "exit_code": {
+            "type": "integer",
+            "description": "Process exit code of the verify command."
+          }
+        }
+      }
+    }
+  }
+}
