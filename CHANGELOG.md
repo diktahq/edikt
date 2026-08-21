@@ -1,5 +1,74 @@
 # edikt changelog
 
+## v0.7.3 (2026-08-20)
+
+A second, unrelated field report from `dcsg/bok-services` — not the upgrade-path report
+v0.7.2 already closed, but a full W0 governance transition (50 sidecars, schema 2→3
+recompile) run on v0.7.1. Four findings (N1–N4), triaged against source rather than the
+report's own diagnosis; see
+`docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md` for the
+full classification.
+
+### Fixed
+
+- **`gov compile --check` misses an orphaned, unmanifested compiled surface (N1).** The
+  bidirectional filesystem-vs-manifest reconciliation the report asked for already
+  existed and was correctly designed — it has its own passing unit test for exactly this
+  scenario. The real defect was narrower: the real call site
+  (`internal/govrun/twophase.go`) constructed its `Options{}` without setting
+  `OutDir`/`IndexPath`, so the orphan-detection half of the check silently read an empty
+  path and found nothing, while missing/content-drift detection on manifested surfaces
+  kept working. `CheckRenderFreshness` now applies the same defaulting `Merge()` already
+  applies to its own copy of the same fields. A codebase-wide sweep for the same bug
+  class (a struct field with a documented default only some consumers apply) found this
+  is the only live instance.
+- **`doctor`'s `MISSING` check has no way to express "deliberately not yet projected" (N2).**
+  A `status: proposed` artifact with no explicit opt-out unconditionally hard-fails, and a
+  project excluding several proposed records by design gets permanent, unfixable errors —
+  plausibly why N1 went unnoticed, since a doctor run that can never reach zero trains
+  users to stop reading it. Scoping `MISSING` to `status: accepted`/`status: active` (the
+  report's own suggestion) would have been wrong — this repo's own `ADR-063` is `proposed`
+  with a legitimate, real sidecar. Added an explicit, per-artifact opt-out instead:
+  `sidecar: skip` frontmatter (optional `reason:`) or a
+  `<!-- edikt:sidecar:skip reason="…" -->` body marker, wired into the same skip-list gate
+  the existing `migration: skip` markers already use.
+- **`gov compile` warns when `no-directives:` is set but directives are still compiling (N3).**
+  `no-directives:` is a warning suppressor, not an instruction — it has never affected
+  which directives compile, only whether an empty-ruleset warning fires. A field report
+  documented an operator misreading the name, applying it to an artefact whose 12
+  directives an owner ruling meant to stop, seeing no error, and shipping a false
+  suppression claim. A new check in `commands/gov/compile.md`'s orphan-detection pass (and,
+  for defense-in-depth, the deprecated `--legacy` compile path) now warns the moment the
+  key is applied to an artefact with a non-empty effective rule set — additive, no
+  breaking change, independent of whether the key is ever renamed.
+- **`gov schema-check`'s fixture exclusion is broadened and documented (N4).** The
+  report's suggested "reserved directory name" mechanism already existed — schema-check
+  already skipped any directory named exactly `fixtures` — just narrower and
+  undocumented enough that a project using its own convention (`sidecar-fixtures/`,
+  `test-fixtures/`) never found it. Broadened to match any directory basename containing
+  `fixture`, and documented in the command's help text.
+
+### Proposed, not decided
+
+- **ADR-069 — rename the `no-directives:` frontmatter key to `empty-directives-reason:`.**
+  Status: proposed, not accepted. The key's *name* invites the exact misreading N3
+  documents, but it is a governance-corpus-facing frontmatter contract every downstream
+  project's `.md` files can carry — a rename is proposed with a deprecation path (both
+  keys recognized, old one warns) rather than shipped as a direct edit, matching this
+  project's own convention for frontmatter/schema contract changes.
+
+### Filed, not fixed
+
+- **Three doctor checks share N1's exact bug shape.** A codebase-wide sweep beyond N1's
+  own root cause found `doctor_orphan_surfaces.go`, `doctor_topic_scope.go`, and
+  `doctor_topic_descriptions.go` all silently swallow `os.ReadDir` errors on the
+  governance directory the same way — any error, not just "doesn't exist yet," silently
+  drops the check from doctor's summary, risking a false "result: healthy." Filed
+  (`docs/internal/issues/doctor-orphan-topic-scope-descriptions-swallow-readdir-errors.md`)
+  rather than fixed here: `0.8.0-rc1` has active, in-progress tooling for exactly this
+  cross-cutting audit, and an independent fix here risked duplicating or conflicting with
+  that effort.
+
 ## v0.7.2 (2026-08-19)
 
 A defect sweep sourced from the 2026-08-19 strategic review (§5, D1–D14) and

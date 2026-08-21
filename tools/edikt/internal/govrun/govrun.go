@@ -235,10 +235,29 @@ func Run(root string, checkOnly, jsonMode bool, clk model.Clock) error {
 	// ── Orphan detection ─────────────────────────────────────────────────────
 	var currentOrphans []string
 	for _, d := range allDocs {
-		if !d.Sentinel.Present || d.Frontmatter.NoDirectives != "" {
+		if !d.Sentinel.Present {
 			continue
 		}
-		if len(d.Sentinel.Directives) == 0 && len(d.Sentinel.ManualDirectives) == 0 {
+		nonEmpty := len(d.Sentinel.Directives) > 0 || len(d.Sentinel.ManualDirectives) > 0
+		// N3 (docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md):
+		// `no-directives:` only suppresses the empty-ruleset warning below —
+		// it never affects which directives compile. A field report
+		// documented an operator reading the name as an instruction,
+		// applying it to an artefact whose rule set was actually non-empty,
+		// seeing no error, and reporting suppression complete while every
+		// directive kept compiling. Warn at the moment of misuse instead.
+		if d.Frontmatter.NoDirectives != "" && nonEmpty {
+			n := len(d.Sentinel.Directives) + len(d.Sentinel.ManualDirectives)
+			warnings = append(warnings, fmt.Sprintf(
+				"[WARN] %s: no-directives: key present but %d directive(s) are still compiling — "+
+					"this key only suppresses the empty-ruleset warning; it has no effect on which "+
+					"directives project. Use suppressed_directives to actually stop directives from compiling.",
+				compile.SourceID(d.Path), n))
+		}
+		if d.Frontmatter.NoDirectives != "" {
+			continue
+		}
+		if !nonEmpty {
 			currentOrphans = append(currentOrphans, compile.SourceID(d.Path))
 		}
 	}

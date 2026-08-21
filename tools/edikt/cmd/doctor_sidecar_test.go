@@ -185,6 +185,35 @@ func TestSidecarChecks_missing_skipsByMarker(t *testing.T) {
 	}
 }
 
+// N2 (docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md):
+// a proposed ADR/invariant explicitly opted out via `sidecar: skip` must
+// not trigger MISSING — but a proposed artifact with NO opt-out still must,
+// since this repo's own ADR-063 proves a proposed artifact can legitimately
+// have a real sidecar.
+func TestSidecarChecks_missing_skipsBySidecarSkipMarker(t *testing.T) {
+	root := scaffoldProject(t)
+
+	writeFile(t, filepath.Join(root, "docs/architecture/decisions/ADR-200-pending.md"),
+		"---\nstatus: proposed\nsidecar: skip\nreason: \"awaiting acceptance gate\"\n---\n\n"+
+			"# ADR-200-pending.md\n\nHooks must emit JSON.\n")
+
+	var buf bytes.Buffer
+	errs, _, _ := runSidecarChecks(root, &buf)
+	if errs != 0 {
+		t.Fatalf("explicit sidecar: skip opt-out should not error; got %d errs:\n%s", errs, buf.String())
+	}
+
+	// Control: status: proposed alone, no opt-out, must still error.
+	plainRoot := scaffoldProject(t)
+	writeFile(t, filepath.Join(plainRoot, "docs/architecture/decisions/ADR-201-pending.md"),
+		"---\nstatus: proposed\n---\n\n# ADR-201-pending.md\n\nHooks must emit JSON.\n")
+	var buf2 bytes.Buffer
+	errs2, _, _ := runSidecarChecks(plainRoot, &buf2)
+	if errs2 == 0 {
+		t.Fatalf("status: proposed alone (no sidecar: skip) should still error MISSING; got:\n%s", buf2.String())
+	}
+}
+
 func TestSidecarChecks_pathMismatch(t *testing.T) {
 	root := scaffoldProject(t)
 	mdRel := "docs/architecture/decisions/ADR-400-foo.md"

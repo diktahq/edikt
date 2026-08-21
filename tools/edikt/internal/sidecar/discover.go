@@ -59,6 +59,18 @@ var dirKinds = []string{KindADR, KindInvariant, KindGuideline}
 // tools/edikt/cmd/migrate_sidecars.go — the two MUST stay in sync.
 var migrationSkipMarkerRe = regexp.MustCompile(`<!--\s*edikt:migration:skip(?:\s+reason="([^"]*)")?\s*-->`)
 
+// sidecarSkipMarkerRe is the body-comment form of an explicit, per-artifact
+// "do not require a sidecar here" opt-out (N2,
+// docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md).
+// Distinct from migrationSkipMarkerRe: that one means "pre-migration, needs
+// lifting into a sidecar"; this one means "deliberately not projected,
+// possibly forever" — a proposed ADR/invariant a project isn't ready to
+// compile, or one split out by an owner ruling that hasn't been accepted yet.
+// `status: proposed` alone is NOT sufficient reason to skip MISSING — this
+// repo's own ADR-063 is proposed and has a legitimate, real sidecar — so the  edikt-guard:allow
+// opt-out must be explicit per artifact, not inferred from status.
+var sidecarSkipMarkerRe = regexp.MustCompile(`<!--\s*edikt:sidecar:skip(?:\s+reason="([^"]*)")?\s*-->`)
+
 // supersededStatusRe matches the canonical ADR status body lines
 // `**Status:** Superseded by ADR-NNN` and `**Status:** Deprecated`
 // (case-insensitive, multiline). Retired ADRs are historical references
@@ -93,9 +105,19 @@ func isSkipListed(path string) (bool, string) {
 			if reason, ok := parseFrontmatterRetiredStatus(front); ok {
 				return true, reason
 			}
+			if reason, ok := parseFrontmatterSidecarSkip(front); ok {
+				return true, reason
+			}
 		}
 	}
 	if m := migrationSkipMarkerRe.FindStringSubmatch(text); m != nil {
+		reason := strings.TrimSpace(m[1])
+		if reason == "" {
+			reason = "marker comment present"
+		}
+		return true, reason
+	}
+	if m := sidecarSkipMarkerRe.FindStringSubmatch(text); m != nil {
 		reason := strings.TrimSpace(m[1])
 		if reason == "" {
 			reason = "marker comment present"
@@ -159,6 +181,35 @@ func parseFrontmatterRetiredStatus(front string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// parseFrontmatterSidecarSkip recognises `sidecar: skip` (with optional
+// `reason: "…"`) — an explicit, per-artifact opt-out from sidecar coverage
+// that carries no implication about the artifact's status. Kept as its own
+// key rather than folded into migration:skip or a status inference: this is
+// "deliberately not projected" (a proposed record awaiting acceptance, or
+// one an owner ruling split out and hasn't accepted yet), not "pre-migration"
+// and not "retired." Named `sidecar:`, not `no-directives:` — that key
+// already means something unrelated (a compile-time warning suppressor) and
+// reusing it is exactly the naming collision N3 documents.
+func parseFrontmatterSidecarSkip(front string) (string, bool) {
+	var sidecarVal, reasonVal string
+	for _, line := range strings.Split(front, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "sidecar:"):
+			sidecarVal = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "sidecar:")), `"' `)
+		case strings.HasPrefix(line, "reason:"):
+			reasonVal = strings.Trim(strings.TrimSpace(strings.TrimPrefix(line, "reason:")), `"' `)
+		}
+	}
+	if sidecarVal != "skip" {
+		return "", false
+	}
+	if reasonVal != "" {
+		return reasonVal, true
+	}
+	return "frontmatter sidecar: skip", true
 }
 
 // IsSkipListed is the exported form of the skip-list check, for callers

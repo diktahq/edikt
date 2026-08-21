@@ -71,6 +71,64 @@ func TestIsSkipListed_AcceptedStatusNotSkipped(t *testing.T) {
 	}
 }
 
+// N2 (docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md):
+// a proposed ADR/invariant with no sidecar must be able to opt out of
+// MISSING explicitly, without inferring the opt-out from status: proposed
+// (this repo's own ADR-063 is proposed and legitimately HAS a sidecar, so
+// a blanket status filter would suppress real signal). "sidecar: skip" is
+// deliberately a different key from "no-directives:" — see N3.
+
+func TestIsSkipListed_FrontmatterSidecarSkip(t *testing.T) {
+	dir := t.TempDir()
+	p := writeMD(t, dir, "ADR-100-pending.md",
+		"---\nstatus: proposed\nsidecar: skip\nreason: \"awaiting acceptance gate\"\n---\n\n# ADR-100\n\nMUST do the thing.\n")
+	skip, reason := IsSkipListed(p)
+	if !skip {
+		t.Fatal("frontmatter sidecar: skip must skip-list the artifact")
+	}
+	if reason != "awaiting acceptance gate" {
+		t.Errorf("expected the declared reason to be surfaced, got %q", reason)
+	}
+}
+
+func TestIsSkipListed_FrontmatterSidecarSkipNoReason(t *testing.T) {
+	dir := t.TempDir()
+	p := writeMD(t, dir, "ADR-101-pending.md",
+		"---\nstatus: proposed\nsidecar: skip\n---\n\n# ADR-101\n\nMUST do the thing.\n")
+	if skip, reason := IsSkipListed(p); !skip || reason == "" {
+		t.Fatalf("sidecar: skip with no reason must still skip-list with a non-empty default reason; got skip=%v reason=%q", skip, reason)
+	}
+}
+
+func TestIsSkipListed_BodyMarkerSidecarSkip(t *testing.T) {
+	dir := t.TempDir()
+	p := writeMD(t, dir, "ADR-102-pending.md",
+		"<!-- edikt:sidecar:skip reason=\"split out by owner ruling, not yet accepted\" -->\n\n"+
+			"# ADR-102\n\nMUST do the thing.\n")
+	skip, reason := IsSkipListed(p)
+	if !skip {
+		t.Fatal("body marker edikt:sidecar:skip must skip-list the artifact")
+	}
+	if reason != "split out by owner ruling, not yet accepted" {
+		t.Errorf("expected the declared reason to be surfaced, got %q", reason)
+	}
+}
+
+// Control: status: proposed ALONE, with no explicit opt-out, must still
+// error MISSING — this is the case the report's own suggested "scope
+// MISSING to status: accepted" fix would have wrongly suppressed, and
+// which this repo's own ADR-063 (proposed, with a real sidecar) proves
+// matters: a proposed artifact CAN legitimately have a sidecar, so
+// forgetting to compile one is still real signal.
+func TestIsSkipListed_ProposedStatusAloneNotSkipped(t *testing.T) {
+	dir := t.TempDir()
+	p := writeMD(t, dir, "ADR-103-pending.md",
+		"---\nstatus: proposed\n---\n\n# ADR-103\n\nMUST do the thing.\n")
+	if skip, reason := IsSkipListed(p); skip {
+		t.Fatalf("status: proposed alone (no explicit sidecar: skip) must NOT be skip-listed — got skip=%v reason=%q", skip, reason)
+	}
+}
+
 func TestDiscover_MarksFrontmatterSupersededAsSkip(t *testing.T) {
 	root := t.TempDir()
 	adrDir := filepath.Join(root, "docs", "architecture", "decisions")

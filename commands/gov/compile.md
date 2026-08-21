@@ -230,6 +230,36 @@ A "valid reason" is defined by `_shared-directive-checks.md §Check C`: ≥ 10 c
 
 If both conditions are true, add the ADR/INV ID to the **current orphan set**.
 
+#### Pass 1b: `no-directives:` misuse check (N3,
+docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md)
+
+`no-directives:` is a **warning suppressor**, read only by Pass 1 above — it
+never affects which directives compile. A field report documented an
+operator reading the name as an instruction ("this artefact contributes no
+directives"), applying it to an artefact whose effective rule set was
+actually non-empty, seeing no error, and reporting suppression complete
+while all directives kept compiling. This pass exists to catch exactly that
+misreading, at the moment it happens rather than by counting refs in
+compiled output later.
+
+While walking the same accepted ADRs and active invariants as Pass 1, for
+each one where the frontmatter contains a `no-directives:` key (with or
+without a valid reason) **AND** the effective rule set (parsed `directives`
+list plus `manual_directives` list) is **non-empty**, emit:
+
+```
+[WARN] ADR-NNN: no-directives: key present but N directive(s) are still compiling —
+    this key only suppresses the empty-ruleset warning above; it has no effect on
+    which directives project. To actually stop directives from compiling, use
+    suppressed_directives instead.
+```
+
+Collect these under a `### no-directives misuse warnings` header, same
+placement convention as the directive-quality warnings above (step 12c):
+skip the header entirely if none were produced. Same **grace period** as
+directive-quality warnings — exit 0 even when present; this pass never
+blocks compilation.
+
 #### Pass 2: History comparison and write
 
 Delegate the five-rule orphan-set state machine to the tier-2 helper. This is an authorized tier-2 orchestration call; the implementation is pure Go (no LLM dispatch).

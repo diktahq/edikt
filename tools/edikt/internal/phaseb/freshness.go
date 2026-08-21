@@ -74,6 +74,24 @@ func (d FreshnessDrift) String() string {
 // could not be performed — which is NOT the same as clean, and callers must
 // not treat it as such (INV-011: fail closed).  edikt-guard:allow
 func CheckRenderFreshness(projectRoot string, pairs []sidecar.Pair, opts Options) ([]FreshnessDrift, error) {
+	// Same defaulting Merge() applies to its own local copy of opts
+	// (merge.go:462-466) — duplicated here rather than assumed, because
+	// Merge()'s defaulting never reaches this function's OWN opts. Below,
+	// `opts` is passed to Merge() again (for the shadow render, via a
+	// second copy) AND used directly by liveSurfaces() for the live-
+	// directory scan. Merge() defaulting its own copy left liveSurfaces()
+	// reading an empty OutDir when a caller (real production code, not
+	// just tests) omitted it — os.ReadDir("") fails, the error is swallowed,
+	// and the entire orphan-detection half of this check silently found
+	// nothing. Reproduced directly; this is what closes it. (N1,
+	// docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md)
+	if opts.OutDir == "" {
+		opts.OutDir = filepath.Join(projectRoot, ".claude", "rules", "governance")
+	}
+	if opts.IndexPath == "" {
+		opts.IndexPath = filepath.Join(projectRoot, ".claude", "rules", "governance.md")
+	}
+
 	scratch, err := os.MkdirTemp("", "edikt-freshness-")
 	if err != nil {
 		return nil, fmt.Errorf("freshness scratch: %w", err)

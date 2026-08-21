@@ -38,10 +38,17 @@ For every ADR, invariant, and guideline `.md`, doctor verifies the co-located `<
 | Check | Severity | What it catches |
 |---|---|---|
 | `ORPHAN` | Hard fail | A `.edikt.yaml` exists with no sibling `.md` |
-| `MISSING` | Hard fail | A governance `.md` has no co-located sidecar |
+| `MISSING` | Hard fail, unless explicitly opted out (see below) | A governance `.md` has no co-located sidecar |
 | `PATH MISMATCH` | Hard fail | The sidecar's `path:` field doesn't resolve to the sibling `.md` |
 | Schema validation | Hard fail | Sidecar fails `templates/schemas/gov-sidecar.v2.schema.json` |
 | `directives: []` | Soft warning | Sidecar exists but has no directives — sidecar may need regeneration |
+
+**Opting an artifact out of `MISSING`.** `status: proposed` alone is not
+exempt — a proposed ADR can legitimately carry a real sidecar even before
+acceptance. For an artifact deliberately not yet projected, opt out
+explicitly with `sidecar: skip` (optional `reason: "…"`) in frontmatter, or
+a `<!-- edikt:sidecar:skip reason="…" -->` body marker — a different key
+from `no-directives:`, which suppresses an unrelated compile-time warning.
 
 ```text
 SIDECAR HEALTH

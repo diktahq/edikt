@@ -28,7 +28,13 @@ wrote. This sees hand-authored ones too.
 
 Reports a COUNT and a DENOMINATOR: "N of M valid". A run that found no files
 reports that nothing was found rather than a clean bill of health — an empty
-corpus and a fully valid one must never look the same.`,
+corpus and a fully valid one must never look the same.
+
+Directories whose basename CONTAINS "fixture" (e.g. fixtures/, test-fixtures/,
+sidecar-fixtures/) are skipped entirely — deliberately invalid or newer-schema
+*.edikt.yaml files for testing this gate itself can live there, under any
+configured paths.*, without joining this corpus census. This is the only
+exclusion mechanism; there is no separate ignore-file or per-file marker.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		root := "."
 		if len(args) > 0 {
@@ -41,7 +47,12 @@ corpus and a fully valid one must never look the same.`,
 			}
 			if d.IsDir() {
 				base := d.Name()
-				if base == ".git" || base == "node_modules" || base == "fixtures" {
+				// N4 (docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md):
+				// broadened from an exact "fixtures" match — a project's own
+				// naming convention (sidecar-fixtures/, test-fixtures/) is not
+				// guaranteed to be that one literal name, and this is the
+				// only exclusion mechanism schema-check has.
+				if base == ".git" || base == "node_modules" || strings.Contains(base, "fixture") {
 					return filepath.SkipDir
 				}
 				return nil

@@ -134,3 +134,55 @@ func TestRenderFreshness_DetectsAnOrphanedSurface(t *testing.T) {
 			"keeps loading and delivering governance nothing stands behind. got: %v", drifts)
 	}
 }
+
+// TestRenderFreshness_DetectsAnOrphanedSurface_RealCallShape is N1
+// (docs/internal/audits/TRIAGE-2026-08-20-bok-services-governance-projection.md):
+// the ACTUAL production call site (govrun/twophase.go, around the
+// `phaseb.CheckRenderFreshness` call) constructs its Options literal with only
+// CompiledAt/CompilerVersion/Excluded/TopicDescriptions set — never OutDir or
+// IndexPath, unlike every test above via freshnessOpts(). Before the fix,
+// liveSurfaces() silently scanned an empty path and orphan detection never
+// fired in production, even though the identical scenario above (fed through
+// freshnessOpts()) always caught it. This pins the real call shape, not the
+// test helper's.
+func TestRenderFreshness_DetectsAnOrphanedSurface_RealCallShape(t *testing.T) {
+	root := t.TempDir()
+	p := mkPair(t, root, "ADR-001-test", "alpha", []sidecar.Directive{
+		{Text: "Alpha rule. (ref: ADR-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "x"}},
+	})
+	p.ArtifactID = "ADR-001"
+	pairs := []sidecar.Pair{p}
+	if _, err := Merge(root, pairs, freshnessOpts(root)); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+
+	// The N1 scenario exactly: an orphaned compiled file from a topic no
+	// sidecar declares anymore, sitting directly in the governance output
+	// directory.
+	orphan := filepath.Join(root, ".claude", "rules", "governance", "classification.md")
+	if err := os.WriteFile(orphan, []byte("---\npaths:\n  - \"x/**\"\n---\n\n- Stale rule. (ref: ADR-099)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// THE REAL CALL SHAPE — no OutDir, no IndexPath, matching
+	// govrun/twophase.go's actual Options{} literal.
+	realCallOpts := Options{
+		CompiledAt:      "2026-08-20T00:00:00Z",
+		CompilerVersion: "0.7.2-test",
+	}
+
+	drifts, err := CheckRenderFreshness(root, pairs, realCallOpts)
+	if err != nil {
+		t.Fatalf("freshness check: %v", err)
+	}
+	found := false
+	for _, d := range drifts {
+		if strings.Contains(d.Path, "classification.md") && d.Kind == "unexpected" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("N1 regression: orphaned surface not reported when Options is constructed "+
+			"the way production code actually constructs it (OutDir/IndexPath unset). got: %v", drifts)
+	}
+}

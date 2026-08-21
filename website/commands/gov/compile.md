@@ -291,6 +291,8 @@ Resolve by:
 
 Orphan state is tracked in `.edikt/state/compile-history.json` via atomic rename. The `.edikt/state/` directory is auto-appended to `.gitignore` — this is local machine state, not repo state.
 
+**`no-directives:` misuse warning (v0.7.3):** `no-directives:` only suppresses the orphan warning above — it has no effect on which directives compile. If an artefact carries the key but its directives list is actually non-empty, compile now warns that the key isn't doing what its name suggests, and points at `suppressed_directives` for actually removing directives from compilation. Non-blocking, same grace period as the other warnings on this page.
+
 ## Directive quality checks
 
 Before writing, compile invokes the shared directive-quality sub-procedure (`commands/gov/_shared-directive-checks.md`) — the same sub-procedure used by `/edikt:gov:review`. It covers:
