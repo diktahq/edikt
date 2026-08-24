@@ -6,11 +6,13 @@
 # Format: paths are relative to the repo root, one per line.
 # Lines beginning with '#' and blank lines are ignored.
 
-# Phase A subagent dispatch — exempt per ADR-030 §"Roll-out" until the
-# tier-1-orchestrated rewrite ships. The hot path of the two-phase compile
-# retains its claude-CLI dependency until then; the prior v0.7.0 deadline
-# has passed without the rewrite landing — removal deadline reset to
-# v0.8.0. The re-orchestration decision (pure tier-1 Task dispatch,
-# ADR-044 pattern, vs. a host-dispatch abstraction that still shells out)
-# is tracked in BRAIN-009 Q8 — read that before starting the rewrite.
-tools/edikt/internal/phasea/runner.go
+# EMPTY — and this is the goal state, not a gap.
+#
+# The sole entry was tools/edikt/internal/phasea/runner.go, exempted per
+# ADR-030 for Phase A's claude-CLI dispatch, with a removal deadline that
+# slipped from v0.7.0 to v0.8.0. SPEC-013 replaced that dispatch with a
+# contract: tier-2 emits a plan, tier-1 fans the extractors out, tier-2
+# verifies. ClaudeRunner and phasea.Dispatcher were deleted in PLAN-v080
+# Phase 4; INV-012 now holds with no exceptions (PRD-007 FR-014).
+#
+# Adding anything back here requires amending ADR-030 first.

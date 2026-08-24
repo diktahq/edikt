@@ -410,9 +410,11 @@ Agent(
 )
 ```
 
-**Prompt body construction.** Build it with `python3 -c`, passing the intent,
-falsifying observation, verify command, and sandbox path as `sys.argv`
-values — never by shell-string interpolation. These fields are
+**Prompt body construction.** Build it with `bin/edikt util render`, passing the
+intent, falsifying observation, verify command, and sandbox path as `--field`
+values — never by shell-string interpolation. Substitution there is literal and
+single-pass, so a value cannot introduce a placeholder or a shell construct
+that a later stage would expand. These fields are
 attacker-influenceable (they come from sidecars, which come from artifact
 prose), and the binary's `AdversaryRequest.Validate` rejects null bytes,
 control characters, path traversal, and shell metacharacters at the boundary

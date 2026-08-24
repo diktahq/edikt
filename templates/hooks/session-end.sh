@@ -1,82 +1,10 @@
 #!/usr/bin/env bash
-# edikt: SessionEnd hook — flush event log, write session summary
-# Fires when a Claude Code session ends. Symmetric counterpart to session-start.sh.
-#
-# Output: {"continue": true} (JSON per Claude Code hook protocol)
-
-set -uo pipefail
-
-# Fast opt-out
-[ "${EDIKT_SESSION_END_SKIP:-0}" = "1" ] && { printf '{"continue": true}\n'; exit 0; }
-
-# Only run in edikt projects
-if [ ! -f '.edikt/config.yaml' ]; then
-    printf '{"continue": true}\n'
-    exit 0
-fi
-
-INPUT=$(cat 2>/dev/null || echo '{}')
-
-# ── python3 preflight (F-074/F-075 loud-failure bar) ────────────────────────
-# Absence used to fail extraction and the summary write silently, and the
-# stdout was byte-identical either way: {"continue": true}, no stderr, no
-# trace anywhere that last-session.json was never written.
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "edikt: session-end — python3 not found; the session summary was not written" >&2
-    printf '{"continue": true, "systemMessage": "⚠ edikt: python3 is missing — the session summary was not written."}\n'
-    exit 0
-fi
-
-# Extract session_id from payload (optional)
-SESSION_ID=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get("session_id", ""))
-except Exception:
-    pass
-' 2>/dev/null)
-
-mkdir -p "$HOME/.edikt/state" 2>/dev/null || true
-SUMMARY_FILE="$HOME/.edikt/state/last-session.json"
-EVENTS_FILE="$HOME/.edikt/events.jsonl"
-
-# Rotate events.jsonl if over 10MB
-if [ -f "$EVENTS_FILE" ]; then
-    SIZE=$(wc -c < "$EVENTS_FILE" 2>/dev/null | tr -d ' ' || echo 0)
-    if [ "${SIZE:-0}" -gt 10485760 ]; then
-        DATE=$(date +%Y%m%d)
-        mv "$EVENTS_FILE" "${EVENTS_FILE}.${DATE}" 2>/dev/null || true
-    fi
-fi
-
-# Write session summary (best-effort; failures don't block).
-# Use ensure_ascii=False + errors="replace" to tolerate exotic paths with
-# non-UTF8 bytes — falls back to placeholder chars rather than dropping
-# the summary entirely.
-TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
-python3 -c "
-import json, sys
-def safe(s):
-    try:
-        return s.encode('utf-8', errors='replace').decode('utf-8')
-    except Exception:
-        return repr(s)
-summary = {
-    'ts': safe(sys.argv[1]),
-    'session_id': safe(sys.argv[2]),
-    'cwd': safe(sys.argv[3]),
-}
-try:
-    with open(sys.argv[4], 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
-except Exception as e:
-    # Last-ditch: write an error marker so the user knows the summary existed
-    try:
-        with open(sys.argv[4], 'w') as f:
-            json.dump({'ts': safe(sys.argv[1]), 'error': str(e)}, f)
-    except Exception:
-        pass
-" "$TS" "$SESSION_ID" "$PWD" "$SUMMARY_FILE" 2>/dev/null || true
-
-printf '{"continue": true}\n'
+# edikt hook shim — dispatches to the edikt binary; first two rungs trust-gated.
+_G="${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; _T="${EDIKT_HOME:-$HOME/.edikt}/state/trusted-roots.json"
+_h() { command -v sha256sum >/dev/null 2>&1 && sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd -P)\":" "$_T" 2>/dev/null && return 0; [ -x "$_G" ] || return 1; H1="$(_h "$1")"; [ -n "$H1" ] && [ "$H1" = "$(_h "$_G")" ]; }
+EDIKT_BIN=""
+for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
+[ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook session-end did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"SessionEnd"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook session-end did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+exec "$EDIKT_BIN" hook run session-end --event SessionEnd

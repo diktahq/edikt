@@ -63,41 +63,14 @@ Plans with no progress table at all (rare — usually a half-written plan stub) 
 Use `python3` rather than `ls -t` for the mtime sort: in interactive shells `ls` is often aliased to `eza` or similar wrappers that ignore the `-t` flag and return alphabetic order, silently breaking the selection.
 
 ```bash
-ACTIVE_PLAN=$(python3 -c "
-import os, glob, re, sys
-plans_dir = sys.argv[1]
-COMPLETE_RE = re.compile(r'\b(done|pass(ed)?|complete(d)?)\b|✅', re.IGNORECASE)
-ROW_RE = re.compile(r'^\| *\d+[a-z]?\s*\|')
-PROGRESS_HEADING = re.compile(r'^##+ +Progress\b', re.IGNORECASE | re.MULTILINE)
-NEXT_HEADING = re.compile(r'^##+ +', re.MULTILINE)
-
-def progress_rows(body):
-    # Scope to the ## Progress section: false-positive rows from other tables
-    # in the plan body (cost estimates, phase prompts, dependency lists) must
-    # not be counted as progress rows.
-    m = PROGRESS_HEADING.search(body)
-    if not m:
-        return []
-    rest = body[m.end():]
-    nxt = NEXT_HEADING.search(rest)
-    section = rest[:nxt.start()] if nxt else rest
-    return [ln for ln in section.splitlines() if ROW_RE.match(ln)]
-
-files = sorted(
-    [f for f in glob.glob(os.path.join(plans_dir, 'PLAN-*.md')) if '.SUPERSEDED' not in f],
-    key=os.path.getmtime, reverse=True
-)
-for f in files:
-    with open(f, encoding='utf-8', errors='replace') as fh:
-        body = fh.read()
-    rows = progress_rows(body)
-    if not rows:
-        continue
-    # A plan is 'active' if at least one row is NOT a completion marker.
-    if any(not COMPLETE_RE.search(r) for r in rows):
-        print(f)
-        break
-" "{plans_dir}")
+# The newest PLAN-*.md whose ## Progress table still has an incomplete row.
+#
+# The scoping to `## Progress` is the whole algorithm, not a detail: a plan
+# body carries cost-estimate, phase-prompt and dependency tables whose rows
+# look identical to progress rows, and counting them made finished plans read
+# as active. `plan active` preserves that bound, and prints NOTHING when every
+# plan is complete — an empty answer, not a failure.
+ACTIVE_PLAN=$(bin/edikt plan active --dir "{plans_dir}")
 ```
 
 CRITICAL — use the detector's output verbatim. If `ACTIVE_PLAN` is empty, the dashboard MUST show "no active plan" — do NOT pick a fallback file from elsewhere, do NOT substitute the latest completed plan, do NOT use your own judgment about which plan looks "more relevant." If `ACTIVE_PLAN` is non-empty, the dashboard MUST report exactly that file as the active plan, regardless of how many phases it has done.

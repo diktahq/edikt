@@ -277,6 +277,11 @@
             "type": "string"
           },
           "description": "Legacy signals if present (v0.5.x sentinels). Extractor MAY use this as a hint when synthesizing the canonical signals field."
+        },
+        "raw_body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Verbatim inner text of the legacy sentinel block, captured ONLY when no structured list above could be parsed from it (hand-edited and pre-v0.4.3 shapes). Without it, a sentinel the parser cannot read is stripped from the .md and its content survives nowhere. The extractor treats this as prose to extract from, not as directives to copy verbatim."
         }
       }
     },

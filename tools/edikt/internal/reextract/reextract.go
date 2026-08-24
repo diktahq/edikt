@@ -29,7 +29,6 @@
 package reextract
 
 import (
-	"context"
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
@@ -41,7 +40,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
+	"errors"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -49,6 +48,7 @@ import (
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/diktahq/edikt/tools/edikt/internal/idvalidate"
 	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
+	"github.com/diktahq/edikt/tools/edikt/internal/pinpreserve"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
@@ -124,9 +124,6 @@ type Options struct {
 	// live corpus.
 	Only        []string
 	Concurrency int
-	// Runner is injectable so tests can count dispatches without paying LLM
-	// latency. Defaults to the production ClaudeRunner.
-	Runner phasea.Runner
 	// RequireCleanTree refuses to start when the working tree carries
 	// uncommitted changes, so the batch can land as one reviewable commit.
 	RequireCleanTree bool
@@ -155,12 +152,20 @@ type Result struct {
 	Failed        int      `json:"failed"`
 	FailedIDs     []string `json:"failed_ids,omitempty"`
 
+	// PlanID names the dispatch plan this run emitted for tier-1 to fan out.
+	// Dispatched counts the plan's items — work HANDED OFF, not work
+	// completed. Succeeded/Failed stay zero here by construction: this
+	// process no longer performs the extraction, and reporting a success
+	// count for work it did not do is exactly the unmeasured-as-measured
+	// shape this pass has been removing. They are filled by `phasea verify`.
+	PlanID string `json:"plan_id,omitempty"`
+
 	// PinsRestored counts human-pinned fields carried across regeneration,
 	// and Unrestorable names every one that could not be. The extractor never
 	// sees the previous sidecar (deliberately), so a regeneration wipes what a
 	// human pinned unless this path puts it back.
-	PinsRestored int           `json:"pins_restored"`
-	Unrestorable []PinnedField `json:"unrestorable,omitempty"`
+	PinsRestored int                       `json:"pins_restored"`
+	Unrestorable []pinpreserve.PinnedField `json:"unrestorable,omitempty"`
 	// LoadFailedIDs names every artifact whose PRIOR sidecar existed but
 	// failed to load — a categorically different case from "no prior
 	// sidecar", surfaced separately so a caller (or a human reading the run
@@ -185,8 +190,10 @@ func Run(opts Options) (*Result, error) {
 	if opts.Concurrency <= 0 {
 		opts.Concurrency = 4
 	}
-	if opts.Runner == nil {
-		opts.Runner = &phasea.ClaudeRunner{}
+	if opts.DispatchTimeout <= 0 {
+		// Was zero for every caller, which made recordingRunner's
+		// `if r.timeout > 0` guard dead and left this path unbounded.
+		opts.DispatchTimeout = govrun.DefaultDispatchTimeout
 	}
 	if opts.LedgerPath == "" {
 		opts.LedgerPath = filepath.Join(opts.ProjectRoot, LedgerRelPath)
@@ -348,10 +355,6 @@ func Run(opts Options) (*Result, error) {
 		return res, nil
 	}
 
-	if err := opts.Runner.Preflight(); err != nil {
-		return res, fmt.Errorf("cannot dispatch the extractor for %d artifact(s): %w", len(tasks), err)
-	}
-
 	// Capture pinned state BEFORE any dispatch. Reading it afterwards would
 	// read what the extractor just overwrote.
 	//
@@ -395,118 +398,61 @@ func Run(opts Options) (*Result, error) {
 		}
 	}
 
-	var mu sync.Mutex
-	recorder := &recordingRunner{
-		inner:   opts.Runner,
-		timeout: opts.DispatchTimeout,
-		preserve: func(t phasea.Task) (*PreserveResult, error) {
-			pr, err := PreservePinned(t.ArtifactID, pinnedBefore[t.ArtifactID], loadFailedBefore[t.ArtifactID], t.SidecarPath)
-			if err != nil {
-				return nil, err
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			res.PinsRestored += pr.DirectivePins
-			if pr.PathsRestored {
-				res.PinsRestored++
-			}
-			res.Unrestorable = append(res.Unrestorable, pr.Unrestorable...)
-			if pr.LoadFailed {
-				// One salient line for the artifact, not seven identical
-				// UNRESTORABLE lines (one per at-risk field) — the per-field
-				// detail still lands in res.Unrestorable for the per-artifact
-				// review ceremony (commands/gov/reextract.md Step 5) to walk
-				// through; this line is what makes the run's own stderr
-				// output impossible to miss.
-				res.LoadFailedIDs = append(res.LoadFailedIDs, t.ArtifactID)
-				fmt.Fprintf(opts.Stderr,
-					"  REFUSED %s: prior sidecar existed but failed to load (%v) — could not check for pinned state (paths, verify, human_approved_at, and others); this artifact's regeneration is NOT treated as clean, review required\n",
-					t.ArtifactID, loadFailedBefore[t.ArtifactID])
-			}
-			if pr.SidecarRewritten {
-				fmt.Fprintf(opts.Stderr, "  restored %s: %d directive pin(s)%s\n",
-					t.ArtifactID, pr.DirectivePins,
-					map[bool]string{true: ", approved paths", false: ""}[pr.PathsRestored])
-			}
-			if !pr.LoadFailed {
-				for _, u := range pr.Unrestorable {
-					fmt.Fprintf(opts.Stderr, "  UNRESTORABLE %s\n", u.String())
-				}
-			}
-			return pr, nil
-		},
-		onDone: func(t phasea.Task, err error) {
-			// Persist per completion, not at the end. What survives a kill
-			// must be what actually finished.
-			mu.Lock()
-			defer mu.Unlock()
-			e := Entry{CompletedAt: opts.Now().UTC().Format(time.RFC3339)}
-			if err != nil {
-				e.Status = StatusFailed
-				e.Err = oneLine(err.Error())
-			} else {
-				// ADR-053 — stamp the body-drift baseline (F-027).  edikt-guard:allow
-				//
-				// RunTwoPhase stamped; this path did not, so a forced
-				// re-extraction — the one operation that rewrites every
-				// sidecar and therefore most needs a baseline — was the only
-				// one that recorded none. The corpus sat at 0-of-71 measured
-				// after a full 65-artifact run.
-				//
-				// Here for the same reason it belongs in RunTwoPhase: the
-				// extractor has just read this parent and produced this
-				// sidecar from it, so the digest is genuinely "what
-				// extraction saw". A backfill pass would write a baseline
-				// claiming an extraction that never happened, converting
-				// "may be incomplete" into a confident lie.
-				//
-				// BEFORE the hash, not after: stamping rewrites the sidecar,
-				// so hashing first records a digest the file no longer has
-				// and resume re-dispatches work that succeeded.
-				if serr := sidecar.StampBodyDigest(t.SidecarPath, t.ParentPath,
-					os.ReadFile,
-					func(p string, b []byte) error { return os.WriteFile(p, b, 0o644) },
-				); serr != nil {
-					// Non-fatal, as in RunTwoPhase: the extraction succeeded
-					// and a missing baseline degrades to UNMEASURED, which is
-					// a safe state. Failing to stamp must not discard good
-					// extraction work — but it must not be silent either.
-					fmt.Fprintf(opts.Stderr,
-						"  warn: %s — could not record body-drift baseline: %v (reported as unmeasured)\n",
-						t.ArtifactID, serr)
-				}
-				e.Status = StatusDone
-				e.SidecarSHA256 = fileSHA256(t.SidecarPath)
-			}
-			ledger.Artifacts[t.ArtifactID] = e
-			if serr := saveLedger(opts.LedgerPath, ledger); serr != nil {
-				fmt.Fprintf(opts.Stderr, "  warn: ledger write failed for %s: %v\n", t.ArtifactID, serr)
-			}
-		},
+	// reextract no longer dispatches either.
+	//
+	// This was the second of ADR-030's two exempted call sites: a
+	// recordingRunner wrapping ClaudeRunner, fanned out by phasea.Dispatcher.
+	// Dispatching means invoking an LLM, which INV-012 forbids a tier-2
+	// binary from doing, so this path follows the compile path onto SPEC-013's
+	// contract — emit a plan, let tier-1 fan out, then `phasea restore` and
+	// `phasea verify`.
+	//
+	// The three behaviours recordingRunner carried are not lost, which is
+	// what D4 gates on. Pin preservation and the ADR-053 body-digest stamp
+	// are phasea.Restore's per-item work; the ledger write is the caller's,
+	// through RestoreOptions.OnItemRestored. The snapshot above still runs
+	// here, before anything is handed off, because it is the pre-rewrite
+	// baseline and this is the last moment the on-disk bytes are still what
+	// extraction is about to overwrite.
+	planOut, planErr := phasea.Plan(phasea.PlanOptions{ProjectRoot: opts.ProjectRoot, Force: opts.Force, Only: opts.Only})
+
+	// Nothing to plan is a SUCCESS, not a failure. It is the ordinary result
+	// of re-invoking on an already-regenerated corpus — the idempotence
+	// clause — and collapsing it into the error branch would make a
+	// well-behaved second run look like a broken one.
+	if planErr == nil && planOut != nil && planOut.ExitCode == phasea.ExitNothingToPlan {
+		if serr := saveLedger(opts.LedgerPath, ledger); serr != nil {
+			return res, serr
+		}
+		return res, nil
 	}
 
-	dis := &phasea.Dispatcher{
-		Runner:       recorder,
-		Concurrency:  opts.Concurrency,
-		ProgressOut:  opts.Stderr,
-		ErrorLogPath: filepath.Join(opts.ProjectRoot, ".edikt", "state", "compile-errors.log"),
+	if planErr != nil || planOut == nil || planOut.ExitCode != phasea.ExitPlanEmitted {
+		msg := "re-extraction could not emit a dispatch plan"
+		if planOut != nil && planOut.Message != "" {
+			msg = msg + ": " + planOut.Message
+		} else if planErr != nil {
+			msg = msg + ": " + planErr.Error()
+		}
+		return res, errors.New(msg)
 	}
-	start := opts.Now()
-	out := dis.Run(context.Background(), tasks)
-	res.Wall = opts.Now().Sub(start).Round(time.Second).String()
-	res.Failed = len(out.Failures)
-	res.Succeeded = res.Dispatched - res.Failed
-	for _, f := range out.Failures {
-		res.FailedIDs = append(res.FailedIDs, f.Task.ArtifactID)
-	}
-	sort.Strings(res.FailedIDs)
 
+	res.PlanID = planOut.Plan.PlanID
+	res.Dispatched = len(planOut.Plan.Items)
+	fmt.Fprintf(opts.Stderr,
+		"re-extraction planned: %d artifact(s), plan %s at %s\n",
+		len(planOut.Plan.Items), planOut.Plan.PlanID,
+		phasea.PlanFilePath(opts.ProjectRoot, planOut.Plan.PlanID))
+	fmt.Fprintln(opts.Stderr, "Run /edikt:gov:reextract from inside Claude Code: it fans out one")
+	fmt.Fprintln(opts.Stderr, "sidecar-extractor per plan item, then runs `bin/edikt phasea restore` and")
+	fmt.Fprintln(opts.Stderr, "`bin/edikt phasea verify`.")
+
+	// Persist the batch header before handing off. It carries started_at and
+	// the prompt_version this batch is bound to, which is what makes a later
+	// Record() (and any resume after it) part of THIS batch rather than an
+	// orphan write against a contract nobody recorded.
 	if err := saveLedger(opts.LedgerPath, ledger); err != nil {
 		return res, err
-	}
-	if res.Failed > 0 {
-		return res, fmt.Errorf("%d of %d dispatch(es) failed: %s (re-run to resume; succeeded artifacts are not re-dispatched)",
-			res.Failed, res.Dispatched, strings.Join(res.FailedIDs, ", "))
 	}
 	return res, nil
 }
@@ -629,41 +575,6 @@ func Status(root string) (*StatusReport, error) {
 	return st, nil
 }
 
-// recordingRunner wraps a Runner so each completion reaches the ledger as it
-// happens. The Dispatcher has no completion hook, and adding one there would
-// give every caller a persistence concern that only this one has.
-type recordingRunner struct {
-	inner   phasea.Runner
-	onDone  func(phasea.Task, error)
-	timeout time.Duration
-
-	// preserve carries human-pinned state across the regeneration. It runs
-	// between the dispatch and the ledger write, so a task is only recorded
-	// done once its pins are back on disk.
-	preserve func(phasea.Task) (*PreserveResult, error)
-}
-
-func (r *recordingRunner) Preflight() error { return r.inner.Preflight() }
-
-func (r *recordingRunner) Resync(ctx context.Context, t phasea.Task) error {
-	if r.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.timeout)
-		defer cancel()
-	}
-	err := r.inner.Resync(ctx, t)
-	if err == nil && r.preserve != nil {
-		if _, perr := r.preserve(t); perr != nil {
-			// A regeneration whose pins could not be restored is a FAILED
-			// regeneration, not a successful one with a warning: the sidecar
-			// on disk is now missing state a human put there, and recording it
-			// done would take it out of the resume set.
-			err = fmt.Errorf("regenerated %s but could not restore pinned state: %w", t.ArtifactID, perr)
-		}
-	}
-	r.onDone(t, err)
-	return err
-}
 
 // discoverEligible returns the live artifact pairs a batch covers: every
 // non-skipped artifact in the configured governance directories.

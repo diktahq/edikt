@@ -297,7 +297,8 @@ If headless mode is available (`claude` on PATH, `evaluator.mode: headless`):
 
 ```bash
 # Headless evaluator invocation compliant
-python3 -c 'import json,sys; print(json.dumps({"prd_path": sys.argv[1], "sidecar_path": sys.argv[2], "rubric_path": sys.argv[3], "rigor": sys.argv[4]}))' "{prd_md}" "{prd_yaml}" ".edikt/rubrics/prd.md" "{rigor}" | claude -p --model "{evaluator.model}" "Apply the rubric. Output JSON: {score: N, total: M, passed: bool, gaps: [...]}"
+bin/edikt util json emit --field 'prd_path={prd_md}' --field 'sidecar_path={prd_yaml}' \
+  --field 'rubric_path=.edikt/rubrics/prd.md' --field 'rigor={rigor}' | claude -p --model "{evaluator.model}" "Apply the rubric. Output JSON: {score: N, total: M, passed: bool, gaps: [...]}"
 ```
 
 Fall back to in-session reasoning if headless fails (visible warning).
@@ -369,30 +370,22 @@ Render `{prd_yaml}` from `templates/prd-sidecar.yaml.tmpl` with the full structu
 **Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/prd-sidecar.v1.schema.json`:
 
 ```bash
-python3 <<'PYEOF' "$PRD_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
-import sys, yaml, json
-from jsonschema import Draft202012Validator
-sidecar = yaml.safe_load(open(sys.argv[1]))
-schema = json.load(open(sys.argv[2]))
-errors = sorted(Draft202012Validator(schema).iter_errors(sidecar), key=lambda e: str(e.path))
-if errors:
-    print("SIDECAR INVALID:", file=sys.stderr)
-    for e in errors:
-        print(f"  {list(e.path) or '<root>'}: {e.message}", file=sys.stderr)
-    sys.exit(1)
-print("OK")
-PYEOF
+bin/edikt util schema-validate "$PRD_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
 ```
 
 If validation fails: do NOT write the sidecar. Show the user which fields are missing/invalid, fix in-memory, re-validate, then write. The sidecar is a contract — never write a non-conforming one.
 
-If `jsonschema` is not installed (pip module missing), fall back to a structural check: assert all 9 required top-level fields are present in the rendered dict before writing.
+The binary carries the validator, so there is no "module not installed" case and no
+second, weaker structural check to disagree with it. That fallback used to assert only
+that the required top-level fields were present — which ran on exactly the machines
+nobody tested on, and passed sidecars this one refuses.
 
 **Computing `{{schema_path}}`:** The template carries a `# yaml-language-server: $schema={{schema_path}}` header that enables IDE autocomplete. Compute the relative path from the PRD's parent directory to `.edikt/schemas/prd-sidecar.v1.schema.json`:
 
 ```bash
-# Use python3 with argv for safe relative-path computation
-SCHEMA_PATH=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json")
+# Path arithmetic in the binary: the operands are paths, and a shell
+# relative-path computation is where a spaced or dotted segment goes wrong.
+SCHEMA_PATH=$(bin/edikt util path relative "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json")
 ```
 
 For a PRD at `docs/product/prds/PRD-NNN-x.yaml` with default layout, `SCHEMA_PATH` resolves to `../../../.edikt/schemas/prd-sidecar.v1.schema.json`.
@@ -414,8 +407,8 @@ This bootstrap keeps the IDE autocomplete working on first-ever PRD creation wit
 **8b. Compute SHA-256 hashes:**
 
 ```bash
-MD_HASH=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PRD_MD")
-YAML_HASH=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PRD_YAML")
+MD_HASH=$(bin/edikt util hash "$PRD_MD")
+YAML_HASH=$(bin/edikt util hash "$PRD_YAML")
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
@@ -565,7 +558,8 @@ Ship stays pending — the sidecar is not mutated. Do NOT auto-edit verifies awa
 **Mutate sidecar:**
 
 ```bash
-python3 <<'PYEOF' "$PRD_YAML" "$FR_LIST" "$AUTHOR" "$NOW"
+AFFECTED=$(bin/edikt prd ship --file "$PRD_YAML" --frs "$FR_LIST" \
+  --author "$AUTHOR" --at "$NOW")' "$PRD_YAML" "$FR_LIST" "$AUTHOR" "$NOW"
 import sys, yaml
 path, frs_raw, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 frs = frs_raw.split(",")
@@ -629,22 +623,8 @@ Minimum 10 characters. Reject empty.
 **Mutate sidecar:**
 
 ```bash
-python3 <<'PYEOF' "$PRD_YAML" "$REASON" "$AUTHOR" "$NOW"
-import sys, yaml
-path, reason, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-with open(path) as f:
-    data = yaml.safe_load(f)
-data["status"] = "cancelled"
-data["cancelled_at"] = now
-data["cancelled_reason"] = reason
-data.setdefault("revision_history", []).append({
-    "at": now, "author": author, "action": "cancel",
-    "note": f"Cancelled: {reason}",
-})
-data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
-with open(path, "w") as f:
-    yaml.safe_dump(data, f, sort_keys=False)
-PYEOF
+bin/edikt prd close --file "$PRD_YAML" --status cancelled --reason "$REASON" \
+  --author "$AUTHOR" --at "$NOW"
 ```
 
 Recompute `_sync` hashes.
@@ -682,22 +662,8 @@ Minimum 10 characters. Reject empty.
 **Mutate sidecar:**
 
 ```bash
-python3 <<'PYEOF' "$PRD_YAML" "$REASON" "$AUTHOR" "$NOW"
-import sys, yaml
-path, reason, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-with open(path) as f:
-    data = yaml.safe_load(f)
-data["status"] = "deprecated"
-data["deprecated_at"] = now
-data["deprecated_reason"] = reason
-data.setdefault("revision_history", []).append({
-    "at": now, "author": author, "action": "deprecate",
-    "note": f"Deprecated: {reason}",
-})
-data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
-with open(path, "w") as f:
-    yaml.safe_dump(data, f, sort_keys=False)
-PYEOF
+bin/edikt prd close --file "$PRD_YAML" --status deprecated --reason "$REASON" \
+  --author "$AUTHOR" --at "$NOW"
 ```
 
 Recompute `_sync` hashes.
@@ -778,7 +744,14 @@ The new PRD gets its own `id: PRD-MMM` from the live-injected next number.
 **Link supersession:**
 
 ```bash
-python3 <<'PYEOF' "$OLD_YAML" "$NEW_YAML" "$OLD_ID" "$NEW_ID" "$AUTHOR" "$NOW" "$FORCED"
+# Both sidecars get an audited entry. A supersession recorded only on the old
+# PRD leaves the new one — the document people actually read — claiming no
+# lineage.
+FORCED_FLAG=""; [ "$FORCED" = "1" ] && FORCED_FLAG="--forced"
+bin/edikt prd supersede \
+  --old-file "$OLD_YAML" --new-file "$NEW_YAML" \
+  --old-id "$OLD_ID" --new-id "$NEW_ID" $FORCED_FLAG \
+  --author "$AUTHOR" --at "$NOW"' "$OLD_YAML" "$NEW_YAML" "$OLD_ID" "$NEW_ID" "$AUTHOR" "$NOW" "$FORCED"
 import sys, yaml
 old_path, new_path, old_id, new_id, author, now, forced = sys.argv[1:]
 with open(old_path) as f:

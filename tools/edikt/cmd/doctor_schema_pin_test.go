@@ -62,7 +62,7 @@ func TestSchemaPinCheck_belowFloor_v1IsExpected(t *testing.T) {
 
 func TestSchemaPinCheck_atFloor_v2Clean(t *testing.T) {
 	root := scaffoldProject(t)
-	writeConfigWithVersion(t, root, "0.7.0-rc3")
+	writeConfigWithVersion(t, root, "0.8.0-rc3")
 	mdRel := "docs/architecture/decisions/ADR-100-x.md"
 	validMd(t, root, mdRel)
 	writeFile(t, filepath.Join(root, "docs/architecture/decisions/ADR-100-x.edikt.yaml"), v2Sidecar(mdRel))
@@ -74,12 +74,12 @@ func TestSchemaPinCheck_atFloor_v2Clean(t *testing.T) {
 }
 
 // This is the positive case: this is exactly the state a premature
-// edikt_version bump (finding 2) produces — pinned at the v0.7+ line while a
+// edikt_version bump (finding 2) produces — pinned at the v0.8+ line while a
 // sidecar is still schema_version 1 — and the state the upgrade-flow gate in
 // commands/upgrade.md Step 6 exists to prevent.
 func TestSchemaPinCheck_atFloor_v1Disagreement(t *testing.T) {
 	root := scaffoldProject(t)
-	writeConfigWithVersion(t, root, "0.7.0-rc3")
+	writeConfigWithVersion(t, root, "0.8.0-rc3")
 	mdRel := "docs/architecture/decisions/ADR-100-x.md"
 	validMd(t, root, mdRel)
 	writeFile(t, filepath.Join(root, "docs/architecture/decisions/ADR-100-x.edikt.yaml"), validSidecar(mdRel))
@@ -87,7 +87,7 @@ func TestSchemaPinCheck_atFloor_v1Disagreement(t *testing.T) {
 	var out bytes.Buffer
 	got := runSchemaPinCheck(root, &out)
 	if got != 1 {
-		t.Fatalf("pinned at v0.7+ with a v1-shaped sidecar: expected 1 warning, got %d\n%s", got, out.String())
+		t.Fatalf("pinned at v0.8+ with a v1-shaped sidecar: expected 1 warning, got %d\n%s", got, out.String())
 	}
 	s := out.String()
 	if !strings.Contains(s, "ADR-100") {

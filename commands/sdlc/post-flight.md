@@ -77,43 +77,28 @@ esac
 # and contract" section above has always allowed mixed case (`A-Za-z`).
 # Casefolding here silently disagreed with that contract — fixed by dropping
 # it, not by lowercasing the contract.
-PLAN=$(python3 -c '
-import sys, unicodedata, re
-v = unicodedata.normalize("NFKC", sys.argv[1]).strip()
-if not re.match(r"^[A-Za-z0-9._-]{1,200}$", v):
-    sys.exit(1)
-sys.stdout.write(v)
-' "$PLAN_RAW") || {
-    python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"plan slug fails allowlist","input":sys.argv[1]}))' "$PLAN_RAW"
+PLAN=$(bin/edikt util normalize --no-fold "$PLAN_RAW") \
+    && bin/edikt util match "$PLAN" --pattern '^[A-Za-z0-9._-]{1,200}$' || {
+    bin/edikt util json emit --field 'status=error' --field 'reason=plan slug fails allowlist' --field "input=$PLAN_RAW"
     exit 1
 }
 PLAN_FILE="<plans-dir>/PLAN-${PLAN}.md"
 
 if [ -n "$PHASE_RAW" ]; then
-    PHASE=$(python3 -c '
-import sys, unicodedata, re
-v = unicodedata.normalize("NFKC", sys.argv[1]).strip()
-if not re.match(r"^[0-9]{1,3}$", v):
-    sys.exit(1)
-sys.stdout.write(v)
-' "$PHASE_RAW") || {
-        python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"phase number fails allowlist","input":sys.argv[1]}))' "$PHASE_RAW"
+    PHASE=$(bin/edikt util normalize --no-fold "$PHASE_RAW") \
+        && bin/edikt util match "$PHASE" --pattern '^[0-9]{1,3}$' || {
+        bin/edikt util json emit --field 'status=error' --field 'reason=phase number fails allowlist' --field "input=$PHASE_RAW"
         exit 1
     }
 else
     # Auto-detect from plan progress table — implementation reads the
     # most recent done or in-progress row.
-    PHASE=$(python3 -c '
-import re, sys
-text = open(sys.argv[1]).read()
-last = None
-for line in text.splitlines():
-    m = re.match(r"^\|\s*([0-9]+)\s*\|\s*(done|in-progress)\s*", line, re.I)
-    if m: last = m.group(1)
-print(last or "")
-' "$PLAN_FILE") || PHASE=""
+    # LAST done/in-progress row, not the highest number: the table is written
+    # in phase order, and a plan whose rows are out of numerical order is
+    # saying something about its own sequencing that a max() would discard.
+    PHASE=$(bin/edikt plan last-phase --file "$PLAN_FILE") || PHASE=""
     if [ -z "$PHASE" ]; then
-        python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"could not auto-detect phase from plan"}))'
+        bin/edikt util json emit --field 'status=error' --field 'reason=could not auto-detect phase from plan'
         exit 1
     fi
 fi
@@ -133,8 +118,8 @@ L1_VERDICT_PATH=$(ls -t ".edikt/state/verify/${STEM_ID}-phase-${PHASE}-"*.json \
                         ".edikt/state/verify/${STEM_FULL}-phase-${PHASE}-"*.json \
                         2>/dev/null | head -1)
 
-if [ -z "$L1_VERDICT_PATH" ] || ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$L1_VERDICT_PATH" 2>/dev/null; then
-    python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"L1 verdict malformed or missing"}))'
+if [ -z "$L1_VERDICT_PATH" ] || ! bin/edikt util json validate "$L1_VERDICT_PATH" 2>/dev/null; then
+    bin/edikt util json emit --field 'status=error' --field 'reason=L1 verdict malformed or missing'
     exit 1
 fi
 # L1_VERDICT_PATH must conform to templates/schemas/verify-report.v1.schema.json.
@@ -145,16 +130,20 @@ fi
 ```bash
 # Env var takes precedence — for emergency rollback when config is corrupt.
 if [ "${EDIKT_DISABLE_POST_FLIGHT:-0}" = "1" ]; then
-    python3 -c 'import json,sys; print(json.dumps({"status":"skipped","reason":"post-flight disabled (env)"}))'
+    bin/edikt util json emit --field 'status=skipped' --field 'reason=post-flight disabled (env)'
     exit 0
 fi
 
 # Config gate.
 SCOPE_JSON=$(bin/edikt gov post-flight-scope --json 2>/dev/null || echo '{"enabled":true,"specialists":[]}')
-ENABLED=$(echo "$SCOPE_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("1" if d.get("enabled") else "0")')
+# `json get` prints the JSON value ("true"/"false"), where the python printed
+# "1"/"0". The comparison below moves with it — a conversion that changed the
+# VALUE and left the test comparing against "1" would have disabled post-flight
+# on every run while still reporting a reason.
+ENABLED=$(printf '%s' "$SCOPE_JSON" | bin/edikt util json get - enabled --default false)
 
-if [ "$ENABLED" != "1" ]; then
-    python3 -c 'import json,sys; print(json.dumps({"status":"skipped","reason":"post-flight disabled"}))'
+if [ "$ENABLED" != "true" ]; then
+    bin/edikt util json emit --field 'status=skipped' --field 'reason=post-flight disabled'
     exit 0
 fi
 ```
@@ -199,7 +188,7 @@ if [ -z "$CHANGED_FILES" ]; then
     # Persist an audit record even on skip — downstream callers depend on the
     # composite report existing for every post-flight run.
     write_skip_report "$PLAN" "$PHASE" "empty diff" "$DIFF_FILE"
-    python3 -c 'import json,sys; print(json.dumps({"status":"skipped","reason":"empty diff"}))'
+    bin/edikt util json emit --field 'status=skipped' --field 'reason=empty diff'
     rm -f "$DIFF_FILE"
     exit 0
 fi
@@ -224,27 +213,10 @@ Compute the effective specialist set:
 # Auto-detection: shell out to a python heredoc that reads
 # commands/_shared-agent-routing.md's pattern table and matches CHANGED_FILES.
 # Pass the list to gov post-flight-scope which composes (auto ∪ required) − never.
-AUTO_DETECTED=$(python3 -c '
-import re, sys
-# Minimal auto-detect: file-extension → specialist. The full routing table
-# lives in commands/_shared-agent-routing.md.
-routing = {
-    r"\.go$": "backend",
-    r"\.(ts|tsx)$": "frontend",
-    r"\.sql$": "dba",
-    r"templates/hooks/.*\.sh$": "security",
-    r"\.github/workflows/": "sre",
-}
-detected = set()
-for line in sys.argv[1].splitlines():
-    for pat, spec in routing.items():
-        if re.search(pat, line):
-            detected.add(spec)
-print(",".join(sorted(detected)))
-' "$CHANGED_FILES")
+AUTO_DETECTED=$(bin/edikt gov detect-specialists --files "$CHANGED_FILES")
 
 SPECIALISTS_JSON=$(bin/edikt gov post-flight-scope --json --auto-detected "$AUTO_DETECTED" 2>/dev/null || echo '{"specialists":[]}')
-SPECIALISTS=$(echo "$SPECIALISTS_JSON" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin).get("specialists", [])))')
+SPECIALISTS=$(printf '%s' "$SPECIALISTS_JSON" | bin/edikt util json join - specialists)
 ```
 
 If `SPECIALISTS` is empty after scope filter, L3 is skipped (`l3_summary.status=skipped`, reason=`no specialists in effective set`).
@@ -318,15 +290,9 @@ if [ "${EDIKT_POSTFLIGHT_STUB:-0}" = "1" ]; then
     if [ ! -f "$FIXTURE" ]; then
         FIXTURE="test/fixtures/post-flight-reports/valid/happy-path.json"
     fi
-    REPORT_JSON=$(python3 -c '
-import json, sys, datetime, pathlib
-tpl = json.loads(pathlib.Path(sys.argv[1]).read_text())
-tpl["meta"]["plan"] = sys.argv[2]
-tpl["meta"]["phase"] = int(sys.argv[3])
-tpl["meta"]["ran_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-tpl["meta"]["dispatch_mode"] = "stub"
-print(json.dumps(tpl, indent=2))
-' "$FIXTURE" "$PLAN" "$PHASE")
+    REPORT_JSON=$(bin/edikt util json stamp "$FIXTURE" \
+      --set "meta.plan=$PLAN" --set-int "meta.phase=$PHASE" \
+      --set meta.dispatch_mode=stub --now meta.ran_at)
 fi
 ```
 
@@ -339,35 +305,13 @@ mkdir -p "$REPORT_DIR"
 REPORT_JSON_PATH="$REPORT_DIR/${PLAN}-${PHASE}-${TS}.json"
 REPORT_MD_PATH="$REPORT_DIR/${PLAN}-${PHASE}-${TS}.md"
 
-# Validate + write the JSON via python3 json.dumps.
-python3 -c '
-import json, sys, pathlib
-data = json.loads(sys.argv[1])
-pathlib.Path(sys.argv[2]).write_text(json.dumps(data, indent=2) + "\n")
-' "$REPORT_JSON" "$REPORT_JSON_PATH"
+# Parsed before it is written — the failure belongs to the step that can still
+# do something about it, not to whoever reads the file later.
+printf '%s' "$REPORT_JSON" | bin/edikt util json format --indent 2 > "$REPORT_JSON_PATH"
 
-# Human-readable Markdown rendering (inline — no separate .sh helper).
-python3 -c '
-import json, sys, pathlib
-data = json.loads(sys.argv[1])
-lines = []
-m = data["meta"]
-lines.append(f"# Post-flight report — {m[\"plan\"]} phase {m[\"phase\"]}\n")
-lines.append(f"Ran at: {m[\"ran_at\"]}  ({m[\"dispatch_mode\"]})\n")
-for layer in ("l1", "l2", "l3"):
-    s = data[f"{layer}_summary"]
-    lines.append(f"## {layer.upper()}: {s[\"status\"]}")
-    if "reason" in s: lines.append(f"  {s[\"reason\"]}")
-findings = data.get("findings", [])
-if findings:
-    lines.append(f"\n## Findings ({len(findings)})\n")
-    for f in findings:
-        srcs = ", ".join(f["sources"])
-        lines.append(f"- **{f[\"severity\"]}** `{f[\"file\"]}:{f[\"line_range\"]}` [{srcs}] {f[\"issue_class\"]} — {f[\"description\"]}")
-else:
-    lines.append("\n## Findings: none\n")
-pathlib.Path(sys.argv[2]).write_text("\n".join(lines) + "\n")
-' "$REPORT_JSON" "$REPORT_MD_PATH"
+# Human-readable Markdown rendering. A renderer, not a decision: nothing in it
+# chooses what goes in the report or what a status means — that stays here.
+bin/edikt gov post-flight-render --report "$REPORT_JSON_PATH" --out "$REPORT_MD_PATH"
 ```
 
 ### 11. Append telemetry
@@ -379,19 +323,12 @@ METRICS=".edikt/state/post-flight/.metrics.jsonl"
 LOCK="${METRICS}.lock"
 (
     flock -x 9
-    python3 -c '
-import json, sys
-print(json.dumps({
-    "ts": sys.argv[1],
-    "plan": sys.argv[2],
-    "phase": int(sys.argv[3]),
-    "dispatch_mode": sys.argv[4],
-    "l1_status": sys.argv[5],
-    "l2_status": sys.argv[6],
-    "l3_status": sys.argv[7],
-    "synthesis_status": sys.argv[8],
-    "elapsed_ms": int(sys.argv[9])
-}))' "$TS" "$PLAN" "$PHASE" "$DISPATCH_MODE" "$L1_STATUS" "$L2_STATUS" "$L3_STATUS" "$SYNTH_STATUS" "$ELAPSED_MS" >> "$METRICS"
+    bin/edikt util json emit \
+      --field "ts=$TS" --field "plan=$PLAN" --int "phase=$PHASE" \
+      --field "dispatch_mode=$DISPATCH_MODE" \
+      --field "l1_status=$L1_STATUS" --field "l2_status=$L2_STATUS" \
+      --field "l3_status=$L3_STATUS" --field "synthesis_status=$SYNTH_STATUS" \
+      --int "elapsed_ms=$ELAPSED_MS" >> "$METRICS"
 ) 9>"$LOCK"
 ```
 
@@ -400,17 +337,11 @@ print(json.dumps({
 `diff_fallback` surfaces the Step 3 fallback loudly in the command's own output contract — `null` when the phase-start SHA was found, `"HEAD~1..HEAD"` when it wasn't (matching the ⚠ line already printed in Step 3). This field is part of the stdout summary only; it is NOT added to the persisted composite report, whose `meta` object is schema-locked (`additionalProperties: false` in `templates/agents/post-flight-report.schema.json`).
 
 ```bash
-python3 -c '
-import json, sys
-print(json.dumps({
-    "status": "ok",
-    "plan": sys.argv[1],
-    "phase": int(sys.argv[2]),
-    "report_json": sys.argv[3],
-    "report_md": sys.argv[4],
-    "elapsed_ms": int(sys.argv[5]),
-    "diff_fallback": (sys.argv[6] or None)
-}, indent=2))' "$PLAN" "$PHASE" "$REPORT_JSON_PATH" "$REPORT_MD_PATH" "$ELAPSED_MS" "$DIFF_FALLBACK"
+bin/edikt util json emit --indent 2 \
+  --field 'status=ok' --field "plan=$PLAN" --int "phase=$PHASE" \
+  --field "report_json=$REPORT_JSON_PATH" --field "report_md=$REPORT_MD_PATH" \
+  --int "elapsed_ms=$ELAPSED_MS" \
+  --field-or-null "diff_fallback=$DIFF_FALLBACK"
 
 rm -f "$DIFF_FILE"
 exit 0
@@ -425,7 +356,16 @@ The composite JSON conforms to `templates/agents/post-flight-report.schema.json`
 ## Invariants honoured
 
 - **Tier-1 markdown only.** No new Go binary verb. Glob/Read/Bash/Agent tools, plus the `bin/edikt gov post-flight-scope` query.
-- **Safe JSON construction.** Every JSON object the command emits is constructed via `python3 -c 'import json,sys; print(json.dumps(...))'` with values passed as separate argv elements. Shell-string concatenation of JSON is forbidden.
+- **Safe JSON construction.** Every JSON object the command emits is built by a
+  serializer with values passed as separate arguments — `bin/edikt util json emit
+  --field`, nesting one emit inside another's `--json` where the document has
+  depth. Shell-string concatenation of JSON is forbidden, and a hand-written
+  `--json '{"k":"'"$v"'"}'` fragment IS concatenation: a `$v` carrying a quote
+  breaks the document exactly as a printf would.
+
+  This named an inline python3 `json.dumps` call until 2026-08-23. The
+  requirement was never the interpreter — only that a value be ENCODED rather
+  than pasted. python3 was simply the one serializer tier-1 had.
 - **No agent text into Claude-facing channels.** Agent verdict text is persisted to JSON report files. It is NEVER interpolated into `systemMessage` or any other Claude-facing channel by this command. Downstream callers that surface verdict text must follow the same rule.
 - **Input validation.** Every external value — plan slug, phase number, ref range, topic name, specialist name — is NFKC-normalized + allowlist-validated before it reaches shell argv, a path, or a prompt. Untrusted values flow as separate argv elements, never concatenated into evaluated strings.
 - **Hermetic tests.** The `test/test-sdlc-post-flight.sh` e2e is hermetic: tmpdir-staged, no host `~/.claude/` reads, runs under `EDIKT_POSTFLIGHT_STUB=1`.
@@ -444,23 +384,32 @@ write_skip_report() {
     ts=$(date -u +%Y%m%dT%H%M%SZ)
     local report_dir=".edikt/state/post-flight"
     mkdir -p "$report_dir"
-    python3 -c '
-import json, sys, datetime, pathlib
-report = {
-    "meta": {
-        "plan": sys.argv[1],
-        "phase": int(sys.argv[2]),
-        "ran_at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "synthesizer_version": "1.0.0",
-        "dispatch_mode": "auto-hook" if sys.argv[5] == "1" else "manual",
-    },
-    "l1_summary": {"status": "passed"},  # caller asserted L1 PASS to even invoke us
-    "l2_summary": {"status": "skipped", "reason": sys.argv[3]},
-    "l3_summary": {"status": "skipped", "reason": sys.argv[3]},
-    "findings": [],
-}
-pathlib.Path(sys.argv[4]).write_text(json.dumps(report, indent=2) + "\n")
-' "$plan" "$phase" "$reason" "$report_dir/${plan}-${phase}-${ts}.json" "${EDIKT_AUTO_HOOK:-0}"
+    # dispatch_mode is resolved in shell rather than inside the emitter: the
+    # emitter takes values, it does not branch on them.
+    local mode="manual"
+    [ "${EDIKT_AUTO_HOOK:-0}" = "1" ] && mode="auto-hook"
+
+    # NESTED EMITS, NOT A HAND-BUILT FRAGMENT. Writing
+    # --json "meta={\"plan\":\"$plan\",...}" would be shell-string-
+    # concatenated JSON — the exact thing the Safe JSON construction invariant
+    # below forbids — and a $reason containing a quote would break the
+    # document. Each level is emitted by the binary, so every value crosses as
+    # argv at every depth.
+    META=$(bin/edikt util json emit \
+      --field "plan=$plan" --int "phase=$phase" \
+      --field "ran_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --field 'synthesizer_version=1.0.0' --field "dispatch_mode=$mode")
+    SKIPPED=$(bin/edikt util json emit --field 'status=skipped' --field "reason=$reason")
+    # l1_summary is "passed" because the caller asserted L1 PASS to reach here.
+    L1=$(bin/edikt util json emit --field 'status=passed')
+
+    bin/edikt util json emit --indent 2 \
+      --json "meta=$META" \
+      --json "l1_summary=$L1" \
+      --json "l2_summary=$SKIPPED" \
+      --json "l3_summary=$SKIPPED" \
+      --json 'findings=[]' \
+      > "$report_dir/${plan}-${phase}-${ts}.json"
 }
 ```
 

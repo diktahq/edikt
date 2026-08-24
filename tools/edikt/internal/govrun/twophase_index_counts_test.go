@@ -38,6 +38,13 @@ func stageWithRetiredADR(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(adrDir, "ADR-002-retired.md"), []byte(retired), 0o644); err != nil {
 		t.Fatalf("write retired adr: %v", err)
 	}
+
+	// Stage the live ADR's sidecar. This was produced mid-compile by a
+	// bootstrapRunner injected as TwoPhaseOptions.Runner; Phase A no longer
+	// dispatches from tier-2 (SPEC-013), so the extractor's output is a
+	// fixture now. The retired ADR deliberately gets none — it is filtered
+	// out before Phase A, which is the subject of these tests.
+	writeBootstrapSidecar(t, adrDir, "ADR-001-test.md", "ADR-001")
 	return root
 }
 
@@ -57,24 +64,31 @@ func TestRunTwoPhase_IndexReportsRetiredExclusions(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
 
 	root := stageWithRetiredADR(t)
-	runner := &bootstrapRunner{}
 	var errBuf, outBuf bytes.Buffer
 
-	if _, err := RunTwoPhase(TwoPhaseOptions{
+	res, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      runner,
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",
-	}, model.RealClock{}); err != nil {
+	}, model.RealClock{})
+	if err != nil {
 		t.Fatalf("compile failed: %v\nstderr:\n%s", err, errBuf.String())
 	}
 
 	// The retired ADR must not have been dispatched to the extractor —
 	// if it were, the "excluded" count below would be measuring the wrong
 	// thing and the test could pass for the wrong reason.
-	if len(runner.dispatched) != 1 || runner.dispatched[0] != "ADR-001" {
-		t.Fatalf("expected only ADR-001 dispatched; got %v", runner.dispatched)
+	// "only ADR-001 was dispatched" used to be read off the fake runner. The
+	// retired ADR is filtered out BEFORE Phase A, so with ADR-001's sidecar
+	// staged there is no work left and no plan is emitted at all — which is
+	// the same claim, observed at the point that still exists. Asserting it
+	// keeps a retired artifact silently entering the work-list from passing.
+	if len(res.BootstrapSidecars) != 0 {
+		t.Fatalf("nothing should need extraction; got %v", res.BootstrapSidecars)
+	}
+	if _, serr := os.Stat(filepath.Join(root, "docs", "architecture", "decisions", "ADR-002-retired.edikt.yaml")); serr == nil {
+		t.Fatal("the retired ADR got a sidecar; it must be excluded before Phase A")
 	}
 
 	idxBody, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance.md"))
@@ -104,12 +118,14 @@ func TestRunTwoPhase_IndexReportsZeroExclusionsAsMeasured(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
 
 	root := stageNeverInitialised(t)
-	runner := &bootstrapRunner{}
+	// Stage the extractor's output so Phase A has no work and Phase B runs.
+	// The header this test reads is Phase B's.
+	writeBootstrapSidecar(t, filepath.Join(root, "docs", "architecture", "decisions"),
+		"ADR-001-test.md", "ADR-001")
 	var errBuf, outBuf bytes.Buffer
 
 	if _, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      runner,
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",

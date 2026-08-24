@@ -1,0 +1,29 @@
+schema_version: 1
+hook: instructions-loaded
+scenarios:
+- id: baseline
+  axis:
+  - payload
+  payload: test/fixtures/hook-payloads/instructions-loaded-basic.json
+  config: default
+  notes: Baseline payload-axis coverage.
+- id: flag-off
+  axis:
+  - config
+  config: configs/flags-off.yaml
+  notes: Config-axis coverage with the feature flag cleared.
+- id: no-python3
+  axis: [environment]
+  env:
+    PATH: /usr/bin:/bin
+  notes: Environment-axis coverage — the F-075 python3-absence sweep shape.
+- id: repeat-fire
+  axis:
+  - ordering
+  - payload
+  sequence:
+  - payload: test/fixtures/hook-payloads/instructions-loaded-basic.json
+    delay_ms: 0
+  - payload: test/fixtures/hook-payloads/instructions-loaded-basic.json
+    delay_ms: 500
+  notes: Ordering-axis coverage — the duplicate-invocation class ADR-050 names.

@@ -2,7 +2,6 @@ package govrun
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -10,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
 	"github.com/diktahq/edikt/tools/edikt/model"
 )
 
@@ -18,28 +16,36 @@ import (
 // standing in for the extractor exactly as bootstrapRunner does. Artifacts
 // absent from globs get NO paths key at all — an undeclared sidecar, which
 // is the case the scope fallback exists for.
-type scopeRunner struct {
-	topics map[string]string   // artifact ID -> topic
-	globs  map[string][]string // artifact ID -> declared code globs
-}
-
-func (r *scopeRunner) Preflight() error { return nil }
-
-func (r *scopeRunner) Resync(_ context.Context, t phasea.Task) error {
+// writeScopeSidecar writes the sidecar the extractor would have produced for
+// one artifact: a topic, optional declared code globs, and one directive.
+//
+// This was a scopeRunner injected as TwoPhaseOptions.Runner and "dispatched"
+// by Phase A. Phase A no longer dispatches from tier-2 (SPEC-013), so the
+// extractor's output is staged as a fixture instead. These tests were always
+// about Phase B's topic scoping and retirement; the fake dispatch was only
+// how the corpus got its sidecars.
+//
+// The quote must appear verbatim in the parent body, or the sidecar reads as
+// anchor-drifted and the compile refuses before Phase B runs.
+func writeScopeSidecar(t *testing.T, adrDir, id, topic string, globs []string) {
+	t.Helper()
 	var b strings.Builder
-	fmt.Fprintf(&b, "schema_version: 1\ntopic: %q\n", r.topics[t.ArtifactID])
-	fmt.Fprintf(&b, "path: \"docs/architecture/decisions/%s\"\n", filepath.Base(t.ParentPath))
-	if g := r.globs[t.ArtifactID]; len(g) > 0 {
+	fmt.Fprintf(&b, "schema_version: 1\ntopic: %q\n", topic)
+	fmt.Fprintf(&b, "path: \"docs/architecture/decisions/%s-test.md\"\n", id)
+	if len(globs) > 0 {
 		b.WriteString("paths:\n")
-		for _, p := range g {
+		for _, p := range globs {
 			fmt.Fprintf(&b, "  - %q\n", p)
 		}
 	}
 	// Signals are validated against ^[a-z0-9][a-z0-9 _.-]*$ — lower-case.
-	fmt.Fprintf(&b, "signals:\n  - %q\n", strings.ToLower(t.ArtifactID)+" signal")
-	fmt.Fprintf(&b, "directives:\n  - text: \"Test rule MUST hold. (ref: %s)\"\n", t.ArtifactID)
+	fmt.Fprintf(&b, "signals:\n  - %q\n", strings.ToLower(id)+" signal")
+	fmt.Fprintf(&b, "directives:\n  - text: \"Test rule MUST hold. (ref: %s)\"\n", id)
 	b.WriteString("    source_excerpt:\n      line_start: 9\n      line_end: 9\n      quote: \"Test rule.\"\n")
-	return os.WriteFile(t.SidecarPath, []byte(b.String()), 0o644)
+	p := filepath.Join(adrDir, fmt.Sprintf("%s-test.edikt.yaml", id))
+	if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("write sidecar: %v", err)
+	}
 }
 
 // stageScopeCorpus writes three ADRs across two topics:
@@ -53,13 +59,20 @@ func stageScopeCorpus(t *testing.T) string {
 	if err := os.MkdirAll(adrDir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
+	topics := map[string]string{"ADR-001": "testing", "ADR-002": "testing", "ADR-003": "security"}
+	globs := map[string][]string{
+		"ADR-001": {"src/**/*.go"},
+		"ADR-003": {"auth/**", "src/session.go"},
+	}
 	for _, id := range []string{"001", "002", "003"} {
-		// Line 9 is "Test rule." — the quote the fake runner anchors to.
+		// Line 9 is "Test rule." — the quote the sidecar anchors to.
 		body := fmt.Sprintf("---\nstatus: accepted\n---\n\n# ADR-%s — Test\n\n## Decision\n\nTest rule.\n", id)
 		p := filepath.Join(adrDir, fmt.Sprintf("ADR-%s-test.md", id))
 		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 			t.Fatalf("write adr: %v", err)
 		}
+		artifactID := "ADR-" + id
+		writeScopeSidecar(t, adrDir, artifactID, topics[artifactID], globs[artifactID])
 	}
 	return root
 }
@@ -74,17 +87,9 @@ func runScopeCompileFull(t *testing.T) (root string, out string, res *TwoPhaseRe
 	t.Setenv("EDIKT_HEADLESS", "")
 
 	root = stageScopeCorpus(t)
-	runner := &scopeRunner{
-		topics: map[string]string{"ADR-001": "testing", "ADR-002": "testing", "ADR-003": "security"},
-		globs: map[string][]string{
-			"ADR-001": {"src/**/*.go"},
-			"ADR-003": {"auth/**", "src/session.go"},
-		},
-	}
 	var errBuf, outBuf bytes.Buffer
 	r, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      runner,
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",

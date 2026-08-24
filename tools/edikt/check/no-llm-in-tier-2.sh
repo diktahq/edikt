@@ -61,7 +61,17 @@ fi
 
 is_exempt () {
     local rel="$1"
-    for e in "${exempt[@]}"; do
+    # ${exempt[@]+"${exempt[@]}"}, not "${exempt[@]}": under `set -u` on bash
+    # 3.2 (the macOS system bash) expanding an empty array is an "unbound
+    # variable" error, not an empty loop. This function is called once per
+    # scanned .go file, BEFORE any pattern match, so an empty exempt list
+    # aborted the gate on its first file — and aborted with rc=1, which this
+    # gate uses to mean "violations found". The zero-exemption state that
+    # ADR-030 is driving toward would therefore have read as a violation.
+    # The --list-exemptions path above already used this idiom; this one did
+    # not, which is why the comment there could claim an empty set exits 0
+    # while this path could not deliver it.
+    for e in ${exempt[@]+"${exempt[@]}"}; do
         [[ "$rel" == "$e" ]] && return 0
     done
     return 1

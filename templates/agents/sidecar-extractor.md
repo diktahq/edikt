@@ -227,6 +227,8 @@ A verify command is **cheatable** when the generator can satisfy it without the 
 
 **verify_kind field:** `verify_kind` MUST be emitted whenever `verify:` is set. Omitting `verify_kind` on a directive that carries `verify:` is a schema error — Phase B compile will reject the sidecar. Valid values: `behavioral`, `tooling`, `structural`.
 
+**Emit the value BARE — never quoted.** Write `verify_kind: behavioral`, not `verify_kind: "behavioral"`. YAML treats the two as the same string, so nothing downstream breaks, but consumers grep this field to answer "how many behavioral verifies did this regeneration add, and how many fixtures do I now owe?" A corpus carrying both spellings makes `grep 'verify_kind: behavioral'` undercount silently, which was reported from a consumer project whose sidecars mixed the two. One spelling, always bare.
+
 ## What to extract
 
 ### `topic`

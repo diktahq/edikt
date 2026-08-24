@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/diktahq/edikt/tools/edikt/internal/injectmatch"
 	"sort"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestClassPriority_Order(t *testing.T) {
 		{"", 3}, // an index rendered before Class existed
 	}
 	for _, c := range cases {
-		if got := classPriority(c.class); got != c.want {
+		if got := injectmatch.ClassPriority(c.class); got != c.want {
 			t.Errorf("classPriority(%q) = %d, want %d", c.class, got, c.want)
 		}
 	}
@@ -38,7 +39,7 @@ func TestSortEntriesByClass_InvariantFirst(t *testing.T) {
 		{ID: "INV-005:d01", Class: "invariant", Text: "an invariant"},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
-		return classPriority(entries[i].Class) < classPriority(entries[j].Class)
+		return injectmatch.ClassPriority(entries[i].Class) < injectmatch.ClassPriority(entries[j].Class)
 	})
 	want := []string{"INV-005:d01", "ADR-001:d01", "GL-002:d01"}
 	for i, id := range want {
@@ -57,7 +58,7 @@ func TestSortEntriesByClass_StableWithinClass(t *testing.T) {
 		{ID: "INV-001:d01", Class: "invariant"},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
-		return classPriority(entries[i].Class) < classPriority(entries[j].Class)
+		return injectmatch.ClassPriority(entries[i].Class) < injectmatch.ClassPriority(entries[j].Class)
 	})
 	want := []string{"INV-002:d01", "INV-001:d01", "ADR-001:d01"}
 	for i, id := range want {

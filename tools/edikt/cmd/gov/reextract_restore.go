@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/pinpreserve"
 	"github.com/diktahq/edikt/tools/edikt/internal/reextract"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/spf13/cobra"
@@ -55,7 +56,7 @@ saw it on is worse than one missing the command.`,
 		}
 
 		var restored, scanned int
-		var unrestorable []reextract.PinnedField
+		var unrestorable []pinpreserve.PinnedField
 		rewritten := map[string]string{}
 
 		files, err := gitLsFiles(abs, "docs")
@@ -107,7 +108,7 @@ saw it on is worse than one missing the command.`,
 				// manual recovery path A1 exists for, so "the reference
 				// commit's sidecar didn't parse" has nowhere further to
 				// escalate to; skipping to the next artifact is correct.
-				res, rerr2 := reextract.PreservePinned(id, before, nil, tmp)
+				res, rerr2 := pinpreserve.PreservePinned(id, before, nil, tmp)
 				os.Remove(tmp)
 				if rerr2 != nil {
 					fmt.Fprintf(os.Stderr, "  %s: %v\n", id, rerr2)
@@ -126,7 +127,7 @@ saw it on is worse than one missing the command.`,
 
 			// Same reasoning as the dry-run branch above: `before` is already
 			// confirmed loadable by the time this line runs.
-			res, rerr := reextract.PreservePinned(id, before, nil, full)
+			res, rerr := pinpreserve.PreservePinned(id, before, nil, full)
 			if rerr != nil {
 				fmt.Fprintf(os.Stderr, "  %s: %v\n", id, rerr)
 				continue

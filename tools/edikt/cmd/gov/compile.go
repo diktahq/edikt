@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/diktahq/edikt/tools/edikt/internal/phaseb"
@@ -206,8 +207,50 @@ Flags:
 				os.Exit(rc)
 			}
 		}
+		// INV-018 injection-budget report: same skip conditions as the
+		// verify gate above (no Phase B ran under --check; --json's
+		// contract is the structured payload only) but INDEPENDENT of
+		// --skip-verify — that flag opts out of the fail-CLOSED INV-009
+		// gate specifically, not this report-only, fail-OPEN check
+		// (ADR-060's philosophy: never let a regression detector change
+		// gov compile's own exit code).
+		if !checkFlag && !jsonFlag {
+			runInjectionBudgetReport(projectRoot)
+		}
 		return nil
 	},
+}
+
+// runInjectionBudgetReport is INV-018's non-blocking regression report: it
+// NEVER changes compile's exit code, even when it detects a per-glob
+// regression against the pinned baseline — that is the entire point of
+// "report-only", matching ADR-060's fail-open philosophy for this surface.
+//
+// The detector itself (test/test-injection-budget.sh,
+// test/lib/injection-enumerate.py) is edikt-dev's own private dev-loop
+// tooling under test/ — INV-017's default clause keeps test/ private, so it
+// is not shipped to installed user projects. This silently no-ops when the
+// script is absent rather than erroring: a project compiled with the
+// installed edikt binary has no reason to carry edikt-dev's own test suite,
+// and absence here is not a defect to report, unlike runPostCompileVerify's
+// missing-binary case (INV-011) — there is no completion claim being made
+// that absence would falsify.
+func runInjectionBudgetReport(projectRoot string) {
+	script := filepath.Join(projectRoot, "test", "test-injection-budget.sh")
+	if _, err := os.Stat(script); err != nil {
+		return
+	}
+	cmd := exec.Command("bash", script)
+	cmd.Dir = projectRoot
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Deliberately ignore the error. Run standalone, the script DOES vary
+	// its exit code (0 pass / 1 regression / 2 unmeasured) — that variance
+	// is what makes it useful as its own CI gate. Here it is wired only as
+	// a report: propagating any of those codes into compile's own exit
+	// status is exactly what "non-blocking" means, so the result is never
+	// read, by design, not because the script happens to always exit 0.
+	_ = cmd.Run()
 }
 
 // runPostCompileVerify execs `bin/edikt verify all --gov-only` in a subprocess against

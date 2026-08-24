@@ -83,27 +83,26 @@ Agent(
 )
 ```
 
-**Prompt body construction.** Build it with `python3 -c`, passing the resolved
-paths as `sys.argv` values — never by shell-string interpolation. The grader
+**Prompt body construction.** Build it with `bin/edikt util render`, passing the
+resolved paths as `--field` values — never by shell-string interpolation.
+Substitution there is literal and single-pass. The grader
 reads the files itself; file CONTENT is never interpolated into the prompt.
 
 ```bash
-PROMPT_BODY=$(python3 -c '
-import json, sys
-gov_dir, rubric, schema = sys.argv[1], sys.argv[2], sys.argv[3]
-print("\n".join([
-    f"Grade the compiled governance tree at: {gov_dir}",
-    f"Rubric: {rubric}",
-    f"Report schema: {schema}",
-    "",
-    "Read every *.md under the governance dir, then score 0-10 on each rubric",
-    "dimension: coherence, conciseness, signal_to_noise, description_quality, tier_assignment, no_double_loading.",
-    "",
-    "Return ONE JSON object conforming to the schema. Every dimension MUST carry",
-    "a real score. If you cannot grade a dimension, say so in findings and fail —",
-    "do NOT emit 0 for a dimension you did not evaluate.",
-]))
-' "$GOV_DIR" "$RUBRIC" "$SCHEMA")
+PROMPT_BODY=$(bin/edikt util render \
+  --field "gov_dir=$GOV_DIR" --field "rubric=$RUBRIC" --field "schema=$SCHEMA" <<'TMPL'
+Grade the compiled governance tree at: {{gov_dir}}
+Rubric: {{rubric}}
+Report schema: {{schema}}
+
+Read every *.md under the governance dir, then score 0-10 on each rubric
+dimension: coherence, conciseness, signal_to_noise, description_quality, tier_assignment, no_double_loading.
+
+Return ONE JSON object conforming to the schema. Every dimension MUST carry
+a real score. If you cannot grade a dimension, say so in findings and fail —
+do NOT emit 0 for a dimension you did not evaluate.
+TMPL
+)
 ```
 
 The instruction against emitting an unevaluated 0 is deliberate. The

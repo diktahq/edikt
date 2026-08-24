@@ -477,6 +477,33 @@ func planArtifact(c candidate) liftResult {
 	return res
 }
 
+// rawSentinelBody returns the sentinel's inner text starting at the line AFTER
+// the open marker.
+//
+// extractInnerYAML starts immediately after the marker TOKEN, so it also
+// captures whatever trails on the marker line — in practice the conventional
+// "managed by edikt" comment. That is harmless for schema detection, which
+// scans for top-level keys and finds none there, but it is wrong for raw_body:
+// the field's contract is the block's content, and the marker's own comment is
+// not content. Preserving it would put a line of edikt's own boilerplate into
+// the prose the extractor reads, in every artifact that takes this path.
+func rawSentinelBody(body string, sent parse.Sentinel) string {
+	const open = "[edikt:dir" + "ectives:start]: #"
+	const close = "[edikt:dir" + "ectives:end]: #"
+	start := sent.StartByte + len(open)
+	if start < 0 || start > len(body) {
+		return ""
+	}
+	if nl := strings.IndexByte(body[start:], '\n'); nl >= 0 {
+		start += nl + 1
+	}
+	end := sent.EndByte - len(close)
+	if end < start || end > len(body) {
+		return ""
+	}
+	return strings.TrimSpace(body[start:end])
+}
+
 func extractInnerYAML(body string, sent parse.Sentinel) string {
 	const open = "[edikt:directives:start]: #"
 	const close = "[edikt:directives:end]: #"
@@ -563,6 +590,24 @@ func applyArtifact(c candidate, ediktRoot, projectRoot string) liftResult {
 		Reminders:            append([]string(nil), sent.Reminders...),
 		Verification:         append([]string(nil), sent.Verification...),
 	}
+	// Preserve the raw sentinel body when the parser recognised nothing in
+	// it. applyArtifact's contract (see the comment above planArtifact's
+	// return) claims every shape is "preserved verbatim into
+	// migration_preserved" — for a block the parser cannot read, that was
+	// false: each list above came back empty, only schema_detected survived,
+	// and stripping the sentinel destroyed the content outright. rc=0,
+	// "0 failed", rule text gone from disk.
+	//
+	// The trigger is "nothing was structurally preserved" rather than
+	// "schema is unknown". It is the strictly wider condition, it states the
+	// property that actually matters, and it stays correct if a future shape
+	// parses to nothing without being classified unknown.
+	if !preserved.HasContent() {
+		if raw := rawSentinelBody(bodyStr, sent); raw != "" {
+			preserved.RawBody = raw
+		}
+	}
+
 	// Optional hints if the legacy sentinel was v0.5.x-full.
 	if sent.Topic != "" {
 		preserved.Topic = sent.Topic
@@ -888,7 +933,8 @@ func runMigrateSidecars(projectRoot, ediktRoot string, dryRun, apply, force, jso
 			}
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(os.Stderr, "The migration's structural-cleanup invariant has been violated.")
-			fmt.Fprintln(os.Stderr, "Your project's pre-migration backup at .edikt/backups/ is intact.")
+			fmt.Fprintln(os.Stderr, "Recover the affected .md files from version control before re-running.")
+			fmt.Fprintln(os.Stderr, "NOTE: `migrate sidecars` does NOT write a backup of your .md files.")
 			return fmt.Errorf("post-migration verification: %d residual sentinel(s) in user files", len(stragglers))
 		}
 	}

@@ -268,6 +268,26 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 				warnN += sdWarn
 			}
 
+			// Migration Content Loss. Names artifacts whose legacy sentinel
+			// block was stripped without being preserved by the migrator in
+			// v0.7.0-rc1 … v0.7.3. Deliberately NOT routed through compile's
+			// lossless gate, which cannot currently run — see
+			// doctor_lost_migration.go for why a check that depends on it
+			// would report silence and read as an all-clear.
+			lmWarn, lmRan := runLostMigrationCheck(cwd, os.Stdout)
+			if lmRan {
+				warnN += lmWarn
+			}
+
+			// Duplicate artifact ids. next-id refuses to MINT a taken id, but
+			// a collision can also arrive by merge, manual copy, bad rename,
+			// or a branch nobody ran next-id on. Allocation-time prevention
+			// alone leaves those undetected.
+			diWarn, diRan := runDuplicateIDCheck(cwd, os.Stdout)
+			if diRan {
+				warnN += diWarn
+			}
+
 			// Sidecar Verify Coverage (Phase 4 of PLAN-v060-completion-evidence).
 			// Reports per-sidecar verify health + project-wide coverage as
 			// soft warnings. Gov compile owns the hard gate; doctor's role
@@ -382,6 +402,14 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			errN += hpErr
 			warnN += hpWarn
 		}
+
+		// Hook-chain journal (ADR-060:d10, SPEC-014 FR-006). Report() was
+		// written for doctor and doctor never called it, so every recorded
+		// suppression reached exactly one surface nobody runs unprompted.
+		// Runs unconditionally — outside the cwd-scoped block above — because
+		// the journal is per-user, not per-project, and its ABSENCE is the
+		// finding that matters most.
+		warnN += runHookJournalCheck(os.Stdout)
 
 		// Post-flight Scope (post-flight review pipeline).  // edikt-guard:allow
 		reportPostFlightScope()

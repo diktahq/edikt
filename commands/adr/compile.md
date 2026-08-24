@@ -104,22 +104,13 @@ if [ ! -f "$SIDECAR" ]; then
   echo "   Known cause: a stale agent definition cached at session start — run 'edikt doctor' and restart the session."
   # Report this target as FAILED. NEVER report it as 'unchanged'.
 fi
-# 2. It must parse. PyYAML when available; a stdlib structural check
-#    otherwise — a missing library must produce the RIGHT diagnosis,
-#    never a false "does not parse" (audit 2026-08-07 #5).
-python3 - "$SIDECAR" <<'PY' || echo "❌ extraction FAILED for $SIDECAR — sidecar exists but does not parse."
-import sys
-body = open(sys.argv[1], encoding="utf-8").read()
-try:
-    import yaml
-    yaml.safe_load(body)
-except ImportError:
-    print("note: PyYAML unavailable — structural check only", file=sys.stderr)
-    sys.exit(0 if "schema_version" in body and body.strip() else 1)
-except Exception as e:
-    print("parse error: " + str(e), file=sys.stderr)
-    sys.exit(1)
-PY
+# 2. It must parse — checked by the binary, which HAS a YAML parser.
+#    This used to be a python heredoc with a PyYAML fallback, because a
+#    missing library had to produce the RIGHT diagnosis rather than a false
+#    "does not parse" (audit 2026-08-07 #5). That whole branch is gone: there
+#    is no optional dependency left to be absent, so there is no wrong
+#    diagnosis left to guard against.
+bin/edikt util yaml validate "$SIDECAR" || echo "❌ extraction FAILED for $SIDECAR — sidecar exists but does not parse."
 # 3. If a sidecar existed BEFORE dispatch (record its mtime in step 3),
 #    an unchanged mtime+size means the extractor wrote NOTHING — that is
 #    the zero-write failure, not idempotency. Report it as FAILED.
@@ -133,7 +124,7 @@ After the agent returns, compare the new sidecar to its prior version (if one ex
 
 ```bash
 canonicalize() {
-  python3 -c 'import yaml,sys; print(yaml.dump(yaml.safe_load(open(sys.argv[1]).read()), sort_keys=True, default_flow_style=False, width=200), end="")' "$1"
+  bin/edikt util yaml canonicalize "$1"
 }
 ```
 

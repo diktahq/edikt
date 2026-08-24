@@ -177,3 +177,84 @@ func TestEntriesContentHash_SensitiveToTextChangeAlone(t *testing.T) {
 		t.Fatalf("entriesContentHash must change when an entry's own text changes, even with the same ID")
 	}
 }
+
+// ─── Hash-composition pins (2026-08-21) ───────────────────────────────────
+//
+// The dedup hash and the shim's rendered message had drifted apart in BOTH
+// directions, undetected, because nothing pinned which fields participate:
+// Reminders/FalsifyingObservation were hashed but never delivered (routine
+// reminder edits re-bounced a byte-identical message), and Intent was
+// delivered but not hashed (a rewritten intent was silently suppressed for
+// the rest of the receiving context). These tests exist so either drift
+// fails loudly instead of silently.
+
+func TestEntriesContentHash_IgnoresFieldsNeverDelivered(t *testing.T) {
+	base := Entry{ID: "ADR-001:d01", Grade: "must", Text: "MUST do the thing.", Intent: "why"}
+
+	for _, tc := range []struct {
+		name string
+		mut  func(Entry) Entry
+	}{
+		{"reminders", func(e Entry) Entry {
+			e.Reminders = []string{"Before X -> verify Y", "Before Z -> verify W"}
+			return e
+		}},
+		{"falsifying_observation", func(e Entry) Entry {
+			e.FalsifyingObservation = "you would see the thing undone"
+			return e
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := entriesContentHash([]Entry{tc.mut(base)})
+			want := entriesContentHash([]Entry{base})
+			if got != want {
+				t.Fatalf("%s changed the dedup hash, but it is never rendered by the shim "+
+					"(templates/hooks/inject-directives-pre.sh renders text, id, intent only). "+
+					"Editing it would re-bounce the agent with a byte-identical message.", tc.name)
+			}
+		})
+	}
+}
+
+func TestEntriesContentHash_SensitiveToEveryDeliveredField(t *testing.T) {
+	base := Entry{ID: "ADR-001:d01", Grade: "must", Text: "MUST do the thing.", Intent: "why"}
+
+	for _, tc := range []struct {
+		name string
+		mut  func(Entry) Entry
+	}{
+		{"id", func(e Entry) Entry { e.ID = "ADR-001:d02"; return e }},
+		{"grade", func(e Entry) Entry { e.Grade = "advisory"; return e }},
+		{"text", func(e Entry) Entry { e.Text = "MUST do a different thing."; return e }},
+		{"intent", func(e Entry) Entry { e.Intent = "a materially revised rationale"; return e }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if entriesContentHash([]Entry{tc.mut(base)}) == entriesContentHash([]Entry{base}) {
+				t.Fatalf("changing %s did NOT change the dedup hash, but it IS delivered to the "+
+					"agent — the revised message would be silently suppressed for the rest of "+
+					"the receiving context.", tc.name)
+			}
+		})
+	}
+}
+
+// TestDeliveredProjection_PinsHashComposition is the guard the drift got past.
+// If the shim's rendering changes, deliveredProjection must change with it,
+// and this test must be updated deliberately — never silently.
+func TestDeliveredProjection_PinsHashComposition(t *testing.T) {
+	e := Entry{
+		ID: "ADR-001:d01", Grade: "must", Text: "t", Intent: "i",
+		FalsifyingObservation: "f", Reminders: []string{"r"},
+	}
+	got := deliveredProjection(e)
+	want := []string{"ADR-001:d01", "must", "t", "i"}
+	if len(got) != len(want) {
+		t.Fatalf("deliveredProjection has %d fields, pinned at %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("deliveredProjection[%d] = %q, pinned %q — if the shim's rendering "+
+				"changed, update both together.", i, got[i], want[i])
+		}
+	}
+}

@@ -68,27 +68,61 @@ func DedupDir() (string, error) {
 	return dir, nil
 }
 
-// entriesContentHash hashes the matched entries' OWN content — not the
-// index they were read from. Sorted by ID first so the hash is independent
-// of match order; each entry contributes every field that changes what the
-// agent would be told, so a genuine edit to the rule still changes the key
-// (F-080 dropped only the whole-index component, not content-sensitivity).
+// deliveredProjection returns the fields of an entry that actually REACH the
+// agent, in delivery order. It is the single source of truth for what dedup
+// treats as "the same message", and it exists so the hash cannot drift away
+// from the shim's rendering the way it silently had.
+//
+// The shim (templates/hooks/inject-directives-pre.sh) renders exactly:
+//
+//	- <Text> (<ID>)
+//	  intent: <Intent>        // only when Intent is non-empty
+//
+// Grade is included because it selects the DELIVERY CHANNEL, not because it is
+// rendered: a must->advisory change moves an entry from the synchronous deny to
+// the advisory PostToolUse surface (ADR-060:d01), which is a different message
+// to a different reader, and so must break dedup.
+//
+// Anything not listed here is deliberately excluded — see entriesContentHash.
+func deliveredProjection(e Entry) []string {
+	return []string{e.ID, e.Grade, e.Text, e.Intent}
+}
+
+// entriesContentHash hashes the matched entries' DELIVERED content — not the
+// index they were read from, and not fields the reader never sees. Sorted by
+// ID first so the hash is independent of match order. Still satisfies
+// ADR-060:d03: content-derived (never mtime), with matched entry ids carried
+// in dedupKey alongside it.
+//
+// 2026-08-21 — THE HASH AND THE MESSAGE HAD DRIFTED, IN BOTH DIRECTIONS:
+//
+//	IN THE HASH, NEVER DELIVERED: Reminders and FalsifyingObservation. Neither
+//	is rendered by either shim (grep -i reminder over templates/hooks/ returns
+//	nothing). Editing an artifact's reminders — routine compile churn, and a
+//	surface where one reminder line is duplicated up to 165 times across the
+//	index — re-bounced the agent with a BYTE-IDENTICAL message. That is exactly
+//	the "bounce for nothing" ADR-060:p04 rejects mtime keying to avoid, arrived
+//	at through a different door.
+//
+//	DELIVERED, NOT IN THE HASH: Intent. The shim renders "intent: ..." beneath
+//	the directive text, so rewriting an intent changes what the agent is told —
+//	yet the key did not move, and the revised message was SILENTLY SUPPRESSED
+//	for the rest of that receiving context. That half is a hole in the delivery
+//	guarantee, which is why this is a bug fix and not a tuning change.
+//
+// The invariant now: dedup identity IS the delivered message. If the shim's
+// rendering changes, deliveredProjection must change with it — and
+// TestDeliveredProjection_PinsHashComposition fails until it does.
 func entriesContentHash(entries []Entry) string {
 	sorted := make([]Entry, len(entries))
 	copy(sorted, entries)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 	var b strings.Builder
 	for _, e := range sorted {
-		b.WriteString(e.ID)
-		b.WriteByte(0)
-		b.WriteString(e.Grade)
-		b.WriteByte(0)
-		b.WriteString(e.Text)
-		b.WriteByte(0)
-		b.WriteString(e.FalsifyingObservation)
-		b.WriteByte(0)
-		b.WriteString(strings.Join(e.Reminders, "\x1f"))
-		b.WriteByte(0)
+		for _, field := range deliveredProjection(e) {
+			b.WriteString(field)
+			b.WriteByte(0)
+		}
 	}
 	h := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(h[:])

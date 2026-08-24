@@ -178,6 +178,23 @@
           "actor_scope": {
             "type": "boolean",
             "description": "v2 (optional; absent means false). ADR-065. Set on a directive/prohibition whose subject is an edikt-internal automated operation (the compilation pipeline, gov:compile, migrate, upgrade) rather than file content a human edit could violate. hook match's write-time MUST-grade selection excludes actor_scope: true entries unconditionally \u2014 that channel only ever observes Claude-Code-mediated Edit/Write calls, which the Go-internal pipeline operations never make, so delivering these as PreToolUse bounces is noise with no enforcement value through this specific surface. Excluded entries still compile and still render in ambient/topic-file surfaces; only write-time PreToolUse delivery is affected. A per-directive, reviewed, deliberate opt-in \u2014 never inferred by the extractor."
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "v2.1 (optional). Per-directive/prohibition glob override: when present, BuildDirectiveIndex resolves this entry's write-time delivery from these globs instead of the sidecar-level paths[]. Absent means unchanged behavior \u2014 the sidecar's paths[] applies, exactly as before this field existed. An explicit empty array is rejected: narrowing an entry to zero files is suppressed_directives wearing a different name, and using the wrong mechanism would leave the entry silently invisible with no record of why. A reviewed, deliberate opt-in \u2014 never inferred by the extractor."
+          },
+          "enforcement": {
+            "type": "string",
+            "enum": [
+              "deny",
+              "advisory"
+            ],
+            "description": "v2.1 (optional). Explicit override of this entry's write-time delivery-channel strength, independent of the class-weighted grade default. Absent means the class default applies (INV-* and ADR-class prohibitions grade must; everything else grades advisory). Always takes priority over the class default when set. A reviewed, deliberate opt-in \u2014 never inferred by the extractor."
           }
         }
       },
@@ -304,6 +321,11 @@
             "type": "string"
           },
           "description": "Legacy signals if present (v0.5.x sentinels). Extractor MAY use this as a hint when synthesizing the canonical signals field."
+        },
+        "raw_body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Verbatim inner text of the legacy sentinel block, captured ONLY when no structured list above could be parsed from it (hand-edited and pre-v0.4.3 shapes). Without it, a sentinel the parser cannot read is stripped from the .md and its content survives nowhere. The extractor treats this as prose to extract from, not as directives to copy verbatim."
         }
       }
     },
@@ -414,6 +436,23 @@
           "actor_scope": {
             "type": "boolean",
             "description": "v2 (optional; absent means false). ADR-065. Set on a directive/prohibition whose subject is an edikt-internal automated operation (the compilation pipeline, gov:compile, migrate, upgrade) rather than file content a human edit could violate. hook match's write-time MUST-grade selection excludes actor_scope: true entries unconditionally \u2014 that channel only ever observes Claude-Code-mediated Edit/Write calls, which the Go-internal pipeline operations never make, so delivering these as PreToolUse bounces is noise with no enforcement value through this specific surface. Excluded entries still compile and still render in ambient/topic-file surfaces; only write-time PreToolUse delivery is affected. A per-directive, reviewed, deliberate opt-in \u2014 never inferred by the extractor."
+          },
+          "paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "v2.1 (optional). Per-directive/prohibition glob override: when present, BuildDirectiveIndex resolves this entry's write-time delivery from these globs instead of the sidecar-level paths[]. Absent means unchanged behavior \u2014 the sidecar's paths[] applies, exactly as before this field existed. An explicit empty array is rejected: narrowing an entry to zero files is suppressed_directives wearing a different name, and using the wrong mechanism would leave the entry silently invisible with no record of why. A reviewed, deliberate opt-in \u2014 never inferred by the extractor."
+          },
+          "enforcement": {
+            "type": "string",
+            "enum": [
+              "deny",
+              "advisory"
+            ],
+            "description": "v2.1 (optional). Explicit override of this entry's write-time delivery-channel strength, independent of the class-weighted grade default. Absent means the class default applies (INV-* and ADR-class prohibitions grade must; everything else grades advisory). Always takes priority over the class default when set. A reviewed, deliberate opt-in \u2014 never inferred by the extractor."
           }
         }
       },

@@ -74,45 +74,60 @@ background dispatches and then runs out of its own turn budget waiting on them w
 confused, partial result as if it were final. This is not a hypothetical: it is exactly what
 happened the first time this command ran (2 of 4 judges returned before the orchestrator gave
 up), and it is recorded here so it does not recur. Compose the prompt body via
-`python3 -c`, with the artifact ID and the sidecar's directives/prohibitions passed as
-`sys.argv` JSON — never by shell-string interpolation, matching `verify-diff.md`'s
+`bin/edikt util render`, with the artifact ID and each item's fields passed as
+`--field` values — never by shell-string interpolation, matching `verify-diff.md`'s
 argv-safety convention.
 
 ```bash
-PROMPT_BODY=$(python3 -c '
-import json, sys
-artifact_id = sys.argv[1]
-items = json.loads(sys.argv[2])  # list of {"kind": "directive"|"prohibition", "text":..., "quote":..., "verify":...}
-lines = [
-    f"You are reviewing the ALREADY-COMPILED sidecar for {artifact_id}.",
-    "You are given only its extracted directives/prohibitions below — you have NOT been",
-    "shown the live source .md, and you must not assume you know what it currently says.",
-    "",
-    "For EACH item, note privately whether its text is fully supported by its own quote",
-    "(no content beyond what the quote states), whether it reads as a complete, coherent",
-    "claim on its own, and whether any verify: command looks trivially cheatable (a fixed",
-    "grep on generator-controlled text, a bare file-existence check with no substantive",
-    "assertion) per GL-002.",
-    "",
-    "Items:",
-]
-for i, it in enumerate(items):
-    lines.append(f"  - id: {artifact_id}.{it[\"kind\"]}[{i}]")
-    lines.append(f"    text: {it[\"text\"]}")
-    lines.append(f"    quote: {it[\"quote\"]}")
-    if it.get("verify"):
-        lines.append(f"    verify: {it[\"verify\"]}")
-lines.extend([
-    "",
-    "Emit ONE overall verdict for this sidecar: PASS (looks fine, no regeneration",
-    "suggested) or SUGGEST_REGEN (looks stale or wrong enough to warrant regeneration).",
-    "Give exactly one reason, citing the specific item(s) that drove the verdict.",
-    "If every item looks clean, PASS — do not invent a reason to flag something.",
-    "You are judging internal coherence only. You have no way to detect content that was",
-    "never extracted in the first place, and must not claim confidence about completeness.",
-])
-print("\n".join(lines))
-' "$ARTIFACT_ID" "$ITEMS_JSON")
+# ITEMS_JSON is a file holding the array; every value crosses as argv, so
+# nothing is shell-concatenated (the reason this was python in the first place).
+ITEMS_TEXT=""
+N=$(bin/edikt util json len "$ITEMS_JSON" .)
+i=0
+while [ "$i" -lt "$N" ]; do
+  KIND=$(bin/edikt util json get "$ITEMS_JSON" "$i.kind")
+  TEXT=$(bin/edikt util json get "$ITEMS_JSON" "$i.text")
+  QUOTE=$(bin/edikt util json get "$ITEMS_JSON" "$i.quote")
+  VERIFY=$(bin/edikt util json get "$ITEMS_JSON" "$i.verify" --default "")
+  ITEM=$(bin/edikt util render \
+    --field "id=$ARTIFACT_ID.$KIND[$i]" --field "text=$TEXT" --field "quote=$QUOTE" <<'TMPL'
+  - id: {{id}}
+    text: {{text}}
+    quote: {{quote}}
+TMPL
+)
+  ITEMS_TEXT="$ITEMS_TEXT$ITEM"
+  if [ -n "$VERIFY" ]; then
+    ITEMS_TEXT="$ITEMS_TEXT$(bin/edikt util render --field "verify=$VERIFY" <<'TMPL'
+    verify: {{verify}}
+TMPL
+)"
+  fi
+  i=$((i + 1))
+done
+
+PROMPT_BODY=$(bin/edikt util render --field "artifact_id=$ARTIFACT_ID" --field "items=$ITEMS_TEXT" <<'TMPL'
+You are reviewing the ALREADY-COMPILED sidecar for {{artifact_id}}.
+You are given only its extracted directives/prohibitions below — you have NOT been
+shown the live source .md, and you must not assume you know what it currently says.
+
+For EACH item, note privately whether its text is fully supported by its own quote
+(no content beyond what the quote states), whether it reads as a complete, coherent
+claim on its own, and whether any verify: command looks trivially cheatable (a fixed
+grep on generator-controlled text, a bare file-existence check with no substantive
+assertion) per GL-002.
+
+Items:
+{{items}}
+
+Emit ONE overall verdict for this sidecar: PASS (looks fine, no regeneration
+suggested) or SUGGEST_REGEN (looks stale or wrong enough to warrant regeneration).
+Give exactly one reason, citing the specific item(s) that drove the verdict.
+If every item looks clean, PASS — do not invent a reason to flag something.
+You are judging internal coherence only. You have no way to detect content that was
+never extracted in the first place, and must not claim confidence about completeness.
+TMPL
+)
 ```
 
 ```text

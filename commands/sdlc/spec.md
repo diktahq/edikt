@@ -329,21 +329,10 @@ Coverage validation adapts to the source type (`$SOURCE_TYPE`):
 4. **Back-reference emission (brainstorm):** After writing the spec, append `SPEC-NNN` to a `produced_specs:` list on the brainstorm document (update its frontmatter or append to an `## Artifacts` section if no frontmatter key exists):
    ```bash
    # Update BRAIN-NNN frontmatter key produced_specs
-   python3 <<'PYEOF' "{brainstorm_path}" "$SPEC_ID" "$AUTHOR" "$NOW"
-   import sys, re, pathlib
-   path, spec_id, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-   content = pathlib.Path(path).read_text()
-   # Insert or update produced_specs in frontmatter
-   if "produced_specs:" in content:
-       content = re.sub(
-           r"(produced_specs:\s*\[)([^\]]*?)(\])",
-           lambda m: m.group(1) + (m.group(2).rstrip(", ") + ", " if m.group(2).strip() else "") + spec_id + m.group(3),
-           content
-       )
-   else:
-       content = content.replace("---\n", f"---\nproduced_specs: [{spec_id}]\n", 1)
-   pathlib.Path(path).write_text(content)
-   PYEOF
+   # Idempotent: the predecessor appended unconditionally, so a repeat run
+   # produced `produced_specs: [SPEC-1, SPEC-1]` — a list saying the same spec
+   # was produced twice, which is wrong rather than merely untidy.
+   bin/edikt util frontmatter append "{brainstorm_path}" produced_specs "$SPEC_ID"
    ```
    Output: `✅ Updated BRAIN-NNN: produced_specs += SPEC-NNN`
 
@@ -454,7 +443,10 @@ SPEC_ID="SPEC-NNN"
 AUTHOR=$(git config user.name 2>/dev/null || echo "unknown")
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-python3 <<'PYEOF' "$PRD_YAML" "$SPEC_ID" "$AUTHOR" "$NOW"
+# Idempotent: a repeat run adds neither a duplicate id nor a second history
+# entry, so a retried command does not fabricate a second linking event.
+bin/edikt prd link-spec --file "$PRD_YAML" --spec "$SPEC_ID" \
+  --author "$AUTHOR" --at "$NOW"' "$PRD_YAML" "$SPEC_ID" "$AUTHOR" "$NOW"
 import sys, yaml
 path, spec_id, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 
@@ -485,7 +477,7 @@ PYEOF
 
 The python3 heredoc above appends the revision_history record inline and clears `_sync` so the caller recomputes hashes.
 
-Recompute `_sync` hashes (SHA-256 via `python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())'` with argv,). Then Edit the sidecar's `_sync:` block with the new hashes and ISO8601 timestamp.
+Recompute `_sync` hashes (SHA-256 via `bin/edikt util hash` with argv,). Then Edit the sidecar's `_sync:` block with the new hashes and ISO8601 timestamp.
 
 Output confirmation:
 ```
@@ -558,29 +550,20 @@ Set the two unused source fields to `null`. The schema's `oneOf` constraint reje
 **Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/spec-sidecar.v1.schema.json`:
 
 ```bash
-python3 <<'PYEOF' "$SPEC_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
-import sys, yaml, json
-from jsonschema import Draft202012Validator
-sidecar = yaml.safe_load(open(sys.argv[1]))
-schema = json.load(open(sys.argv[2]))
-errors = sorted(Draft202012Validator(schema).iter_errors(sidecar), key=lambda e: str(e.path))
-if errors:
-    print("SIDECAR INVALID:", file=sys.stderr)
-    for e in errors:
-        print(f"  {list(e.path) or '<root>'}: {e.message}", file=sys.stderr)
-    sys.exit(1)
-print("OK")
-PYEOF
+bin/edikt util schema-validate "$SPEC_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
 ```
 
 If validation fails: do NOT write the sidecar. Show the user which fields are missing/invalid, fix in-memory, re-validate, then write.
 
-If `jsonschema` is not installed, fall back to a structural check: assert all 8 required top-level fields are present AND exactly one of `source_prd / source_brainstorm / source_prompt` is non-null.
+The binary carries the validator, so there is no "module not installed" case and no
+second, weaker structural check to disagree with it. That fallback used to assert only
+that the required top-level fields were present — which ran on exactly the machines
+nobody tested on, and passed sidecars this one refuses.
 
 **Computing `{{schema_path}}`:** Compute the relative path from the SPEC's parent directory to `.edikt/schemas/spec-sidecar.v1.schema.json`:
 
 ```bash
-SCHEMA_PATH=$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[2], sys.argv[1]))' "$(dirname "$SPEC_YAML")" "$PROJECT_ROOT/.edikt/schemas/spec-sidecar.v1.schema.json")
+SCHEMA_PATH=$(bin/edikt util path relative "$(dirname "$SPEC_YAML")" "$PROJECT_ROOT/.edikt/schemas/spec-sidecar.v1.schema.json")
 ```
 
 If `.edikt/schemas/spec-sidecar.v1.schema.json` does NOT exist in the project, auto-install it as part of this step:

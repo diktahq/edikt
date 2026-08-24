@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/hook-corpus-recording/v1.json",
+  "$comment": "edikt:artifact type=contract spec=SPEC-014 status=draft reviewed_by=architect",
+  "title": "edikt hook corpus recording (ADR-063 Decision §2)",
+  "description": "One recording.json per scenario, at test/fixtures/hook-corpus/<hook>/recordings/<scenario-id>/recording.json, sitting beside the raw captured bytes (stdout.raw, stderr.raw) and a fs-diff.json tree snapshot. Written by the recorder (SR-009) executing the current bash hook — the living oracle — for that scenario; read by the migration gate (bin/edikt dev hook-corpus diff) that compares a Go replacement's live output against this recording before that hook's shim is allowed to swap to the FR-004 shape.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "hook", "scenario_id", "scenario_input_sha256", "normalizer_version", "recorded_at", "oracle", "exit_code", "stdout_sha256", "stderr_sha256", "fs_diff"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "hook": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "scenario_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "scenario_input_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "sha256 hex digest of the exact scenario input this recording was captured against: the canonicalized concatenation of the matrix scenario's payload bytes (or the empty string when payload is null), its resolved config fixture bytes, and its env override set (sorted key=value lines, null values recorded as an explicit unset marker) — the sequence steps' inputs, concatenated in order, for a call-ordering scenario. Required per the SPEC-014 pre-flight correction: without this pin, editing a payload or config fixture referenced by matrix.yaml leaves the recording's bytes untouched, so `dev hook-corpus diff` would go on comparing the Go replacement against an oracle recorded from an input that no longer exists on disk — a green diff that proves nothing. The diff gate MUST recompute this hash from the scenario's current inputs and refuse to compare when it no longer matches, rather than silently diffing against a stale oracle."
+    },
+    "normalizer_version": {
+      "type": "string",
+      "pattern": "^v[0-9]+$",
+      "description": "The version of the volatile-field normalization logic (the pass list volatile_fields_normalized names) applied before hashing stdout/stderr/added/modified content in this recording. Pinned the same way prompt_version pins the extractor contract (ADR-055 §4's model-pin rule, extended by analogy): a change to what a normalization pass strips or how it matches invalidates every recording captured under the prior version, and this field is what lets the diff gate detect and refuse a stale recording rather than comparing bytes normalized two different ways."
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When THIS recording was captured — metadata about the recording, not part of the hook's own output, so it is never subject to the volatile_fields_normalized masking below (that masking applies only to content the hook itself emitted)."
+    },
+    "oracle": {
+      "type": "string",
+      "enum": ["bash", "go"],
+      "description": "Which implementation this recording characterizes. \"bash\" = a pre-migration characterization recording, captured against the bash hook implementation being replaced — the original v1 shape, and still every recording's value until that hook migrates. \"go\" = a post-migration regression recording (spec.md 'Post-migration matrix policy'), captured against the already-migrated Go implementation for a scenario discovered or added after that hook's corpus gate closed; there is no bash oracle left to compare it against. A hook's matrix.yaml is frozen at migration, so a given scenario_id's recording does not flip from \"bash\" to \"go\" in place — a post-migration addition is a new scenario_id. A Go replacement's output is otherwise never itself persisted as a 'recording' during the pre-migration gate — it is compared live, at diff time, against the bash-oracle recording (see spec.md 'Corpus recorder' Components) so there is exactly one source of truth per scenario at gate time, never two recordings that could silently drift apart."
+    },
+    "exit_code": { "type": "integer", "minimum": 0, "maximum": 255 },
+    "stdout_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "sha256 of stdout.raw AFTER volatile-field normalization (see volatile_fields_normalized) — this is the value the migration gate compares byte-for-byte against the Go replacement's equally-normalized stdout."
+    },
+    "stderr_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "sha256 of stderr.raw, same normalization discipline as stdout_sha256."
+    },
+    "stdout_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Length of the raw (pre-normalization) stdout capture — a sanity figure surfaced in coverage/diff reports, not itself compared."
+    },
+    "wall_clock_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock milliseconds this scenario's execution took when it was recorded. INFORMATIONAL, and deliberately so: SPEC-014 spec.md:265 declines to set a runtime-path budget for the corpus recorder ('runs offline, in CI and at authoring time, never in the PreToolUse/PostToolUse chain a user waits on'), so this field is never compared by `dev hook-corpus diff` and no threshold is enforced against it. It is captured because a per-hook latency figure is the one number a migration PR is asked for and cannot reconstruct after the fact — but a gate citing a threshold here would be citing a number the spec explicitly refuses to set."
+    },
+    "oracle_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "sha256 of the exact implementation artifact this recording was captured by executing: for oracle \"bash\", the bytes of templates/hooks/<file> as they stood at record time; for oracle \"go\", the bytes of the bin/edikt binary that ran `hook run <name>`. This is what makes `oracle` an auditable claim rather than a self-assertion — a reviewer can hash the pre-migration hook file out of git history and confirm the recording was captured against the bash body being replaced, not against a shim that already dispatched to Go. The recorder additionally REFUSES to write oracle \"bash\" for a file whose shape is the FR-004 exec shim, and refuses it outright for a registry row whose status is `migrated`."
+    },
+    "volatile_fields_normalized": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["iso8601-timestamp", "unix-epoch-seconds", "unix-epoch-ms", "tmpdir-path", "random-uuid", "pid", "home-path", "project-root", "username", "hostname", "session-id"]
+      },
+      "description": "Which normalization passes were applied to stdout/stderr (and to added/modified file content in fs_diff) before hashing — e.g. \"iso8601-timestamp\" replaces any RFC3339 timestamp with a fixed placeholder token before hashing. The five host-identity passes (\"home-path\", \"project-root\", \"username\", \"hostname\", \"session-id\") joined the original six because the recorder's sandbox is a fresh temporary tree per scenario: the record run and the later diff run execute under DIFFERENT absolute paths by construction, so without them every recording would mismatch itself on the second run and no gate could ever be green for an honest reason. Exit codes are not in this list and never can be — normalizing an exit code is exactly F-036's failure reappearing as a comparator setting. Recorded explicitly so a reviewer can see exactly what the byte-comparison does NOT prove, rather than that being an implicit, undiscoverable property of the comparator. Empty array is valid and means no normalization ran (the hook emits no volatile fields). Became a closed enum per the SPEC-014 pre-flight correction: a free-form string here let two recordings name the same normalization pass with different spellings, so the diff gate could not mechanically confirm both sides of a comparison ran the identical pass — the fixed vocabulary is the same closed-set discipline `normalizer_version` pins at the whole-recording level, applied per pass."
+    },
+    "fs_diff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["added", "removed", "modified"],
+      "description": "Sandbox tree diff (relative paths only) between the state immediately before and immediately after this scenario ran — the mechanism this spec uses for F-074-class side-effect-only observables (worktree-create.sh's governance copy, a timestamped ledger line's JSONL append, task-created.sh's ledger entry) that no stdout assertion can see.",
+      "properties": {
+        "added": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256"],
+            "properties": {
+              "path": { "type": "string" },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$",
+                "description": "Hash of the added file's content AFTER the same volatile-field normalization as stdout (e.g. a timestamped ledger line's JSONL line carries an 'at' timestamp field)."
+              }
+            }
+          }
+        },
+        "removed": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Relative paths present before and absent after. Content is irrelevant once removed."
+        },
+        "modified": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256_before", "sha256_after"],
+            "properties": {
+              "path": { "type": "string" },
+              "sha256_before": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+              "sha256_after": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

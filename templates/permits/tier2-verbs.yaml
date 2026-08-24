@@ -17,6 +17,25 @@ verbs:
     provenance: ADR-029
   - verb: "migrate"
     provenance: ADR-029
+  - verb: "util"              # group permit: json {emit,get,len,validate,format,
+    provenance: PRD-007       # join,stamp}, yaml {get,validate,canonicalize},
+                              # hash, path relative, schema-validate, render,
+                              # normalize, match, frontmatter append.
+                              #
+                              # FR-010 removed python3 from every command body.
+                              # These are the six things the 71 inline calls
+                              # actually did; each exists because a specific
+                              # call site needed it, and none may grow a
+                              # decision — see commands/gov/verify-diff.md's
+                              # Tier-1-markdown-only invariant for the test.
+  - verb: "prd"               # group permit: ship, close, link-spec, supersede
+    provenance: PRD-007       # PRD lifecycle mutations. Each appends a
+                              # revision_history entry unconditionally — there
+                              # is no verb here that mutates without recording
+                              # who did it, which is why these are not a
+                              # generic "set this YAML path".
+  - verb: "plan"              # group permit: active, last-phase
+    provenance: PRD-007       # Plan-file queries, read-only.
   - verb: "gov"               # group permit: compile, compile-history,
     provenance: ADR-033       # gitignore-bootstrap, directive-check,
                               # benchmark cheat-rate (ADR-040), grade-compile (ADR-044),
@@ -31,6 +50,13 @@ verbs:
     provenance: ADR-029
   - verb: "sidecar"           # group permit: add-manual-directive (ADR-031),
     provenance: ADR-031       # approve (ADR-039), diff
+  - verb: "phasea"            # group permit: plan, restore, verify (D6).
+    provenance: ADR-052       # The dispatch itself is NOT a verb here and
+                              # never will be — fanning extractors out means
+                              # invoking an LLM, which INV-012 forbids a
+                              # tier-2 binary from doing. Tier-1 owns that
+                              # step and calls these three around it
+                              # (SPEC-013, PLAN-v080 Phases 4-5).
   - verb: "next-id"
     provenance: ADR-029       # pre-exec live-block helper for the :new/:sdlc commands
   - verb: "hook"              # ack / held / unack (ADR-050) — operator-invoked

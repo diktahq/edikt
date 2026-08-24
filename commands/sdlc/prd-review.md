@@ -90,7 +90,7 @@ Record per-item pass/fail for the Gaps section of the report.
 
 Compute SHA-256 of the `.md` file:
 ```bash
-CURRENT_MD_HASH=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PRD_MD")
+CURRENT_MD_HASH=$(bin/edikt util hash "$PRD_MD")
 ```
 
 Read `_sync.md_hash` from the sidecar. If mismatch (and `_sync.md_hash` is non-empty):

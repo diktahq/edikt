@@ -296,6 +296,22 @@ type Directive struct {
 	// NegativeFixturePath is the path to a script that exits non-zero when the
 	// directive's behavioral property is violated. Required for verify_kind: behavioral.
 	NegativeFixturePath string `yaml:"negative_fixture_path,omitempty"`
+
+	// Paths is a v2.1 (ADR-070) per-directive glob override. When set,
+	// BuildDirectiveIndex resolves this entry's write-time delivery from
+	// these globs instead of the sidecar's own Paths. Absent means
+	// unchanged behavior. An explicit empty slice is rejected by Validate —
+	// narrowing to zero files is SuppressedDirectives wearing a different
+	// name. A reviewed, deliberate opt-in — never inferred by the extractor.
+	Paths []string `yaml:"paths,omitempty"`
+
+	// Enforcement is a v2.1 (ADR-070/ADR-071) explicit override of this
+	// entry's write-time delivery-channel strength ("deny" | "advisory"),
+	// independent of ADR-071's class-weighted grade default. Absent means
+	// the class default applies; Enforcement always takes priority over it
+	// when set. A reviewed, deliberate opt-in — never inferred by the
+	// extractor.
+	Enforcement string `yaml:"enforcement,omitempty"`
 }
 
 // VerificationEntry is one row of the gov-sidecar verification[] array.
@@ -372,11 +388,45 @@ type MigrationPreserved struct {
 	Reminders            []string `yaml:"reminders,omitempty"`
 	Verification         []string `yaml:"verification,omitempty"`
 
+	// RawBody is the verbatim inner text of the legacy sentinel block,
+	// populated ONLY when the structured lists above all came back empty
+	// — i.e. the parser recognised no shape in it. Without this, a
+	// sentinel the parser cannot read is stripped from the .md and its
+	// content survives nowhere: silent data loss reported as success.
+	//
+	// Hand-edited blocks and pre-v0.4.3 shapes are exactly where this
+	// happens, and a long-lived 0.4.x project is where hand-edited
+	// sentinels live. The extractor treats it as prose to extract from,
+	// not as directives to copy — it is unparsed by definition.
+	RawBody string `yaml:"raw_body,omitempty"`
+
 	// Topic/Signals are hints if the legacy sentinel was a v0.5.x-full
 	// shape. Extractor MAY use these when synthesising canonical
 	// topic + signals; otherwise extracts from prose.
 	Topic   string   `yaml:"topic,omitempty"`
 	Signals []string `yaml:"signals,omitempty"`
+}
+
+// HasContent reports whether this preservation block carries anything the
+// extractor could work from. SchemaDetected is deliberately NOT counted: it is
+// audit metadata about what the block LOOKED like, not the block's content, and
+// treating it as content is what let an artifact pass as "preserved" while its
+// rule text was gone.
+//
+// Two callers depend on this distinction:
+//   - migrate, to decide whether RawBody must be captured before stripping;
+//   - the Phase B lossless gate, to tell "nothing was dropped" apart from
+//     "nothing was measured" (INV-013).
+func (m *MigrationPreserved) HasContent() bool {
+	if m == nil {
+		return false
+	}
+	return len(m.Directives) > 0 ||
+		len(m.ManualDirectives) > 0 ||
+		len(m.SuppressedDirectives) > 0 ||
+		len(m.Reminders) > 0 ||
+		len(m.Verification) > 0 ||
+		strings.TrimSpace(m.RawBody) != ""
 }
 
 // Anchors returns the effective anchor list for this directive, normalising v1
@@ -459,6 +509,13 @@ type Prohibition struct {
 	HumanApprovedAt       string `yaml:"human_approved_at,omitempty"`
 	PositiveFixturePath   string `yaml:"positive_fixture_path,omitempty"`
 	NegativeFixturePath   string `yaml:"negative_fixture_path,omitempty"`
+
+	// Paths — see Directive.Paths (ADR-070). Same contract for prohibitions.
+	Paths []string `yaml:"paths,omitempty"`
+
+	// Enforcement — see Directive.Enforcement (ADR-070/ADR-071). Same
+	// contract for prohibitions.
+	Enforcement string `yaml:"enforcement,omitempty"`
 }
 
 // Load reads sidecarPath, strictly decodes it, and runs the v1 validators.
@@ -636,6 +693,15 @@ func (s *Sidecar) Validate() error {
 				return fmt.Errorf("directives[%d].anchor[%d].quote: required", i, ai)
 			}
 		}
+		// v2.1 (ADR-070): a directive-level paths override, if present, must
+		// be non-empty — an explicit empty array is suppressed_directives
+		// wearing a different name, not a scoping decision.
+		if d.Paths != nil && len(d.Paths) == 0 {
+			return fmt.Errorf("directives[%d].paths: empty array not allowed (minItems 1)", i)
+		}
+		if d.Enforcement != "" && d.Enforcement != "deny" && d.Enforcement != "advisory" {
+			return fmt.Errorf("directives[%d].enforcement: %q, must be \"deny\" or \"advisory\"", i, d.Enforcement)
+		}
 	}
 	// v1.1: scope must be from the closed enum when present.
 	for i, phase := range s.Scope {
@@ -675,6 +741,13 @@ func (s *Sidecar) Validate() error {
 			if se.Quote == "" {
 				return fmt.Errorf("prohibitions[%d].anchor[%d].quote: required", i, ai)
 			}
+		}
+		// v2.1 (ADR-070): same empty-override rejection as directives.
+		if p.Paths != nil && len(p.Paths) == 0 {
+			return fmt.Errorf("prohibitions[%d].paths: empty array not allowed (minItems 1)", i)
+		}
+		if p.Enforcement != "" && p.Enforcement != "deny" && p.Enforcement != "advisory" {
+			return fmt.Errorf("prohibitions[%d].enforcement: %q, must be \"deny\" or \"advisory\"", i, p.Enforcement)
 		}
 	}
 	return nil

@@ -1,0 +1,14 @@
+schema_version: 1
+hook: event-log
+scenarios:
+- id: should-never-be-read
+  axis:
+  - payload
+  - config
+  - environment
+  - ordering
+  notes: |
+    A fully-tagged matrix for a `class: library` row. It exists to prove the
+    library carve-out fires BEFORE the matrix is read — if the check ever
+    reported this hook as covered, it would be treating a sourced helper as a
+    migratable hook.

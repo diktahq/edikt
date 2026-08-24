@@ -41,8 +41,12 @@ func TestBidirectionalGate_MissingPositiveFixture(t *testing.T) {
 	if !strings.Contains(err.Error(), "positive_fixture_path is empty") {
 		t.Errorf("directive arm: error does not mention positive_fixture_path: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Plan C") {
-		t.Errorf("directive arm: error does not mention Plan C: %v", err)
+	// The error must point the reader somewhere they can ACT on. It used to
+	// say "per Plan C" — SPEC-009 shorthand that resolves to nothing outside
+	// this repo. A consumer project hit this gate, could not resolve the
+	// reference, and set the fixture convention by guessing.
+	if !strings.Contains(err.Error(), "edikt.dev/governance/behavioral-fixtures") {
+		t.Errorf("directive arm: error does not point at a resolvable reference: %v", err)
 	}
 
 	// prohibition arm
@@ -90,8 +94,12 @@ func TestBidirectionalGate_MissingNegativeFixture(t *testing.T) {
 	if !strings.Contains(err.Error(), "negative_fixture_path is empty") {
 		t.Errorf("directive arm: error does not mention negative_fixture_path: %v", err)
 	}
-	if !strings.Contains(err.Error(), "Plan C") {
-		t.Errorf("directive arm: error does not mention Plan C: %v", err)
+	// The error must point the reader somewhere they can ACT on. It used to
+	// say "per Plan C" — SPEC-009 shorthand that resolves to nothing outside
+	// this repo. A consumer project hit this gate, could not resolve the
+	// reference, and set the fixture convention by guessing.
+	if !strings.Contains(err.Error(), "edikt.dev/governance/behavioral-fixtures") {
+		t.Errorf("directive arm: error does not point at a resolvable reference: %v", err)
 	}
 
 	// prohibition arm

@@ -430,10 +430,10 @@ func validatePhaseBConstraints(pairs []sidecar.Pair) error {
 			// negative fixture path. Files need not exist at compile time;
 			// existence is a benchmark-time concern.
 			if d.VerifyKind == "behavioral" && d.PositiveFixturePath == "" {
-				return fmt.Errorf("%s: directives[%d] %q: verify_kind is behavioral but positive_fixture_path is empty — add a positive fixture script per Plan C", p.ArtifactID, i, d.Text)
+				return fmt.Errorf("%s: directives[%d] %q: verify_kind is behavioral but positive_fixture_path is empty — a behavioral verify requires a fixture PAIR (positive + negative); see https://edikt.dev/governance/behavioral-fixtures", p.ArtifactID, i, d.Text)
 			}
 			if d.VerifyKind == "behavioral" && d.NegativeFixturePath == "" {
-				return fmt.Errorf("%s: directives[%d] %q: verify_kind is behavioral but negative_fixture_path is empty — add a negative fixture script per Plan C", p.ArtifactID, i, d.Text)
+				return fmt.Errorf("%s: directives[%d] %q: verify_kind is behavioral but negative_fixture_path is empty — a behavioral verify requires a fixture PAIR (positive + negative); the negative arm must exit 0 only when it DETECTS a violation; see https://edikt.dev/governance/behavioral-fixtures", p.ArtifactID, i, d.Text)
 			}
 		}
 		for i, pr := range p.Sidecar.Prohibitions {
@@ -445,10 +445,10 @@ func validatePhaseBConstraints(pairs []sidecar.Pair) error {
 			}
 			// SPEC-009 Plan C Phase 4 — bidirectional fixture gate (prohibition arm).  // edikt-guard:allow
 			if pr.VerifyKind == "behavioral" && pr.PositiveFixturePath == "" {
-				return fmt.Errorf("%s: prohibitions[%d] %q: verify_kind is behavioral but positive_fixture_path is empty — add a positive fixture script per Plan C", p.ArtifactID, i, pr.Text)
+				return fmt.Errorf("%s: prohibitions[%d] %q: verify_kind is behavioral but positive_fixture_path is empty — a behavioral verify requires a fixture PAIR (positive + negative); see https://edikt.dev/governance/behavioral-fixtures", p.ArtifactID, i, pr.Text)
 			}
 			if pr.VerifyKind == "behavioral" && pr.NegativeFixturePath == "" {
-				return fmt.Errorf("%s: prohibitions[%d] %q: verify_kind is behavioral but negative_fixture_path is empty — add a negative fixture script per Plan C", p.ArtifactID, i, pr.Text)
+				return fmt.Errorf("%s: prohibitions[%d] %q: verify_kind is behavioral but negative_fixture_path is empty — a behavioral verify requires a fixture PAIR (positive + negative); the negative arm must exit 0 only when it DETECTS a violation; see https://edikt.dev/governance/behavioral-fixtures", p.ArtifactID, i, pr.Text)
 			}
 		}
 	}
@@ -1074,6 +1074,30 @@ func groupByTopic(pairs []sidecar.Pair) map[string]*topicGroup {
 			}
 			for _, m := range p.Sidecar.ManualDirectives {
 				t.Manual = append(t.Manual, manualEntry{Text: m, Source: p.ArtifactID})
+			}
+			// ADR-072 (amends ADR-066): an entry narrowed by its OWN paths  edikt-guard:allow
+			// override (ADR-070) renders a compact digest into the topic
+			// file's ambient body too — dual channel, in addition to (not
+			// instead of) full directive-index.yaml delivery above. The
+			// PreToolUse deny still fires AFTER the model composes its
+			// edit; this is what reaches the model BEFORE, for exactly the
+			// now-narrowed subset ADR-072 bounds. An entry relying only on
+			// the sidecar-level paths (no override) is NOT duplicated here
+			// — it stays index-only, unchanged from ADR-066.
+			for _, d := range p.Sidecar.Directives {
+				if _, isSuppressed := suppressed[d.Text]; isSuppressed {
+					continue
+				}
+				if len(d.Paths) == 0 {
+					continue
+				}
+				t.Directives = append(t.Directives, compile.Rule{Text: d.Text, Source: p.ArtifactID})
+			}
+			for _, pr := range p.Sidecar.Prohibitions {
+				if len(pr.Paths) == 0 {
+					continue
+				}
+				t.Prohibitions = append(t.Prohibitions, compile.Rule{Text: pr.Text, Source: p.ArtifactID})
 			}
 		} else if strings.HasPrefix(p.ArtifactID, "INV-") {
 			// A PATHLESS INVARIANT contributes its FIRST surviving directive —

@@ -1,0 +1,18 @@
+schema_version: 1
+hook: cwd-changed
+scenarios:
+- id: baseline
+  axis:
+  - payload
+  payload: test/fixtures/hook-payloads/cwd-changed-basic.json
+  config: default
+  notes: |
+    Deliberately incomplete. No environment axis, no ordering axis, and no
+    F-041 spaced-path scenario even though a CwdChanged payload carries a path.
+    The self-test asserts this is reported as a GAP; if it ever passes, the
+    check has stopped checking.
+- id: flag-off
+  axis:
+  - config
+  config: configs/flags-off.yaml
+  notes: Config-axis coverage.

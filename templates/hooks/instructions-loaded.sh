@@ -1,24 +1,10 @@
 #!/usr/bin/env bash
-# edikt: InstructionsLoaded hook — log which rule packs are active
-# Fires every time a .claude/rules/*.md file is loaded. Logs the rule
-# name to session-signals.log for visibility in /edikt:status.
-
-# Only run in edikt projects
-if [ ! -f ".edikt/config.yaml" ]; then exit 0; fi
-
-# The loaded file path is available via hook input
-FILE="${CLAUDE_TOOL_INPUT_FILE_PATH:-${CLAUDE_TOOL_INPUT_PATH:-}}"
-if [ -z "$FILE" ]; then exit 0; fi
-
-# Only log .claude/rules/ files
-case "$FILE" in
-  *.claude/rules/*.md)
-    RULE_NAME=$(basename "$FILE" .md)
-    mkdir -p "$HOME/.edikt" 2>/dev/null || true
-    LOG_FILE="$HOME/.edikt/session-signals.log"
-    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    echo "${TIMESTAMP} RULE_LOADED ${RULE_NAME}" >> "$LOG_FILE"
-    ;;
-esac
-
-exit 0
+# edikt hook shim — dispatches to the edikt binary; first two rungs trust-gated.
+_G="${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; _T="${EDIKT_HOME:-$HOME/.edikt}/state/trusted-roots.json"
+_h() { command -v sha256sum >/dev/null 2>&1 && sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd -P)\":" "$_T" 2>/dev/null && return 0; [ -x "$_G" ] || return 1; H1="$(_h "$1")"; [ -n "$H1" ] && [ "$H1" = "$(_h "$_G")" ]; }
+EDIKT_BIN=""
+for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
+[ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook instructions-loaded did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"InstructionsLoaded"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook instructions-loaded did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+exec "$EDIKT_BIN" hook run instructions-loaded --event InstructionsLoaded

@@ -1,7 +1,7 @@
 ---
 name: governance-verifier
 description: "Read-only diff-time governance verifier. Reads a code diff and a set of compiled directives; emits per-directive PASS/FAIL/NEEDS_REVIEW verdicts. Skeptical, contract-only."
-allowed-tools: [Read, Glob, Grep]
+tools: [Read, Glob, Grep]
 context: fork
 effort: medium
 maxTurns: 10

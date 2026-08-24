@@ -23,6 +23,27 @@ func runCmd(t *testing.T, args ...string) (string, error) {
 	return buf.String(), err
 }
 
+// runCmdSplit is runCmd with the streams kept apart, and returns
+// (stdout, stderr, error).
+//
+// Any assertion about MACHINE-READABLE output must use this. runCmd merges
+// the two, so a diagnostic the binary correctly writes to stderr — the
+// version-pin warning, for one — lands in the middle of what a caller is
+// trying to parse. A test that decodes runCmd's output as JSON passes or
+// fails on whether a warning happened to fire, not on the contract it means
+// to check, and that is environment-dependent: it passed standalone and
+// failed under test/run.sh.
+func runCmdSplit(t *testing.T, args ...string) (string, string, error) {
+	t.Helper()
+	bin := buildBinary(t)
+	cmd := exec.Command(bin, args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err
+}
+
 // buildBinary compiles the binary once per test binary run and returns
 // the path. Uses t.TempDir for isolation.
 // _builtBinary is set by TestMain before any test runs.

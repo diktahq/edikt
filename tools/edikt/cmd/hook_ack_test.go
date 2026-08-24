@@ -23,7 +23,7 @@ func hackProject(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, ".edikt", "config.yaml"),
-		[]byte("edikt_version: \"0.7.0\"\n"), 0o644); err != nil {
+		[]byte("edikt_version: \"0.8.0\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(root)

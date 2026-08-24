@@ -129,8 +129,8 @@ Aspirational entries are warnings, not errors.
 
 14. Log the drift event:
     ```bash
-    source "$HOME/.edikt/hooks/event-log.sh" 2>/dev/null
-    edikt_log_event "drift_report" '{"spec":"SPEC-{NNN}","compliant":{n},"diverged":{n}}'
+    bin/edikt hook event --type drift_report \
+      --data '{"spec":"SPEC-{NNN}","compliant":{n},"diverged":{n}}'
     ```
 
 15. When called from `/edikt:sdlc:code-review` (not directly): only run if an active spec exists, use `--scope=spec`, and append findings under a "DRIFT CHECK" section in the review output.

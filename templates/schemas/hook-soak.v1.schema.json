@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/hook-soak/v1.json",
+  "$comment": "edikt:artifact type=contract spec=SPEC-014 status=draft reviewed_by=architect",
+  "title": "edikt hook soak gate record",
+  "description": "Written by `bin/edikt hook soak --group <n>` at .edikt/state/hook-soak/group-<n>.soak.json, and referenced by Phase 15 (group 1) / Phase 19 (group 2) of PLAN-v080-reliability-core's soak gates (SPEC-014 spec.md §'Dogfood soak', AC-007-1). Records, per migrated hook in the named group, whether that hook has journal invocation evidence within the soak window and whether any disqualifying outcome (panic-recovered, unregistered-hook-name, or hook-binary-absent) was observed in that same window. `elapsed_days` is always derived from the git commit date of the group's last migration commit (D2/D2 owner ruling, 2026-08-20) — never from a gitignored state file — so the gate reproduces the identical verdict on a fresh clone as it did on the machine that ran it. A journal that could not be read at all is recorded as `journal_status: unknown` for every hook in the group, never as zero invocations, so an unreadable journal cannot render as a clean soak (INV-013).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "group", "since_commit", "elapsed_days", "hooks", "status"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version for this soak record's on-disk shape. Integer, matching every other machine-state contract in the phasea/hook family (phasea-dispatch-plan.v1, phasea-receipt.v1, phasea-journal.v1, hook-registry.v1, hook-corpus-matrix.v1, hook-corpus-recording.v1) — added at authoring time rather than retrofitted later, since Phase 15/19 gate the riskiest work in PLAN-v080-reliability-core on this format and it must not repeat phasea-journal.v1's pre-flight gap of shipping with none."
+    },
+    "group": {
+      "type": "integer",
+      "enum": [1, 2],
+      "description": "Which FR-007 migration group this soak record covers: 1 = the simple-injector group (Phase 15's gate), 2 = the multi-call-hook group (Phase 19's gate). Group 3 (the write-deny gates) has no soak gate of its own — FR-007's migration order runs group 3 immediately after group 2's soak, on convention maturity rather than a third wall-clock window (spec.md 'FR-007 — migration order')."
+    },
+    "since_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "The git commit hash (abbreviated or full) of this group's last migration commit — the point `elapsed_days` counts forward from. Recorded explicitly so the derivation in `elapsed_days` is independently reproducible from git history alone, without trusting the number this record states."
+    },
+    "elapsed_days": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Whole days between `since_commit`'s commit date and the soak check's run time, computed fresh at check time from `git log -1 --format=%cI <since_commit>` — never persisted from, or compared against, a gitignored state file (D2 owner ruling: 'elapsed days is a reported fact, derived from git, not a gitignored state file'). Reported here as a fact alongside the per-hook invocation evidence, not as the gate's pass/fail criterion by itself — a group can be day-14 and still refuse if any hook has zero invocation evidence or a disqualifying outcome."
+    },
+    "hooks": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per hook `hook-registry.v1` lists as belonging to this group and already migrated (status: migrated). A group with zero migrated hooks never reaches a soak check — Phase 15/19 do not run this gate until the whole group has landed — so this array is never empty for a soak record that was actually written.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "journal_status", "invocation_count", "panic_recovered_count", "unregistered_hook_name_count", "binary_absent_count"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$",
+            "description": "Matches a hook-registry.v1 row's name."
+          },
+          "journal_status": {
+            "type": "string",
+            "enum": ["observed", "unknown"],
+            "description": "\"observed\" — the hook's journal window was read successfully, and `invocation_count` and the outcome counts below reflect what it contains, including zero. \"unknown\" — the journal could not be read for this hook in this window (absent file, unreadable window, or resolution failure); the gate MUST refuse on \"unknown\" as loudly as it does on a genuine zero, and MUST NOT report the counts below as 0 in this case — the counts are 0-valued placeholders only, not evidence, when journal_status is \"unknown\"."
+          },
+          "invocation_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of journaled invocation records for this hook within the soak window. The gate refuses group-wide, naming this hook, when this is 0 with journal_status \"observed\" — a genuinely-zero, successfully-read count is exactly what proves the hook never actually ran during the window."
+          },
+          "panic_recovered_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Count of this hook's journal records in-window carrying the panic-recovered outcome (Phase 6's centralized dispatch-site recover()). Any non-zero value refuses the group's soak."
+          },
+          "unregistered_hook_name_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Count of this hook's journal records in-window carrying the unregistered-hook-name outcome. Any non-zero value refuses the group's soak."
+          },
+          "binary_absent_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Count of this hook's journal records in-window where the ratified exec-shim's binary-existence check found the edikt binary absent and emitted the static absence banner (ADR-063's minimal exec shim). Any non-zero value refuses the group's soak."
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pass", "refused"],
+      "description": "The gate's verdict for this run. \"pass\" only when every hook in `hooks` has journal_status \"observed\", invocation_count >= 1, and all three outcome counts at 0. \"refused\" otherwise, with `refusal_reasons` populated naming why."
+    },
+    "refusal_reasons": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Human-readable reasons this run refused, one per disqualifying condition found (e.g. \"cwd-changed: zero invocation evidence in window\", \"file-changed: journal_status unknown\", \"post-tool-use: 2 panic-recovered outcome(s) in window\"). Required to be non-empty whenever status is \"refused\" (see the if/then below); empty (or absent) when status is \"pass\", since a passing run has no reason to name."
+    }
+  },
+  "if": {
+    "properties": { "status": { "const": "refused" } },
+    "required": ["status"]
+  },
+  "then": {
+    "required": ["refusal_reasons"],
+    "properties": {
+      "refusal_reasons": { "minItems": 1 }
+    }
+  }
+}

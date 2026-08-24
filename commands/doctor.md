@@ -69,7 +69,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 **Config:**
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('.edikt/config.yaml'))" 2>&1 || echo "INVALID"
+bin/edikt util yaml validate .edikt/config.yaml 2>&1 || echo "INVALID"
 ```
 - `[ok]` if valid YAML
 - `[FAIL]` if parse error — show the error
@@ -510,7 +510,7 @@ Report:
 For each PRD `.yaml` sidecar (read the `schema_version` key with any YAML-aware tool — `yq` is fine; a 1-line python form is also acceptable, as long as it uses stdlib only):
 
 ```bash
-python3 -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1])).get('schema_version','missing') or 'missing')" "$YAML_PATH"
+bin/edikt util yaml get "$YAML_PATH" schema_version --default missing
 ```
 
 - `schema_version == "1.0"` → `[ok]`
@@ -522,7 +522,7 @@ python3 -c "import sys,yaml; print(yaml.safe_load(open(sys.argv[1])).get('schema
 For each v2 PRD sidecar with `_sync.md_hash` non-empty:
 
 ```bash
-CURRENT=$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$PRD_MD")
+CURRENT=$(bin/edikt util hash "$PRD_MD")
 ```
 
 Compare to `_sync.md_hash`. On mismatch:

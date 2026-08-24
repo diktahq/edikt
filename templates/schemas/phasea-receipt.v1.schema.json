@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/phasea-receipt/v1.json",
+  "$comment": "edikt:artifact type=contract spec=SPEC-013 status=draft reviewed_by=architect. JSON has no comment syntax; this $comment keyword (a real JSON Schema draft-2020-12 keyword, ignored by validators) carries the artifact-status header artifacts.md's other native formats put in a leading comment line.",
+  "title": "edikt phasea verify receipt",
+  "description": "Written by `bin/edikt phasea verify --plan <id>` at .edikt/state/phasea/<plan_id>.receipt.json. Records, per item, whether the sidecar-extractor's dispatch produced schema-valid, freshly-pinned output. A receipt with consumed:true is terminal: `phasea verify` MUST refuse to re-verify or re-consume the same plan_id again (exit 2). verified_at is one of two runtime-state timestamps in the phasea contract family (the other is the journal's ts); the PLAN artifact carries none — it alone is bound by ADR-020 byte-determinism.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "plan_id", "items", "consumed", "verified_at"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version for this receipt file's on-disk shape. Integer, matching the plan schema's convention — see phasea-dispatch-plan.v1.schema.json's schema_version description."
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^pap-[0-9a-f]{12}$",
+      "description": "The plan this receipt verifies against. Matches exactly one phasea-dispatch-plan.v1 file's plan_id."
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One entry per item in the referenced plan. A receipt always covers every planned item — there is no partial receipt that silently omits an item, because an omitted item would be indistinguishable from one that was never checked (INV-013).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_id", "status", "attempts"],
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,80}$",
+            "description": "Matches the item_id of the corresponding entry in the plan this receipt verifies."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["ok", "output-missing", "schema-invalid", "parent-hash-mismatch", "prompt-version-mismatch", "failed-terminal", "pins-unrestorable"],
+            "description": "The per-item verify outcome. \"ok\" — expected_output.path exists, parses as YAML, validates against gov-sidecar.v2, and its artifact_sha256 matches what was pinned in the plan (parent-hash check passed). \"output-missing\" — expected_output.path does not exist on disk. \"schema-invalid\" — the file exists and parses but fails gov-sidecar.v2 validation. \"parent-hash-mismatch\" — the keystone check: artifact_path's on-disk sha256 no longer equals the plan's pinned artifact_sha256, so whatever the extractor read cannot be proven to be the planned version. \"prompt-version-mismatch\" — the installed extractor's resolved prompt_version (ADR-055) no longer matches the plan item's pinned prompt_version, meaning the extraction contract changed between planning and verify. \"failed-terminal\" — this item has been re-verified attempts >= phasea.max_attempts_per_item times while still not ok, and the skill MUST NOT re-dispatch it again; the plan as a whole stays unconsumed and Phase B is refused (AC-013-3) until a human intervenes and a fresh plan is computed. \"pins-unrestorable\" — D6's restore step (`bin/edikt phasea restore`) could not reinstate a mandatory pinned field (e.g. `human_approved_at`) that the pre-dispatch pin-set captured on a prior sidecar, because the regenerated sidecar's shape no longer admits it or the field's prior value cannot be reconciled with the new content. Distinct from \"failed-terminal\": failed-terminal is a retry-exhaustion state reached after repeated re-verification, while pins-unrestorable is terminal on FIRST observation — a lost pin is never eligible for another restore attempt against the same plan_id (INV-015: governance content, including a human's prior approval, must never leave silently, and squashing this into failed-terminal would let a retry-budget count stand in for a permanent, human-visible loss)."
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "How many times `phasea verify` has evaluated this item against this plan_id. Increments at verify time, not at dispatch time (owner-recommended: simpler than introducing a separate claim verb). An item already at status \"ok\" in a prior receipt for the same plan_id is carried forward unchanged on a later verify call — its attempts value does not increment further, because it is no longer re-evaluated."
+          }
+        }
+      }
+    },
+    "consumed": {
+      "type": "boolean",
+      "description": "True only when every item in `items` has status \"ok\". Setting this true is the one irreversible transition in the phasea contract: once true, this plan_id MUST be rejected by any further `phasea verify --plan <id>` invocation (exit 2), whether or not the underlying corpus later changes. A receipt with consumed:false and every remaining item at failed-terminal or pins-unrestorable represents a terminal state — also never eligible for Phase B, but distinct from CONSUMED because it never becomes eligible again for this plan_id; recovery requires a fresh plan (a corpus or config change that produces a new plan_id)."
+    },
+    "verified_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 UTC timestamp of this verify run. Runtime state, not a compiled governance surface — exempt from ADR-020's byte-determinism rule, which binds rendered/compiled output, not audit timestamps on state files."
+    }
+  }
+}

@@ -19,9 +19,9 @@ func TestRunGovVerifies_SuppressedDirectiveIsSkippedNotFailed(t *testing.T) {
 	sc := &sidecar.Sidecar{
 		SuppressedDirectives: []string{"suppressed rule text"},
 		Directives: []sidecar.Directive{
-			{Text: "suppressed rule text", Verify: "exit 1"},           // would fail if run
-			{Text: "live rule text", Verify: "exit 0"},                 // must still run and pass
-			{Text: "live rule with no verify"},                         // must still be skipped:operational
+			{Text: "suppressed rule text", Verify: "exit 1"}, // would fail if run
+			{Text: "live rule text", Verify: "exit 0"},       // must still run and pass
+			{Text: "live rule with no verify"},               // must still be skipped:operational
 		},
 	}
 

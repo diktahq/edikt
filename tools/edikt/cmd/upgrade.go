@@ -11,24 +11,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/release"
 	"github.com/spf13/cobra"
 )
 
 const defaultInstallRepo = "diktahq/edikt"
-
-// installRepoRe validates EDIKT_INSTALL_REPO before it composes a URL or the
-// cosign identity regex — an unvalidated value could both build a bad URL
-// and widen the identity check to match more than intended. Restricted to
-// letters, digits, '.', '_', '-' on both sides of exactly one '/'. Mirrors
-// install.sh's own EDIKT_INSTALL_REPO validation exactly (F-090); a real
-// regexp here, not a shell glob, so the bracket-class-plus-star gotcha that
-// made install.sh's first attempt at this exploitable (glob '*' doesn't
-// quantify the preceding class) doesn't apply to this implementation.
-var installRepoRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
 
 // installRepo resolves EDIKT_INSTALL_REPO — same variable name and same
 // contract as install.sh's own override (F-090), so a maintainer testing a
@@ -53,19 +43,6 @@ func githubAPI() string {
 	return "https://api.github.com/repos/" + installRepo() + "/releases/latest"
 }
 
-// cosignIdentityRegexp is the expected certificate identity for release
-// signing, derived from the same installRepo() value releaseBase() and
-// githubAPI() use — retargeting the download URL without also retargeting
-// this regex would download from one repo's release and verify against a
-// different repo's identity, which can only ever fail. '.' is the one
-// regex metacharacter a GitHub owner/repo name may contain (installRepoRe
-// restricts it to [A-Za-z0-9_.-]); escaped so a literal '.' doesn't widen
-// the match to "any character".
-func cosignIdentityRegexp() string {
-	escaped := strings.ReplaceAll(installRepo(), ".", `\.`)
-	return `^https://github\.com/` + escaped + `/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$`
-}
-
 const cosignOIDCIssuer = "https://token.actions.githubusercontent.com"
 
 var upgradeYes bool
@@ -83,7 +60,7 @@ If already up-to-date, reports so and exits 0.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if v := os.Getenv("EDIKT_INSTALL_REPO"); v != "" {
-			if !installRepoRe.MatchString(v) {
+			if !release.ValidateRepo(v) {
 				return &exitCodeError{code: 3, msg: fmt.Sprintf(
 					"EDIKT_INSTALL_REPO must match <owner>/<repo> using only letters, digits, '.', '_', '-' (got: %s)", v)}
 			}
@@ -127,7 +104,7 @@ If already up-to-date, reports so and exits 0.`,
 		}
 
 		// Resolve latest tag.
-		latestTag, err := resolveLatestTag()
+		latestTag, err := release.ResolveLatestTag(githubAPI())
 		if err != nil {
 			return fmt.Errorf("resolving latest tag: %w", err)
 		}
@@ -145,6 +122,32 @@ If already up-to-date, reports so and exits 0.`,
 		if latMajor != curMajor {
 			return fmt.Errorf("major upgrade detected (current v%s, latest v%s) — run: curl -fsSL %s/v%s/install.sh | bash",
 				currentV, latestV, releaseBase(), latestV)
+		}
+
+		// Reject upgrades that skip a minor line (SPEC-015 SP-006). The
+		// cross-major check above never fires pre-1.0 — major is always 0 —
+		// so this is the gate that actually enforces "adjacent minor line
+		// only" until 1.0. Scoped to THIS command's own "resolve latest,
+		// then activate" path only: install.sh's do_legacy_v04/do_current_v05
+		// install whatever tag was explicitly requested (--ref, or the
+		// v0.4.x-forward migration path ADR-042 already governs) with no
+		// semver-distance check, and this gate does not touch that.
+		//
+		// WHY versionLineFloor (version_gate.go) matters more than this gate:
+		// this check ships INSIDE the v0.8.0 binary, so it only ever runs
+		// when a v0.8.0+ binary is doing the resolving. A user still running
+		// v0.7.x's own binary executes v0.7.x's OWN same-major check and
+		// never reaches this code at all — this gate cannot catch that user.
+		// versionLineFloor catches them from the OTHER direction instead: a
+		// NEW binary refusing an OLD project, which is reachable regardless
+		// of which binary the user happens to still have installed.
+		curMinor := semverParts(currentV)[1]
+		latMinor := semverParts(latestV)[1]
+		if latMinor-curMinor > 1 {
+			return fmt.Errorf("direct upgrade from v%s to v%s skips a minor line — "+
+				"edikt only supports direct upgrade from the immediately prior line.\n"+
+				"Step through the intermediate release first, or run:\n"+
+				"  curl -fsSL %s/v%s/install.sh | bash", currentV, latestV, releaseBase(), latestV)
 		}
 
 		fmt.Printf("upgrade: v%s → v%s\n", currentV, latestV)
@@ -168,6 +171,7 @@ If already up-to-date, reports so and exits 0.`,
 				return fmt.Errorf("install failed: %w", err)
 			}
 			stampPayloadVersion(targetDir, latestV)
+			snapshotLauncherBinary(targetDir, latestV)
 			emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": latestV})
 		} else {
 			fmt.Fprintf(os.Stderr, "upgrade: %s already installed, skipping fetch\n", latestV)
@@ -207,85 +211,6 @@ If already up-to-date, reports so and exits 0.`,
 		fmt.Fprintf(os.Stderr, "upgrade complete: v%s → v%s\n", currentV, latestV)
 		return nil
 	},
-}
-
-// resolveLatestTag fetches the latest GitHub release tag.
-// Respects EDIKT_RELEASE_TAG env override for testing/offline use.
-func resolveLatestTag() (string, error) {
-	if override := os.Getenv("EDIKT_RELEASE_TAG"); override != "" {
-		return override, nil
-	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(githubAPI())
-	if err != nil {
-		return "", fmt.Errorf("fetching GitHub API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("reading response: %w", err)
-	}
-
-	// Extract tag_name from JSON without requiring encoding/json (keeps things
-	// lean and avoids struct dependency on GitHub API shape).
-	tag := extractJSONString(string(body), "tag_name")
-	if tag == "" {
-		return "", fmt.Errorf("could not parse tag_name from GitHub API response")
-	}
-
-	// Sanity check.
-	if !isSemverTag(tag) {
-		return "", fmt.Errorf("extracted tag does not look like semver: %s", tag)
-	}
-
-	return tag, nil
-}
-
-// extractJSONString finds the first value for `"key": "value"` in a JSON string.
-// This is intentionally simple — we only need a single well-known field.
-func extractJSONString(json, key string) string {
-	needle := `"` + key + `"`
-	idx := strings.Index(json, needle)
-	if idx < 0 {
-		return ""
-	}
-	rest := json[idx+len(needle):]
-	// Find the colon.
-	colon := strings.Index(rest, ":")
-	if colon < 0 {
-		return ""
-	}
-	rest = strings.TrimSpace(rest[colon+1:])
-	if len(rest) == 0 || rest[0] != '"' {
-		return ""
-	}
-	rest = rest[1:]
-	end := strings.Index(rest, `"`)
-	if end < 0 {
-		return ""
-	}
-	return rest[:end]
-}
-
-func isSemverTag(tag string) bool {
-	t := strings.TrimPrefix(tag, "v")
-	parts := strings.SplitN(t, ".", 3)
-	if len(parts) < 3 {
-		return false
-	}
-	for _, p := range parts[:2] {
-		if p == "" {
-			return false
-		}
-		for _, c := range p {
-			if c < '0' || c > '9' {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 // semverGreater returns true if a > b (simple semver comparison, no pre-release).
@@ -496,7 +421,7 @@ func downloadAndInstall(ediktRoot, tag, norm string) error {
 				verifyCmd := exec.Command(cosignPath,
 					"verify-blob",
 					"--bundle", sigPath,
-					"--certificate-identity-regexp", cosignIdentityRegexp(),
+					"--certificate-identity-regexp", release.CosignIdentityRegexp(installRepo()),
 					"--certificate-oidc-issuer", cosignOIDCIssuer,
 					sumPath,
 				)
@@ -523,7 +448,7 @@ func downloadAndInstall(ediktRoot, tag, norm string) error {
 				cleanup()
 				return fmt.Errorf("reading verified SHA256SUMS: %w", rerr)
 			}
-			expected, listed := lookupSHA256SUMS(doc, payloadName)
+			expected, listed := release.LookupSHA256SUMS(doc, payloadName)
 			switch {
 			case !listed:
 				// COULD NOT CHECK: the signed document does not cover this
@@ -697,31 +622,6 @@ func checkHookSyntax(payloadRoot string) error {
 	}
 	fmt.Fprintf(os.Stderr, "  hooks: %d scripts pass `bash -n`\n", len(scripts))
 	return nil
-}
-
-// lookupSHA256SUMS returns the digest a SHA256SUMS document records for name.
-//
-// listed distinguishes "the document does not cover this asset" from "the
-// document covers it and the digest differs" — the caller must treat those
-// differently, because only the first is a check that could not run. Folding
-// them together is how F-042 shipped: an absent integrity source presented as
-// an ordinary error and remedied with a flag that disabled signing too.
-//
-// Format is coreutils sha256sum: "<hex>  <name>", where a leading "*" on the
-// name marks binary mode. Matches the awk in install.sh:530 so the two
-// launchers cannot drift on what counts as a match.
-func lookupSHA256SUMS(doc []byte, name string) (digest string, listed bool) {
-	for _, line := range strings.Split(string(doc), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
-			continue
-		}
-		entry := strings.TrimPrefix(fields[1], "*")
-		if entry == name {
-			return fields[0], true
-		}
-	}
-	return "", false
 }
 
 // sha256File returns the hex-encoded SHA-256 digest of a file.

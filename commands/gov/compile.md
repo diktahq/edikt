@@ -8,6 +8,13 @@ allowed-tools:
   - Grep
   - Bash
   - Write
+  - Task
+tier_2_dependency: edikt phasea plan
+on_absent: refuse-and-direct-user
+tier_2_dependency_2: edikt phasea restore
+on_absent_2: refuse-and-direct-user
+tier_2_dependency_3: edikt phasea verify
+on_absent_3: refuse-and-direct-user
 ---
 
 # edikt:gov:compile
@@ -116,7 +123,7 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
 
     - **`directives[]`** — auto-extracted by `/edikt:<artifact>:compile` from the source body. Each entry has `text` and `source_excerpts[]` (an ordered array of 1..N anchors).
     - **`manual_directives[]`** — user-authored rules. Optional (defaults to `[]`). Preserved across sidecar regenerations. Always included in the effective rule set.
-    - **`suppressed_directives[]`** — auto directives the user rejected. Optional (defaults to `[]`). Subtracted from `directives` at compile time.
+    - **`suppressed_directives[]`** — auto directives the user rejected. Optional (defaults to `[]`). Preserved across sidecar regenerations. Subtracted from `directives` at compile time.
     - **`reminders[]`** — pre-action reminders. Optional. Aggregated into `governance.md § Reminders`.
     - **`verification[]`** — verification checklist items. Optional. Aggregated into `governance.md § Verification Checklist`.
     - **`topic`** — the topic key for grouping (e.g., `ai`, `backend`, `privacy`).
@@ -132,36 +139,62 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
 
     **Within-artifact contradiction detection** (same as before): a directive and a manual directive that contradict each other → warn but include both. A suppressed directive that matches nothing in `directives[]` → warn (stale suppression).
 
-12. **If no sidecar exists** (fresh artifact, never compiled, or a whole project adopting edikt on pre-existing docs): auto-chain to the per-artifact compile commands, then re-run step 11.
+12. **If no sidecar exists, or a sidecar is stale** (fresh artifact, never compiled, quote drift, or a whole project adopting edikt on pre-existing docs): run the Phase A contract below. Then re-run step 11.
 
-    This is the bootstrap path, and it applies whether ONE artifact is missing a sidecar or ALL of them are. A project adopting edikt on hand-written ADRs arrives here with every artifact missing — that is expected, not an error state. `bin/edikt gov compile` performs the same bootstrap natively via Phase A dispatch, so both entry points behave the same way.
+    This is the bootstrap path, and it applies whether ONE artifact needs extraction or ALL of them do. A project adopting edikt on hand-written ADRs arrives here with every artifact missing — that is expected, not an error state.
 
-    Group missing sidecars by artifact type. Before chaining, print:
+    **Extraction is tier-1's job, not the binary's.** `bin/edikt gov compile` computes the work-list and emits a plan; it does NOT dispatch. Fanning extractors out means invoking an LLM, which INV-012 forbids a tier-2 binary from doing (ADR-030, SPEC-013). You are the dispatcher.
 
-    ```
-    ℹ No sidecars found for {n} artifacts. Running per-artifact compile:
-       → /edikt:adr:compile         ({n_adr} ADRs without sidecar)
-       → /edikt:invariant:compile   ({n_inv} invariants without sidecar)
-       → /edikt:guideline:compile   ({n_gl} guidelines without sidecar)
-    ```
-
-    Before chaining, ensure the sidecar schema is resolvable project-locally (same best-effort copy the per-artifact commands perform in their step 2b — doing it once here saves each chained command the check):
+    **Step A1 — plan.**
 
     ```bash
-    test -f "$PROJECT_ROOT/.edikt/schemas/gov-sidecar.v2.schema.json" || {
-      mkdir -p "$PROJECT_ROOT/.edikt/schemas"
-      SOURCE_SCHEMA="$EDIKT_HOME/current/templates/schemas/gov-sidecar.v2.schema.json"
-      [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$HOME/.edikt/current/templates/schemas/gov-sidecar.v2.schema.json"
-      [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$PROJECT_ROOT/templates/schemas/gov-sidecar.v2.schema.json"
-      [ -f "$SOURCE_SCHEMA" ] && cp "$SOURCE_SCHEMA" "$PROJECT_ROOT/.edikt/schemas/gov-sidecar.v2.schema.json"
-    }
+    bin/edikt phasea plan
     ```
 
-    If no source schema is found, continue anyway — the extractor carries the full allowed-key contract in its own prompt. NEVER instruct an extractor to read `templates/schemas/...` as a project-relative path.
+    Exit 0 means a plan was written and its path printed. Exit 1 means there is nothing to extract — skip to step 11. Exit 4 is a refusal (budget ceiling, or an unpinned extractor `prompt_version`): report the message verbatim and stop. Never re-run to get past a refusal.
 
-    After each completes, re-run step 11. If sidecars are STILL missing after the chain, abort with the full list.
+    Read `.edikt/state/phasea/<plan_id>.plan.json`. Validate it is well-formed JSON with `schema_version`, `plan_id`, `created_from`, `budget` and `items` before acting on any part of it. A malformed plan is never partially acted on.
 
-    **Headless mode** (`EDIKT_HEADLESS=1` or no `/dev/tty`): disable the auto-chain. Print the explicit run-these-three list and exit non-zero.
+    **Step A2 — fan out, one subagent per item.**
+
+    For each entry in `items[]`, spawn **exactly one** `sidecar-extractor` subagent via `Task`. Compose the prompt from **only** that item's `artifact_path` and `item_id` — nothing else:
+
+    ```
+    Task(subagent_type: "sidecar-extractor",
+         prompt: "<item.artifact_path> <item.item_id>")
+    ```
+
+    **No add, drop, merge, retry-with-changes, or reword.** Do not skip an item. Do not combine two items into one subagent context — ADR-027's one-fresh-context-per-artifact still holds, and a merged context is how one artifact's prose leaks into another's sidecar. Do not dispatch an item that is not in `items[]`. On a retry, re-dispatch the **identical** fields; never a "fixed" or annotated prompt.
+
+    Continue on error: one subagent failing does not stop the fan-out of the rest. `phasea verify` is what decides what actually landed, and it can only do that if every item was attempted.
+
+    **Step A3 — restore pinned state.**
+
+    ```bash
+    bin/edikt phasea restore --plan <plan_id>
+    ```
+
+    The extractor never sees the previous sidecar, so a regeneration arrives without whatever a human pinned on it. Restore puts it back, quarantines any regenerated sidecar that fails the content gate, and records the body-drift baseline. Run it before verify, once, for the whole plan.
+
+    **Step A4 — verify, and act on the exit code.**
+
+    ```bash
+    bin/edikt phasea verify --plan <plan_id>
+    ```
+
+    **Read the receipt's existence BEFORE interpreting the exit code.** If `.edikt/state/phasea/<plan_id>.receipt.json` does not exist, the run refused before evaluating anything — report that as a pre-run refusal, never as "items failed". A missing receipt and a receipt full of failures are different events, and only one of them says anything about the extraction.
+
+    | Exit | Meaning | What you do |
+    |------|---------|-------------|
+    | 0 | every item ok | proceed to step 11 |
+    | 1 | some items failed | re-dispatch step A2 for each receipt item with `attempts < phasea.max_attempts_per_item`, then repeat A4 |
+    | 2 | plan rejected (unknown, malformed, or already consumed) | abort; report the message verbatim; never retry |
+    | 3 | receipt unwritable | abort; report the message verbatim; never retry |
+    | 5 | failed-terminal | **stop and report the failing items. Do NOT retry.** Exit 5 means the retry budget is spent; re-dispatching burns tokens against an item that has already been given every attempt it is owed |
+
+    Exit 1 and exit 5 differ only in whether anything is still owed a retry, and treating 5 as 1 is an unbounded loop that looks like progress.
+
+    **Headless mode** (`EDIKT_HEADLESS=1` or no `/dev/tty`): do not fan out. Print the plan path and the explicit `/edikt:adr:compile`-style run-these list, and exit non-zero.
 
 ### Schema Completeness Gate
 
@@ -380,6 +413,14 @@ bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
     human-approved rather than extracted. Never render a routing table here, and
     never invent a description — an unapproved topic shows as pending.
 
+    **A description is capped at 160 characters** (`topicregistry.MaxDescriptionChars`,
+    and `maxLength` in `topic-registry.v1.schema.json`). Over-length is refused with
+    `error: description is N chars (max 160)`. The cap is not stylistic: every approved
+    description renders into the ambient topic index, which loads on **every** edit in
+    every session, and 160 characters is roughly the 25-token per-topic budget that
+    index is priced at. A description that needs more room is usually a topic that
+    should be split.
+
     ## Reminders
 
     Before acting, check the relevant constraint.
@@ -425,8 +466,8 @@ bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
 
 22. Log the compilation event:
     ```bash
-    source "$HOME/.edikt/hooks/event-log.sh" 2>/dev/null
-    edikt_log_event "compile" '{"adrs_compiled":{n},"invariants_compiled":{m},"guidelines_compiled":{g},"topics":{t},"total_directives":{total},"sidecar_coverage":"{pct}%"}'
+    bin/edikt hook event --type compile \
+      --data '{"adrs_compiled":{n},"invariants_compiled":{m},"guidelines_compiled":{g},"topics":{t},"total_directives":{total},"sidecar_coverage":"{pct}%"}'
     ```
 
 23. Output the compilation summary with reverse source map:

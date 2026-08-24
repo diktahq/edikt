@@ -40,11 +40,15 @@
           },
           "classification": {
             "type": "string",
-            "enum": ["testable", "operational", "informational"],
-            "description": "testable = every criterion carries an executable verify command; operational = observable but not machine-checkable; informational = context only."
+            "enum": ["testable", "operational", "informational", "owner"],
+            "description": "testable = every criterion carries an executable verify command; operational = observable but not machine-checkable; informational = context only; owner = completion is a human decision (a ruling, a sign-off, a go/no-go) and the criteria are never executed. owner is deliberately distinct from informational: informational means there is nothing to check, owner means a person must act and may not have, and a report scanned for outstanding human work must be able to tell them apart."
           },
           "completion_promise": {
             "type": "string"
+          },
+          "phase_metadata": {
+            "type": "object",
+            "description": "Freeform, runner-ignored. Nothing in `edikt verify` reads this. It exists because this schema is validated with additionalProperties:false and the loader decodes with KnownFields(true), so before it existed a plan carrying any concept the schema had not anticipated could not be loaded at all — leaving the author to delete their own text or mislabel the phase. Put the unanticipated thing here instead; it survives in the file where its author put it."
           },
           "criteria": {
             "type": "array",

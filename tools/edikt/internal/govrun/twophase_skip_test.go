@@ -2,8 +2,6 @@ package govrun
 
 import (
 	"bytes"
-	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,29 +16,6 @@ import (
 // sidecar for whatever artifact it is handed — the same contract as the
 // per-artifact `:compile` command in production. Self-contained so this
 // file has no dependency on other test helpers.
-type skipRunner struct {
-	dispatched []string
-}
-
-func (r *skipRunner) Preflight() error { return nil }
-
-func (r *skipRunner) Resync(_ context.Context, t phasea.Task) error {
-	r.dispatched = append(r.dispatched, t.ArtifactID)
-	body := fmt.Sprintf(`schema_version: 2
-topic: "testing"
-path: "docs/architecture/decisions/%s"
-signals:
-  - "bootstrap signal"
-directives:
-  - text: "Test rule MUST hold. (ref: %s)"
-    source_excerpts:
-      - line_start: 9
-        line_end: 9
-        quote: "Test rule."
-`, filepath.Base(t.ParentPath), t.ArtifactID)
-	return os.WriteFile(t.SidecarPath, []byte(body), 0o644)
-}
-
 // Field bug (bok-services 2026-08-07): after retiring ADRs via frontmatter
 // `status: superseded`, Phase A re-bootstrapped their sidecars from prose and
 // Phase B compiled their directives — duplicating rules reclassified into
@@ -114,27 +89,52 @@ directives: []
 		t.Fatal(err)
 	}
 
-	runner := &skipRunner{}
+	// SELECTION half. ADR-001's staged sidecar is deliberately stale, so
+	// Phase A has work and emits a plan; the retired ADRs must not be in it.
+	// This used to be read off a skipRunner's dispatch tally — there is no
+	// dispatch from tier-2 to tally now, so it is read off the plan tier-1
+	// would actually fan out from.
+	stageExtractorAgent(t, root, "claude-sonnet-5")
+	var planErrBuf, planOutBuf bytes.Buffer
+	_, perr := RunTwoPhase(TwoPhaseOptions{
+		ProjectRoot: root,
+		Stderr:      &planErrBuf,
+		Stdout:      &planOutBuf,
+		OnLoss:      "accept",
+	}, model.RealClock{})
+	if perr == nil || !strings.Contains(perr.Error(), "await tier-1 extraction") {
+		t.Fatalf("expected Phase A to emit a plan and refuse; got %v\nstderr:\n%s", perr, planErrBuf.String())
+	}
+	planned, pperr := phasea.Plan(phasea.PlanOptions{ProjectRoot: root})
+	if pperr != nil || planned == nil || planned.Plan == nil {
+		t.Fatalf("no plan to inspect: %v", pperr)
+	}
+	var ids []string
+	for _, it := range planned.Plan.Items {
+		ids = append(ids, it.ItemID)
+	}
+	for _, id := range ids {
+		if id != "ADR-001" {
+			t.Errorf("skip-listed artifact planned for extraction: %s", id)
+		}
+	}
+	if len(ids) != 1 {
+		t.Errorf("expected exactly 1 planned item (ADR-001), got %v", ids)
+	}
+
+	// MERGE half. Stage what the extractor would have written so Phase A has
+	// nothing left and Phase B runs — the retired directives must not reach
+	// the compiled surfaces below.
+	writeBootstrapSidecar(t, adrDir, "ADR-001-test.md", "ADR-001")
 	var errBuf, outBuf bytes.Buffer
 	res, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      runner,
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",
 	}, model.RealClock{})
 	if err != nil {
 		t.Fatalf("RunTwoPhase: %v\nstderr:\n%s", err, errBuf.String())
-	}
-
-	// Only the live ADR is dispatched.
-	for _, id := range runner.dispatched {
-		if id != "ADR-001" {
-			t.Errorf("skip-listed artifact dispatched to extractor: %s", id)
-		}
-	}
-	if len(runner.dispatched) != 1 {
-		t.Errorf("expected exactly 1 dispatch (ADR-001), got %v", runner.dispatched)
 	}
 	if res.PhaseB == nil {
 		t.Fatal("Phase B did not run")

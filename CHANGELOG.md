@@ -1,5 +1,176 @@
 # edikt changelog
 
+## v0.8.0 (2026-08-24)
+
+edikt's hook tier no longer needs `python3`. Every lifecycle hook used to shell out to it to emit
+protocol JSON; on a machine without `python3` — increasingly common on macOS — a hook
+would silently no-op while `doctor` kept reporting healthy. All 22 hooks are now
+ten-line shims that exec the Go binary directly, and each migration is verified against
+a recorded characterization corpus so the replacement reproduces the original bash
+hook's exit code, stdout, stderr, and filesystem effect byte-for-byte.
+
+### Changed
+
+- **Plan phases can be owner-gated, and can carry metadata the schema did not anticipate.**
+  `plan-criteria.v1` had three classifications — testable, operational, informational — and
+  refused every key it did not know. A phase whose completion is a human decision (a ruling, a
+  sign-off, a go/no-go) had no shape: the only ways to make the plan loadable were deleting the
+  owner's gate text or labelling the phase as something it is not. A consumer left the plan
+  unverifiable instead, so `edikt verify` covered nine of their ten plans and nothing reported
+  the tenth. Two additions: `classification: owner`, whose criteria are never executed and are
+  recorded as `skipped: owner-gated`; and `phase_metadata`, a freeform object the runner
+  ignores, so the next unanticipated concept has somewhere to go.
+
+  `owner` is deliberately not a synonym for `informational` — informational means there is
+  nothing to check, owner means a person must act and may not have, and a report scanned for
+  outstanding human work needs to tell them apart.
+- **`edikt verify PLAN-NNN` now resolves a plan by its id.** Sidecars on disk are
+  `PLAN-NNN-<slug>-criteria.yaml` while every doc and habit says `verify PLAN-NNN`, and
+  matching was exact-stem only — so the id everyone types never resolved. It now prefix-matches,
+  anchored on the hyphen so `PLAN-02` cannot resolve `PLAN-027`. An id matching more than one
+  plan is refused with the candidates named rather than resolved by picking one: a confident
+  answer about a plan you did not name is worse than the miss it replaces. A genuinely missing
+  sidecar still exits 2 with the path it looked for, unchanged.
+- **`verify_kind` is now emitted bare, never quoted.** The extractor produced both
+  `verify_kind: behavioral` and `verify_kind: "behavioral"` across a corpus, so
+  `grep 'verify_kind: behavioral'` undercounted — reported by a consumer counting how many
+  fixtures a regeneration had just obliged them to write. YAML treats the two as the same
+  string; nothing downstream changes. Existing sidecars carrying the quoted form are still
+  counted correctly by edikt's own tooling.
+- **All 22 hooks now ship as Go-backed exec shims**, removing the `python3` dependency
+  from the hook tier entirely.
+
+### Added
+
+- **`test/test-hook-corpus-replay.sh`** — replays the committed hook corpus for every
+  migrated hook and fails on any behavioural difference, so byte-parity with the
+  original bash hooks is checked automatically instead of only by hand.
+
+### Security
+
+- **The INV-005 sentinel guard did not enforce under a common condition (v0.7.0-rc1 →
+  v0.7.3).** `pre-tool-use.sh` emitted two top-level JSON objects in one invocation — the
+  guard's decision, then a project-context advisory. Claude Code parses hook stdout by its
+  first character and treats invalid JSON as plain text; two concatenated objects are invalid
+  JSON, so the host discarded everything, `permissionDecision: deny` included. All four deny
+  branches were inert: an agent could edit compiled governance surfaces,
+  `.claude/settings.json`, or a managed sentinel region unimpeded.
+
+  **Trigger:** `.edikt/config.yaml` present **and** `docs/project-context.md` absent. A fully
+  initialised project emits one object and is unaffected.
+
+  **Workaround without upgrading:** run `/edikt:init` so `docs/project-context.md` exists; the
+  advisory stops firing and the decision reaches the host. Check with
+  `test -f docs/project-context.md`.
+
+  Fixed by folding the advisory into the guard's own reply, so the hook always emits exactly
+  one JSON object. A new gate, `test/check-hook-stdout-single-object.sh`, asserts that for
+  every recorded hook stdout across all 22 hooks.
+
+  A fuller advisory covering the affected v0.7.x releases is held privately and is not
+  published with this release. Everything needed to determine whether you were affected — the
+  trigger condition, the check, and the workaround — is stated above.
+
+### Fixed
+
+- **`edikt next-id` handed out ids that were already taken.** It read a single directory and
+  printed the result as though it described the whole project, so an id held in another
+  checkout — a worktree, with its sidecar already written — was offered as the next free one.
+  Minting a taken id corrupts quietly and surfaces at merge. It is also worse than a filename
+  clash: an id is a relationship anchor, and in the reported case the occupant was live, dated,
+  and already held the exact role the new record claimed to be establishing, so committing
+  would have produced structural drift rather than a rename conflict.
+
+  `next-id` now collects ids from every checkout `git worktree list` reports, including
+  worktrees outside the repository directory. It prints what it scanned on every run
+  (`Scanned: 3 checkouts …`), and when it cannot enumerate them — no git, not a repository,
+  the command failed — it says the scan covered this working tree only and names why. It never
+  degrades silently into the same authoritative-looking line, which was the actual defect.
+- **`edikt doctor` reports two artifacts holding the same id.** Refusing to mint a collision
+  only helps at allocation time; ids also collide through merges, manual copies, bad renames,
+  and branches nobody ran `next-id` on. The check names **both** paths, because which one is
+  the intruder is not something edikt can know, and reports its denominator on a clean run.
+- **A regeneration could add fixture obligations without saying so.** A `sidecar-extractor`
+  run may introduce directives with `verify_kind: behavioral`, and each one requires a
+  positive AND negative fixture script before `gov compile` will render. A consumer project
+  went from 0 to 10 behavioral verifies across three artifacts in a single regeneration, none
+  with fixtures, and the next compile refused — the fix they were shipping was blocked by its
+  own sidecar. `edikt phasea verify` now reports the debt by artifact, with a total, at the
+  one moment it is known and not yet blocking. `doctor`'s Verify Kind Coverage tally is
+  post-hoc and does not say a fixture will be *required*.
+- **Rejecting a proposed topic description did not stick.** Rejection removed the pending file
+  and recorded nothing, so the next extraction re-proposed the same description: `reject →
+  compile → re-proposed`, with no exit. The only escape a consumer found was approving a
+  description for a topic they had already decided was dead. The decision now persists in
+  `.edikt/topic-rejections.yaml` — committed, beside `topics.yaml`, because it is the team's
+  decision and `.edikt/state/` is gitignored — and a rejected topic is neither re-proposed nor
+  given an empty slot. Because rejecting a description usually means the *topic* should not
+  exist, the rejection also names every sidecar still declaring it, and compile reports such
+  topics as rendering without a description by decision rather than by oversight. Delete an
+  entry to undo.
+- **`suppressed_directives[]` was documented as if regeneration might clear it.** The schema
+  says both `manual_directives[]` and `suppressed_directives[]` are never overwritten by the
+  extractor, but the compile summary gave the preservation clause only to `manual_directives`.
+  Reading the prose rather than the schema, a consumer concluded a no-argument
+  `adr:compile` would wipe an artifact's 12 suppressions and re-publish directives for a
+  frozen subsystem — wrote it up as a governance finding and imposed a workflow constraint on
+  themselves before withdrawing it. A doc omission became a false defect. Both docs now carry
+  the clause.
+- **Two enforced limits were documented nowhere.** The behavioral-fixture requirement pointed
+  at "Plan C", internal shorthand that resolves to nothing outside this repo — the error now
+  links [the fixture guide](https://edikt.dev/governance/behavioral-fixtures), which is new and
+  documents the convention, including that the compile validates the fixture *path* and not the
+  filename, so several directives may share one pair. And the 160-character cap on a topic
+  description, previously discoverable only by hitting it, is documented with its reason: every
+  description loads into the ambient topic index on every edit, and 160 characters is roughly
+  the 25-token per-topic budget that index is priced at.
+- **`migrate sidecars` destroyed directive blocks it could not parse (v0.7.0-rc1 → v0.7.3).**
+  Phase A strips the in-body `[edikt:directives:start]` block from an artifact once its sidecar
+  is written. For blocks it could parse, the contents were preserved first. For blocks it could
+  not, nothing was preserved: the sidecar recorded `schema_detected: unknown` and no content,
+  the block was removed from the `.md`, and the command exited 0 reporting
+  `N sidecars wrote, 0 failed`. The directive text then existed nowhere on disk.
+
+  **Trigger:** a sentinel block whose inner YAML carries none of `content_hash`,
+  `topic` + `directives`, `source_hash`, or `directives`. Every shape edikt itself writes
+  carries one of those and is unaffected — hand-edited blocks are the realistic casualty.
+
+  **Am I affected:** run `edikt doctor`, which now names affected artifacts under
+  **Migration Content Loss**. A preservation block holding `schema_detected` and nothing else is
+  the signature, and it is precise: from this release an unparseable block is preserved under
+  `raw_body`, so that state can only have been produced by an affected build.
+
+  **This is not fully recoverable.** Recover the affected `.md` from version control and re-run
+  the migration. `migrate sidecars` writes no backup — earlier versions of this tool and its
+  docs claimed a pre-migration copy was kept under `.edikt/backups/`, which was never true for
+  this command; both are corrected here.
+
+  Fixed by preserving an unrecognised block verbatim under `migration_preserved.raw_body`,
+  which the extractor reads as source prose. A control across all five sentinel shapes asserts
+  the block's text survives into the sidecar.
+
+  A fuller advisory is held privately and is not published with this release. Everything
+  needed to determine whether you were affected is stated above, and the recovery steps are in
+  the [sidecar migration guide](https://edikt.dev/guides/sidecar-migration#recovering-a-block-lost-by-an-earlier-build).
+- **The post-extraction lossless check passed artifacts it never examined.** It compared the
+  extractor's output against the preserved directive list, and when that list was empty it
+  compared against nothing, found nothing missing, and reported a clean result. Artifacts it
+  cannot compare are now reported as UNMEASURED and named, and follow the same `--on-loss`
+  policy as a real loss — proceeding without verification is a decision, not a default.
+- **Stale JSON schema copies under a project's `.edikt/schemas/`.** These are installed once
+  by the compile commands and never refreshed, so a project that first compiled before a
+  schema gained fields kept the older copy indefinitely. The binary is unaffected — it
+  validates against a schema compiled into it — but the copy is what the extractor resolves
+  first and what your editor validates against, so the symptoms are extraction drift and
+  spurious editor errors on valid files. edikt's own copies are refreshed and every mirrored
+  schema is now checked for drift on each test run. To refresh a project's copies:
+  `cp ~/.edikt/current/templates/schemas/*.schema.json .edikt/schemas/`.
+- Corpus scenarios that named a disable-flag branch but recorded output byte-identical
+  to their own baseline, so deleting the guard left them green. Each is now proven by a
+  test that fails when the guard is removed.
+- Two read-only reviewer agents declared `allowed-tools:` (the slash-command key)
+  instead of `tools:`, which agents ignore — both ran with full write access.
+
 ## v0.7.3 (2026-08-20)
 
 A second, unrelated field report from `dcsg/bok-services` — not the upgrade-path report

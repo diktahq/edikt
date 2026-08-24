@@ -25,9 +25,15 @@ if command -v grep >/dev/null 2>&1; then
   fi
 fi
 
-# Source event logging
-if [ -f "$HOME/.edikt/hooks/event-log.sh" ]; then
-  source "$HOME/.edikt/hooks/event-log.sh"
+# The standard discovery ladder, for the one verb this hook calls. Resolved once
+# and allowed to come back empty: a git hook that refused to push because
+# telemetry was unavailable would be a worse failure than the missing record.
+EDIKT_BIN_RESOLVED=""
+for _c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; do
+  if [ -x "$_c" ]; then EDIKT_BIN_RESOLVED="$_c"; break; fi
+done
+if [ -z "$EDIKT_BIN_RESOLVED" ] && command -v edikt >/dev/null 2>&1; then
+  EDIKT_BIN_RESOLVED="edikt"
 fi
 
 # Read base directory from config
@@ -239,14 +245,20 @@ if [ "${EDIKT_INVARIANT_SKIP:-0}" != "1" ]; then
         echo "   To disable: add 'pre-push-invariants: false' under 'hooks:' in .edikt/config.yaml"
         echo ""
 
-        # Log the violation. JSON is built by json.dumps with the finding
-        # passed as argv data (INV-003) — sed-escaping into a concatenated
-        # string is exactly the pattern that invariant forbids: a finding
+        # Log the violation. The finding is passed as a --field VALUE and the
+        # binary encodes it (INV-003): sed-escaping into a concatenated string
+        # is exactly the pattern that invariant forbids, and a finding
         # containing a backslash or control character broke the log line.
-        if type edikt_log_event >/dev/null 2>&1; then
+        #
+        # This used to source $HOME/.edikt/hooks/event-log.sh and shell out to
+        # python3 for one json.dumps. That helper is deleted, and this file was
+        # the last python3 caller under templates/hooks/ — invisible to the
+        # migration's own `templates/hooks/*.sh` glob, since `pre-push` has no
+        # extension.
+        if [ -n "$EDIKT_BIN_RESOLVED" ]; then
           for V in "${INV_VIOLATIONS[@]}"; do
-            PAYLOAD=$(python3 -c 'import json,sys; print(json.dumps({"finding": sys.argv[1], "context": "pre-push"}))' "$V")
-            edikt_log_event "invariant_violation" "$PAYLOAD"
+            "$EDIKT_BIN_RESOLVED" hook event --type invariant_violation \
+              --field "finding=$V" --field context=pre-push 2>/dev/null || true
           done
         fi
 

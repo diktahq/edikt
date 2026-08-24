@@ -47,7 +47,13 @@ type ProposalRoutingReport struct {
 	VerifiesQueued         []string `json:"verifies_queued,omitempty"`
 	TopicDescriptionQueued []string `json:"topic_description_queued,omitempty"`
 	TopicSlotsOpened       []string `json:"topic_slots_opened,omitempty"`
-	SidecarsStripped       int      `json:"sidecars_stripped"`
+
+	// TopicsRejected names corpus topics skipped because a human rejected
+	// their description. Reported rather than silent: a topic that renders
+	// with no description is a visible gap, and the reader needs to know it
+	// is a decision rather than an oversight.
+	TopicsRejected   []string `json:"topics_rejected,omitempty"`
+	SidecarsStripped int      `json:"sidecars_stripped"`
 }
 
 // Empty reports whether the routing step had nothing to do. A no-subject run
@@ -55,7 +61,8 @@ type ProposalRoutingReport struct {
 // exist.
 func (r ProposalRoutingReport) Empty() bool {
 	return len(r.PathsQueued) == 0 && len(r.VerifiesQueued) == 0 &&
-		len(r.TopicDescriptionQueued) == 0 && len(r.TopicSlotsOpened) == 0
+		len(r.TopicDescriptionQueued) == 0 && len(r.TopicSlotsOpened) == 0 &&
+		len(r.TopicsRejected) == 0
 }
 
 // Report renders the one-line summary compile prints.
@@ -72,6 +79,9 @@ func (r ProposalRoutingReport) Report() string {
 	}
 	if n := len(r.TopicSlotsOpened); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d topic(s) awaiting a description with none proposed (%s)", n, strings.Join(r.TopicSlotsOpened, ", ")))
+	}
+	if n := len(r.TopicsRejected); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d topic(s) rendering with no description because it was rejected (%s)", n, strings.Join(r.TopicsRejected, ", ")))
 	}
 	return "Proposals — " + strings.Join(parts, "; ") +
 		". Review with `bin/edikt sidecar approve --kind <verify|paths|topic-description> --list`."
@@ -118,6 +128,17 @@ type pendingTopicOut struct {
 func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregistry.Registry, now time.Time) (ProposalRoutingReport, error) {
 	rep := ProposalRoutingReport{}
 	stamp := now.UTC().Format(time.RFC3339)
+
+	// A topic whose description a human has REJECTED is not re-proposed.
+	// Without this the loop reject -> compile -> re-proposed has no exit, and
+	// the only escape is approving a description for a topic already decided
+	// to be dead. A malformed rejections file fails the routing rather than
+	// degrading to "no rejections": treating unreadable decisions as absent
+	// would silently re-open the loop.
+	rejections, rerr := topicregistry.LoadRejections(topicregistry.RejectionsPathFor(projectRoot))
+	if rerr != nil {
+		return rep, rerr
+	}
 
 	pathsDir := filepath.Join(projectRoot, ".edikt", "state", "pending-paths")
 	topicsDir := filepath.Join(projectRoot, ".edikt", "state", "pending-topic-descriptions")
@@ -224,7 +245,7 @@ func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregi
 			// re-proposed. The registry is pinned judgment; re-queueing a
 			// machine suggestion against an approved entry every compile is
 			// the regenerate-per-compile failure the pin exists to stop.
-			if _, approved := registry[sc.Topic]; !approved {
+			if _, approved := registry[sc.Topic]; !approved && !rejections.IsRejected(sc.Topic) {
 				if err := os.MkdirAll(topicsDir, 0o755); err != nil {
 					return rep, fmt.Errorf("mkdir %s: %w", topicsDir, err)
 				}
@@ -273,6 +294,15 @@ func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregi
 	sort.Strings(names)
 	for _, t := range names {
 		if _, approved := registry[t]; approved {
+			continue
+		}
+		// A REJECTED topic gets no slot either. Skipping only the description
+		// proposal above and still opening an empty slot here would re-create
+		// the pending file on every compile — the same loop, one code path
+		// over. The declaring sidecars are what must change; `sidecar approve
+		// --decision=reject` names them at rejection time.
+		if rejections.IsRejected(t) {
+			rep.TopicsRejected = append(rep.TopicsRejected, t)
 			continue
 		}
 		dest := filepath.Join(topicsDir, t+".yaml")

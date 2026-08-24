@@ -14,11 +14,11 @@ import (
 
 func TestRun_WritesPreRewriteSnapshot(t *testing.T) {
 	root := newCorpus(t, 2)
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.SkipFixtureProof = false
 
-	if _, err := Run(opts); err != nil {
+	firstRes, err := Run(opts)
+	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -29,24 +29,33 @@ func TestRun_WritesPreRewriteSnapshot(t *testing.T) {
 		t.Fatalf("snapshot not written at %s: %v", snap, err)
 	}
 
-	// The snapshot must be the PRE-rewrite content, not the post-rewrite
-	// content the dispatched sidecar now holds.
-	wantPre := "schema_version: 2\nartifact: " + id + "\nregenerated: false\n"
-	if string(b) != wantPre {
-		t.Fatalf("snapshot content = %q, want pre-rewrite content %q", b, wantPre)
+	// The snapshot must be the PRE-rewrite content — the bytes on disk when
+	// the run started, which is the whole point of a review baseline. It is
+	// compared against the live file rather than a hardcoded string: the
+	// fixture's exact bytes are not the subject, "the snapshot is not the
+	// post-rewrite content" is.
+	live := filepath.Join(root, "docs/architecture/decisions", id+"-fixture.edikt.yaml")
+	pre, perr := os.ReadFile(live)
+	if perr != nil {
+		t.Fatalf("live sidecar: %v", perr)
+	}
+	if string(b) != string(pre) {
+		t.Fatalf("snapshot content = %q, want the pre-rewrite bytes %q", b, pre)
 	}
 
-	live := filepath.Join(root, "docs/architecture/decisions", id+"-fixture.edikt.yaml")
-	liveB, err := os.ReadFile(live)
-	if err != nil {
-		t.Fatalf("live sidecar: %v", err)
+	// Stand in for tier-1's fan-out, then confirm the snapshot did NOT follow
+	// the live file. A snapshot that tracked the rewrite leaves the review
+	// with nothing to diff against.
+	extractInto(t, root, firstRes.PlanID, -1)
+	if _, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: firstRes.PlanID}); rerr != nil {
+		t.Fatalf("record: %v", rerr)
 	}
-	wantPost := "schema_version: 2\nartifact: " + id + "\nregenerated: true\n"
-	if string(liveB) != wantPost {
-		t.Fatalf("live sidecar = %q, want post-rewrite content %q — the snapshot and live copy must differ after dispatch, or the review has nothing to show", liveB, wantPost)
+	liveB, lerr := os.ReadFile(live)
+	if lerr != nil {
+		t.Fatalf("live sidecar after extraction: %v", lerr)
 	}
 	if string(b) == string(liveB) {
-		t.Fatal("snapshot equals live sidecar after dispatch — snapshotting must have run AFTER rewrite, not before")
+		t.Fatal("snapshot equals live sidecar after extraction — snapshotting must have run BEFORE the rewrite, not after")
 	}
 }
 
@@ -56,33 +65,41 @@ func TestRun_DoesNotSnapshotAlreadyDoneArtifacts(t *testing.T) {
 	// get no fresh snapshot — one would imply "this run touched it," which
 	// would be false.
 	root := newCorpus(t, 2)
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.SkipFixtureProof = false
 
-	if _, err := Run(opts); err != nil {
+	firstRes, err := Run(opts)
+	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
 
 	id := adrID(1)
 	snap := SnapshotPath(root, id)
-	firstStat, err := os.Stat(snap)
-	if err != nil {
-		t.Fatalf("snapshot missing after first run: %v", err)
+	firstStat, serr := os.Stat(snap)
+	if serr != nil {
+		t.Fatalf("snapshot missing after first run: %v", serr)
 	}
 	firstModTime := firstStat.ModTime()
 
 	// Second run: everything is already done (same prompt version, unchanged
-	// sidecars), so nothing should be re-dispatched or re-snapshotted.
-	r2 := &fakeRunner{}
-	opts2 := baseOpts(root, r2)
+	// sidecars), so nothing should be re-planned or re-snapshotted.
+	//
+	// Run() only plans now, so the corpus has to actually be regenerated
+	// between the two runs for "already done" to be true — otherwise the
+	// second run would legitimately replan and this would fail for a reason
+	// that has nothing to do with snapshots.
+	extractInto(t, root, firstRes.PlanID, -1)
+	if _, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: firstRes.PlanID}); rerr != nil {
+		t.Fatalf("record: %v", rerr)
+	}
+	opts2 := baseOpts(root)
 	opts2.SkipFixtureProof = false
-	res, err := Run(opts2)
-	if err != nil {
-		t.Fatalf("second run: %v", err)
+	res, rerr2 := Run(opts2)
+	if rerr2 != nil {
+		t.Fatalf("second run: %v", rerr2)
 	}
 	if res.Dispatched != 0 {
-		t.Fatalf("second run dispatched %d; want 0 (everything already done)", res.Dispatched)
+		t.Fatalf("second run planned %d; want 0 (everything already done)", res.Dispatched)
 	}
 
 	secondStat, err := os.Stat(snap)

@@ -33,6 +33,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/diktahq/edikt/tools/edikt/internal/pathsproposal"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/diktahq/edikt/tools/edikt/internal/topicregistry"
@@ -508,10 +509,53 @@ func runApproveTopicDescription(pendingID, decision string) error {
 	}
 
 	if decision == "reject" {
+		topic := strings.TrimSpace(ptd.Topic)
+		if topic == "" {
+			topic = pendingID
+		}
+		root, rootErr := os.Getwd()
+		if rootErr != nil {
+			return &exitCodeError{code: 1, msg: fmt.Sprintf("resolve project root: %v", rootErr)}
+		}
+
+		// PERSIST the decision before removing the pending file. Removing
+		// first and failing here would leave the topic un-rejected AND
+		// un-queued, which reads as resolved and is not.
+		rejPath := topicregistry.RejectionsPathFor(root)
+		rejections, loadErr := topicregistry.LoadRejections(rejPath)
+		if loadErr != nil {
+			return &exitCodeError{code: 1, msg: loadErr.Error()}
+		}
+		// Reason is left for a human to add by hand. There is no --reason flag
+		// today, and filling it from an unrelated flag would put a file path
+		// where a sentence belongs.
+		rejections[topic] = topicregistry.Rejection{
+			RejectedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+		if saveErr := topicregistry.SaveRejections(rejPath, rejections); saveErr != nil {
+			return &exitCodeError{code: 1, msg: fmt.Sprintf("persist rejection: %v", saveErr)}
+		}
+
 		if err := os.Remove(pendingPath); err != nil {
 			return &exitCodeError{code: 1, msg: fmt.Sprintf("remove pending file: %v", err)}
 		}
-		fmt.Fprintf(os.Stdout, "ok: rejected %s (no registry entry written, pending file removed)\n", pendingID)
+
+		fmt.Fprintf(os.Stdout, "ok: rejected %s (recorded in %s; not re-proposed)\n",
+			pendingID, topicregistry.RejectionsRelPath)
+
+		// Rejecting a description usually means the TOPIC should not exist.
+		// Name the sidecars that still declare it, so the next step is the
+		// root cause rather than another lap of the loop.
+		if declaring := sidecarsDeclaringTopic(root, topic); len(declaring) > 0 {
+			fmt.Fprintf(os.Stdout, "\n%d sidecar(s) still declare topic %q:\n", len(declaring), topic)
+			for _, d := range declaring {
+				fmt.Fprintf(os.Stdout, "  %s\n", d)
+			}
+			fmt.Fprintln(os.Stdout, "The topic stays in the corpus while any of these declare it — it will")
+			fmt.Fprintln(os.Stdout, "render with no description in the ambient index. Retopic or retire them.")
+		} else {
+			fmt.Fprintf(os.Stdout, "\nNo sidecar declares topic %q — nothing further to do.\n", topic)
+		}
 		return nil
 	}
 
@@ -615,4 +659,46 @@ func readEditedContent(p string) (string, *exitCodeError) {
 		return "", &exitCodeError{code: 1, msg: fmt.Sprintf("read --edited-content: %v", readErr)}
 	}
 	return strings.TrimRight(string(body), "\n\r\t "), nil
+}
+
+// sidecarsDeclaringTopic names every sidecar whose `topic:` is the given one.
+//
+// Rejecting a description is usually a statement about the TOPIC, not about
+// the sentence: the reporting project rejected one for a subsystem they had
+// dissolved. Persisting the rejection alone would leave that topic in the
+// corpus, rendering into the ambient index with no description and no further
+// prompt. Naming the declaring sidecars points at the root cause instead of
+// routing around it.
+//
+// Best-effort by construction: an unreadable config or sidecar yields a
+// shorter list, never an error. The rejection has already been persisted by
+// the time this runs, and failing the command over a diagnostic would undo a
+// decision the human made.
+func sidecarsDeclaringTopic(projectRoot, topic string) []string {
+	cfg, err := govrun.LoadConfig(projectRoot)
+	if err != nil {
+		return nil
+	}
+	pairs, derr := sidecar.Discover(projectRoot,
+		[]string{cfg.Paths.Decisions, cfg.Paths.Invariants, cfg.Paths.Guidelines})
+	if derr != nil {
+		return nil
+	}
+	var out []string
+	for _, p := range pairs {
+		if p.SidecarPath == "" {
+			continue
+		}
+		sc, lerr := sidecar.Load(p.SidecarPath)
+		if lerr != nil || sc == nil || sc.Topic != topic {
+			continue
+		}
+		rel := p.SidecarPath
+		if r, relErr := filepath.Rel(projectRoot, p.SidecarPath); relErr == nil && !strings.HasPrefix(r, "..") {
+			rel = filepath.ToSlash(r)
+		}
+		out = append(out, rel)
+	}
+	sort.Strings(out)
+	return out
 }

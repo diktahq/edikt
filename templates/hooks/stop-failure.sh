@@ -1,34 +1,10 @@
 #!/usr/bin/env bash
-# edikt: StopFailure hook — log API errors to events.jsonl
-# Fires when a turn ends due to an API error (rate limit, auth failure, etc.)
-
-# Only run in edikt projects
-if [ ! -f ".edikt/config.yaml" ]; then exit 0; fi
-
-# Read hook input from stdin
-INPUT=$(cat)
-
-# ── python3 preflight (F-074/F-075 loud-failure bar) ────────────────────────
-# StopFailure has no established stdout-JSON contract (this hook's success
-# path prints nothing; its whole job is a silent events.jsonl log write), so
-# stderr is the only channel available that does not invent a new protocol
-# shape. Absence used to fail every extraction and the log write silently.
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "edikt: stop-failure — python3 not found; this API error was not logged" >&2
-    exit 0
-fi
-
-# Extract error details (already safely extracted via python3)
-ERROR_TYPE=$(echo "$INPUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('error',{}).get('type','unknown'))" 2>/dev/null || echo "unknown")
-ERROR_MSG=$(echo "$INPUT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('error',{}).get('message','')[:200])" 2>/dev/null || echo "")
-
-# Build the event JSON via json.dumps so embedded quotes/backslashes/newlines in
-# the upstream error payload cannot corrupt events.jsonl. The raw
-# values ride as sys.argv; they never enter a shell-concatenated string.
-EVENT_JSON=$(python3 -c 'import json,sys; print(json.dumps({"error_type": sys.argv[1], "message": sys.argv[2]}))' "$ERROR_TYPE" "$ERROR_MSG")
-
-# Log the event
-source "$HOME/.edikt/hooks/event-log.sh" 2>/dev/null
-edikt_log_event "stop_failure" "$EVENT_JSON" 2>/dev/null
-
-exit 0
+# edikt hook shim — dispatches to the edikt binary; first two rungs trust-gated.
+_G="${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; _T="${EDIKT_HOME:-$HOME/.edikt}/state/trusted-roots.json"
+_h() { command -v sha256sum >/dev/null 2>&1 && sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd -P)\":" "$_T" 2>/dev/null && return 0; [ -x "$_G" ] || return 1; H1="$(_h "$1")"; [ -n "$H1" ] && [ "$H1" = "$(_h "$_G")" ]; }
+EDIKT_BIN=""
+for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
+[ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook stop-failure did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"StopFailure"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook stop-failure did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+exec "$EDIKT_BIN" hook run stop-failure --event StopFailure

@@ -203,15 +203,25 @@ fi
 
 # ─── Dependency check ───────────────────────────────────────────────────────
 command -v curl >/dev/null 2>&1 || { error "curl is required"; exit $EX_NETWORK; }
-# F-060: this installer writes settings.json (line ~750) and the settings
-# sidecar (line ~800) via bare `python3` heredocs with no preflight — the
-# only failure a user ever saw was "settings.json substitution failed —
-# hook paths not written", naming the symptom and never the cause. Not a
-# new dependency: python3 was already silently required by that code.
-# python3 has not shipped with macOS since 12.3 and is absent from most
-# slim containers; checked here, before either write, so the actual
-# missing dependency is what the user reads.
-command -v python3 >/dev/null 2>&1 || { error "python3 is required (used to safely write settings.json — see F-060)"; exit $EX_GENERAL; }
+# F-060/Phase 10: settings.json and its integrity sidecar used to be written
+# by a pair of bare interpreter heredocs (write_settings_json, below),
+# checked here with an interpreter-presence preflight. Those heredocs are
+# gone — both writes now go through the Go binary's `install settings`
+# verb — so the old interpreter is no longer a dependency of this script at
+# all, and there is nothing left to preflight here.
+#
+# What replaces it is a CAPABILITY preflight, not a binary-presence check,
+# and it cannot live at this line: it has to run against the launcher this
+# invocation is about to stage, which does not exist on disk yet at this
+# point in the script (TAG isn't even resolved). See
+# preflight_settings_capability() near install_launcher() below — it runs
+# immediately after a candidate launcher is staged and BEFORE that binary
+# is placed at $EDIKT_ROOT/bin/edikt, PATH is touched, or any version is
+# installed/activated. That ordering is the actual point of this preflight:
+# `install.sh --ref v0.7.2` can stage a binary that predates the
+# `install settings` verb entirely, and cobra's "unknown command" failure
+# for that case must be caught before any mutation, not after PATH was
+# modified and `current` was flipped (the failure mode this closes).
 
 # ─── Interactive mode prompt (preserved from v0.4.x) ────────────────────────
 # Use /dev/tty so `curl | bash` still gets a prompt. Fall back to global.
@@ -714,6 +724,68 @@ stage_launcher() {
   return 0
 }
 
+# ─── Capability preflight (Phase 10) ────────────────────────────────────────
+# Probes whether a STAGED (not-yet-placed) launcher binary actually
+# supports `install settings`, BEFORE that binary is placed at
+# $EDIKT_ROOT/bin/edikt, PATH is touched, or any version is
+# installed/activated. Replaces the interpreter-presence preflight deleted
+# above with a check against the specific failure that old preflight never
+# caught: `install.sh --ref v0.7.2` can stage a pre-0.8.0 binary that has
+# no `install settings` verb at all. Every call site below runs this BEFORE
+# its own first mutation, so that failure surfaces as a named, clean
+# refusal instead of a half-finished install with PATH modified, `current`
+# flipped, and no settings.json ever written.
+#
+# WHAT WAS WRONG HERE (recorded so it doesn't happen again): the original
+# probe ran `install settings --help` and treated exit 0 as "verb
+# supported". That reasoning assumed cobra reports "unknown command" for an
+# unrecognized subcommand — but `install` is declared with a positional
+# `<tag>` argument (`Args: cobra.ExactArgs(1)`), so cobra parses "settings"
+# as a VALID tag rather than an unknown subcommand. There is no
+# "unrecognized" case for `--help` to catch: it short-circuits before Args
+# validation and prints INSTALL's own help either way, exit 0, whether or
+# not `settings` exists as a real subcommand. Confirmed empirically against
+# a built v0.7.3 binary: `install settings --help` exits 0 on it exactly
+# like it does on v0.8.0+. The probe was modelling cobra's dispatch
+# behaviour instead of asserting the fact it actually needed — the model
+# was wrong for this command's shape, so the probe could not fail even in
+# principle (INV-014: a guard must assert the resolved outcome, not
+# reproduce the logic that produces it).
+#
+# THE FIX: ask cobra directly, from ITS OWN output, whether `settings` is a
+# registered subcommand of `install`. `install --help` (the PARENT's help —
+# no positional consumed, since --help also short-circuits here) prints an
+# "Available Commands:" block cobra generates from its real subcommand
+# registration table. A pre-0.8.0 binary's block lists `benchmark` only; a
+# 0.8.0+ binary's additionally lists `settings`. This reads the actual
+# registration rather than a copy of it — no version-number arithmetic, no
+# assumption about which release introduced the verb — so it also stays
+# correct for a binary whose version string this probe never parses at all:
+# a locally built `dev` binary (test/run.sh builds bin/edikt with no `-X
+# Version=` ldflag, and the integration suite runs install.sh against it via
+# EDIKT_LAUNCHER_SOURCE) is judged on whether it actually has the verb, not
+# on what its unset version claims to be. `_psc_ver` below is computed only
+# for the refusal message; the pass/fail decision never touches it.
+preflight_settings_capability() {
+  _psc_bin="$1"
+  _psc_help=$("$_psc_bin" install --help 2>&1) || true
+  if printf '%s\n' "$_psc_help" | grep -qE '^[[:space:]]{2}settings([[:space:]]|$)'; then
+    return 0
+  fi
+  _psc_ver=$(go_binary_version "$_psc_bin" 2>/dev/null || true)
+  # A staged binary with no active version reports no parseable version at
+  # all; say so rather than printing a "v" in front of nothing.
+  if [ -n "$_psc_ver" ]; then
+    _psc_desc="v$_psc_ver"
+  else
+    _psc_desc="version unknown"
+  fi
+  error "the staged edikt binary ($_psc_desc) does not support \`install settings\` — this verb was added in v0.8.0."
+  error "This happens when --ref points at a release older than v0.8.0."
+  error "Re-run install.sh without --ref for the latest release, or pass --ref pointing at v0.8.0 or newer."
+  return $EX_VERSION
+}
+
 # Atomically place the launcher at $EDIKT_ROOT/bin/.
 #
 # Phase 3 (v0.6.0+): edikt-shell has been deleted. The release tarball
@@ -742,6 +814,19 @@ install_launcher() {
     # `|| true` on the next line makes $? read as 0 (success) if this were
     # read after it, silently masking the failure and letting the caller
     # proceed as if the launcher had installed correctly.
+    rm -f "$tmp" 2>/dev/null || true
+    return $_rc
+  fi
+  # Capability preflight BEFORE any placement — $tmp is a scratch file at
+  # this point, nothing under $EDIKT_ROOT/bin/edikt has been touched, and
+  # neither PATH nor `current` has been. A failure here is a zero-mutation
+  # refusal, matching what the deleted interpreter preflight used to guarantee.
+  # NOT `if ! preflight ...; then _rc=$?` — inside the then-branch of `if !`,
+  # $? is the status of the `!` pipeline (0), so _rc captured success and the
+  # refusal was returned as 0. Run it, capture $? on the very next line.
+  preflight_settings_capability "$tmp"
+  _rc=$?
+  if [ "$_rc" -ne 0 ]; then
     rm -f "$tmp" 2>/dev/null || true
     return $_rc
   fi
@@ -804,150 +889,33 @@ dryrun_do() {
 }
 
 # ─── settings.json writer ─────────────────────────────────────────────────────
-# Reads $EDIKT_ROOT/templates/settings.json.tmpl, substitutes ${EDIKT_HOOK_DIR}
-# with the resolved absolute hook path, and writes the result atomically to
-# $CLAUDE_HOME_DIR/settings.json.
+# Phase 10 (FR-009, SPEC-015): the two former interpreter heredocs — substitute
+# ${EDIKT_HOOK_DIR} into settings.json.tmpl and write it atomically, then
+# compute and write the managed-region integrity sidecar — are now one Go
+# verb, `edikt install settings`.
 #
-# The template uses ${EDIKT_HOOK_DIR} as a placeholder — not a real env var.
-# sed substitutes it at install time so the resulting settings.json has
-# absolute paths (no shell expansion required at hook-fire time).
+# The Go package path is deliberately NOT named here, and neither is the
+# pattern that forbids it. ADR-029 directive[9] guards "tier-1 MUST install
+# without tier-2" by grepping this whole file — comments included — for any
+# reference to building or installing the binary. That is blunt, and the
+# bluntness is the point: install.sh must never acquire a way to do either.
+# A comment that merely mentions the package trips it, so the comment gives
+# way rather than the guard. Naming the pattern here would trip it too.
+# This function is a thin wrapper exporting the three inputs that verb
+# needs, mirroring run_launcher_step's existing EDIKT_ROOT-export pattern
+# (see run_launcher_step, below). CLAUDE_HOME is exported explicitly
+# because a --project install computes CLAUDE_HOME_DIR="$(pwd)/.claude"
+# locally — internal/claudepaths.ResolveClaudeRoot()'s own priority order
+# (CLAUDE_HOME -> CLAUDE_CONFIG_DIR -> $HOME/.claude) has no other way to
+# see that value; without the explicit export a project-mode install would
+# silently write to $HOME/.claude/settings.json instead.
 write_settings_json() {
-  tmpl="$EDIKT_ROOT/templates/settings.json.tmpl"
-  dest="$CLAUDE_HOME_DIR/settings.json"
-  if [ ! -f "$tmpl" ]; then
-    warn "settings.json.tmpl not found at $tmpl — skipping settings.json write"
+  if $DRY_RUN; then
+    dryrun_do "edikt install settings (hook dir: $EDIKT_HOOK_DIR)"
     return 0
   fi
-
-  # Phase 13: back up the existing settings.json before the new permissions
-  # block overwrites it. This enables `edikt rollback v0.6.0` to restore
-  # the user's prior settings if the new posture breaks something.
-  # Backup is one-shot — only the FIRST v0.6.0 install creates it.
-  _backup_root="$HOME/.edikt/backup"
-  _backup_dir_marker="$_backup_root/pre-v0.6.0-marker"
-  if [ -f "$dest" ] && [ ! -f "$_backup_dir_marker" ]; then
-    _backup_ts=$(date -u +"%Y%m%dT%H%M%SZ" 2>/dev/null || date +%s)
-    _backup_dir="$_backup_root/pre-v0.6.0-${_backup_ts}"
-    mkdir -p "$_backup_dir" 2>/dev/null || true
-    if cp -p "$dest" "$_backup_dir/settings.json" 2>/dev/null; then
-      # Record the backup dir path in the marker file so rollback can find it.
-      printf '%s\n' "$_backup_dir" > "$_backup_dir_marker"
-      chmod 0600 "$_backup_dir_marker" "$_backup_dir/settings.json" 2>/dev/null || true
-      dim "backed up $dest → $_backup_dir/settings.json (for 'edikt rollback v0.6.0')"
-    fi
-  fi
-
-  # Validate EDIKT_HOOK_DIR before substitution. Characters that
-  # can corrupt JSON or shell expansion are rejected — the previous sed-based
-  # implementation silently produced invalid JSON when the path contained
-  # any of these (audit HI-3).
-  case "$EDIKT_HOOK_DIR" in
-    *'"'*|*'\'*|*'|'*|*$'\n'*|*$'\r'*|*$'\t'*)
-      error "EDIKT_HOOK_DIR contains a forbidden character (\", \\, |, tab, or newline): $EDIKT_HOOK_DIR"
-      return $EX_GENERAL
-      ;;
-  esac
-
-  mkdir -p "$CLAUDE_HOME_DIR" || return $EX_PERMISSION
-
-  # Python substitution: json.loads the template, walk the tree substituting
-  # the ${EDIKT_HOOK_DIR} placeholder in string values, json.dumps the result,
-  # and atomically rename. This eliminates the sed-based text substitution
-  # (which was neither JSON-aware nor JSON-escape-safe) and guarantees the
-  # written file is structurally valid JSON (closes audit HI-2).
-  python3 - "$tmpl" "$dest" "$EDIKT_HOOK_DIR" <<'PY'
-import json
-import os
-import sys
-
-tmpl_path, dest_path, hook_dir = sys.argv[1], sys.argv[2], sys.argv[3]
-
-with open(tmpl_path, 'r', encoding='utf-8') as f:
-    raw = f.read()
-
-# Template uses the literal token ${EDIKT_HOOK_DIR} as a placeholder. It
-# appears inside string values in the JSON template. We replace via string
-# operation on the raw text FIRST (so the JSON parser sees valid paths),
-# then json.loads / json.dumps to round-trip and guarantee validity.
-substituted = raw.replace('${EDIKT_HOOK_DIR}', hook_dir)
-
-try:
-    parsed = json.loads(substituted)
-except json.JSONDecodeError as exc:
-    sys.stderr.write(f"template produced invalid JSON after substitution: {exc}\n")
-    sys.stderr.write(f"check that EDIKT_HOOK_DIR = {hook_dir!r} is a safe path\n")
-    sys.exit(1)
-
-# Write atomically: tmp in the same directory, fsync, rename.
-tmp_path = f"{dest_path}.tmp.{os.getpid()}"
-try:
-    with open(tmp_path, 'w', encoding='utf-8') as f:
-        json.dump(parsed, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, dest_path)
-except OSError as exc:
-    sys.stderr.write(f"atomic write failed: {exc}\n")
-    try:
-        os.remove(tmp_path)
-    except OSError:
-        pass
-    sys.exit(1)
-PY
-  rc=$?
-  if [ "$rc" -ne 0 ]; then
-    error "settings.json substitution failed — hook paths not written"
-    return $EX_GENERAL
-  fi
-
-  # Write managed-region integrity sidecar (). The sidecar
-  # records the canonical hash of the managed keys in settings.json so that
-  # future upgrades can detect drift (user edited the managed region directly)
-  # and prompt before overwriting. Phase 13 migration reads this sidecar to
-  # decide whether to prompt or silently replace.
-  _state_dir="$HOME/.edikt/state"
-  _sidecar="$_state_dir/settings-managed.json"
-  python3 - "$dest" "$_sidecar" <<'PY' || true
-import hashlib
-import json
-import os
-import sys
-from datetime import datetime, timezone
-
-dest_path, sidecar_path = sys.argv[1], sys.argv[2]
-try:
-    with open(dest_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-except (OSError, json.JSONDecodeError):
-    sys.exit(0)
-
-managed_keys = ["permissions"]
-managed = {k: data[k] for k in managed_keys if k in data}
-canonical = json.dumps(managed, sort_keys=True, ensure_ascii=False).encode('utf-8')
-managed_hash = hashlib.sha256(canonical).hexdigest()
-
-sidecar = {
-    "settings_path": dest_path,
-    "managed_keys": managed_keys,
-    "managed_hash": managed_hash,
-    "sentinel_version": 1,
-    "installed_at": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-}
-os.makedirs(os.path.dirname(sidecar_path), exist_ok=True)
-tmp = sidecar_path + '.tmp'
-with open(tmp, 'w', encoding='utf-8') as f:
-    json.dump(sidecar, f, indent=2)
-    f.write('\n')
-os.replace(tmp, sidecar_path)
-try:
-    os.chmod(sidecar_path, 0o600)
-except OSError:
-    pass
-PY
-
-  dim "wrote $dest (hook dir: $EDIKT_HOOK_DIR)"
-  return 0
+  EDIKT_ROOT="$EDIKT_ROOT" CLAUDE_HOME="$CLAUDE_HOME_DIR" EDIKT_HOOK_DIR="$EDIKT_HOOK_DIR" \
+    "$EDIKT_ROOT/bin/edikt" install settings
 }
 
 # ─── Flow orchestration ─────────────────────────────────────────────────────
@@ -1043,7 +1011,14 @@ do_legacy_v04() {
 go_binary_version() {
   f="$1"
   [ -x "$f" ] || { echo ""; return 0; }
-  "$f" version 2>/dev/null | head -1 | awk '{print $NF}' | tr -d 'v' || echo ""
+  # Take the last field ONLY when it is version-shaped. `edikt version` on a
+  # binary with no active version prints "no version installed", whose last
+  # field is the word "installed" — which used to reach callers as the
+  # version "vinstalled" and land in user-facing error messages.
+  "$f" version 2>/dev/null | head -1 | awk '
+    { v = $NF; sub(/^v/, "", v)
+      if (v ~ /^[0-9]+\.[0-9]+(\.[0-9]+)?([-+][0-9A-Za-z.-]+)?$/) print v }
+  ' || echo ""
 }
 
 do_current_v05() {
@@ -1104,11 +1079,32 @@ do_current_v05() {
       rm -f "$tmp" 2>/dev/null || true
       return $EX_NETWORK
     fi
+    # Capability preflight BEFORE placement — see preflight_settings_capability's
+    # doc comment (near install_launcher). $tmp has not replaced
+    # $EDIKT_ROOT/bin/edikt yet, so a failure here is a zero-mutation refusal.
+    # See the note at install_launcher's own preflight call: `$?` inside
+    # `if ! cmd` is the negation's status, not cmd's.
+    preflight_settings_capability "$tmp"
+    _rc=$?
+    if [ "$_rc" -ne 0 ]; then
+      rm -f "$tmp" 2>/dev/null || true
+      return $_rc
+    fi
     cp "$EDIKT_ROOT/bin/edikt" "$EDIKT_ROOT/bin/edikt.prev" 2>/dev/null || true
     mv "$tmp" "$EDIKT_ROOT/bin/edikt"
     info "launcher updated: $cur_ver -> $new_ver"
   else
     dim "launcher is current ($cur_ver, content verified)"
+  fi
+
+  # Second (cheap, --help-only) capability check ahead of this function's
+  # own first mutation (`install "$TAG"` below). Covers the "no restaging
+  # needed" branch above, where the already-placed binary was never staged
+  # by THIS run and so was never checked by the block above.
+  preflight_settings_capability "$EDIKT_ROOT/bin/edikt"
+  _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    return $_rc
   fi
 
   # Idempotent: re-running edikt install for an already-installed tag

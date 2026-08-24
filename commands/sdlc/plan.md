@@ -258,13 +258,17 @@ CRITICAL: NEVER write a plan file without running the pre-flight specialist revi
 
 10b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory. The sidecar is **spec-only**: it describes what each phase promises and how to check it, never evaluation state. `bin/edikt verify` strict-parses it (unknown fields → exit 2), so state fields (`status`, `fail_count`, `fail_reason`, `block_reason`, `last_evaluated`, `generated`, `attempt`) must NEVER appear in it — they live in the evaluation state file (see 10c).
 
-   Top-level fields: `schema_version: 1` (required), `plan`, `target_release`, `created`, `phases[]`. Each phase: `id` (string), `name`, `classification`, optional `completion_promise`, `criteria[]`. Each criterion: `id`, `statement`, and `verify` where one exists.
+   Top-level fields: `schema_version: 1` (required), `plan`, `target_release`, `created`, `phases[]`. Each phase: `id` (string), `name`, `classification`, optional `completion_promise`, optional `phase_metadata`, `criteria[]`. Each criterion: `id`, `statement`, and `verify` where one exists.
+
+   `phase_metadata` is a freeform object the runner ignores entirely. Use it for anything this schema does not anticipate — a gate condition, a reviewer, a link. It exists so an unanticipated concept never forces the choice between deleting the text and mislabelling the phase.
 
    For each phase:
    - Extract acceptance criteria from the plan text; each becomes `{id, statement}`
    - Assign IDs: `AC-{phase}.{seq}` (e.g., AC-1.1, AC-1.2)
    - If pre-flight criteria validation ran (step 9), populate `verify` with the proposed commands from the evaluator
-   - **Classify the phase:** `testable` only when EVERY criterion in it has a `verify` command — testable phases hard-require one per criterion. If some criteria have no command, use `operational` (humanly observable but not machine-checkable) or `informational` (context only). Never emit `verify: null` — omit the key entirely when there is no command.
+   - **Classify the phase:** `testable` only when EVERY criterion in it has a `verify` command — testable phases hard-require one per criterion. If some criteria have no command, use `operational` (humanly observable but not machine-checkable), `informational` (context only), or `owner` (completion is a human decision — a ruling, a sign-off, a go/no-go). Never emit `verify: null` — omit the key entirely when there is no command.
+
+     `owner` is not a synonym for `informational`. Informational means there is nothing to check; owner means a person must act and may not have. Both are skipped by the runner, but they record different states, and a report scanned for outstanding human work can only find owner phases if you label them as such. Put the gate condition itself in `phase_metadata`.
 
    Schema: `templates/schemas/plan-criteria.v1.schema.json` (shipped in the payload; project-local copy under `.edikt/schemas/` if present). Canonical example: `docs/internal/plans/PLAN-sidecar-architecture-criteria.yaml`.
 
@@ -505,8 +509,8 @@ When a phase completes (generator outputs the completion promise):
         ```bash
         LATEST_PF=$(ls -t .edikt/state/post-flight/${PLAN_SLUG}-${PHASE_NUM}-*.json 2>/dev/null | head -1)
         if [ -n "$LATEST_PF" ]; then
-            L2_STATUS=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["l2_summary"]["status"])' "$LATEST_PF")
-            L2_FAIL_COUNT=$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))["l2_summary"].get("counts",{}); print(c.get("fail",0))' "$LATEST_PF")
+            L2_STATUS=$(bin/edikt util json get "$LATEST_PF" l2_summary.status)
+            L2_FAIL_COUNT=$(bin/edikt util json get "$LATEST_PF" l2_summary.counts.fail --default 0)
         fi
         ```
 

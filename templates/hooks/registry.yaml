@@ -1,0 +1,208 @@
+# registry.yaml — the SP-007 data-driven hook registration surface.
+#
+# WHY THIS FILE EXISTS AT ALL
+#
+# `bin/edikt hook run <name>` must resolve <name> from DATA, never from a
+# hardcoded Go switch. PRD-007's owner rider is explicit about it: a future
+# name-pattern change must not require a binary change. This file is that data,
+# and it is tier-1 (`.yaml` under `templates/`, permitted by INV-001), so it
+# ships with every install and is readable without a build step.
+#
+# THREE CONSUMERS, ONE SOURCE OF TRUTH
+#
+#   1. The shim generator (Phase 8) renders one `templates/hooks/<file>` per
+#      row whose `class` is not `library`, from the canonical FR-004 template.
+#   2. `tools/edikt/internal/hook/registry.go` — the SP-007 PARITY GATE. Every
+#      row with `status: migrated` must have a matching Go-side `Register()`
+#      call, and every registered handler must have a `status: migrated` row.
+#      `TestRegistryParity` names any name present in one set and not the other.
+#   3. The corpus recorder (Phase 7) iterates these rows to know which hooks
+#      have a matrix and where it lives.
+#
+#   ...plus a fourth, mechanical one: `tools/edikt/check/hook-registry-settings-drift.sh`
+#   asserts every `event` here against a LIVE parse of `templates/settings.json.tmpl`
+#   and against `test/test-init-registration.sh`'s own exemption enumeration, so
+#   the three consumers above and the settings template cannot drift apart
+#   silently. A row whose `event` is wrong is a hook that never fires, and a
+#   hook that never fires looks exactly like a hook with nothing to say.
+#
+# `event` IS REQUIRED AND ENUM-CLOSED. Before the SPEC-014 pre-flight
+# correction it was an open string, where a typo like "PreToolUSe" validated
+# cleanly and produced a row that could never match a real lifecycle event.
+# `null` is reserved for `class: library` — a sourced bash helper that is never
+# itself registered and never receives a payload on stdin.
+#
+# STATUS IS NOT A PLAN, IT IS A FACT. `pending` means the file is still the
+# pre-FR-004 hand-written bash body. It flips to `migrated` in the same change
+# that lands the hook's Go handler, one hook at a time (FR-007) — never in
+# advance, because the parity gate reads it as a claim about what is registered
+# right now.
+#
+# Schema: templates/schemas/hook-registry.v1.schema.json
+schema_version: 1
+
+hooks:
+  # -- gate: the three write-deny hooks, migrated LAST (FR-007) -------------
+  # A regression here blocks the user's editor, so they move only once the
+  # injector and multi-call classes have shipped and soaked.
+  - name: pre-tool-use
+    event: PreToolUse
+    file: pre-tool-use.sh
+    class: gate
+    status: migrated
+    python3_baseline_count: 8
+  - name: verify-gate
+    event: PreToolUse
+    file: verify-gate.sh
+    class: gate
+    status: migrated
+    python3_baseline_count: 20
+  - name: inject-directives-pre
+    event: PreToolUse
+    file: inject-directives-pre.sh
+    class: gate
+    status: migrated
+    python3_baseline_count: 11
+
+  # -- multi-call: hooks that fan out to several tier-2 verbs per fire ------
+  - name: stop-hook
+    event: Stop
+    file: stop-hook.sh
+    class: multi-call
+    status: migrated
+    python3_baseline_count: 14
+  - name: phase-end-detector
+    event: Stop
+    file: phase-end-detector.sh
+    class: multi-call
+    status: migrated
+    # The one row in the tier that is NOT the canonical exec shim. ADR-063's
+    # 2026-08-22 Amendment admits a second shape for it, and only for it: this
+    # hook execs the host model CLI at three sites, INV-012 forbids the tier-2
+    # binary from doing that, and the two facts are separable — the binary
+    # keeps every byte of JSON and every decision, the caller keeps the three
+    # dispatches. `hook shim check` reads this field to know it must assert
+    # the caller's properties rather than diff it against a render it was
+    # never generated from.
+    shape: dispatch-orchestrator
+    python3_baseline_count: 28
+  - name: subagent-stop
+    event: SubagentStop
+    file: subagent-stop.sh
+    class: multi-call
+    status: migrated
+    python3_baseline_count: 20
+
+  # -- injector: everything else that is directly registered ---------------
+  - name: session-start
+    event: SessionStart
+    file: session-start.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 8
+  - name: session-end
+    event: SessionEnd
+    file: session-end.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 6
+  - name: user-prompt-submit
+    event: UserPromptSubmit
+    file: user-prompt-submit.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 7
+  - name: post-tool-use
+    event: PostToolUse
+    file: post-tool-use.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 0
+  - name: inject-directives-post
+    event: PostToolUse
+    file: inject-directives-post.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 7
+  - name: stop-failure
+    event: StopFailure
+    file: stop-failure.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 7
+  - name: post-compact
+    event: PostCompact
+    file: post-compact.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 8
+  - name: instructions-loaded
+    event: InstructionsLoaded
+    file: instructions-loaded.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 0
+  - name: subagent-start
+    event: SubagentStart
+    file: subagent-start.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 6
+  - name: task-created
+    event: TaskCreated
+    file: task-created.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 8
+  - name: task-completed
+    event: TaskCompleted
+    file: task-completed.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 8
+  - name: cwd-changed
+    event: CwdChanged
+    file: cwd-changed.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 4
+  - name: file-changed
+    event: FileChanged
+    file: file-changed.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 8
+  - name: worktree-create
+    event: WorktreeCreate
+    file: worktree-create.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 5
+  - name: worktree-remove
+    event: WorktreeRemove
+    file: worktree-remove.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 6
+  # The one payload-invoked hook registered OUTSIDE settings.json's `hooks:`
+  # block -- it sits under the top-level `statusLine` key instead. Carried here
+  # with the literal event "statusLine" so the drift check can reconcile it
+  # rather than special-case it in prose.
+  - name: status-line
+    event: statusLine
+    file: status-line.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 0
+
+  # -- library: sourced bash, never registered, never given a payload ------
+  # `event: null` is the schema's way of saying "this row is not a hook".
+  # These are listed anyway so the drift check has a complete denominator:
+  # every `.sh` under templates/hooks/ is accounted for by exactly one row,
+  # and an unaccounted file is a FAILURE rather than an invisible omission.
+  - name: plan-naming
+    event: null
+    file: _plan-naming.sh
+    class: library
+    status: pending
+    python3_baseline_count: 0

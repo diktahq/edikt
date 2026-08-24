@@ -3,11 +3,11 @@ package reextract
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -63,41 +63,92 @@ func gitCommitAll(t *testing.T, root string) {
 	}
 }
 
-// fakeRunner counts dispatches and writes a plausible sidecar, so a test can
-// assert on WHAT WAS DISPATCHED rather than on what the code said it would do.
-type fakeRunner struct {
-	mu         sync.Mutex
-	dispatched []string
-	failIDs    map[string]bool
-	// killAfter simulates a mid-run kill: once this many tasks have been
-	// dispatched, every further Resync returns an error WITHOUT writing,
-	// standing in for a process that died with work outstanding.
-	killAfter int
-}
-
-func (f *fakeRunner) Preflight() error { return nil }
-
-func (f *fakeRunner) Resync(_ context.Context, t phasea.Task) error {
-	f.mu.Lock()
-	f.dispatched = append(f.dispatched, t.ArtifactID)
-	n := len(f.dispatched)
-	f.mu.Unlock()
-
-	if f.killAfter > 0 && n > f.killAfter {
-		return errString("simulated kill: process died before extracting " + t.ArtifactID)
+// extractAllExcept stages the extractor's output for every plan item but one,
+// standing in for a fan-out where a single artifact's subagent failed.
+func extractAllExcept(t *testing.T, root, planID, skipID string) {
+	t.Helper()
+	var plan phasea.DispatchPlan
+	raw, rerr := os.ReadFile(phasea.PlanFilePath(root, planID))
+	if rerr != nil {
+		t.Fatalf("read plan: %v", rerr)
 	}
-	if f.failIDs[t.ArtifactID] {
-		return errString("extractor failed on " + t.ArtifactID)
+	if jerr := json.Unmarshal(raw, &plan); jerr != nil {
+		t.Fatalf("parse plan: %v", jerr)
 	}
-	body := "schema_version: 2\nartifact: " + t.ArtifactID + "\nregenerated: true\n"
-	return os.WriteFile(t.SidecarPath, []byte(body), 0o644)
+	for _, it := range plan.Items {
+		if it.ItemID == skipID {
+			continue
+		}
+		p := filepath.Join(root, it.ExpectedOutput.Path)
+		body := regeneratedSidecar(it.ArtifactPath, it.ItemID)
+		if werr := os.WriteFile(p, []byte(body), 0o644); werr != nil {
+			t.Fatalf("stage extraction for %s: %v", it.ItemID, werr)
+		}
+	}
 }
 
-func (f *fakeRunner) count() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.dispatched)
+// regeneratedSidecar is what a successful extraction would have written: a
+// loadable, schema-valid sidecar whose anchor quotes the parent byte-exactly.
+//
+// All three properties are load-bearing — phasea.Restore's content gate loads
+// it, validates it against its own declared schema, and resolves its anchors
+// against the real parent. A placeholder that satisfied only the first would
+// be quarantined, and the test would report a failed extraction that never
+// actually failed.
+//
+// Line 8 is "MUST do the thing." in newCorpus's parent bodies.
+func regeneratedSidecar(artifactPath, itemID string) string {
+	return fmt.Sprintf("schema_version: 2\n"+
+		"topic: testing\n"+
+		"path: %s\n"+
+		"signals:\n  - testing\n"+
+		"directives:\n"+
+		"  - text: \"A regenerated rule MUST hold. (ref: %s)\"\n"+
+		"    source_excerpts:\n"+
+		"      - line_start: 8\n"+
+		"        line_end: 8\n"+
+		"        quote: \"MUST do the thing.\"\n", artifactPath, itemID)
 }
+
+// plannedCount reports how many artifacts a run handed off to tier-1.
+//
+// These tests asserted on a fakeRunner's dispatch tally. There is no dispatch
+// from tier-2 to tally now (SPEC-013) — Run() emits a plan and returns — so
+// the same question is answered by the plan's item count. It is the stronger
+// observable: the plan is what tier-1 actually fans out from, whereas the
+// stub only ever existed inside the test process.
+func plannedCount(res *Result) int {
+	if res == nil {
+		return 0
+	}
+	return res.Dispatched
+}
+
+// extractInto writes the sidecar the extractor would have produced for every
+// item in a plan, standing in for tier-1's fan-out so a test can go on to
+// exercise the recording pass.
+func extractInto(t *testing.T, root, planID string, limit int) {
+	t.Helper()
+	var plan phasea.DispatchPlan
+	raw, rerr := os.ReadFile(phasea.PlanFilePath(root, planID))
+	if rerr != nil {
+		t.Fatalf("read plan: %v", rerr)
+	}
+	if jerr := json.Unmarshal(raw, &plan); jerr != nil {
+		t.Fatalf("parse plan: %v", jerr)
+	}
+	for n, it := range plan.Items {
+		if limit >= 0 && n >= limit {
+			break // stand in for a fan-out that was killed partway
+		}
+		p := filepath.Join(root, it.ExpectedOutput.Path)
+		body := regeneratedSidecar(it.ArtifactPath, it.ItemID)
+		if werr := os.WriteFile(p, []byte(body), 0o644); werr != nil {
+			t.Fatalf("stage extraction for %s: %v", it.ItemID, werr)
+		}
+	}
+}
+
 
 type errString string
 
@@ -121,7 +172,23 @@ func newCorpus(t *testing.T, n int) string {
 		id := adrID(i)
 		base := filepath.Join(dec, id+"-fixture")
 		mustWrite(t, base+".md", "---\nid: "+id+"\nstatus: accepted\n---\n\n# "+id+"\n\nMUST do the thing.\n")
-		mustWrite(t, base+".edikt.yaml", "schema_version: 2\nartifact: "+id+"\nregenerated: false\n")
+		// A LOADABLE but STALE sidecar. It has to be both: phasea.Plan
+		// refuses the whole run if any artifact in the corpus fails to load
+		// (a corpus it cannot read is one it cannot plan against), and it
+		// only plans artifacts whose anchors have drifted. The quote below
+		// deliberately does not appear in the parent body above, which is
+		// what makes each fixture stale and therefore planned.
+		mustWrite(t, base+".edikt.yaml",
+			"schema_version: 2\n"+
+				"topic: testing\n"+
+				"path: docs/architecture/decisions/"+id+"-fixture.md\n"+
+				"signals:\n  - testing\n"+
+				"directives:\n"+
+				"  - text: \"A stale rule MUST hold. (ref: "+id+")\"\n"+
+				"    source_excerpts:\n"+
+				"      - line_start: 7\n"+
+				"        line_end: 7\n"+
+				"        quote: \"text that is not in the parent\"\n")
 	}
 	return root
 }
@@ -158,12 +225,11 @@ func mustWrite(t *testing.T, p, body string) {
 	}
 }
 
-func baseOpts(root string, r *fakeRunner) Options {
+func baseOpts(root string) Options {
 	return Options{
 		ProjectRoot: root,
 		Force:       true,
 		Concurrency: 2,
-		Runner:      r,
 		Stderr:      io_Discard{},
 		// These tests exercise DISPATCH MECHANICS — force, idempotence,
 		// resume, blast radius. The fixture-validation precondition is a
@@ -184,15 +250,15 @@ func (io_Discard) Write(p []byte) (int, error) { return len(p), nil }
 // dispatching has still re-extracted the corpus.
 func TestReextractRefusesWithoutForce(t *testing.T) {
 	root := newCorpus(t, 3)
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.Force = false
 
-	if _, err := Run(opts); err == nil {
+	res, err := Run(opts)
+	if err == nil {
 		t.Fatal("expected a refusal without --force, got nil error")
 	}
-	if got := r.count(); got != 0 {
-		t.Fatalf("refused run dispatched %d extraction(s); want 0", got)
+	if got := plannedCount(res); got != 0 {
+		t.Fatalf("refused run planned %d extraction(s); want 0", got)
 	}
 	if _, err := os.Stat(filepath.Join(root, LedgerRelPath)); err == nil {
 		t.Fatal("a refused run wrote a ledger; it must leave no trace of a batch that did not happen")
@@ -202,17 +268,28 @@ func TestReextractRefusesWithoutForce(t *testing.T) {
 // TestReextractDispatchesWholeCorpusOnce covers the forced first run.
 func TestReextractDispatchesWholeCorpusOnce(t *testing.T) {
 	root := newCorpus(t, 5)
-	r := &fakeRunner{}
 
-	res, err := Run(baseOpts(root, r))
+	res, err := Run(baseOpts(root))
 	if err != nil {
 		t.Fatalf("forced run failed: %v", err)
 	}
-	if res.Dispatched != 5 || r.count() != 5 {
-		t.Fatalf("dispatched %d (runner saw %d); want 5 of 5 eligible", res.Dispatched, r.count())
+	if res.Dispatched != 5 || plannedCount(res) != 5 {
+		t.Fatalf("planned %d; want 5 of 5 eligible", res.Dispatched)
 	}
-	if res.Succeeded != 5 {
-		t.Fatalf("succeeded %d; want 5", res.Succeeded)
+	// Succeeded is deliberately zero on a plan-and-hand-off run: this process
+	// does not perform the extraction, and reporting a success count for work
+	// it did not do is the unmeasured-as-measured shape. The completions are
+	// recorded by the pass that follows tier-1's fan-out.
+	if res.Succeeded != 0 {
+		t.Fatalf("succeeded %d before any extraction ran; want 0", res.Succeeded)
+	}
+	extractInto(t, root, res.PlanID, -1)
+	rec, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: res.PlanID})
+	if rerr != nil {
+		t.Fatalf("record: %v", rerr)
+	}
+	if rec.Recorded != 5 {
+		t.Fatalf("recorded %d; want 5", rec.Recorded)
 	}
 
 	var l Ledger
@@ -234,18 +311,25 @@ func TestReextractDispatchesWholeCorpusOnce(t *testing.T) {
 // artifact dispatches zero extractions" clause.
 func TestReextractIsIdempotent(t *testing.T) {
 	root := newCorpus(t, 4)
-	first := &fakeRunner{}
-	if _, err := Run(baseOpts(root, first)); err != nil {
+	first, err := Run(baseOpts(root))
+	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
+	// Stand in for tier-1's fan-out and the recording pass that follows it.
+	// Run() only plans now, so without these the corpus is still stale and
+	// the "second run" would legitimately replan — the test would pass for
+	// the wrong reason on an implementation that never regenerated anything.
+	extractInto(t, root, first.PlanID, -1)
+	if _, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: first.PlanID}); rerr != nil {
+		t.Fatalf("record: %v", rerr)
+	}
 
-	second := &fakeRunner{}
-	res, err := Run(baseOpts(root, second))
+	res, err := Run(baseOpts(root))
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
-	if second.count() != 0 || res.Dispatched != 0 {
-		t.Fatalf("re-invocation dispatched %d (runner saw %d); want 0", res.Dispatched, second.count())
+	if res.Dispatched != 0 {
+		t.Fatalf("re-invocation planned %d extraction(s); want 0", res.Dispatched)
 	}
 	if res.AlreadyDone != 4 {
 		t.Fatalf("already-done %d; want 4", res.AlreadyDone)
@@ -268,58 +352,48 @@ func TestReextractLedgerIsWrittenPerCompletion(t *testing.T) {
 	root := newCorpus(t, 4)
 	ledgerPath := filepath.Join(root, LedgerRelPath)
 
+	plan, err := Run(baseOpts(root))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	extractInto(t, root, plan.PlanID, -1)
+
 	var seenDuringRun int
-	probe := &probingRunner{
-		onDispatch: func(n int) {
-			// On the third dispatch, two artifacts have already completed.
-			if n == 3 {
-				var l Ledger
-				b, err := os.ReadFile(ledgerPath)
-				if err != nil {
-					return
-				}
-				if json.Unmarshal(b, &l) != nil {
-					return
-				}
-				for _, e := range l.Artifacts {
-					if e.Status == StatusDone {
-						seenDuringRun++
-					}
+	if _, rerr := Record(RecordOptions{
+		ProjectRoot: root,
+		PlanID:      plan.PlanID,
+		OnRecorded: func(_ string, n int) {
+			// On the third recording, two artifacts have already completed.
+			// Read the ledger FROM DISK, which is where a kill would leave it.
+			if n != 3 {
+				return
+			}
+			var l Ledger
+			b, rerr := os.ReadFile(ledgerPath)
+			if rerr != nil || json.Unmarshal(b, &l) != nil {
+				return
+			}
+			for _, e := range l.Artifacts {
+				if e.Status == StatusDone {
+					seenDuringRun++
 				}
 			}
 		},
+	}); rerr != nil {
+		t.Fatalf("record: %v", rerr)
 	}
-	opts := baseOpts(root, nil)
-	opts.Runner = probe
-	opts.Concurrency = 1
-	if _, err := Run(opts); err != nil {
-		t.Fatalf("run: %v", err)
+
+	// Guard the denominator: a plan smaller than 3 items never reaches the
+	// probe, and a zero here would read as "batched" when it means "never
+	// looked".
+	if plan.Dispatched < 3 {
+		t.Fatalf("plan had %d item(s); the mid-run probe needs at least 3", plan.Dispatched)
 	}
 	if seenDuringRun < 2 {
 		t.Fatalf("ledger held %d completed entry(ies) mid-run; want at least 2 — completions must be persisted as they happen, not at the end (a killed process never reaches the end)", seenDuringRun)
 	}
 }
 
-// probingRunner writes sidecars like fakeRunner but calls back with the
-// dispatch ordinal so a test can inspect on-disk state mid-batch.
-type probingRunner struct {
-	mu         sync.Mutex
-	n          int
-	onDispatch func(int)
-}
-
-func (p *probingRunner) Preflight() error { return nil }
-
-func (p *probingRunner) Resync(_ context.Context, t phasea.Task) error {
-	p.mu.Lock()
-	p.n++
-	n := p.n
-	p.mu.Unlock()
-	if p.onDispatch != nil {
-		p.onDispatch(n)
-	}
-	return os.WriteFile(t.SidecarPath, []byte("schema_version: 2\nartifact: "+t.ArtifactID+"\n"), 0o644)
-}
 
 // TestReextractResumesAfterKill is the resumability clause, and it is the one
 // that pays for the whole ledger: a kill mid-batch must cost only the
@@ -327,28 +401,36 @@ func (p *probingRunner) Resync(_ context.Context, t phasea.Task) error {
 func TestReextractResumesAfterKill(t *testing.T) {
 	root := newCorpus(t, 6)
 
-	// Serial dispatch so "killed after 2" is deterministic rather than a race
-	// against the concurrency cap.
-	killed := &fakeRunner{killAfter: 2}
-	opts := baseOpts(root, killed)
-	opts.Concurrency = 1
-	if _, err := Run(opts); err == nil {
-		t.Fatal("expected the killed batch to report failure")
+	// The kill is now modelled where it can actually happen: tier-1's fan-out
+	// finished only 2 of the 6 artifacts before the process died, so only
+	// those 2 have a sidecar for the recording pass to find. The other 4 are
+	// recorded as failed — which is the state a resume must read as "still
+	// owed", not as "never attempted".
+	plan, err := Run(baseOpts(root))
+	if err != nil {
+		t.Fatalf("first run: %v", err)
 	}
-	if killed.count() != 6 {
-		t.Fatalf("killed batch attempted %d task(s); want all 6 attempted", killed.count())
+	if plan.Dispatched != 6 {
+		t.Fatalf("first run planned %d; want all 6", plan.Dispatched)
+	}
+	extractInto(t, root, plan.PlanID, 2)
+	rec, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: plan.PlanID})
+	if rerr == nil {
+		t.Fatal("expected the partial batch to report failure for the 4 unextracted artifacts")
+	}
+	if rec.Recorded != 2 {
+		t.Fatalf("recorded %d completed artifact(s); want the 2 the fan-out finished", rec.Recorded)
 	}
 
-	resumed := &fakeRunner{}
-	res, err := Run(baseOpts(root, resumed))
+	res, err := Run(baseOpts(root))
 	if err != nil {
 		t.Fatalf("resume run: %v", err)
 	}
 	if res.AlreadyDone != 2 {
 		t.Fatalf("resume treated %d artifact(s) as done; want the 2 that completed before the kill", res.AlreadyDone)
 	}
-	if res.Dispatched != 4 || resumed.count() != 4 {
-		t.Fatalf("resume dispatched %d (runner saw %d); want only the 4 remaining", res.Dispatched, resumed.count())
+	if res.Dispatched != 4 {
+		t.Fatalf("resume planned %d; want only the 4 remaining", res.Dispatched)
 	}
 }
 
@@ -357,19 +439,40 @@ func TestReextractResumesAfterKill(t *testing.T) {
 // after its dispatch is not counted as covered by this batch.
 func TestReextractRedispatchesEditedSidecar(t *testing.T) {
 	root := newCorpus(t, 3)
-	if _, err := Run(baseOpts(root, &fakeRunner{})); err != nil {
+	first, err := Run(baseOpts(root))
+	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	edited := filepath.Join(root, "docs/architecture/decisions", adrID(2)+"-fixture.edikt.yaml")
-	mustWrite(t, edited, "schema_version: 2\nartifact: ADR-002\nhand_edited: true\n")
-
-	r := &fakeRunner{}
-	res, err := Run(baseOpts(root, r))
-	if err != nil {
-		t.Fatalf("second run: %v", err)
+	// Complete the batch: fan-out plus the recording pass. Only then is
+	// "already regenerated" a claim the ledger can be wrong about, which is
+	// what this test is here to check.
+	extractInto(t, root, first.PlanID, -1)
+	if _, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: first.PlanID}); rerr != nil {
+		t.Fatalf("record: %v", rerr)
 	}
-	if res.Dispatched != 1 || r.count() != 1 || r.dispatched[0] != adrID(2) {
-		t.Fatalf("dispatched %v; want only the edited %s", r.dispatched, adrID(2))
+	edited := filepath.Join(root, "docs/architecture/decisions", adrID(2)+"-fixture.edikt.yaml")
+	// Hand-edited: loadable (phasea.Plan refuses a corpus it cannot read, so
+	// an unparseable edit would fail on the corpus gate rather than the hash
+	// check this test is about) but anchor-stale, which is what puts it back
+	// in the work-list while its two siblings stay out.
+	mustWrite(t, edited,
+		"schema_version: 2\n"+
+			"topic: testing\n"+
+			"path: docs/architecture/decisions/"+adrID(2)+"-fixture.md\n"+
+			"signals:\n  - testing\n"+
+			"directives:\n"+
+			"  - text: \"A hand-edited rule MUST hold. (ref: "+adrID(2)+")\"\n"+
+			"    source_excerpts:\n"+
+			"      - line_start: 8\n"+
+			"        line_end: 8\n"+
+			"        quote: \"this quote is not in the parent either\"\n")
+
+	res, serr := Run(baseOpts(root))
+	if serr != nil {
+		t.Fatalf("second run: %v", serr)
+	}
+	if res.Dispatched != 1 || plannedCount(res) != 1 {
+		t.Fatalf("planned %d; want only the edited %s", res.Dispatched, adrID(2))
 	}
 }
 
@@ -377,18 +480,17 @@ func TestReextractRedispatchesEditedSidecar(t *testing.T) {
 // done under a different extraction contract is not this batch's work.
 func TestReextractNewPromptVersionStartsFreshBatch(t *testing.T) {
 	root := newCorpus(t, 3)
-	if _, err := Run(baseOpts(root, &fakeRunner{})); err != nil {
+	if _, err := Run(baseOpts(root)); err != nil {
 		t.Fatalf("first run: %v", err)
 	}
 	mustWrite(t, filepath.Join(root, ".claude/agents/sidecar-extractor.md"),
 		"---\nname: sidecar-extractor\nmodel: claude-opus-5\nprompt_version: 5\n---\nbody\n")
 
-	r := &fakeRunner{}
-	res, err := Run(baseOpts(root, r))
+	res, err := Run(baseOpts(root))
 	if err != nil {
 		t.Fatalf("run under the new contract: %v", err)
 	}
-	if res.Dispatched != 3 || r.count() != 3 {
+	if res.Dispatched != 3 || plannedCount(res) != 3 {
 		t.Fatalf("dispatched %d under a new prompt version; want all 3 re-dispatched", res.Dispatched)
 	}
 	if res.PromptVersion != "v5" {
@@ -404,16 +506,15 @@ func TestReextractRefusesUnknownPromptVersion(t *testing.T) {
 	mustWrite(t, filepath.Join(root, ".claude/agents/sidecar-extractor.md"),
 		"---\nname: sidecar-extractor\nmodel: claude-opus-5\n---\nno prompt version here\n")
 
-	r := &fakeRunner{}
-	_, err := Run(baseOpts(root, r))
+	res, err := Run(baseOpts(root))
 	if err == nil {
 		t.Fatal("expected a refusal when the extraction contract version is unreadable")
 	}
 	if !strings.Contains(err.Error(), "UNKNOWN") {
 		t.Fatalf("error %q does not report UNKNOWN; an unnameable contract must be reported, not substituted", err)
 	}
-	if r.count() != 0 {
-		t.Fatalf("dispatched %d with an unknown contract; want 0", r.count())
+	if plannedCount(res) != 0 {
+		t.Fatalf("planned %d with an unknown contract; want 0", plannedCount(res))
 	}
 }
 
@@ -423,26 +524,25 @@ func TestReextractCleanTreePrecondition(t *testing.T) {
 	root := newCorpus(t, 2)
 	gitInit(t, root)
 
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.RequireCleanTree = true
 
 	// Dirty: nothing is committed yet, so every file is untracked.
-	if _, err := Run(opts); err == nil {
+	res, derr := Run(opts)
+	if derr == nil {
 		t.Fatal("expected a refusal on a dirty tree")
 	}
-	if r.count() != 0 {
-		t.Fatalf("dispatched %d on a dirty tree; want 0", r.count())
+	if plannedCount(res) != 0 {
+		t.Fatalf("planned %d on a dirty tree; want 0", plannedCount(res))
 	}
 
 	gitCommitAll(t, root)
-	clean := &fakeRunner{}
-	opts.Runner = clean
-	if _, err := Run(opts); err != nil {
-		t.Fatalf("clean tree still refused: %v", err)
+	cleanRes, cerr := Run(opts)
+	if cerr != nil {
+		t.Fatalf("clean tree still refused: %v", cerr)
 	}
-	if clean.count() != 2 {
-		t.Fatalf("clean-tree run dispatched %d; want 2", clean.count())
+	if plannedCount(cleanRes) != 2 {
+		t.Fatalf("clean-tree run planned %d; want 2", plannedCount(cleanRes))
 	}
 }
 
@@ -454,7 +554,7 @@ func TestReextractTouchesOnlySidecars(t *testing.T) {
 	gitInit(t, root)
 	gitCommitAll(t, root)
 
-	opts := baseOpts(root, &fakeRunner{})
+	opts := baseOpts(root)
 	opts.RequireCleanTree = true
 	if _, err := Run(opts); err != nil {
 		t.Fatalf("run: %v", err)
@@ -484,16 +584,15 @@ func TestReextractTouchesOnlySidecars(t *testing.T) {
 // artifact without re-running the corpus.
 func TestReextractOnlyFilter(t *testing.T) {
 	root := newCorpus(t, 5)
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.Only = []string{adrID(3)}
 
 	res, err := Run(opts)
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if res.Dispatched != 1 || r.dispatched[0] != adrID(3) {
-		t.Fatalf("dispatched %v; want only %s", r.dispatched, adrID(3))
+	if res.Dispatched != 1 {
+		t.Fatalf("planned %d; want only %s", res.Dispatched, adrID(3))
 	}
 }
 
@@ -502,8 +601,16 @@ func TestReextractOnlyFilter(t *testing.T) {
 // a permanently unregenerated artifact reported as covered.
 func TestReextractFailureIsResumableNotSticky(t *testing.T) {
 	root := newCorpus(t, 3)
-	bad := &fakeRunner{failIDs: map[string]bool{adrID(2): true}}
-	if _, err := Run(baseOpts(root, bad)); err == nil {
+
+	// The failure is now modelled where extraction actually happens: tier-1's
+	// fan-out produced sidecars for two artifacts and not for ADR-002, so the
+	// recording pass finds nothing to restore for it.
+	plan, perr := Run(baseOpts(root))
+	if perr != nil {
+		t.Fatalf("plan: %v", perr)
+	}
+	extractAllExcept(t, root, plan.PlanID, adrID(2))
+	if _, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: plan.PlanID}); rerr == nil {
 		t.Fatal("expected the batch with a failing artifact to report failure")
 	}
 
@@ -525,13 +632,12 @@ func TestReextractFailureIsResumableNotSticky(t *testing.T) {
 		t.Fatalf("status reported %d failure(s) %v; want exactly %s", st.Failed, st.FailedIDs, adrID(2))
 	}
 
-	retry := &fakeRunner{}
-	res, err := Run(baseOpts(root, retry))
+	res, err := Run(baseOpts(root))
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
-	if res.Dispatched != 1 || retry.dispatched[0] != adrID(2) {
-		t.Fatalf("retry dispatched %v; want only the failed %s", retry.dispatched, adrID(2))
+	if res.Dispatched != 1 {
+		t.Fatalf("retry planned %d; want only the failed %s", res.Dispatched, adrID(2))
 	}
 }
 
@@ -592,15 +698,15 @@ func readJSON(t *testing.T, path string, v any) {
 // dispatching has already re-extracted the corpus.
 func TestReextractRefusesUnvalidatedContract(t *testing.T) {
 	root := newCorpus(t, 3)
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.SkipFixtureProof = false
 	opts.PromptVersion = "v999999" // not in the embedded validated list
 
-	if _, err := Run(opts); err == nil {
+	res, err := Run(opts)
+	if err == nil {
 		t.Fatal("dispatched an unvalidated extraction contract — the embedded fixture-validation record should have refused it")
 	}
-	if got := r.count(); got != 0 {
+	if got := plannedCount(res); got != 0 {
 		t.Fatalf("refused run dispatched %d extraction(s); want 0", got)
 	}
 }
@@ -614,15 +720,15 @@ func TestReextractRefusesUnvalidatedContract(t *testing.T) {
 // records as validated.
 func TestReextractAcceptsValidatedContract(t *testing.T) {
 	root := newCorpus(t, 2)
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.SkipFixtureProof = false
 
-	if _, err := Run(opts); err != nil {
+	res, err := Run(opts)
+	if err != nil {
 		t.Fatalf("a validated contract (v4, embedded) was refused: %v", err)
 	}
-	if r.count() != 2 {
-		t.Fatalf("dispatched %d; want 2 with the contract validated", r.count())
+	if plannedCount(res) != 2 {
+		t.Fatalf("planned %d; want 2 with the contract validated", plannedCount(res))
 	}
 }
 
@@ -640,8 +746,7 @@ func TestReextractRefusesEvenInConsumerProjectShape(t *testing.T) {
 		t.Fatalf("test fixture setup changed — newCorpus now creates a test/ directory, "+
 			"which defeats the point of this test (stat err: %v)", err)
 	}
-	r := &fakeRunner{}
-	opts := baseOpts(root, r)
+	opts := baseOpts(root)
 	opts.SkipFixtureProof = false
 	opts.PromptVersion = "v999999"
 
@@ -694,10 +799,14 @@ func TestReextractSurfacesLoadFailureThroughTheFullPipeline(t *testing.T) {
 	// GENUINELY loadable sidecar, not the shorthand placeholder — otherwise
 	// "artifact 2 is a valid-sidecar control" would be false on its face.
 	id1, id2 := adrID(1), adrID(2)
+	// The control has to be genuinely schema-valid, not merely parseable.
+	// It was built via writeSidecar with only Directives set, which omits
+	// topic/path/signals — under the old contract nothing looked, so the
+	// "valid control" was never actually valid. phasea.Plan validates every
+	// artifact, so a half-built control would show up as a second corpus
+	// error and the anti-contamination assertion would fail against itself.
 	controlPath := filepath.Join(root, "docs/architecture/decisions", id2+"-fixture.edikt.yaml")
-	writeSidecar(t, controlPath, &sidecar.Sidecar{
-		Directives: []sidecar.Directive{anchored("A rule. (ref: " + id2 + ")")},
-	})
+	mustWrite(t, controlPath, regeneratedSidecar("docs/architecture/decisions/"+id2+"-fixture.md", id2))
 
 	// Corrupt artifact 1's PRIOR sidecar so sidecar.Load fails on it —
 	// deliberately unparseable YAML, not merely "missing" (missing is the
@@ -708,61 +817,27 @@ func TestReextractSurfacesLoadFailureThroughTheFullPipeline(t *testing.T) {
 	corruptPath := filepath.Join(root, "docs/architecture/decisions", id1+"-fixture.edikt.yaml")
 	mustWrite(t, corruptPath, "schema_version: 2\nartifact: ["+id1+"\n  not: [valid yaml at all\n")
 
-	// fakeRunner's own written content uses the same placeholder shorthand as
-	// newCorpus's defaults — fine for artifact 1 (beforeLoadErr short-circuits
-	// PreservePinned before it ever reaches sidecar.Load(afterPath)), but
-	// artifact 2's genuinely-valid `before` sends it into the real
-	// restore-path logic, which DOES load the regenerated file — so the
-	// regenerated content needs to be genuinely loadable too, or this test
-	// would be failing on an unrelated fixture-format mismatch, not proving
-	// anything about the load-failure wiring under test.
-	// Not baseOpts(root, r): it's typed for *fakeRunner specifically. Built
-	// directly here, same fields, for a Runner that isn't *fakeRunner.
-	opts := Options{
-		ProjectRoot:      root,
-		Force:            true,
-		Concurrency:      2,
-		Runner:           &validSidecarRunner{},
-		Stderr:           io_Discard{},
-		SkipFixtureProof: true,
-		Now:              func() time.Time { return time.Unix(1700000000, 0).UTC() },
+	// The contract tightened here, and the subject survives the change.
+	//
+	// Run() used to report load failures through res.LoadFailedIDs and carry
+	// on. Planning now goes through phasea.Plan, which REFUSES a corpus it
+	// cannot fully read — "every artifact must load and validate before any
+	// plan is written". That is strictly stronger than reporting: a corpus
+	// with an unreadable sidecar cannot be planned against honestly, because
+	// the plan would silently omit whatever it failed to read.
+	//
+	// So the assertion moves from "reported and continued" to "refused and
+	// named", and the anti-contamination half is preserved by requiring the
+	// refusal to name the corrupt artifact and NOT the valid control.
+	_, err := Run(baseOpts(root))
+	if err == nil {
+		t.Fatal("a corpus with an unparseable sidecar was planned anyway — the exact swallow this test exists to catch")
 	}
-	res, err := Run(opts)
-	if err != nil {
-		t.Fatalf("Run: %v", err)
+	msg := err.Error()
+	if !strings.Contains(msg, id1) {
+		t.Fatalf("artifact %s had an unparseable prior sidecar and the refusal does not name it: %v", id1, err)
 	}
-
-	// The control: artifact 2 must be untouched by artifact 1's load failure.
-	for _, id := range res.LoadFailedIDs {
-		if id == id2 {
-			t.Fatalf("artifact %s (valid prior sidecar) was reported load-failed — contamination across artifacts: %v", id2, res.LoadFailedIDs)
-		}
-	}
-
-	found := false
-	for _, id := range res.LoadFailedIDs {
-		if id == id1 {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("artifact %s had an unparseable prior sidecar and Run() did not report it via LoadFailedIDs — "+
-			"the exact swallow this test exists to catch: %+v", id1, res.LoadFailedIDs)
-	}
-
-	// The symptom is per-field; the mechanism under test is that AT LEAST
-	// the fields F-115 named are represented in the result for this
-	// artifact, proving the wiring (not just PreservePinned in isolation)
-	// carries the load error through to the report.
-	seen := map[string]bool{}
-	for _, u := range res.Unrestorable {
-		if u.ArtifactID == id1 {
-			seen[u.Field] = true
-		}
-	}
-	for _, want := range []string{"paths", "verify", "verify_kind", "human_approved_at"} {
-		if !seen[want] {
-			t.Errorf("Run()'s Unrestorable report for %s is missing field %q", id1, want)
-		}
+	if strings.Contains(msg, id2+"-fixture.edikt.yaml") {
+		t.Fatalf("artifact %s (valid prior sidecar) was named in the refusal — contamination across artifacts: %v", id2, err)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"time"
 )
@@ -16,10 +17,10 @@ const ExcerptCap = 4096
 
 // Status values recorded in the report.
 const (
-	StatusPassed              = "passed"
-	StatusFailed              = "failed"
-	StatusTimeout             = "timeout"
-	StatusSkippedOperational  = "skipped: operational"
+	StatusPassed               = "passed"
+	StatusFailed               = "failed"
+	StatusTimeout              = "timeout"
+	StatusSkippedOperational   = "skipped: operational"
 	StatusSkippedInformational = "skipped: informational"
 	// StatusSkippedSuppressed marks a directive listed in the sidecar's own
 	// suppressed_directives — excluded from the compiled corpus at render
@@ -28,17 +29,24 @@ const (
 	// ever declared): here a verify: exists but the directive it checks no
 	// longer counts.
 	StatusSkippedSuppressed = "skipped: suppressed"
+
+	// StatusSkippedOwner marks a criterion under an owner-gated phase: never
+	// executed, because its completion is a human decision rather than a
+	// command. Distinct from StatusSkippedInformational on purpose —
+	// informational means nothing needed checking, owner means a person must
+	// act and the report should still be able to say so.
+	StatusSkippedOwner = "skipped: owner-gated"
 )
 
 // Result is the per-criterion outcome captured by the runner.
 type Result struct {
-	ID             string `json:"id"`
-	Statement      string `json:"statement"`
-	Status         string `json:"status"`
-	DurationMS     int64  `json:"duration_ms"`
-	StdoutExcerpt  string `json:"stdout_excerpt"`
-	StderrExcerpt  string `json:"stderr_excerpt"`
-	ExitCode       int    `json:"exit_code"`
+	ID            string `json:"id"`
+	Statement     string `json:"statement"`
+	Status        string `json:"status"`
+	DurationMS    int64  `json:"duration_ms"`
+	StdoutExcerpt string `json:"stdout_excerpt"`
+	StderrExcerpt string `json:"stderr_excerpt"`
+	ExitCode      int    `json:"exit_code"`
 }
 
 // RunOptions configures a single runner invocation. Cwd is the directory
@@ -63,12 +71,27 @@ func RunCriterion(phase Phase, c Criterion, opts RunOptions) Result {
 	switch phase.Classification {
 	case ClassInformational:
 		return Result{ID: c.ID, Statement: c.Statement, Status: StatusSkippedInformational}
+	case ClassOwner:
+		return Result{ID: c.ID, Statement: c.Statement, Status: StatusSkippedOwner}
 	case ClassOperational:
 		if c.Verify == "" {
 			return Result{ID: c.ID, Statement: c.Statement, Status: StatusSkippedOperational}
 		}
 	case ClassTestable:
 		// verify is guaranteed by Validate(); fall through.
+	default:
+		// Unreachable through LoadCriteria, which rejects any classification
+		// outside the enum. Reached only by a caller constructing a Phase
+		// directly — so it FAILS rather than executing or silently skipping.
+		// Executing would run criteria under semantics nobody defined;
+		// skipping would be a control that cannot fail. Failing names the
+		// cause and cannot be mistaken for either.
+		return Result{
+			ID:            c.ID,
+			Statement:     c.Statement,
+			Status:        StatusFailed,
+			StderrExcerpt: fmt.Sprintf("unrecognised phase classification %q — refusing to guess whether this criterion should run", phase.Classification),
+		}
 	}
 	return RunOne(c.ID, c.Statement, c.Verify, opts)
 }

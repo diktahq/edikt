@@ -52,12 +52,76 @@ const (
 	OutcomeIndexEmpty   Outcome = "index_empty"   // compiled, but zero globs
 )
 
+// `hook run <name>` outcomes (SPEC-014 FR-006 / SP-007, ADR-060:d18).
+//
+// The five above describe a MATCH. These four describe an INVOCATION of a
+// migrated hook handler, journaled by internal/hook's dispatcher rather than
+// by Match. They are hyphenated where the five above are snake_case, which is
+// deliberate rather than sloppy: the spelling is the one SPEC-014 and
+// PLAN-v080 name verbatim, and the visual split keeps the two families legible
+// in a journal that now carries both.
+//
+// EACH IS ITS OWN TYPE FOR THE SAME REASON THE FIVE ABOVE ARE. At the hook's
+// output, a handler that crashed, a name that resolved to nothing, and a
+// payload that would not decode are the same observable — a hook that exited 0
+// having said nothing. Reusing an existing value "because it is close enough"
+// is exactly what ADR-060:d18 forbids.
+const (
+	// OutcomeHookRan — the handler was found, ran to completion, and returned.
+	// NOT a suppression: this is the healthy class, and the exit code carried
+	// on the same record is what says whether the hook allowed or denied.
+	OutcomeHookRan Outcome = "hook-ran"
+
+	// OutcomePanicRecovered — the handler ran and BROKE. The dispatcher caught
+	// the panic at its single recovery site, emitted an empty hook-protocol
+	// reply, and exited 0. Exiting 0 is not leniency: a Go panic exiting
+	// non-zero at PreToolUse would BLOCK the user's write, which is strictly
+	// worse than the missing-interpreter behaviour this migration replaces.
+	OutcomePanicRecovered Outcome = "panic-recovered"
+
+	// OutcomeUnregisteredHookName — the name resolved to no handler. Never a
+	// silent no-op (SP-007): exit 0, a loud stderr diagnostic naming the name,
+	// and this record.
+	OutcomeUnregisteredHookName Outcome = "unregistered-hook-name"
+
+	// OutcomePayloadUnparseable — the handler exists but never ran, because
+	// the host payload could not be decoded. Distinct from panic-recovered
+	// ("ran and broke") and from unregistered ("never found"): here the hook
+	// was present and correct and still governed nothing.
+	OutcomePayloadUnparseable Outcome = "payload-unparseable"
+
+	// OutcomeBinaryAbsent — bin/edikt itself could not be found on the
+	// shim's discovery ladder (SPEC-014 FR-003 / PRD-007 AC-003-1, ADR-060's
+	// 2026-08-20 amendment promoting binary absence from an "unjournalable"
+	// cause to a distinctly-typed one).
+	//
+	// The shim never writes this record itself: the amendment is explicit
+	// that "a shim-side journal write would violate AC-004-1's
+	// no-business-logic rule" — the shim has no state-directory contract and
+	// no lock discipline. This value exists so the amendment's OTHER half,
+	// the next successful `bin/edikt` invocation backfilling the absence
+	// window it can now see, has a distinct outcome to write instead of
+	// reusing one of the three above. A hook whose binary was entirely
+	// missing is none of "ran and broke" (panic-recovered), "never found"
+	// (unregistered-hook-name), or "found and never ran"
+	// (payload-unparseable) — it is "nothing ran because there was nothing to
+	// run it", and ADR-060:d18 forbids collapsing distinct fail-open causes
+	// into one just because they are close.
+	OutcomeBinaryAbsent Outcome = "binary-absent"
+)
+
 // Suppressed reports whether this outcome means governance did not run, as
 // opposed to genuinely not applying. This is the predicate the detectability
 // surface is built on.
+// The `hook run` classes are here for a reason worth stating: without them, a
+// hook that PANICKED would be counted as a healthy invocation by ReadSummary,
+// and `hook probe` would exit 0 on a chain that crashed. A crash is the most
+// literal form of "governance did not run" there is.
 func (o Outcome) Suppressed() bool {
 	switch o {
 	case OutcomeIndexMissing, OutcomeIndexCorrupt, OutcomeBadPath, OutcomeIndexEmpty:
+		return true
+	case OutcomePanicRecovered, OutcomeUnregisteredHookName, OutcomePayloadUnparseable, OutcomeBinaryAbsent:
 		return true
 	}
 	return false

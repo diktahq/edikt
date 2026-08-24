@@ -93,11 +93,11 @@ Full documentation, guides, and examples at **[edikt.dev](https://edikt.dev)**.
 
 Every file is `.md` or `.yaml` you can read, edit, and version-control.
 
-Tier-1 (commands, templates, rules) has no dependencies. The hook tier does:
-21 of 25 shipped hooks invoke `python3` (F-061). It now fails loudly and
-degrades to `warn`/advisory when `python3` is missing, rather than silently
-disabling governance — but the dependency is real. `install.sh` checks for
-it before it writes your `settings.json`.
+Tier-1 (commands, templates, rules) has no dependencies. The hook tier used to
+need `python3` — every hook shelled out to it to emit protocol JSON, and on a
+machine without `python3` a hook silently no-opped while governance looked
+healthy. All 22 hooks are now ten-line shims that exec the Go binary directly.
+`python3` is gone from the hook tier entirely.
 
 ## Claude Code only
 

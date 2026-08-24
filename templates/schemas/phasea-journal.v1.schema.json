@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/phasea-journal/v1.json",
+  "$comment": "edikt:artifact type=contract spec=SPEC-013 status=draft reviewed_by=architect. JSON has no comment syntax; this $comment keyword (a real JSON Schema draft-2020-12 keyword, ignored by validators) carries the artifact-status header artifacts.md's other native formats put in a leading comment line.",
+  "title": "edikt phasea dispatch journal line",
+  "description": "One line of the append-only .edikt/state/phasea-dispatch.jsonl journal (AC-018-2) \u2014 this schema describes a single journaled event object, not the file as a whole. A line is appended for every plan emission, every verify call, every consume, and every refusal at either plan or verify time (SP-006 \u00a77's state machine), so the journal is the auditable spend ledger at both ends of the dispatch budget. Mirrors the append-only-JSONL pattern already established by tools/edikt/internal/hookmatch/journal.go's hook journal, for the same reason: an appended line survives a concurrent write under O_APPEND without a lock, and a rewritten state file can lose the record it just wrote.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event",
+    "plan_id",
+    "items",
+    "failing",
+    "ts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version for this journal line's on-disk shape. Integer, matching the plan and receipt schemas' convention. Added per the SPEC-013 pre-flight correction: the journal was the only append-only format of the three phasea artifacts lacking a schema_version, leaving a future shape change with no way to distinguish an old line from a new one when the two are interleaved in the same append-only file."
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "plan",
+        "verify",
+        "consume",
+        "refuse"
+      ],
+      "description": "\"plan\" \u2014 `phasea plan` emitted a plan file. \"verify\" \u2014 `phasea verify` ran and produced a receipt (whether or not it was all-ok). \"consume\" \u2014 a verify call resulted in consumed:true (the terminal success transition). \"refuse\" \u2014 dispatch was refused before doing the work it was asked to do: at plan time when the stale count exceeds phasea.ceiling or phasea.force_ceiling (AC-018-1), or at verify time when the plan_id is unknown or already consumed (AC-013-4). Every \"refuse\" event carries a `cause` field naming which of these it was."
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^pap-[0-9a-f]{12}$",
+      "description": "The plan this event concerns. Present even for a plan-time \"refuse\" event: plan_id is derived from corpus_hash + config_hash alone (see phasea-dispatch-plan.v1.schema.json), so it is computable whether or not a plan file was actually written \u2014 recording it ties the refusal to the specific corpus/config state that would have produced that plan."
+    },
+    "items": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Item count relevant to this event: the plan's item count for \"plan\"/\"verify\"/\"consume\" events, or the stale-sidecar count that was refused (which may exceed the applied ceiling) for a plan-time \"refuse\" event. 0 is valid only for a verify-time \"refuse\" (unknown or already-consumed plan_id \u2014 no items were evaluated)."
+    },
+    "failing": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,80}$"
+      },
+      "description": "item_ids not at status \"ok\" as of this event. Empty for \"plan\" (nothing has been verified yet) and for \"consume\" (all-ok by definition). Populated for a \"verify\" event that found incomplete items, and for a plan-time \"refuse\" this is empty (the refusal happened before any item could be evaluated)."
+    },
+    "cause": {
+      "type": "string",
+      "enum": [
+        "ceiling-exceeded",
+        "force-ceiling-exceeded",
+        "unknown-plan-id",
+        "already-consumed",
+        "prompt-version-unknown",
+        "corpus-load-error",
+        "item-validation-failed",
+        "pin-capture-failed",
+        "invalid-config"
+      ],
+      "description": "Populated only on a \"refuse\" event (see the if/then below), naming which of the four refusal reasons applied. Plan-time causes: \"ceiling-exceeded\" \u2014 the stale count exceeded phasea.ceiling on the default (non-forced) path. \"force-ceiling-exceeded\" \u2014 the stale count exceeded phasea.force_ceiling on a `--force` run. Verify-time causes: \"unknown-plan-id\" \u2014 the plan_id named on the `phasea verify --plan <id>` invocation does not match any emitted plan. \"already-consumed\" \u2014 the named plan_id's receipt already has consumed:true (AC-013-4's re-verify rejection). Added per the SPEC-013 pre-flight correction: without this field, every refuse event collapsed into one undifferentiated journal line, and a plan-time budget refusal was indistinguishable from a verify-time replay-protection refusal by grepping the journal alone. Widened 2026-08-20: SPEC-013 SR-006 requires EVERY refusal to journal, and the original four causes covered only ceiling refusals \u2014 leaving prompt_version UNKNOWN, corpus load failure, item validation failure, pin-capture failure and invalid config as refusals that left no audit trace. FR-018 asks for auditable spend at both ends; a refusal nobody can see is not auditable. Additive enum members are non-breaking within a major version (templates/schemas/README.md)."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO8601 UTC timestamp of this journal event. Journal entries are audit history, not compiled governance output, so ADR-020's byte-determinism rule does not bind this field \u2014 same exemption as the receipt's verified_at."
+    }
+  },
+  "if": {
+    "properties": {
+      "event": {
+        "const": "refuse"
+      }
+    },
+    "required": [
+      "event"
+    ]
+  },
+  "then": {
+    "required": [
+      "cause"
+    ]
+  }
+}

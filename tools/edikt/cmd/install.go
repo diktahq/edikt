@@ -47,6 +47,7 @@ var installCmd = &cobra.Command{
 				return installExitError(exitNetwork, "%v", err)
 			}
 			stampPayloadVersion(targetDir, tag)
+			snapshotLauncherBinary(targetDir, tag)
 			writeManifest(targetDir, tag, "")
 			emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": tag})
 			reportInstallNotActivated(ediktRoot, tag)
@@ -104,6 +105,7 @@ var installCmd = &cobra.Command{
 		}
 
 		stampPayloadVersion(targetDir, tag)
+		snapshotLauncherBinary(targetDir, tag)
 		writeManifest(targetDir, tag, computedSHA)
 		emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": tag})
 		reportInstallNotActivated(ediktRoot, tag)

@@ -39,30 +39,55 @@ type IndexEntry struct {
 	Intent                string
 	FalsifyingObservation string
 	Reminders             []string
+
+	// Paths is the RESOLVED glob set this entry indexes under (ADR-070):
+	// the directive/prohibition's own Paths override when set, else the
+	// sidecar's Paths. BuildDirectiveIndex distributes each entry to
+	// exactly these globs, never to the whole sidecar's set unconditionally
+	// — the fix for the Cartesian-product fan-out ADR-070 confirmed
+	// (ADR-040: 5 globs x 33 directives = 165 entries, all irrelevant
+	// directives riding along with every relevant one).
+	Paths []string
 }
 
 // gradeFor pins the enforcement grade at RENDER time.
 //
-// `must` iff the source artifact is an invariant (structural — the
-// strongest class regardless of wording), or the text's strongest RFC-2119
-// modal is MUST-level (MUST, SHALL, NEVER, REQUIRED — either polarity).
+// ADR-071 (amends ADR-064): grade is class-weighted, not derived from modal  edikt-guard:allow
+// verbs in directive text. Measured cause of the prior approach's failure:
+// gradeFor read its own upstream normalization back through a modal regex —
+// ADR prose is overwhelmingly written as plain declarative decisions, and a
+// present-tense declarative describing an architectural decision is,
+// correctly, promoted to MUST-phrased text at extraction time, so the modal
+// check downstream had almost nothing left to discriminate on (98.2% must).
+//
+// Class table (ADR-071):
+//
+//	INV-*, directive or prohibition  -> must
+//	ADR-*, prohibition               -> must
+//	ADR-*, directive                 -> advisory
+//	GL-*,  directive or prohibition  -> advisory
+//
+// `enforcement` (ADR-070's schema v2.1 field) overrides the class default
+// when set, in EITHER direction — "deny" forces must even on an otherwise-
+// advisory class, "advisory" forces advisory even on an invariant or ADR
+// prohibition a reviewer judges doesn't warrant blocking. Absent, the class
+// table applies unconditionally — this is what keeps invariants must-graded
+// by default, unchanged from before this ADR.
+//
 // Pinned here — and recorded per entry — precisely so the hook never
 // re-derives it: a consumer re-deriving grade could silently downgrade an
 // invariant to advisory and nothing would report the difference.
-//
-// ADR-064: this used to check only for the negative-polarity markers  edikt-guard:allow
-// "MUST NOT"/"NEVER"/"NO EXCEPTIONS", so a bare positive MUST — the
-// overwhelming majority of how directives are actually authored — fell
-// through to advisory for every non-invariant artifact. Reuses
-// sidecar.DirectiveModal (already trusted for force-weakening detection
-// during extraction) rather than a second, independent keyword list — two
-// implementations of "what modal is this?" is the drift GL-002 names, and
-// the weaker one is exactly what the old three-word list turned out to be.
-func gradeFor(artifactID, text string) string {
-	if strings.HasPrefix(artifactID, "INV-") {
+func gradeFor(class string, isProhibition bool, enforcement string) string {
+	switch enforcement {
+	case "deny":
+		return "must"
+	case "advisory":
+		return "advisory"
+	}
+	if class == "invariant" {
 		return "must"
 	}
-	if sidecar.DirectiveModal(text) == sidecar.ModalMust {
+	if class == "adr" && isProhibition {
 		return "must"
 	}
 	return "advisory"
@@ -112,6 +137,12 @@ func entryID(artifactID string, kind byte, ordinal int) string {
 // key for an artifact that named none. Those artifacts reach the reader
 // through the ambient core (pathless invariants) or the skill package
 // (everything else) — the tier ladder, not this surface.
+//
+// ADR-070: each entry distributes to its OWN resolved Paths (IndexEntriesFor
+// sets this to the directive's own override when present, else the
+// sidecar's), not to the sidecar's full glob set unconditionally. This is
+// the precision fix — an entry with a narrower override no longer rides
+// along on every glob the rest of its sidecar declares.
 func BuildDirectiveIndex(pairs []sidecar.Pair) map[string][]IndexEntry {
 	out := map[string][]IndexEntry{}
 
@@ -128,14 +159,13 @@ func BuildDirectiveIndex(pairs []sidecar.Pair) map[string][]IndexEntry {
 		entries := make([]IndexEntry, 0, len(dirs)+len(prohs))
 		entries = append(entries, dirs...)
 		entries = append(entries, prohs...)
-		if len(entries) == 0 {
-			continue
-		}
 
-		globs := append([]string(nil), sc.Paths...)
-		sort.Strings(globs)
-		for _, g := range globs {
-			out[g] = append(out[g], entries...)
+		for _, e := range entries {
+			globs := append([]string(nil), e.Paths...)
+			sort.Strings(globs)
+			for _, g := range globs {
+				out[g] = append(out[g], e)
+			}
 		}
 	}
 	return out
@@ -178,31 +208,45 @@ func IndexEntriesFor(p sidecar.Pair) (directives, prohibitions []IndexEntry) {
 		if d.ActorScope {
 			continue
 		}
+		class := classFor(p.ArtifactID)
 		directives = append(directives, IndexEntry{
 			ID:                    entryID(p.ArtifactID, 'd', i+1),
-			Grade:                 gradeFor(p.ArtifactID, d.Text),
-			Class:                 classFor(p.ArtifactID),
+			Grade:                 gradeFor(class, false, d.Enforcement),
+			Class:                 class,
 			Text:                  d.Text,
 			Intent:                d.Intent,
 			FalsifyingObservation: d.FalsifyingObservation,
 			Reminders:             sc.Reminders,
+			Paths:                 resolvePaths(d.Paths, sc.Paths),
 		})
 	}
 	for i, ph := range sc.Prohibitions {
 		if ph.ActorScope {
 			continue
 		}
+		class := classFor(p.ArtifactID)
 		prohibitions = append(prohibitions, IndexEntry{
 			ID:                    entryID(p.ArtifactID, 'p', i+1),
-			Grade:                 gradeFor(p.ArtifactID, ph.Text),
-			Class:                 classFor(p.ArtifactID),
+			Grade:                 gradeFor(class, true, ph.Enforcement),
+			Class:                 class,
 			Text:                  ph.Text,
 			Intent:                ph.Intent,
 			FalsifyingObservation: ph.FalsifyingObservation,
 			Reminders:             sc.Reminders,
+			Paths:                 resolvePaths(ph.Paths, sc.Paths),
 		})
 	}
 	return directives, prohibitions
+}
+
+// resolvePaths implements ADR-070's per-entry override: an entry's own Paths
+// when set (schema/Validate already reject an explicit empty override, so
+// non-empty is the only non-nil case), else the sidecar's Paths unchanged.
+func resolvePaths(entryPaths, sidecarPaths []string) []string {
+	if len(entryPaths) > 0 {
+		return entryPaths
+	}
+	return sidecarPaths
 }
 
 // RenderDirectiveIndex emits the index as deterministic YAML.

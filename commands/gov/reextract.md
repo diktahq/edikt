@@ -4,11 +4,18 @@ description: "Deliberately regenerate the corpus (or named artifacts) through th
 tier: 1
 tier_2_dependency: edikt gov reextract
 on_absent: refuse-and-direct-user
+tier_2_dependency_2: edikt phasea plan
+on_absent_2: refuse-and-direct-user
+tier_2_dependency_3: edikt phasea restore
+on_absent_3: refuse-and-direct-user
+tier_2_dependency_4: edikt phasea verify
+on_absent_4: refuse-and-direct-user
 allowed-tools:
   - Read
   - Bash
   - AskUserQuestion
   - Glob
+  - Task
 ---
 
 # /edikt:gov:reextract
@@ -110,7 +117,14 @@ until you accept it.
 Ask via `AskUserQuestion`: "Proceed with dispatch?" (yes / no). Stop on
 "no" with no further action.
 
-### 4. Dispatch
+### 4. Plan, fan out, restore, verify
+
+**The binary does not dispatch.** `bin/edikt gov reextract` computes the
+work-list and emits a plan; fanning extractors out means invoking an LLM,
+which INV-012 forbids a tier-2 binary from doing (ADR-030, SPEC-013). You are
+the dispatcher. This is the same Phase A contract `/edikt:gov:compile` runs.
+
+**4a — plan.**
 
 ```bash
 bin/edikt gov reextract --force --json \
@@ -118,22 +132,76 @@ bin/edikt gov reextract --force --json \
 ```
 
 No `--clean-tree` — the review baseline is the snapshot written in Step 2's
-description, not git history.
+description, not git history. The snapshot is taken here, before anything is
+handed off, because this is the last moment the on-disk bytes are still what
+extraction is about to overwrite.
 
-Capture the JSON result (`eligible`, `dispatched`, `succeeded`, `failed`,
-`pins_restored`, `unrestorable`, `load_failed_ids`). If `failed > 0`, list
-which artifact IDs failed (from `--status` afterward) — they remain pending
-in the ledger and nothing was written for them; this is not a
-partial-corruption state.
+Capture the JSON result. `plan_id` names the plan; `dispatched` counts what
+was HANDED OFF, not what completed. `succeeded` and `failed` are zero at this
+point by construction — this process performed no extraction, and a success
+count for work it did not do would be a measurement nobody made. They are
+filled in by step 4d.
+
+Read `.edikt/state/phasea/<plan_id>.plan.json` and validate it is well-formed
+JSON with its four required top-level keys before acting on any part of it.
+
+**4b — fan out, one subagent per item.**
+
+For each entry in `items[]`, spawn **exactly one** `sidecar-extractor`
+subagent via `Task`, with the prompt composed from **only** that item's
+`artifact_path` and `item_id`:
+
+```
+Task(subagent_type: "sidecar-extractor",
+     prompt: "<item.artifact_path> <item.item_id>")
+```
+
+**No add, drop, merge, retry-with-changes, or reword.** Never combine two
+items into one context (ADR-027), never dispatch an item absent from the
+plan, and on a retry re-dispatch the identical fields. Continue on error —
+one failure does not stop the rest.
+
+**4c — restore and record.**
+
+```bash
+bin/edikt phasea restore --plan <plan_id>
+```
+
+This reinstates human-pinned state the extractor could not have seen,
+quarantines any regenerated sidecar that fails the content gate, records the
+ADR-053 body-drift baseline, and writes one ledger entry per artifact as it
+finishes — so a run killed here loses only the work still outstanding.
+
+**4d — verify, and act on the exit code.**
+
+```bash
+bin/edikt phasea verify --plan <plan_id>
+```
+
+**Check whether `.edikt/state/phasea/<plan_id>.receipt.json` exists BEFORE
+reading the exit code.** No receipt means the run refused before evaluating
+anything: report a pre-run refusal, never "items failed". A missing receipt
+and a receipt full of failures are different events.
+
+| Exit | Meaning | What you do |
+|------|---------|-------------|
+| 0 | every item ok | continue to Step 5 |
+| 1 | some items failed | re-dispatch 4b for each receipt item with `attempts < phasea.max_attempts_per_item`, then repeat 4d |
+| 2 | plan rejected (unknown, malformed, already consumed) | abort; report verbatim; never retry |
+| 3 | receipt unwritable | abort; report verbatim; never retry |
+| 5 | failed-terminal | **stop and report the failing items. Do NOT retry.** The retry budget is spent |
+
+Exit 1 and exit 5 differ only in whether anything is still owed an attempt.
+Treating 5 as 1 is an unbounded loop that looks like progress.
+
+If artifacts failed, they remain pending in the ledger and nothing was
+written for them; this is not a partial-corruption state.
 
 If `load_failed_ids` is non-empty: for each, the PRIOR sidecar existed but
-failed to parse before dispatch — a categorically different case from an
-artifact that had no prior sidecar at all. The regenerated sidecar was still
-written (extraction itself succeeded), but nothing could be checked for
-pinned state (approved paths, verify, verify_kind, human_approved_at, or
-either fixture path) on that artifact, because the file that would have
-carried it couldn't be read. This is not a normal "unresolved pin" — treat
-it with more weight in Step 6 below, not folded silently into the ordinary
+failed to parse — a categorically different case from an artifact that had no
+prior sidecar at all. Nothing could be checked for pinned state on that
+artifact, because the file that would have carried it could not be read.
+Treat it with more weight in Step 6, not folded silently into the ordinary
 per-field list.
 
 ### 5. Per-artifact review

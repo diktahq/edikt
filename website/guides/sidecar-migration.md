@@ -37,7 +37,7 @@ That sentinel block is the unit being migrated. Phase A strips it and produces a
 Triggered by `edikt migrate sidecars --apply`. For each governance `.md` with an in-body sentinel block, Phase A:
 
 1. **Parses the legacy block.** Detects which schema flavor it is (`v0.5x-full`, `v0.5x-partial`, `v0.4.3-legacy`, `unknown`) and decodes the lists.
-2. **Writes a skeleton sidecar.** `<artifact>.edikt.yaml` lands next to the `.md`. The skeleton has `topic: needs-extraction`, empty `directives: []`, and the legacy block's lists preserved verbatim under a transient `migration_preserved:` field:
+2. **Writes a skeleton sidecar.** `<artifact>.edikt.yaml` lands next to the `.md`. The skeleton has `topic: needs-extraction`, empty `directives: []`, and the legacy block's contents preserved verbatim under a transient `migration_preserved:` field. A block that decoded into lists is preserved as lists (below); a block that decoded into nothing is preserved as prose under `raw_body` (see [Blocks that do not parse](#blocks-that-do-not-parse)):
 
    ```yaml
    schema_version: 1
@@ -58,7 +58,59 @@ Triggered by `edikt migrate sidecars --apply`. For each governance `.md` with an
      signals: [cache, ttl, redis]
    ```
 
-3. **Strips the in-body block.** The `[edikt:directives:start] … [edikt:directives:end]` lines are removed from the parent `.md` only after the sidecar write succeeds. The pre-migration body lives at `.edikt/backups/<timestamp>/` for recovery.
+### Blocks that do not parse
+
+Not every sentinel block decodes into lists. A block that was hand-edited, or written before the `directives:`-keyed shape existed, has nothing for the parser to pick up — no `content_hash`, no `topic`, no `directives:` key:
+
+```yaml
+[edikt:directives:start]: # managed by edikt
+- Services MUST validate all external input at the trust boundary. (ref: ADR-001)
+[edikt:directives:end]: #
+```
+
+These are preserved as text rather than as structure:
+
+```yaml
+migration_preserved:
+  schema_detected: unknown
+  raw_body: |-
+    - Services MUST validate all external input at the trust boundary. (ref: ADR-001)
+```
+
+`raw_body` holds the block's inner text as-is. It is **prose, not structure**: the extractor reads it as additional source text to derive rules from — the same way it reads the artifact's own body — rather than copying its lines into `directives[]`. Your rules still reach the sidecar; they arrive through extraction instead of a mechanical lift, which means the extractor may reword them into canonical directive form.
+
+`raw_body` and the structured lists are mutually exclusive. It is written only when no list could be parsed, so a sidecar never carries both.
+
+### Recovering a block lost by an earlier build
+
+**This affects you only if you ran `edikt migrate sidecars --apply` with edikt v0.7.0-rc1 … v0.7.3.**
+
+Those builds stripped an unparseable block from the `.md` without preserving its contents anywhere. The command reported success — `N sidecars wrote, 0 failed` — and the sidecar recorded the classification but no content:
+
+```yaml
+migration_preserved:
+  schema_detected: unknown      # and nothing else
+```
+
+If your sidecars look like that, the rule text from those blocks is not in the sidecar. Two ways to get it back:
+
+**From version control.** The strip is an ordinary, commit-visible edit to the `.md`; the block is in the parent commit.
+
+::: danger There is no backup to fall back on
+`edikt migrate sidecars` does **not** write a backup of your `.md` files. Documentation and one tool message previously said the pre-migration body was kept under `.edikt/backups/` — that was never true for this command. `.edikt/backups/` is written by the installer-level `edikt migrate` for the edikt payload, not for your governance artifacts. If the affected `.md` files are not in version control, the stripped text is not recoverable.
+:::
+
+Restore the affected `.md` files and re-run `edikt migrate sidecars --dry-run` then `--apply` on a current build, which preserves the block under `raw_body`.
+
+`gov compile` also names these for you. An artifact whose preservation block has no content is reported as **UNMEASURED** rather than passing silently:
+
+```text
+lossless check: UNMEASURED for 1 sidecar(s) — the check ran but had no baseline to compare against:
+  ADR-001-example.edikt.yaml
+    migration_preserved is empty (no directives, no raw_body); the baseline was lost before this gate could measure it
+```
+
+3. **Strips the in-body block.** The `[edikt:directives:start] … [edikt:directives:end]` lines are removed from the parent `.md` only after the sidecar write succeeds. **No backup of the `.md` is written** — commit before migrating, and recover from version control if you need the original.
 
 Phase A is **pure Go, no LLM, no `Task`/`Agent` dispatch**. A static-analysis test verifies no LLM-dispatch symbol is reachable from the migrate code path.
 
@@ -78,11 +130,16 @@ The extractor runs in a forked subagent context with a locked prompt. It reads t
 4. `migration_preserved.reminders` → `reminders[]` verbatim; may append from `## Confirmation` / `## Enforcement` prose.
 5. `migration_preserved.verification` → `verification[]` verbatim; same append rule.
 6. `migration_preserved.topic` and `.signals` are HINTS only; the extractor synthesizes canonical values from prose when the hints don't fit.
-7. The extractor MUST NOT include `migration_preserved:` in its output sidecar — the field is transient by design.
+7. `migration_preserved.raw_body` is SOURCE TEXT, not a list — the extractor derives directives from it as it does from the artifact's prose. It is the one preserved field with no verbatim-carry rule, because unparsed text has no entries to carry.
+8. The extractor MUST NOT include `migration_preserved:` in its output sidecar — the field is transient by design.
 
 ### Lossless gate
 
 After the dispatch, the compile checks every output sidecar against the corresponding `migration_preserved.directives`. The check tokenizes each directive into `(modality, ref_id, normalized noun phrase)` and looks for every preserved tuple in the output. Any tuple missing is a **loss**.
+
+Not every artifact can be checked this way. A preservation block holding only `raw_body` has no directive tuples to compare against, and one holding nothing at all (see [Recovering a block lost by an earlier build](#recovering-a-block-lost-by-an-earlier-build)) has no baseline whatsoever. Both are reported as **UNMEASURED** and named individually — never counted as having passed. A check with nothing to compare against has not found the extraction clean; it has not looked.
+
+UNMEASURED artifacts follow the same `--on-loss` policy as losses, on the same reasoning: proceeding without verification is a decision, and CI should have to opt into it rather than inherit it silently.
 
 The behaviour is governed by `--on-loss`:
 
@@ -166,7 +223,7 @@ After the commit lands:
 2. `edikt rollback` (or `edikt use <prior-version>`) to switch the active launcher version back.
 3. Your legacy in-body sentinels return; the sidecars remain in your working tree as untracked files (delete or keep).
 
-The `.edikt/backups/<timestamp>/` directory holds pre-migration `.md` snapshots for at least 30 days — recovery without git is possible if needed.
+There are no pre-migration `.md` snapshots. Recovery is via version control, so commit your governance artifacts before running the migration.
 
 ## Related
 

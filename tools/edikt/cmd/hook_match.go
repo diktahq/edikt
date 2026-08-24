@@ -10,30 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
 
-	"github.com/diktahq/edikt/tools/edikt/internal/hookcfg"
 	"github.com/diktahq/edikt/tools/edikt/internal/hookmatch"
+	"github.com/diktahq/edikt/tools/edikt/internal/injectmatch"
 	"github.com/spf13/cobra"
 )
-
-// classPriority orders a deny message's entries by structural class when
-// several directives match the same write. Lower sorts first. An empty or
-// unrecognized class (an index rendered before Class existed, or "unknown")
-// sorts last — never ahead of a classified entry, since sorting an unknown
-// class first would rank it above a known one for no reason.
-func classPriority(class string) int {
-	switch class {
-	case "invariant":
-		return 0
-	case "adr":
-		return 1
-	case "guideline":
-		return 2
-	default:
-		return 3
-	}
-}
 
 func newHookMatchCmd() *cobra.Command {
 	var path, grade, sessionID, shim, root string
@@ -66,101 +47,27 @@ not run.`,
 				}
 				root = wd
 			}
-			res := hookmatch.Match(root, path)
-
-			// Presentation-only: order matched entries by structural class
-			// (invariant first, then ADR, then guideline, then unknown),
-			// stable within a class. DESIGN-QUESTIONS-2026-08-16.md Q2,
-			// option 3 — a human reading a multi-directive deny sees the
-			// highest-structural-class rule first. Does not change which
-			// entries match, whether the write is denied, or dedup/budget
-			// semantics below, all of which key on the entry ID set, not
-			// its order.
-			sort.SliceStable(res.Entries, func(i, j int) bool {
-				return classPriority(res.Entries[i].Class) < classPriority(res.Entries[j].Class)
-			})
-
-			if grade != "" {
-				res.Entries = hookmatch.FilterGrade(res.Entries, grade)
-				// Re-derive the outcome after filtering: entries existed but
-				// none of this grade is a NO-MATCH for this caller, not a
-				// match with zero results. The pre shim asks "is there a MUST
-				// here"; answering "matched" with an empty list would make it
-				// bounce on nothing.
-				if len(res.Entries) == 0 && res.Outcome == hookmatch.OutcomeMatched {
-					res.Outcome = hookmatch.OutcomeNoMatch
-				}
-			}
-
-			// Dedup AFTER grade filtering, so the key covers exactly the
-			// directives this caller would act on.
-			suppressedByDedup := false
-			budgetExhausted := false
-			if dedup && res.Outcome == hookmatch.OutcomeMatched {
-				budget := hookmatch.BounceBudget
-				if cfg, err := hookcfg.Load(root); err != nil {
-					// Fail toward the compiled default rather than toward
-					// zero: a budget of 0 is disguised enforcement-off,
-					// which hookcfg.Load itself refuses to represent — an
-					// unreadable config must not silently reach the same
-					// state through this path instead.
-					fmt.Fprintf(os.Stderr, "edikt hook match: .edikt/config.yaml unreadable (%v); using default bounce budget %d\n", err, budget)
-				} else {
-					budget = cfg.BounceBudget
-				}
-				result, err := hookmatch.AlreadyBounced(sessionID, contextFlag, res.Entries, budget)
-				if err != nil {
-					// Bounce. Failing toward TELLING the agent about a
-					// MUST-grade rule is the safe direction.
-					fmt.Fprintf(os.Stderr, "edikt hook match: dedup state unavailable (%v); bouncing anyway\n", err)
-				} else if result.BudgetExhausted {
-					// Entries stay populated: the caller must still
-					// surface them, as advisory rather than a deny —
-					// "proceeds LOUDLY", not "proceeds unheard".
-					budgetExhausted = true
-				} else if !result.Bounce {
-					suppressedByDedup = true
-					res.Entries = nil
-				}
-			}
-
-			// Journal every invocation. Its error is ignored on purpose: a
-			// journal that cannot be written must not break the write it is
-			// observing. `hook report` compensates by reporting staleness.
-			ids := make([]string, 0, len(res.Entries))
-			for _, e := range res.Entries {
-				ids = append(ids, e.ID)
-			}
-			_ = hookmatch.Append(hookmatch.Record{
-				Shim:      shim,
-				Outcome:   string(res.Outcome),
-				Detail:    res.Detail,
-				Path:      res.NormPath,
-				Matched:   len(res.Entries),
-				SessionID: sessionID,
-
+			// ONE implementation, shared with the Go handler that replaced
+			// inject-directives-pre.sh. This used to be the only copy, and the
+			// shims reached it by shelling out to the binary they already ran
+			// inside; the handler now calls the same function directly. See
+			// injectmatch's package comment for why a second copy in the handler
+			// would have drifted in the direction nobody watches.
+			out := injectmatch.Run(injectmatch.Request{
+				Root:            root,
+				Path:            path,
+				Grade:           grade,
+				SessionID:       sessionID,
+				Shim:            shim,
+				Dedup:           dedup,
 				Actor:           actorFlag,
 				AgentType:       agentTypeFlag,
 				ParentSessionID: parentSessionFlag,
 				ContextID:       contextFlag,
-				DirectiveIDs:    ids,
-				// BOUNCED means the deny actually fired. A match suppressed by
-				// dedup delivered nothing new: the agent was already told, and
-				// counting it as a bounce would inflate the one number that is
-				// near-proof a rule changed an outcome. A budget-exhausted
-				// match is neither: it delivered something new (advisory),
-				// but did not deny.
-				Bounced:         shim == "pre" && len(res.Entries) > 0 && !suppressedByDedup && !budgetExhausted,
-				DedupSuppressed: suppressedByDedup,
-				BudgetExhausted: budgetExhausted,
-			})
+			}, os.Stderr)
+			res := out.Result
 
 			if jsonOut {
-				out := struct {
-					hookmatch.Result
-					DedupSuppressed bool `json:"dedup_suppressed"`
-					BudgetExhausted bool `json:"budget_exhausted"`
-				}{res, suppressedByDedup, budgetExhausted}
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", " ")
 				return enc.Encode(out)

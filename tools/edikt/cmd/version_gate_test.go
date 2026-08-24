@@ -10,10 +10,12 @@ import (
 )
 
 func TestVersionLineBelowFloor(t *testing.T) {
-	// Floor is 0.7 (SPEC-011: gov-sidecar.v2). The 0.6 rows moved from
-	// not-below to below when the floor moved — that is the property under
-	// test, not an incidental update: every line beneath the floor is refused,
-	// and the previous line is no longer special.
+	// Floor is 0.8 (SPEC-015/PRD-007 Phase 11 — paired with the N-1
+	// upgrade-line gate, not a corpus-shape break; see version_gate.go's
+	// comment). The 0.7 rows moved from not-below to below when the floor
+	// moved — that is the property under test, not an incidental update:
+	// every line beneath the floor is refused, and the previous line is no
+	// longer special.
 	cases := map[string]bool{
 		"0.5.0":     true,
 		"0.5.1":     true,
@@ -23,13 +25,14 @@ func TestVersionLineBelowFloor(t *testing.T) {
 		"0.6.0":     true,
 		"0.6.0-rc4": true,
 		"0.6.1":     true,
-		"0.7.0":     false,
-		"0.7.0-rc1": false, // prerelease of the line is still on the line
-		"0.7.1":     false,
+		"0.7.0":     true,
+		"0.7.0-rc1": true,
+		"0.7.1":     true,
 		"0.8.0":     false,
+		"0.8.0-rc1": false, // prerelease of the line is still on the line
 		"1.0.0":     false,
 		"garbage":   false, // unparseable → not gated
-		"0.7":       false,
+		"0.8":       false,
 	}
 	for v, want := range cases {
 		if got := versionLineBelowFloor(v); got != want {
@@ -100,10 +103,10 @@ func TestEnsureVersionLine(t *testing.T) {
 	// a floor bump is most likely to get wrong: the line that used to pass.
 	t.Run("previous line is refused after the floor moves", func(t *testing.T) {
 		t.Setenv("EDIKT_SKIP_VERSION_GATE", "")
-		writeConfig(t, "0.6.0-rc4")
+		writeConfig(t, "0.7.0-rc4")
 		err := ensureVersionLine()
 		if err == nil {
-			t.Fatal("expected refusal for a 0.6-line project at floor 0.7, got nil")
+			t.Fatal("expected refusal for a 0.7-line project at floor 0.8, got nil")
 		}
 		// The refusal must name the CURRENT floor. A message hardcoding the
 		// previous one would send the operator after the wrong release.
@@ -114,9 +117,9 @@ func TestEnsureVersionLine(t *testing.T) {
 
 	t.Run("current line passes", func(t *testing.T) {
 		t.Setenv("EDIKT_SKIP_VERSION_GATE", "")
-		writeConfig(t, "0.7.0-rc1")
+		writeConfig(t, "0.8.0-rc1")
 		if err := ensureVersionLine(); err != nil {
-			t.Errorf("0.7.0-rc1 should pass, got %v", err)
+			t.Errorf("0.8.0-rc1 should pass, got %v", err)
 		}
 	})
 

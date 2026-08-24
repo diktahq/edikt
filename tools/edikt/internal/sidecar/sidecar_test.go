@@ -240,3 +240,134 @@ func TestLoad_OptionalFields_Absent(t *testing.T) {
 		t.Errorf("verification: want nil when absent, got %v", s.Verification)
 	}
 }
+
+// TestLoad_PerDirectivePathsAndEnforcement is the AC-26 positive fixture
+// (ADR-070): a directive with a narrower paths override and an explicit
+// enforcement value round-trips through Load with both fields populated,
+// while a sibling directive with neither field stays nil/empty and falls
+// back to sidecar-level scoping unaffected.
+func TestLoad_PerDirectivePathsAndEnforcement(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "test", "fixtures", "sidecars", "v2", "valid", "per-directive-paths-and-enforcement.yaml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(s.Directives) != 2 {
+		t.Fatalf("directives: want 2, got %d", len(s.Directives))
+	}
+	overridden := s.Directives[0]
+	if len(overridden.Paths) != 1 || overridden.Paths[0] != "tools/edikt/internal/phaseb/directiveindex.go" {
+		t.Errorf("directives[0].paths: unexpected value %v", overridden.Paths)
+	}
+	if overridden.Enforcement != "deny" {
+		t.Errorf("directives[0].enforcement: want %q, got %q", "deny", overridden.Enforcement)
+	}
+	fallback := s.Directives[1]
+	if fallback.Paths != nil {
+		t.Errorf("directives[1].paths: want nil (no override), got %v", fallback.Paths)
+	}
+	if fallback.Enforcement != "" {
+		t.Errorf("directives[1].enforcement: want empty (class default applies), got %q", fallback.Enforcement)
+	}
+	if len(s.Prohibitions) != 1 {
+		t.Fatalf("prohibitions: want 1, got %d", len(s.Prohibitions))
+	}
+	pr := s.Prohibitions[0]
+	if len(pr.Paths) != 1 || pr.Paths[0] != "templates/schemas/gov-sidecar.v2.schema.json" {
+		t.Errorf("prohibitions[0].paths: unexpected value %v", pr.Paths)
+	}
+	if pr.Enforcement != "advisory" {
+		t.Errorf("prohibitions[0].enforcement: want %q, got %q", "advisory", pr.Enforcement)
+	}
+}
+
+// TestLoad_NoOverrides_PathsAndEnforcementByteIdenticalBehavior is the AC-26
+// back-compat proof: a sidecar using neither v2.1 field loads with both
+// fields nil/empty on every directive and prohibition, so BuildDirectiveIndex
+// (Phase 27) has nothing to branch on and falls through to sidecar-level
+// paths exactly as before this ADR.
+func TestLoad_NoOverrides_PathsAndEnforcementByteIdenticalBehavior(t *testing.T) {
+	root := repoRoot(t)
+	path := filepath.Join(root, "test", "fixtures", "sidecars", "valid", "adr-001.edikt.yaml")
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(s.Directives) == 0 {
+		t.Fatal("fixture has no directives — this control measured nothing")
+	}
+	for i, d := range s.Directives {
+		if d.Paths != nil {
+			t.Errorf("directives[%d].paths: want nil, got %v", i, d.Paths)
+		}
+		if d.Enforcement != "" {
+			t.Errorf("directives[%d].enforcement: want empty, got %q", i, d.Enforcement)
+		}
+	}
+}
+
+// TestValidate_RejectsEmptyDirectivePathsOverride and its prohibition twin
+// pin ADR-070's minItems:1 rule at the Go-validator layer, symmetric with
+// the schema-level rejection TestV2AcceptsMultiAndSingleAnchor's sibling
+// invalid fixture (empty-directive-paths-override.yaml) exercises via
+// ValidateRawAgainstSchemaV2.
+func TestValidate_RejectsEmptyDirectivePathsOverride(t *testing.T) {
+	s := &Sidecar{
+		SchemaVersion: SchemaVersionV2, Topic: "ok", Path: "x.md",
+		Directives: []Directive{{
+			Text:           "some rule",
+			Paths:          []string{},
+			SourceExcerpts: []SourceExcerpt{{LineStart: 1, LineEnd: 1, Quote: "q"}},
+		}},
+	}
+	if err := s.Validate(); err == nil {
+		t.Fatal("expected error for empty directives[].paths override")
+	}
+}
+
+func TestValidate_RejectsEmptyProhibitionPathsOverride(t *testing.T) {
+	s := &Sidecar{
+		SchemaVersion: SchemaVersionV2, Topic: "ok", Path: "x.md",
+		Prohibitions: []Prohibition{{
+			Text:           "MUST NOT do the thing",
+			Paths:          []string{},
+			SourceExcerpts: []SourceExcerpt{{LineStart: 1, LineEnd: 1, Quote: "q"}},
+		}},
+	}
+	if err := s.Validate(); err == nil {
+		t.Fatal("expected error for empty prohibitions[].paths override")
+	}
+}
+
+func TestValidate_RejectsUnknownEnforcementValue(t *testing.T) {
+	s := &Sidecar{
+		SchemaVersion: SchemaVersionV2, Topic: "ok", Path: "x.md",
+		Directives: []Directive{{
+			Text:           "some rule",
+			Enforcement:    "block", // not in {deny, advisory}
+			SourceExcerpts: []SourceExcerpt{{LineStart: 1, LineEnd: 1, Quote: "q"}},
+		}},
+	}
+	if err := s.Validate(); err == nil {
+		t.Fatal("expected error for enforcement value outside {deny, advisory}")
+	}
+}
+
+// TestValidate_AcceptsKnownEnforcementValues is the isolation control for
+// the rejection test above.
+func TestValidate_AcceptsKnownEnforcementValues(t *testing.T) {
+	for _, v := range []string{"deny", "advisory", ""} {
+		s := &Sidecar{
+			SchemaVersion: SchemaVersionV2, Topic: "ok", Path: "x.md",
+			Directives: []Directive{{
+				Text:           "some rule",
+				Enforcement:    v,
+				SourceExcerpts: []SourceExcerpt{{LineStart: 1, LineEnd: 1, Quote: "q"}},
+			}},
+		}
+		if err := s.Validate(); err != nil {
+			t.Errorf("enforcement %q should be accepted, got: %v", v, err)
+		}
+	}
+}

@@ -1,3 +1,27 @@
+# THIS WORKFLOW PUBLISHES. A tag pushed to edikt-dev is not a rehearsal.
+#
+# It is easy to read the promotion tooling (scripts/promote_to_public.py) and
+# conclude that releases only happen on diktahq/edikt after a promotion, and
+# that this workflow is a leftover. It is not. Its last green run
+# (31882868468, 2026-08-15) published a real, non-draft GitHub Release for
+# v0.7.0-rc3 in THIS repository, and that release exists today.
+#
+# What a tag here does:
+#   v*-rc*  -> build publishes a Release here; bump-tap / wait-tap-ci /
+#              merge-tap-pr are all SKIPPED (each is gated on
+#              needs.build.outputs.is_prerelease != 'true')
+#   v*      -> build publishes a Release here AND the tap jobs run: clone
+#              diktahq/homebrew-tap, open a PR, wait on its CI, then merge
+#              behind the `production` environment's required reviewer
+#
+# Since 2026-08-16 every run here has failed in 2-5s before any job starts,
+# with "recent account payments have failed or your spending limit needs to be
+# increased". That is an account-level block, not a defect in this file, and it
+# means recent failures say nothing about whether the workflow is correct.
+# See docs/guides/release-runbook.md § "Known-broken: the last three releases
+# did not complete" for the evidence and for the Homebrew tap failure that is
+# separate from it.
+
 name: release
 
 on:
@@ -450,11 +474,11 @@ jobs:
   # against the host, sitting silently wrong because the job it protects has
   # never once run.
   #
-  # To configure the environment before the first real (non-rc) release:
-  #   1. In the edikt-dev repo Settings → Environments → New environment "production".
-  #   2. Under "Deployment protection rules" → Required reviewers → add at least
-  #      one maintainer. Save.
-  #   3. (Optional) restrict to the main branch only.
+  # To configure the environment before the first real (non-rc) release, run
+  # (idempotent — safe to re-run any time after too):
+  #   scripts/gh-environment-protect.sh diktahq/edikt-dev production dcsg
+  # See docs/guides/release-runbook.md's "production environment protection"
+  # section for what the script does and how its result is verified.
   merge-tap-pr:
     needs: [build, bump-tap, wait-tap-ci]
     runs-on: ubuntu-latest

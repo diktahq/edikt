@@ -30,30 +30,31 @@ func TestUseExistingVersion(t *testing.T) {
 	// dangles and breaks Claude Code's slash-command resolution.
 	t.Setenv("CLAUDE_HOME", filepath.Join(root, "claude"))
 
-	// Both versions must be on the current line (≥ 0.7.0); v0.5.x was
-	// retracted and the payload-line floor (ADR-042) refuses it.
-	for _, v := range []string{"0.7.0", "0.7.1"} {
+	// Both versions must be on the current line (>= versionLineFloor); v0.5.x
+	// was retracted and the payload-line floor (ADR-042) refuses anything
+	// below it. Floor is 0.8.0 as of SPEC-015 Phase 11.
+	for _, v := range []string{"0.8.0", "0.8.1"} {
 		if err := os.MkdirAll(filepath.Join(root, "versions", v), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := writeLock(root, "0.7.1", "test"); err != nil {
+	if err := writeLock(root, "0.8.1", "test"); err != nil {
 		t.Fatal(err)
 	}
 
-	buf, err := runCmd(t, "use", "0.7.0")
+	buf, err := runCmd(t, "use", "0.8.0")
 	if err != nil {
-		t.Fatalf("use 0.7.0: %v\n%s", err, buf)
+		t.Fatalf("use 0.8.0: %v\n%s", err, buf)
 	}
 
 	after, err := readLock(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.Active != "0.7.0" {
-		t.Errorf("expected active=0.7.0, got %s", after.Active)
+	if after.Active != "0.8.0" {
+		t.Errorf("expected active=0.8.0, got %s", after.Active)
 	}
-	if after.Previous != "0.7.1" {
-		t.Errorf("expected previous=0.7.1, got %s", after.Previous)
+	if after.Previous != "0.8.1" {
+		t.Errorf("expected previous=0.8.1, got %s", after.Previous)
 	}
 }

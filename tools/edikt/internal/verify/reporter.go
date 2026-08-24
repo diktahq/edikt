@@ -47,7 +47,10 @@ func (r *Report) BuildSummary() {
 			r.Summary.Failed++
 		case StatusTimeout:
 			r.Summary.Timeout++
-		case StatusSkippedOperational, StatusSkippedInformational, StatusSkippedSuppressed:
+		case StatusSkippedOperational, StatusSkippedInformational, StatusSkippedSuppressed, StatusSkippedOwner:
+			// Every status must land in a bucket. A new one missing from this
+			// list would count in Total and in nothing else, so Total would
+			// stop equalling the sum and the report would under-state silently.
 			r.Summary.Skipped++
 		}
 	}

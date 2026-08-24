@@ -6,4 +6,5 @@ import (
 
 func init() {
 	rootCmd.AddCommand(gov.Cmd)
+	rootCmd.AddCommand(newPhaseACmd())
 }

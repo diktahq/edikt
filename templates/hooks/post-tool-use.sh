@@ -1,60 +1,10 @@
 #!/usr/bin/env bash
-# edikt: PostToolUse hook (Write|Edit) — auto-format files after edits
-# Runs the appropriate formatter for the file's language silently.
-#
-# NOTE: This hook only fires for Write/Edit calls in the main Claude session.
-# Subagents spawned via the Agent tool run in a subprocess and do NOT trigger
-# this hook. To compensate, each code-writing agent template (backend,
-# frontend, qa, mobile) includes an explicit
-# "File Formatting" section instructing the agent to run the formatter itself.
-
-# Disable flags
-if [ "${EDIKT_FORMAT_SKIP:-0}" = "1" ]; then exit 0; fi
-if [ ! -f ".edikt/config.yaml" ]; then exit 0; fi
-if grep -q "auto-format: false" .edikt/config.yaml 2>/dev/null; then exit 0; fi
-
-FILE="${CLAUDE_TOOL_INPUT_FILE_PATH:-${CLAUDE_TOOL_INPUT_PATH:-}}"
-if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then exit 0; fi
-
-# Reject filenames containing newlines, null bytes,
-# or other metacharacters before passing them to a formatter. A crafted file
-# path with embedded `;` or newline could otherwise split case statements or
-# smuggle arguments into the formatter invocation.
-case "$FILE" in
-  *[!A-Za-z0-9_./-]*)
-    exit 0
-    ;;
-esac
-
-EXT="${FILE##*.}"
-
-case "$EXT" in
-  go)
-    command -v gofmt >/dev/null 2>&1 && gofmt -w "$FILE" 2>/dev/null || true
-    ;;
-  ts|tsx|js|jsx)
-    if [ -f "node_modules/.bin/prettier" ]; then
-      node_modules/.bin/prettier --write "$FILE" 2>/dev/null
-    elif command -v prettier >/dev/null 2>&1; then
-      prettier --write "$FILE" 2>/dev/null
-    fi
-    ;;
-  py)
-    if command -v black >/dev/null 2>&1; then
-      black "$FILE" 2>/dev/null
-    elif command -v ruff >/dev/null 2>&1; then
-      ruff format "$FILE" 2>/dev/null
-    fi
-    ;;
-  rb)
-    command -v rubocop >/dev/null 2>&1 && rubocop -A "$FILE" 2>/dev/null
-    ;;
-  php)
-    command -v php-cs-fixer >/dev/null 2>&1 && php-cs-fixer fix "$FILE" 2>/dev/null
-    ;;
-  rs)
-    command -v rustfmt >/dev/null 2>&1 && rustfmt "$FILE" 2>/dev/null
-    ;;
-esac
-
-exit 0
+# edikt hook shim — dispatches to the edikt binary; first two rungs trust-gated.
+_G="${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; _T="${EDIKT_HOME:-$HOME/.edikt}/state/trusted-roots.json"
+_h() { command -v sha256sum >/dev/null 2>&1 && sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd -P)\":" "$_T" 2>/dev/null && return 0; [ -x "$_G" ] || return 1; H1="$(_h "$1")"; [ -n "$H1" ] && [ "$H1" = "$(_h "$_G")" ]; }
+EDIKT_BIN=""
+for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
+[ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook post-tool-use did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"PostToolUse"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook post-tool-use did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+exec "$EDIKT_BIN" hook run post-tool-use --event PostToolUse

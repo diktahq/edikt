@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/verify"
@@ -236,8 +237,49 @@ func locateCriteriaSidecar(projectRoot, planID string) (string, error) {
 			return cand, nil
 		}
 	}
-	expected := filepath.Join(plansDirs[0], stem+"-criteria.yaml")
-	return "", fmt.Errorf("verify: no criteria sidecar at %s", expected)
+	// PREFIX MATCH. Every doc and every habit names a plan by its id alone,
+	// but a sidecar on disk is <id>-<slug>-criteria.yaml, so exact-stem
+	// matching never resolved the id anyone actually types. The trailing
+	// hyphen anchors the match, so a shorter id cannot resolve a longer one
+	// that merely starts with the same characters.
+	//
+	// Candidates are collected across ALL search dirs rather than returning
+	// the first hit. Returning the first would resolve an ambiguous id by
+	// directory precedence — silently picking one plan when the user named
+	// something matching two is worse than the exact-match miss it replaces.
+	var matches []string
+	seen := map[string]bool{}
+	for _, dir := range plansDirs {
+		if dir == "" {
+			continue
+		}
+		hits, gerr := filepath.Glob(filepath.Join(dir, stem+"-*-criteria.yaml"))
+		if gerr != nil {
+			continue
+		}
+		for _, h := range hits {
+			if !seen[h] {
+				seen[h] = true
+				matches = append(matches, h)
+			}
+		}
+	}
+	sort.Strings(matches)
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		expected := filepath.Join(plansDirs[0], stem+"-criteria.yaml")
+		return "", fmt.Errorf("verify: no criteria sidecar at %s", expected)
+	default:
+		var names []string
+		for _, m := range matches {
+			names = append(names, filepath.Base(m))
+		}
+		return "", fmt.Errorf("verify: %q matches %d criteria sidecars — name one exactly:\n  %s",
+			planID, len(matches), strings.Join(names, "\n  "))
+	}
 }
 
 // plansPathFromConfig reads paths.plans from .edikt/config.yaml; returns

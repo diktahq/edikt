@@ -167,10 +167,40 @@ func emitListing(out io.Writer, root, relDir string, k listingKind) error {
 		absDir = filepath.Join(root, relDir)
 	}
 
-	names, err := listArtifacts(absDir, k)
-	if err != nil {
-		return err
+	// Collect from EVERY checkout, not just this one. An id held in another
+	// worktree is taken, and handing it out again corrupts silently until a
+	// merge surfaces it.
+	scope := worktreeRoots(root)
+	var names []string
+	seenName := map[string]bool{}
+	for _, r := range scope.Roots {
+		dir := absDir
+		if r != root {
+			// Same configured relative path, rooted at the other checkout. An
+			// absolute paths: entry is shared by every checkout, so it is read
+			// once (under the main tree) and not re-rooted.
+			if filepath.IsAbs(relDir) {
+				continue
+			}
+			dir = filepath.Join(r, relDir)
+		}
+		found, ferr := listArtifacts(dir, k)
+		if ferr != nil {
+			// A checkout we cannot read is not a checkout with no ids. Degrade
+			// the SCOPE rather than dropping it silently — the whole defect
+			// here was a partial scan presented as a complete one.
+			scope.Degraded = true
+			scope.Reason = "one or more checkouts could not be read"
+			continue
+		}
+		for _, n := range found {
+			if !seenName[n] {
+				seenName[n] = true
+				names = append(names, n)
+			}
+		}
 	}
+	sort.Strings(names)
 
 	// Next id is max(existing numbers)+1, never count+1: gaps and duplicate
 	// numbers in the corpus made the count drift below the highest id on
@@ -192,7 +222,7 @@ func emitListing(out io.Writer, root, relDir string, k listingKind) error {
 	if len(names) > 0 {
 		existing = strings.Join(names, ",")
 	}
-	body := fmt.Sprintf("%s: %s\n%s: %s\n", k.header, next, k.footer, existing)
+	body := fmt.Sprintf("%s: %s\n%s: %s\n%s\n", k.header, next, k.footer, existing, scope.describe())
 	var dupNums []int
 	for n, holders := range byNum {
 		if len(holders) > 1 {

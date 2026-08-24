@@ -50,22 +50,18 @@ RANGE="${ARGUMENTS:-HEAD~1..HEAD}"
 case "$RANGE" in
   *..*) ;;
   *)
-    python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"ref range must contain ..","input":sys.argv[1]}))' "$RANGE"
+    bin/edikt util json emit --field 'status=error' --field 'reason=ref range must contain ..' --field "input=$RANGE"
     exit 1
     ;;
 esac
 
 # Allowlist gate. NFKC + casefold + strip first so Unicode lookalikes
 # and trailing whitespace cannot bypass.
-RANGE_NORM=$(python3 -c '
-import sys, unicodedata
-v = unicodedata.normalize("NFKC", sys.argv[1]).casefold().strip()
-sys.stdout.write(v)
-' "$RANGE")
+RANGE_NORM=$(bin/edikt util normalize "$RANGE")
 
 case "$RANGE_NORM" in
   *[!a-z0-9._/~^@-]*|"")
-    python3 -c 'import json,sys; print(json.dumps({"status":"error","reason":"ref range contains disallowed characters","input":sys.argv[1]}))' "$RANGE"
+    bin/edikt util json emit --field 'status=error' --field 'reason=ref range contains disallowed characters' --field "input=$RANGE"
     exit 1
     ;;
 esac
@@ -81,7 +77,7 @@ CHANGED_FILES=$(printf '%s\n' "$CHANGED_RAW" | awk '$1 != "-" && $2 != "-" { pri
 
 # Empty-diff guard (post binary filter).
 if [ -z "$CHANGED_FILES" ]; then
-  python3 -c 'import json,sys; print(json.dumps({"status":"skipped","reason":"empty diff"}))'
+  bin/edikt util json emit --field 'status=skipped' --field 'reason=empty diff'
   exit 0
 fi
 
@@ -102,7 +98,7 @@ Glob: .claude/rules/governance/*.md
 If the result is empty, no compiled governance exists. Emit the skip JSON and exit:
 
 ```bash
-python3 -c 'import json,sys; print(json.dumps({"status":"skipped","reason":"no compiled governance"}))'
+bin/edikt util json emit --field 'status=skipped' --field 'reason=no compiled governance'
 rm -f "$DIFF_FILE"
 exit 0
 ```
@@ -114,91 +110,30 @@ For each `.claude/rules/governance/<topic>.md` returned by Glob:
 1. **Read** the file with the Read tool. Extract the YAML frontmatter between the first two `---` lines.
 2. Parse `paths:` (an array of **code globs** scoping where the topic's directives apply — the union of the contributing sidecars' declared `paths:`, or the single glob `**` when any contributor declared none). If the frontmatter is malformed or `paths:` is missing, emit a per-topic skip:
    ```bash
-   python3 -c 'import json,sys; print(json.dumps({"topic":sys.argv[1],"status":"skipped","reason":"malformed paths frontmatter"}))' "$TOPIC"
+   bin/edikt util json emit --field "topic=$TOPIC" --field 'status=skipped' --field 'reason=malformed paths frontmatter'
    ```
    Continue to the next topic; do not crash.
 3. **Topic name allowlist (defense in depth).** The topic name comes from the filename basename (already kebab-case validated upstream by the sidecar schema). Re-validate at use-site by NFKC + casefold + strip + regex:
 
    ```bash
    TOPIC=$(basename "$TOPIC_FILE" .md)
-   TOPIC_NORM=$(python3 -c '
-   import sys, unicodedata
-   v = unicodedata.normalize("NFKC", sys.argv[1]).casefold().strip()
-   sys.stdout.write(v)
-   ' "$TOPIC")
+   TOPIC_NORM=$(bin/edikt util normalize "$TOPIC")
 
    case "$TOPIC_NORM" in
      [a-z]*) ;;
      *) printf '%s\n' "{\"topic\":\"$TOPIC\",\"status\":\"skipped\",\"reason\":\"topic name fails allowlist\"}"; continue ;;
    esac
    # Full regex check via python (case + length cap).
-   python3 -c '
-   import re, sys
-   if not re.match(r"^[a-z][a-z0-9-]{0,39}$", sys.argv[1]):
-       sys.exit(1)
-   ' "$TOPIC_NORM" || { python3 -c 'import json,sys; print(json.dumps({"topic":sys.argv[1],"status":"skipped","reason":"topic name fails allowlist"}))' "$TOPIC"; continue; }
+   bin/edikt util match "$TOPIC_NORM" --pattern '^[a-z][a-z0-9-]{0,39}$' || { bin/edikt util json emit --field "topic=$TOPIC" --field 'status=skipped' --field 'reason=topic name fails allowlist'; continue; }
    ```
 
 4. **Path-glob match.** For each `paths:` entry from the topic's frontmatter, check if any changed file matches. If at least one changed file matches at least one `paths:` entry, the topic is **in scope** for this diff.
 
-5. **Extract the directive list** from the topic file's body between `[edikt:directives:start]: #` and `[edikt:directives:end]: #`. Build the list via `python3 -c` with the topic-file path and the artifact's primary ref (e.g., `ADR-NNN`, `INV-NNN`, or topic-stem) passed as `sys.argv` values — **directive text never traverses shell-string interpolation** (safe input handling). Sequential `directive_id` values are assigned as `<ref>.directive[<index>]`. The extractor supports two directive formats: a simple single-line `- text` format, and a multi-line YAML-like format where `intent` and `falsifying_observation` appear as indented sub-fields next to the `- text:` bullet (a Phase B extension). Both `intent` and `falsifying_observation` are NFKC-normalized, casefolded, stripped, and allowlist-gated before they enter argv.
+5. **Extract the directive list** from the topic file's body between `[edikt:directives:start]: #` and `[edikt:directives:end]: #`. Build the list via `bin/edikt gov extract-directives`, passing the topic-file path and the artifact's primary ref (e.g., `ADR-NNN`, `INV-NNN`, or topic-stem) as flags — **directive text never traverses shell-string interpolation** (safe input handling). Sequential `directive_id` values are assigned as `<ref>.directive[<index>]`. The extractor supports two directive formats: a simple single-line `- text` format, and a multi-line YAML-like format where `intent` and `falsifying_observation` appear as indented sub-fields next to the `- text:` bullet (a Phase B extension). Both `intent` and `falsifying_observation` are NFKC-normalized, casefolded, stripped, and allowlist-gated before they enter argv.
 
    ```bash
-   DIRECTIVES_JSON=$(python3 -c '
-   import json, re, sys, pathlib, unicodedata
-
-   def _gate(val, maxlen=300):
-       """NFKC+casefold+strip, then reject control chars. Returns stripped original or None."""
-       if not val:
-           return None
-       norm = unicodedata.normalize("NFKC", val).casefold().strip()
-       if any(unicodedata.category(c)[0] == "C" for c in norm):
-           return None
-       if len(norm) > maxlen:
-           return None
-       return val.strip()
-
-   topic_file = sys.argv[1]
-   ref = sys.argv[2]
-   body = pathlib.Path(topic_file).read_text()
-   m = re.search(r"\[edikt:directives:start\]: #(.*?)\[edikt:directives:end\]: #", body, re.DOTALL)
-   directives = []
-   if m:
-       lines = m.group(1).splitlines()
-       i = 0
-       while i < len(lines):
-           line = lines[i].strip()
-           if not line.startswith("- "):
-               i += 1
-               continue
-           content = line[2:].strip()
-           entry = {"directive_id": f"{ref}.directive[{len(directives)}]"}
-           if content.startswith("text: "):
-               # Multi-line format: intent/falsifying_observation may follow as indented sub-fields.
-               entry["text"] = content[6:].strip()
-               j = i + 1
-               while j < len(lines):
-                   sub = lines[j]
-                   if sub and not sub[0:1] in (" ", "\t"):
-                       break
-                   sub_s = sub.strip()
-                   if sub_s.startswith("intent: "):
-                       gated = _gate(sub_s[8:].strip())
-                       if gated:
-                           entry["intent"] = gated
-                   elif sub_s.startswith("falsifying_observation: "):
-                       gated = _gate(sub_s[24:].strip())
-                       if gated:
-                           entry["falsifying_observation"] = gated
-                   j += 1
-               i = j
-           else:
-               # Simple single-line format.
-               entry["text"] = content
-               i += 1
-           directives.append(entry)
-   print(json.dumps(directives))
-   ' "$TOPIC_FILE" "$REF")
+   DIRECTIVES_JSON=$(bin/edikt gov extract-directives \
+     --topic-file "$TOPIC_FILE" --ref "$REF")
    ```
 
    The output is a JSON array of `{directive_id, text, intent?, falsifying_observation?}` objects. Pass it to the dispatch step (Step 5 below) via `$DIRECTIVES_JSON` — never via shell-string interpolation of directive text.
@@ -215,79 +150,24 @@ Agent(
 )
 ```
 
-**Prompt body construction.** The prompt body MUST be composed via `python3 -c` with the diff file path, topic name, and directive list (from Step 4 sub-step 5) all passed as `sys.argv` values. **Directive text never traverses shell-string interpolation.** Per the AI-agent-first dispatcher contract and safe input handling, attacker-influenceable values (directive text, topic name, falsifying observations) flow as JSON through argv — never concatenated into evaluated strings. The diff body itself is never included; only the diff PATH.
+**Prompt body construction.** The prompt body MUST be composed via `bin/edikt gov verify-prompt` with the diff file path, topic name, and directive list (from Step 4 sub-step 5) all passed as `sys.argv` values. **Directive text never traverses shell-string interpolation.** Per the AI-agent-first dispatcher contract and safe input handling, attacker-influenceable values (directive text, topic name, falsifying observations) flow as JSON through argv — never concatenated into evaluated strings. The diff body itself is never included; only the diff PATH.
 
 ```bash
-PROMPT_BODY=$(python3 -c '
-import json, sys
-diff_file = sys.argv[1]
-topic = sys.argv[2]
-directives = json.loads(sys.argv[3])
-agent_version = sys.argv[4]
-lines = [
-    f"You are evaluating diff at: {diff_file}",
-    "",
-    f"Topic: {topic}",
-    "Directives:",
-]
-for d in directives:
-    # Intent-mode shape selection (values already gated in Step 4.5).
-    # Intent shape: both intent AND falsifying_observation present → emit those two; strip text.
-    # Text shape:   fallback when either is absent.
-    has_intent = bool(d.get("intent")) and bool(d.get("falsifying_observation"))
-    lines.append(f"  - directive_id: {d[\"directive_id\"]}")
-    if has_intent:
-        lines.append(f"    intent: {d[\"intent\"]}")
-        lines.append(f"    falsifying_observation: {d[\"falsifying_observation\"]}")
-    else:
-        lines.append(f"    text: {d[\"text\"]}")
-lines.extend([
-    "",
-    "Read the diff file. For each directive, emit one verdict (PASS / FAIL / NEEDS_REVIEW) per the governance-verifier contract. Emit one JSON object conforming to templates/agents/governance-verifier-verdict.schema.json.",
-    "",
-    f"meta.topic = {topic}",
-    f"meta.agent_version = \"{agent_version}\"",
-])
-print("\n".join(lines))
-' "$DIFF_FILE" "$TOPIC" "$DIRECTIVES_JSON" "1.1.0")
+PROMPT_BODY=$(bin/edikt gov verify-prompt \
+  --diff-file "$DIFF_FILE" --topic "$TOPIC" \
+  --directives "$DIRECTIVES_JSON" --agent-version 1.1.0)
 
 # EDIKT_CAPTURE_PROMPT: when set, write the composed prompt payload as JSON
 # to the given path BEFORE agent dispatch / stub check. Enables AC-7.2 and
 # AC-7.3 without invoking the LLM. Values flow via argv — no shell concatenation.
 if [ -n "${EDIKT_CAPTURE_PROMPT:-}" ]; then
-  python3 -c '
-import json, sys, pathlib
-prompt_body = sys.argv[1]
-capture_path = sys.argv[2]
-topic = sys.argv[3]
-directives_raw = json.loads(sys.argv[4])
-# Build structured capture: each directive records its dispatched shape
-# plus source_text so AC-7.3 can verify no text leaked into intent blocks.
-dispatch = []
-for d in directives_raw:
-    has_intent = bool(d.get("intent")) and bool(d.get("falsifying_observation"))
-    if has_intent:
-        entry = {
-            "directive_id": d["directive_id"],
-            "shape": "intent",
-            "intent": d["intent"],
-            "falsifying_observation": d["falsifying_observation"],
-            "source_text": d.get("text", ""),
-        }
-    else:
-        entry = {
-            "directive_id": d["directive_id"],
-            "shape": "text",
-            "text": d.get("text", ""),
-        }
-    dispatch.append(entry)
-payload = {
-    "topic": topic,
-    "directives": dispatch,
-    "meta": {"topic": topic, "agent_version": "1.1.0"},
-}
-pathlib.Path(capture_path).write_text(json.dumps(payload, indent=2) + "\n")
-' "$PROMPT_BODY" "$EDIKT_CAPTURE_PROMPT" "$TOPIC" "$DIRECTIVES_JSON"
+  # Same verb, same shape-selection rule — written once rather than in two
+  # adjacent heredocs that could disagree about which directives got which
+  # treatment, which is exactly what the capture exists to check.
+  bin/edikt gov verify-prompt \
+    --diff-file "$DIFF_FILE" --topic "$TOPIC" \
+    --directives "$DIRECTIVES_JSON" --agent-version 1.1.0 \
+    --capture "$EDIKT_CAPTURE_PROMPT" >/dev/null
 fi
 ```
 
@@ -299,15 +179,8 @@ Before dispatch, check `EDIKT_VERIFIER_STUB`. If `=1`, skip Agent dispatch and s
 
 ```bash
 if [ "${EDIKT_VERIFIER_STUB:-0}" = "1" ]; then
-  REPORT_JSON=$(python3 -c '
-import json, sys, datetime, pathlib
-tpl_path = sys.argv[1]
-topic = sys.argv[2]
-tpl = json.loads(pathlib.Path(tpl_path).read_text())
-tpl["meta"]["topic"] = topic
-tpl["meta"]["ran_at"] = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-print(json.dumps(tpl, indent=2))
-' "test/fixtures/verifier-verdicts/valid/pass-only.json" "$TOPIC")
+  REPORT_JSON=$(bin/edikt gov verify-stub-verdict \
+    --fixture test/fixtures/verifier-verdicts/valid/pass-only.json --topic "$TOPIC")
   # Persist via step 6 logic below; do NOT dispatch the agent.
 fi
 ```
@@ -321,33 +194,27 @@ mkdir -p "$REPORT_DIR"
 REPORT_PATH="$REPORT_DIR/${TOPIC}-${TS}.json"
 
 # The agent's output (or stub) is captured as REPORT_JSON. Re-encode through
-# python3 json.dumps to guarantee well-formedness — never
-# write the raw agent string to disk unvalidated.
-python3 -c '
-import json, sys, pathlib
-data = json.loads(sys.argv[1])
-pathlib.Path(sys.argv[2]).write_text(json.dumps(data, indent=2) + "\n")
-' "$REPORT_JSON" "$REPORT_PATH"
+# Parsed before it is written — never write the raw agent string to disk
+# unvalidated. The failure belongs to the step that can still do something
+# about it, not to whoever reads the file later.
+printf '%s' "$REPORT_JSON" | bin/edikt util json format --indent 2 > "$REPORT_PATH"
 ```
 
 ### 7. Stdout summary
 
-After all topics complete, print a summary via `python3 json.dumps`:
+After all topics complete, print a summary. `--json` parses each aggregate rather than
+splicing it, so a malformed fragment is refused here instead of producing a document that
+only looks well-formed:
 
 ```bash
-python3 -c '
-import json, sys
-summary = {
-    "status": "ok",
-    "range": sys.argv[1],
-    "topics_processed": int(sys.argv[2]),
-    "topics_skipped": int(sys.argv[3]),
-    "reports": json.loads(sys.argv[4]),
-    "totals": json.loads(sys.argv[5]),
-    "elapsed_ms": int(sys.argv[6]),
-}
-print(json.dumps(summary, indent=2))
-' "$RANGE" "$TOPICS_OK" "$TOPICS_SKIPPED" "$REPORTS_JSON" "$TOTALS_JSON" "$ELAPSED_MS"
+bin/edikt util json emit --indent 2 \
+  --field 'status=ok' \
+  --field "range=$RANGE" \
+  --int "topics_processed=$TOPICS_OK" \
+  --int "topics_skipped=$TOPICS_SKIPPED" \
+  --json "reports=$REPORTS_JSON" \
+  --json "totals=$TOTALS_JSON" \
+  --int "elapsed_ms=$ELAPSED_MS"
 ```
 
 Where `TOTALS_JSON` is `{"PASS": n, "FAIL": n, "NEEDS_REVIEW": n}` aggregated across all per-topic verdicts.
@@ -374,8 +241,30 @@ exit 0
 
 ## Invariants
 
-- **Tier-1 markdown only.** No new Go binary verb. The slash command uses Glob, Read, Bash, Agent — no `bin/edikt verify-diff` exists; never call one.
-- **Safe JSON construction.** All JSON construction goes through `python3 -c 'import json,sys; print(json.dumps(...))'` with values passed as argv. Never shell-string-concatenate JSON.
+- **Tier-1 markdown only — the ORCHESTRATION, not every helper.** There is no
+  `bin/edikt verify-diff`, and there must not be: the sequencing, the fan-out and
+  the decision to dispatch stay here, in markdown, where they are readable and
+  changeable without a build.
+
+  This bullet used to read "No new Go binary verb" flatly, which by 2026-08-23
+  contradicted the thing it shares a repository with: PLAN-v080 FR-010 removes
+  python3 from every command body by replacing it with verb calls, so a flat ban
+  on verbs and the plan could not both be satisfied. The distinction the bullet
+  was reaching for is between MOVING THE COMMAND into the binary — which would
+  make this file a thin wrapper nobody reads — and calling a verb to do one
+  well-defined thing the shell cannot do safely. The second is what
+  `gov extract-directives` and `gov verify-prompt` are.
+
+  The test: could a reader still follow what this command does by reading this
+  file? If a verb absorbs a decision, it has gone too far.
+- **Safe JSON construction.** All JSON construction goes through a serializer with
+  values passed as arguments — `bin/edikt util json emit --field`, or a verb that
+  builds the document itself. Never shell-string-concatenate JSON.
+
+  This named an inline python3 `json.dumps` call until 2026-08-23. The requirement was
+  never the interpreter; it was that a value carrying a quote or a backslash must
+  be ENCODED rather than pasted. python3 was simply the only serializer tier-1
+  had.
 - **No agent text into Claude-facing channels.** Agent verdict text is persisted to a JSON report file. It is NEVER interpolated into a `systemMessage` or any other Claude-facing channel by this command. (Downstream callers that surface verdict text to Claude must follow the same rule.)
 - **Input validation.** Every external value — ref range, topic name, file path — is NFKC-normalized + allowlist-validated before it reaches shell argv, a path, or a prompt. Untrusted values flow as separate argv elements, never concatenated into evaluated strings.
 - **Hermetic tests.** The `test/test-gov-verify-diff.sh` e2e is hermetic: tmpdir-staged, no host `~/.claude/` reads, `EDIKT_VERIFIER_STUB=1`.

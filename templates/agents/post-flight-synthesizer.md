@@ -1,7 +1,7 @@
 ---
 name: post-flight-synthesizer
 description: "Read-only synthesizer that consumes L1 (criteria verify), L2 (governance verifier), and L3 (specialist) verdicts plus the diff and emits a deduplicated composite report. Dedupes overlapping findings by (file_path, line_range, issue_class) tuple. Fresh fork — no parent-session context."
-allowed-tools: [Read]
+tools: [Read]
 context: fork
 effort: medium
 maxTurns: 10

@@ -1,7 +1,7 @@
 package govrun
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -28,8 +28,11 @@ type TwoPhaseOptions struct {
 	CheckOnly   bool
 	NoWait      bool
 	JSONMode    bool          // suppress prose UI on stdout; caller emits JSON
-	Runner      phasea.Runner // injectable for tests; defaults to ClaudeRunner
-	Concurrency int           // defaults to 8
+	Concurrency int           // defaults to DefaultDispatchConcurrency
+	// DispatchTimeout bounds ONE artifact's extraction. Defaults to
+	// DefaultDispatchTimeout; a negative value disables the bound and is
+	// only meaningful to tests that drive a runner they control.
+	DispatchTimeout time.Duration
 	Stderr      io.Writer
 	Stdout      io.Writer
 
@@ -51,6 +54,11 @@ type TwoPhaseResult struct {
 	// predates edikt" from "routine resync" — the two have very different
 	// cost profiles and the JSON consumer should be able to tell them apart.
 	BootstrapSidecars []string `json:"bootstrap_sidecars,omitempty"`
+
+	// PhaseAPlanID names the dispatch plan emitted when Phase A found work.
+	// Empty when Phase A had nothing to do. It is how a caller — and the
+	// tier-1 skill — names the plan to fan out and then verify.
+	PhaseAPlanID string `json:"phase_a_plan_id,omitempty"`
 
 	// BodyDrift is the ADR-053 second signal: how many artifact bodies
 	// changed since their sidecar was extracted. Separate from
@@ -108,11 +116,55 @@ type TwoPhaseResult struct {
 	// the OnLoss policy, a non-empty report may have failed the run.
 	LosslessReport []LossArtifactRec `json:"lossless_report,omitempty"`
 
+	// LosslessUnmeasured names artifacts the lossless check could NOT
+	// evaluate, and exists because the check's denominator can be zero.
+	// CheckLosslessAgainstDirectives compares the extractor's output against
+	// MigrationPreserved.Directives; when that list is empty it compares
+	// against nothing, finds nothing missing, and the artifact passes a gate
+	// that never measured it. INV-013: absence is never a passing measurement.
+	//
+	// Same nil/empty contract as RenderDrift below. Empty and non-nil means
+	// the Phase B pass RAN and every artifact carrying a preservation block
+	// was measurable; nil means the pass did not run. Entries name artifacts
+	// whose extraction is unverified, not artifacts known to have lost data.
+	LosslessUnmeasured []UnmeasuredRec `json:"lossless_unmeasured,omitempty"`
+
 	// RenderDrift is AC-2.9's report: rendered surfaces that do not match a
 	// fresh render of the current sidecars. Empty and non-nil means the check
 	// RAN and found nothing; nil means it did not run — a distinction a
 	// consumer must be able to make (INV-013).
 	RenderDrift []string `json:"render_drift,omitempty"`
+}
+
+// UnmeasuredRec names an artifact whose lossless comparison had no baseline
+// to compare against. Reason distinguishes the two ways that happens so a
+// reader can tell an unparseable sentinel apart from a sidecar written by a
+// migrator that destroyed its own baseline.
+type UnmeasuredRec struct {
+	SidecarPath string `json:"sidecar_path"`
+	Reason      string `json:"reason"`
+}
+
+// losslessMeasurable reports whether a preservation block gives the lossless
+// check a baseline it can actually compare the extractor's output against.
+//
+// Only Directives qualify. CheckLosslessAgainstDirectives matches on a
+// (modality, ref_id, normalized noun-phrase) tuple per legacy directive
+// string; RawBody is unparsed prose by definition and yields no such tuple,
+// and SchemaDetected is audit metadata rather than content.
+func losslessMeasurable(mp *sidecar.MigrationPreserved) bool {
+	return mp != nil && len(mp.Directives) > 0
+}
+
+// losslessUnmeasurableReason names WHY an artifact could not be measured, so
+// the report distinguishes an unparseable sentinel that was preserved from a
+// baseline that was destroyed before the gate ever saw it. Callers must only
+// use it when losslessMeasurable is false.
+func losslessUnmeasurableReason(mp *sidecar.MigrationPreserved) string {
+	if mp.HasContent() {
+		return "migration_preserved carries only raw_body (unparsed sentinel); extractor output cannot be compared per-directive"
+	}
+	return "migration_preserved is empty (no directives, no raw_body); the baseline was lost before this gate could measure it"
 }
 
 // LossArtifactRec is a JSON-friendly per-artifact loss record.
@@ -230,10 +282,10 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		opts.Stdout = os.Stdout
 	}
 	if opts.Concurrency <= 0 {
-		opts.Concurrency = 8
+		opts.Concurrency = DefaultDispatchConcurrency
 	}
-	if opts.Runner == nil {
-		opts.Runner = &phasea.ClaudeRunner{}
+	if opts.DispatchTimeout <= 0 {
+		opts.DispatchTimeout = DefaultDispatchTimeout
 	}
 
 	cfg, err := loadConfig(opts.ProjectRoot)
@@ -433,150 +485,62 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			return res, fmt.Errorf("phase A: %d v1-shaped sidecar(s); run `edikt migrate to-v2`", len(legacy))
 		}
 
-		// Fail fast when the dispatch target is unreachable. Without this,
-		// a project with 42 uncompiled artifacts fans out 42 tasks that
-		// each die with `exec: "claude": executable file not found` — 42
-		// identical stack-shaped errors instead of one actionable line.
-		if err := opts.Runner.Preflight(); err != nil {
-			fmt.Fprintf(opts.Stderr, "error: cannot dispatch the sidecar extractor for %d artifact(s): %v\n", len(tasks), err)
-			fmt.Fprintln(opts.Stderr, "Phase A runs the per-artifact `:compile` command in a Claude Code session.")
-			fmt.Fprintln(opts.Stderr, "Run /edikt:gov:compile from inside Claude Code, or install the `claude` CLI and re-run.")
-			return res, fmt.Errorf("phase A: extractor unavailable")
-		}
-
+		// Phase A no longer dispatches from here, and must not.
+		//
+		// Fanning extractors out means invoking an LLM, which INV-012
+		// forbids a tier-2 binary from doing. ADR-030 carried an exemption
+		// for this exact call site with a removal deadline that has already
+		// slipped once; SPEC-013 replaces the dispatch with a contract —
+		// tier-2 emits a schema-valid plan, tier-1 fans out one
+		// sidecar-extractor per item, tier-2 verifies the result.
+		//
+		// So this returns a plan and a refusal rather than doing the work.
+		// The refusal is the point: Phase B must not run against sidecars
+		// that are known stale, and the only path that clears them now runs
+		// through tier-1.
 		if n := len(res.BootstrapSidecars); n > 0 {
-			fmt.Fprintf(opts.Stderr, "Phase A: bootstrapping %d sidecar(s) from prose (first compile of these artifacts)\n", n)
+			fmt.Fprintf(opts.Stderr, "Phase A: %d sidecar(s) need bootstrapping from prose (first compile of these artifacts)\n", n)
 		}
 
-		ctx := context.Background()
-		dis := &phasea.Dispatcher{
-			Runner:       opts.Runner,
-			Concurrency:  opts.Concurrency,
-			ProgressOut:  opts.Stderr,
-			ErrorLogPath: filepath.Join(opts.ProjectRoot, ".edikt", "state", "compile-errors.log"),
-		}
-		// Record and announce the pinned model. A run whose output nobody
-		// can attribute to a model is a measurement that cannot be
-		// compared to any other — which is what every extraction baseline
-		// taken before the pin now is.
-		//
-		// Resolved from the ClaudeRunner when that is the runner in play;
-		// a caller that injected its own runner (tests, future
-		// harnesses) is not assumed to dispatch to any model at all, so
-		// the field stays empty rather than reporting a model that never
-		// ran. Reporting the default here regardless would be exactly the
-		// unmeasured-as-measured shape this pass has been removing.
-		//
-		// ADR-055: read the model from the EXTRACTOR AGENT'S frontmatter,
-		// not from the CLI --model value. --model pins the session that
-		// runs the slash command; that session forks a subagent per
-		// artifact (ADR-027) and the subagent's frontmatter governs. The
-		// two disagreed for three months — the CLI said claude-opus-5 while
-		// every sidecar in the corpus was written by sonnet, and the log
-		// line reported the CLI's value (D27).
-		//
-		// On failure this reports UNKNOWN and never substitutes the CLI
-		// value or DefaultExtractorModel. Substituting one is precisely how
-		// an unmeasured value came to be rendered as a measured one.
-		if _, ok := opts.Runner.(*phasea.ClaudeRunner); ok {
-			m, merr := phasea.ResolveExtractorAgentModel(opts.ProjectRoot)
-			res.ExtractorModel = m
-			if merr != nil {
-				fmt.Fprintf(opts.Stderr,
-					"Phase A — extractor model: %s (could not read %s: %v)\n",
-					phasea.ExtractorModelUnknown, phasea.ExtractorAgentRelPath, merr)
-			} else {
-				fmt.Fprintf(opts.Stderr, "Phase A — extractor model: %s\n", m)
-			}
-		}
-
-		paRes := dis.Run(ctx, tasks)
-		res.PhaseADone = true
-		res.PhaseAFailures = len(paRes.Failures)
-		fmt.Fprintf(opts.Stderr, "Phase A done: %d ok, %d failed in %s\n",
-			paRes.TaskCount-len(paRes.Failures), len(paRes.Failures), paRes.Wall.Round(time.Millisecond))
-
-		if len(paRes.Failures) > 0 {
-			fmt.Fprintf(opts.Stderr, "Phase A failures (logged to .edikt/state/compile-errors.log):\n")
-			for _, f := range paRes.Failures {
-				fmt.Fprintf(opts.Stderr, "  %s: %v\n", f.Task.ArtifactID, f.Err)
-				res.PhaseAErrors = append(res.PhaseAErrors, PhaseAErrorRec{
-					ArtifactID:   f.Task.ArtifactID,
-					ArtifactType: f.Task.ArtifactType,
-					Err:          f.Err.Error(),
-				})
-			}
-			return res, fmt.Errorf("phase A: %d failure(s); not running phase B", len(paRes.Failures))
-		}
-
-		// ADR-053 — stamp the body-drift baseline.
-		//
-		// This is the ONLY honest moment to do it: the extractor has just
-		// read this parent body and produced a sidecar from it, so the digest
-		// recorded here is genuinely "what extraction saw". Stamping anywhere
-		// else — a backfill pass over the whole corpus, say — would write a
-		// baseline claiming an extraction that never happened, converting the
-		// signal from "this sidecar may be incomplete" into a confident lie.
-		// That is strictly worse than the unmeasured state it replaces, which
-		// is why pre-ADR-053 sidecars stay unmeasured until they are next
-		// regenerated rather than being backfilled to look clean.
-		//
-		// Reached only when every Phase A task succeeded (the early return
-		// above), so no failed extraction can leave a baseline behind.
-		for _, t := range tasks {
-			if err := sidecar.StampBodyDigest(t.SidecarPath, t.ParentPath,
-				os.ReadFile,
-				func(p string, b []byte) error { return os.WriteFile(p, b, 0o644) },
-			); err != nil {
-				// Non-fatal: the extraction itself succeeded, and a missing
-				// baseline degrades to UNMEASURED, which is a safe state. A
-				// failure to stamp must not discard good extraction work.
-				fmt.Fprintf(opts.Stderr,
-					"  warn: %s — could not record body-drift baseline: %v (reported as unmeasured)\n",
-					t.ArtifactID, err)
-			}
-		}
-
-		// Reload sidecars now that subagents have regenerated them. Two
-		// paths (Phase 7 of PLAN-sidecar-review-fixes #41):
-		//
-		// • Default — full re-Discover. Conservative; matches v0.6.0
-		// RC behavior. Stays the fallback so any incremental-mode
-		// regression can be ruled out by clearing the env var.
-		//
-		// • EDIKT_PHASE_B_INCREMENTAL=1 — reload only the sidecars
-		// Phase A actually rewrote. Phase A never adds new pairs to
-		// the set: `pairs` is derived from the parent .md files, and
-		// a bootstrap task writes a sidecar for a pair that is
-		// already a member (it just had a nil Sidecar). So the
-		// original `pairs` slice stays authoritative for membership;
-		// only contents need refreshing. Reuse-with-incremental-reload
-		// is opt-in for v0.6.0 and slated to default on in v0.6.1 once
-		// soak data is in.
-		if os.Getenv("EDIKT_PHASE_B_INCREMENTAL") == "1" {
-			staleIDs := make(map[string]bool, len(tasks))
-			for _, t := range tasks {
-				staleIDs[t.ArtifactID] = true
-			}
-			for i := range pairs {
-				if !staleIDs[pairs[i].ArtifactID] {
-					continue
-				}
-				sc, lerr := sidecar.Load(pairs[i].SidecarPath)
-				if lerr != nil {
-					pairs[i].Sidecar = nil
-					pairs[i].LoadErr = lerr
-					continue
-				}
-				pairs[i].Sidecar = sc
-				pairs[i].LoadErr = nil
-			}
+		// The extractor model is reported unconditionally now. It used to be
+		// gated on `opts.Runner.(*phasea.ClaudeRunner)` — "only report a
+		// model when we are the ones dispatching". With dispatch gone that
+		// condition can never be true, so the gate would have silently
+		// turned this into dead code and the field into a permanent empty
+		// string. ADR-055 still governs WHERE the value comes from: the
+		// extractor agent's frontmatter, never a CLI --model flag, and
+		// UNKNOWN on failure rather than a substituted default.
+		m, merr := phasea.ResolveExtractorAgentModel(opts.ProjectRoot)
+		res.ExtractorModel = m
+		if merr != nil {
+			fmt.Fprintf(opts.Stderr,
+				"Phase A — extractor model: %s (could not read %s: %v)\n",
+				phasea.ExtractorModelUnknown, phasea.ExtractorAgentRelPath, merr)
 		} else {
-			pairs, err = sidecar.Discover(opts.ProjectRoot, dirs)
-			if err != nil {
-				return res, fmt.Errorf("rediscover after phase A: %w", err)
-			}
+			fmt.Fprintf(opts.Stderr, "Phase A — extractor model: %s\n", m)
 		}
+
+		planOut, planErr := phasea.Plan(phasea.PlanOptions{ProjectRoot: opts.ProjectRoot})
+		if planErr != nil || planOut == nil || planOut.ExitCode != phasea.ExitPlanEmitted {
+			msg := "phase A: could not emit a dispatch plan"
+			if planOut != nil && planOut.Message != "" {
+				msg = msg + ": " + planOut.Message
+			} else if planErr != nil {
+				msg = msg + ": " + planErr.Error()
+			}
+			fmt.Fprintln(opts.Stderr, "error: "+msg)
+			return res, errors.New(msg)
+		}
+
+		res.PhaseAPlanID = planOut.Plan.PlanID
+		fmt.Fprintf(opts.Stderr,
+			"Phase A: %d artifact(s) need extraction — plan %s emitted at %s\n",
+			len(planOut.Plan.Items), planOut.Plan.PlanID,
+			phasea.PlanFilePath(opts.ProjectRoot, planOut.Plan.PlanID))
+		fmt.Fprintln(opts.Stderr, "Run /edikt:gov:compile from inside Claude Code: it fans out one")
+		fmt.Fprintln(opts.Stderr, "sidecar-extractor per plan item, then runs `bin/edikt phasea verify`.")
+		return res, fmt.Errorf("phase A: %d artifact(s) await tier-1 extraction (plan %s); not running phase B",
+			len(planOut.Plan.Items), planOut.Plan.PlanID)
 	}
 
 	// Skip-listed artifacts (superseded / deprecated / migration:skip) are
@@ -757,8 +721,16 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			continue
 		}
 
-		// (1) Lossless check
-		if mp := pairs[i].Sidecar.MigrationPreserved; len(mp.Directives) > 0 {
+		// (1) Lossless check.
+		//
+		// The pass has now run for at least one artifact, so the report
+		// lists become "ran and found nothing" rather than "did not run".
+		if res.LosslessUnmeasured == nil {
+			res.LosslessUnmeasured = []UnmeasuredRec{}
+		}
+		mp := pairs[i].Sidecar.MigrationPreserved
+		switch {
+		case losslessMeasurable(mp):
 			losses := lossless.CheckLosslessAgainstDirectives(mp.Directives, pairs[i].Sidecar)
 			if len(losses) > 0 {
 				res.LosslessReport = append(res.LosslessReport, LossArtifactRec{
@@ -766,6 +738,11 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 					Losses:      losses,
 				})
 			}
+		default:
+			res.LosslessUnmeasured = append(res.LosslessUnmeasured, UnmeasuredRec{
+				SidecarPath: pairs[i].SidecarPath,
+				Reason:      losslessUnmeasurableReason(mp),
+			})
 		}
 
 		// (2) Strip + rewrite
@@ -820,6 +797,39 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		case "accept":
 			fmt.Fprintln(opts.Stderr)
 			fmt.Fprintln(opts.Stderr, "continuing (per --on-loss=accept). Loss documented above is now persisted.")
+		}
+	}
+
+	// Surface artifacts the check could not measure. This is deliberately
+	// separate from the loss report above: a loss is a known regression, an
+	// unmeasured artifact is an unknown. Reporting them together would let the
+	// second hide inside the first's count.
+	//
+	// It routes through the SAME OnLoss policy rather than a softer one. The
+	// policy's whole premise is that CI must opt in to accepting silent loss,
+	// and an unverifiable extraction is silent loss that has not been proven
+	// either way — INV-013's "absence is never a passing measurement" applies
+	// to the gate's own denominator, not only to what it reports.
+	if len(res.LosslessUnmeasured) > 0 {
+		policy := resolveLossPolicy(opts.OnLoss, os.Stdin)
+		fmt.Fprintln(opts.Stderr)
+		fmt.Fprintf(opts.Stderr, "lossless check: UNMEASURED for %d sidecar(s) — the check ran but had no baseline to compare against:\n", len(res.LosslessUnmeasured))
+		for _, rec := range res.LosslessUnmeasured {
+			fmt.Fprintf(opts.Stderr, "  %s\n    %s\n", filepath.Base(rec.SidecarPath), rec.Reason)
+		}
+		switch policy {
+		case "abort":
+			fmt.Fprintln(opts.Stderr)
+			fmt.Fprintln(opts.Stderr, "abort (per --on-loss=abort). These artifacts passed the lossless gate without")
+			fmt.Fprintln(opts.Stderr, "being measured by it; that is not the same as passing it. Options:")
+			fmt.Fprintln(opts.Stderr, "  - Re-run with --on-loss=accept to proceed with the extraction unverified.")
+			fmt.Fprintln(opts.Stderr, "  - Restore the artifact's sentinel from version control and re-run migrate,")
+			fmt.Fprintln(opts.Stderr, "    which now preserves unparseable blocks verbatim into raw_body.")
+			fmt.Fprintln(opts.Stderr, "  - Review the .md against its sidecar by hand and confirm the rules survived.")
+			return res, fmt.Errorf("lossless check: %d sidecar(s) unmeasured after Phase A", len(res.LosslessUnmeasured))
+		case "accept":
+			fmt.Fprintln(opts.Stderr)
+			fmt.Fprintln(opts.Stderr, "continuing (per --on-loss=accept). These extractions remain unverified.")
 		}
 	}
 

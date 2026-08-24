@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
+	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
 	"github.com/diktahq/edikt/tools/edikt/model"
 )
 
@@ -83,46 +84,94 @@ directives:
         quote: "Proposed rule."
 `)
 
-	runner := &skipRunner{}
+	// Selection is read off the emitted PLAN now, not off a fake runner's
+	// tally. Same subject — "no LLM call is spent on an artifact whose
+	// directives get discarded" — against the artifact tier-1 actually fans
+	// out from, which is a stronger place to assert it than a stub that only
+	// ever existed in this process.
+	stageExtractorAgent(t, root, "claude-sonnet-5")
 	var errBuf, outBuf bytes.Buffer
 	res, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      runner,
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",
 	}, model.RealClock{})
-	if err != nil {
-		t.Fatalf("RunTwoPhase: %v\nstderr:\n%s", err, errBuf.String())
+	if err == nil {
+		t.Fatalf("expected Phase A to emit a plan and refuse\nstderr:\n%s", errBuf.String())
 	}
-	if res.PhaseB == nil {
-		t.Fatal("Phase B did not run")
+	if !strings.Contains(err.Error(), "await tier-1 extraction") {
+		t.Fatalf("refused for the wrong reason, so the assertions below prove nothing: %v\nstderr:\n%s", err, errBuf.String())
 	}
 
-	// No LLM call is spent on an artifact whose directives get discarded.
-	for _, id := range runner.dispatched {
-		if id == "ADR-038" {
-			t.Errorf("proposed artifact dispatched to extractor: %v", runner.dispatched)
-		}
+	planned, perr := phasea.Plan(phasea.PlanOptions{ProjectRoot: root})
+	if perr != nil || planned == nil || planned.Plan == nil {
+		t.Fatalf("no plan to inspect: %v", perr)
 	}
-	// ...and the two accepted ones WERE dispatched, so "nothing dispatched"
-	// cannot be mistaken for "the proposed one was filtered".
-	dispatched := strings.Join(runner.dispatched, ",")
+	var ids []string
+	for _, it := range planned.Plan.Items {
+		ids = append(ids, it.ItemID)
+	}
+	joined := strings.Join(ids, ",")
+
+	if strings.Contains(joined, "ADR-038") {
+		t.Errorf("proposed artifact planned for extraction: %v", ids)
+	}
+	// ...and the two accepted ones WERE planned, so "nothing planned" cannot
+	// be mistaken for "the proposed one was filtered".
 	for _, id := range []string{"ADR-001", "ADR-004"} {
-		if !strings.Contains(dispatched, id) {
-			t.Errorf("accepted %s was not dispatched; got %v", id, runner.dispatched)
+		if !strings.Contains(joined, id) {
+			t.Errorf("accepted %s was not planned; got %v", id, ids)
 		}
 	}
+	_ = res
 
 	// The exclusion is announced, not silent (INV-015). 165 index entries
 	// going dark with no line of output is the same class of event as them
 	// arriving with no line of output.
-	if !strings.Contains(errBuf.String(), "skip: ADR-038") {
-		t.Errorf("expected an announced skip for ADR-038, stderr:\n%s", errBuf.String())
+	//
+	// This needs a SECOND run. The announcement is Phase B's, and Phase B
+	// does not run while Phase A still has work — so one run cannot both
+	// have a work-list to assert selection against and reach the phase that
+	// announces the skip. Staging the accepted artifacts' sidecars empties
+	// the work-list and lets Phase B run.
+	adrDir2 := filepath.Join(root, "docs", "architecture", "decisions")
+	entries, derr := os.ReadDir(adrDir2)
+	if derr != nil {
+		t.Fatalf("readdir: %v", derr)
 	}
-	if !strings.Contains(errBuf.String(), "proposed") {
-		t.Errorf("skip announcement must name the disqualifying status, stderr:\n%s", errBuf.String())
+	staged := 0
+	for _, e := range entries {
+		base := e.Name()
+		if !strings.HasSuffix(base, ".md") || strings.Contains(base, "038") {
+			continue // ADR-038 is the proposed one; it must stay unstaged
+		}
+		id := base[:strings.Index(base, "-")+4]
+		writeBootstrapSidecar(t, adrDir2, base, id)
+		staged++
 	}
+	// Guard the denominator: staging nothing would leave Phase A with work,
+	// the second compile would refuse, and the failure would look like a
+	// missing announcement rather than a fixture that never got written.
+	if staged == 0 {
+		t.Fatal("staged no sidecars; the announcement assertions below would be unreachable")
+	}
+	var errBuf2, outBuf2 bytes.Buffer
+	if _, err2 := RunTwoPhase(TwoPhaseOptions{
+		ProjectRoot: root,
+		Stderr:      &errBuf2,
+		Stdout:      &outBuf2,
+		OnLoss:      "accept",
+	}, model.RealClock{}); err2 != nil {
+		t.Fatalf("second compile (for the Phase B announcement) failed: %v\nstderr:\n%s", err2, errBuf2.String())
+	}
+	if !strings.Contains(errBuf2.String(), "skip: ADR-038") {
+		t.Errorf("expected an announced skip for ADR-038, stderr:\n%s", errBuf2.String())
+	}
+	if !strings.Contains(errBuf2.String(), "proposed") {
+		t.Errorf("skip announcement must name the disqualifying status, stderr:\n%s", errBuf2.String())
+	}
+	errBuf = errBuf2
 
 	// Scan every rendered surface, not just .claude/rules/ — since SPEC-011
 	// stage 1 an unscoped topic renders to a skill package instead, and a

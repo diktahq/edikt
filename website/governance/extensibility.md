@@ -45,6 +45,8 @@ suppressed_directives:
 
 This directive will not appear in the topic file even though the extractor keeps generating it from the prose. To un-suppress, remove the entry from `suppressed_directives:`.
 
+**Regenerating a sidecar does not clear your suppressions.** `manual_directives:` and `suppressed_directives:` are both user-owned — the schema states each is "Never overwritten by sidecar-extractor" — so re-running `/edikt:adr:compile` (with or without arguments) rewrites `directives[]` from the prose and leaves both of your lists untouched. A suppression made months ago still applies after a regeneration today.
+
 When to use: when the extractor generates a rule that's technically correct but doesn't apply to your project (e.g., "NEVER use global state" but your project legitimately uses a global logger initialized in main).
 
 ### Editing sidecar directives directly

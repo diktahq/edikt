@@ -305,5 +305,6 @@ Idempotent — safe to call when dev mode is not active.`,
 func init() {
 	devCmd.AddCommand(devLinkCmd)
 	devCmd.AddCommand(devUnlinkCmd)
+	devCmd.AddCommand(newHookCorpusCmd())
 	rootCmd.AddCommand(devCmd)
 }

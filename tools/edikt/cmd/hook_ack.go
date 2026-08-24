@@ -198,6 +198,6 @@ func init() {
 	hookAckCmd.Flags().StringVar(&hookAckWhy, "why", "", "reason for holding this emission (required)")
 	_ = hookAckCmd.MarkFlagRequired("until")
 	hookCmd.AddCommand(hookAckCmd, hookHeldCmd, hookUnackCmd)
-	hookCmd.AddCommand(newHookMatchCmd(), newHookProbeCmd(), newHookReportCmd())
+	hookCmd.AddCommand(newHookEventCmd(), newHookMatchCmd(), newHookProbeCmd(), newHookReportCmd(), newHookRunCmd(), newHookShimCmd(), newHookSoakCmd())
 	rootCmd.AddCommand(hookCmd)
 }

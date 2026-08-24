@@ -55,6 +55,16 @@ type Phase struct {
 	Classification    string      `yaml:"classification"`
 	CompletionPromise string      `yaml:"completion_promise,omitempty"`
 	Criteria          []Criterion `yaml:"criteria"`
+
+	// PhaseMetadata is a freeform, runner-ignored object. The decoder is
+	// KnownFields(true), so before this existed a plan carrying any concept
+	// the schema had not anticipated could not be loaded at all — the author's
+	// only options were to delete the text or mislabel the phase.
+	//
+	// Nothing in the runner reads it. It exists so the NEXT unanticipated
+	// concept has somewhere to go that does not force that choice, and so the
+	// text survives in the file where its author put it.
+	PhaseMetadata map[string]any `yaml:"phase_metadata,omitempty"`
 }
 
 // Criterion is one acceptance criterion under a phase.
@@ -81,6 +91,21 @@ const (
 	ClassTestable      = "testable"
 	ClassOperational   = "operational"
 	ClassInformational = "informational"
+
+	// ClassOwner marks a phase whose completion is a HUMAN DECISION — an
+	// owner ruling, a sign-off, a go/no-go. Its criteria are never executed.
+	//
+	// It is deliberately not the same as informational. Informational means
+	// "there is nothing to check here"; owner means "a person must act here
+	// and has not necessarily done so". Collapsing them would lose exactly
+	// the distinction the classification exists to record, and a reader
+	// scanning a report for outstanding human work would find nothing.
+	//
+	// Added after a consumer project reported that its one owner-gated phase
+	// of ten had no expressible shape: the only options were deleting the
+	// owner's gate text or mislabelling the phase, so the plan was left
+	// unverifiable and `edikt verify` silently covered nine of ten.
+	ClassOwner = "owner"
 )
 
 // LoadCriteria strictly decodes the criteria sidecar at path and validates
@@ -126,11 +151,11 @@ func (c *CriteriaFile) Validate() error {
 		}
 		seenPhase[p.ID] = true
 		switch p.Classification {
-		case ClassTestable, ClassOperational, ClassInformational:
+		case ClassTestable, ClassOperational, ClassInformational, ClassOwner:
 		case "":
 			return fmt.Errorf("phases[%s].classification: required", p.ID)
 		default:
-			return fmt.Errorf("phases[%s].classification: %q (must be testable|operational|informational)",
+			return fmt.Errorf("phases[%s].classification: %q (must be testable|operational|informational|owner)",
 				p.ID, p.Classification)
 		}
 		if len(p.Criteria) == 0 {

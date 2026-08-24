@@ -23,7 +23,7 @@ The command runs in four steps:
 1. **Glob-match.** Discover compiled governance topic files (`.claude/rules/governance/*.md`) via the Glob tool. For each topic, parse its frontmatter `paths:` array. If at least one changed file matches at least one `paths:` entry, the topic is "in scope" for this diff. Out-of-scope topics are silently ignored.
 2. **Diff capture.** Materialize the unified diff to a temp file (`mktemp -t edikt-verify-diff.XXXXXX.diff`). Binary files (detected via `git diff --numstat` reporting `-` for added/deleted counts) are excluded. The temp file *path* is the contract surface between the slash command and the verifier subagent — diff TEXT never appears in any prompt string (defense against agent-derived text injection).
 3. **Per-topic dispatch.** For each in-scope topic, dispatch a `governance-verifier` subagent concurrently (single message, multiple Agent calls). The agent reads the diff from the temp path, evaluates each directive in the topic's body against the diff, and emits a JSON verdict array. Read-only by construction — `allowed-tools: [Read, Glob, Grep]`, `context: fork`.
-4. **JSON persistence.** Re-encode the agent's output through `python3 json.dumps` and write to `.edikt/state/gov-verify/<topic>-<YYYYMMDDTHHMMSSZ>.json`. Downstream callers (the post-flight orchestrator, `bin/edikt doctor`, future CI lints) consume the JSON reports — this command is informational and never gates on its own findings.
+4. **JSON persistence.** Re-encode the agent's output through `bin/edikt util json emit` and write to `.edikt/state/gov-verify/<topic>-<YYYYMMDDTHHMMSSZ>.json`. Downstream callers (the post-flight orchestrator, `bin/edikt doctor`, future CI lints) consume the JSON reports — this command is informational and never gates on its own findings.
 
 A final summary line on stdout (also JSON) reports topics processed, per-topic counts, report paths, and elapsed time.
 
@@ -64,7 +64,7 @@ Gating is the orchestrator's job. This command never returns non-zero on a FAIL 
 ## Safety properties
 
 - **Tier-1 markdown only.** No new Go binary verb. No `bin/edikt verify-diff` exists.
-- **Safe JSON construction.** Every JSON object the command emits is constructed via `python3 -c 'import json,sys; print(json.dumps(...))'` with values passed as separate argv elements. Shell-string concatenation of JSON is forbidden.
+- **Safe JSON construction.** Every JSON object the command emits is constructed via `bin/edikt util json emit`, with values passed as separate arguments and encoded by the binary's own serializer. Shell-string concatenation of JSON is forbidden.
 - **No agent text into model-facing channels.** Agent verdict text is persisted to a JSON report file. It is never interpolated into a `systemMessage` or any other model-facing channel by this command. Downstream callers that surface verdict text must follow the same rule.
 - **Input validation.** Every external value — ref range, topic name, file path — is NFKC-normalized + allowlist-validated before it reaches shell argv, a path, or a prompt. Untrusted values flow as separate argv elements, never concatenated into evaluated strings.
 - **Hermetic tests.** The `test/test-gov-verify-diff.sh` e2e is hermetic: tmpdir-staged, no host `~/.claude/` reads, runs under `EDIKT_VERIFIER_STUB=1`.

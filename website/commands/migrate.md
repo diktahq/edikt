@@ -4,7 +4,7 @@ Two migrations live under `edikt migrate`. `sidecars` lifts legacy in-body direc
 
 ## edikt migrate sidecars
 
-One-shot, mandatory migration to the v0.6.0 sidecar format. Reads every governance `.md` (ADRs, Invariant Records, guidelines) and **structurally strips** the in-body `[edikt:directives:start]` block into a co-located `<artifact>.edikt.yaml` sidecar. The sidecar is a skeleton — `topic: needs-extraction`, empty `directives: []`, with the legacy block's contents preserved verbatim under a transient `migration_preserved:` field. Canonical directive content is produced by `/edikt:gov:compile` afterwards (Phase B). After migration, `/edikt:gov:compile` reads sidecars only — there is no double-parser window.
+One-shot, mandatory migration to the v0.6.0 sidecar format. Reads every governance `.md` (ADRs, Invariant Records, guidelines) and **structurally strips** the in-body `[edikt:directives:start]` block into a co-located `<artifact>.edikt.yaml` sidecar. The sidecar is a skeleton — `topic: needs-extraction`, empty `directives: []`, with the legacy block's contents preserved verbatim under a transient `migration_preserved:` field. How they are preserved depends on whether the block parses: recognised shapes come back as structured lists, and a block the parser cannot read comes back as raw prose under `raw_body`. Either way nothing in the block is discarded. Canonical directive content is produced by `/edikt:gov:compile` afterwards (Phase B). After migration, `/edikt:gov:compile` reads sidecars only — there is no double-parser window.
 
 `/edikt:upgrade` orchestrates both phases (structural strip + canonical extraction) automatically as a single user-visible step. Use the binary subcommand directly when scripting CI flows or when you want to rehearse the strip separately.
 
@@ -50,10 +50,13 @@ The migration is split at a clean architectural boundary. `edikt migrate sidecar
 For every artifact with an in-body sentinel block (whatever shape — v0.5.x-full, v0.5.x-partial, v0.4.3-legacy, pre-v0.4, hand-edited, unknown), Phase A:
 
 1. Parses the in-body block.
-2. Writes a skeleton sidecar with `topic: needs-extraction`, empty `directives: []`, and the legacy block's contents preserved verbatim under a transient top-level `migration_preserved:` field:
+2. Writes a skeleton sidecar with `topic: needs-extraction`, empty `directives: []`, and the legacy block's contents preserved verbatim under a transient top-level `migration_preserved:` field.
+
+   When the block parses into a recognised shape, its lists are carried across as lists:
+
    ```yaml
    migration_preserved:
-     schema_detected: "v0.5x-full" | "v0.5x-partial" | "v0.4.3-legacy" | "unknown"
+     schema_detected: "v0.5x-full" | "v0.5x-partial" | "v0.4.3-legacy"
      directives: [...]                # verbatim from sentinel
      manual_directives: [...]
      suppressed_directives: [...]
@@ -62,9 +65,30 @@ For every artifact with an in-body sentinel block (whatever shape — v0.5.x-ful
      topic: <legacy>                  # hint, optional
      signals: [...]                   # hint, optional
    ```
+
+   When it does not — a hand-edited block, or any shape the parser does not recognise — there are no lists to carry. The block's text is preserved as-is under `raw_body`, and `schema_detected` reads `unknown`:
+
+   ```yaml
+   migration_preserved:
+     schema_detected: unknown
+     raw_body: |-
+       - Services MUST validate all external input at the trust boundary. (ref: ADR-001)
+   ```
+
+   `raw_body` is prose, not structure. The extractor reads it as source text to extract rules from, the same way it reads the artifact's own body — it does not copy the lines across as directives. So the rules survive the migration and reach the sidecar through extraction rather than through a mechanical lift.
+
+   The two are mutually exclusive: `raw_body` is written only when no list could be parsed, so a sidecar never carries both.
+
+   ::: warning If you migrated with edikt v0.7.0-rc1 … v0.7.3
+   Those builds stripped an unparseable block without preserving it — the sidecar
+   recorded `schema_detected: unknown` and nothing else, and the rule text was gone
+   from disk while the command reported success. v0.6.x and earlier skipped such
+   blocks instead of stripping them and are unaffected. See
+   [the upgrade note](/guides/sidecar-migration#recovering-a-block-lost-by-an-earlier-build).
+   :::
 3. Strips the in-body sentinel block from the parent `.md` (only after the sidecar writes successfully).
 
-After the per-artifact loop, a **post-migration verification step** scans every migrated `.md` and fails the run with a per-file list if any column-0 `[edikt:directives:start]: #` survived. Documentation files that opt out via skip-list (`<!-- edikt:migration:skip -->` or frontmatter `documents_legacy_format: true`) are excluded by design. The `.edikt/backups/` directory holds the pre-migration `.md` so recovery is straightforward if this gate fires.
+After the per-artifact loop, a **post-migration verification step** scans every migrated `.md` and fails the run with a per-file list if any column-0 `[edikt:directives:start]: #` survived. Documentation files that opt out via skip-list (`<!-- edikt:migration:skip -->` or frontmatter `documents_legacy_format: true`) are excluded by design. Recovery is via version control: `migrate sidecars` does not write a backup of your `.md` files.
 
 #### Phase B — `/edikt:gov:compile` (dispatches sidecar-extractor)
 

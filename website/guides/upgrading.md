@@ -1,7 +1,7 @@
 # Keeping edikt Up to Date
 
 ::: tip Current entry point
-**v0.7.1** is the current release and the entry point for upgrading. `diktahq/edikt`'s prior public releases stopped at **v0.4.5** — v0.5.x was retracted (ADR-042) and v0.6.0 was never published — but v0.7.0 restarted the release line and it, along with v0.7.1, is fully installable. If you have an installed project on v0.4.x, run `/edikt:upgrade` and it carries you straight to v0.7.1 in one pass — the migration and schema-upgrade steps handle the full jump uniformly.
+**v0.7.1** is the current release and the entry point for upgrading. `diktahq/edikt`'s prior public releases stopped at **v0.4.5** — v0.5.x was retracted (ADR-042) and v0.6.0 was never published — but v0.7.0 restarted the release line and it, along with v0.7.1, is fully installable. If you have an installed project on v0.4.x, run `/edikt:upgrade` and it carries you straight to v0.7.1 in one pass — the migration and schema-upgrade steps handle the full jump uniformly. **This one-pass jump is historical**, specific to the v0.4.x → v0.7.1 gap left by the retracted/unpublished v0.5.x–v0.6.0 lines. Starting with v0.8.0, `edikt upgrade` only jumps one minor line at a time (the N-1 policy below) — it is not a general "always straight to latest" guarantee for future releases.
 :::
 
 edikt has two layers that need updating separately: the **global templates** (installed on your machine) and the **project configuration** (committed in each repo).
@@ -114,6 +114,22 @@ agents:
 
 **CLAUDE.md sentinels** — v0.1.1 migrates CLAUDE.md section markers from HTML comments (`<!-- edikt:start -->`) to visible text markers (`[edikt:start]: #`). Claude Code v2.1.72+ hides HTML comments, so the old markers were invisible to the model. Upgrade detects and migrates automatically.
 
+### What does NOT get upgraded: `.edikt/schemas/`
+
+Your project's JSON schema copies under `.edikt/schemas/` are **never refreshed** by `install.sh` or by `edikt upgrade`. They are written once, by the `/edikt:adr:compile`, `/edikt:invariant:compile`, `/edikt:guideline:compile`, `/edikt:sdlc:prd` and `/edikt:sdlc:spec` commands, and only when the file is absent. A project that first compiled before a schema gained fields keeps the older copy indefinitely.
+
+This does not affect validation by the binary, which uses a schema compiled into it. It affects the two things that read the project copy: the sidecar extractor, which resolves project-locally first, and your editor. The symptoms are extraction drift and schema errors reported against files that are actually valid.
+
+Refresh them from the installed payload:
+
+```bash
+cp ~/.edikt/current/templates/schemas/*.schema.json .edikt/schemas/
+```
+
+::: warning Do not `rm -rf .edikt/schemas`
+Deleting the directory does not regenerate it. Only three of the schemas kept there have any auto-install path at all — `gov-sidecar.v2`, `prd-sidecar.v1` and `spec-sidecar.v1` — and each is written by one specific command. The rest (`gov-sidecar.v1`, `directive-index.v1`, `plan-criteria.v1`, `plan-eval-state.v1`, `topic-registry.v1`) have no writer and would simply stay missing. Copy over them instead.
+:::
+
 ---
 
 ## Earlier versions
@@ -181,6 +197,41 @@ enforcing what they say. If a refusal looks wrong, reword the directive rather t
 
 Full detail — the exact refusal messages, the sidecar schema v1→v2 change, and recovery paths — is in
 [Upgrading to v0.7.0](/guides/v0.7.0-upgrade).
+
+---
+
+## Starting with v0.8.0: the N-1 upgrade-line policy
+
+The v0.4.x → v0.7.1 one-pass jump above is a **historical, one-time exception** — it exists because two
+release lines (v0.5.x, v0.6.0) were retracted or never published, leaving nothing installable in
+between. It is not how `edikt upgrade` behaves going forward.
+
+**From v0.8.0 onward, `edikt upgrade` only advances one minor line at a time (N-1).** If your installed
+project is on the line immediately before the latest release (e.g. v0.7.x → v0.8.x), `edikt upgrade`
+proceeds normally. If you are more than one minor line behind (e.g. v0.7.x when v0.9.0 is current), it
+refuses with an explicit message rather than silently skipping a line your project was never migrated
+through:
+
+```text
+direct upgrade from v0.7.x to v0.9.0 skips a minor line — edikt only supports direct upgrade
+from the immediately prior line.
+Step through the intermediate release first, or run:
+  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+```
+
+You have two options when this fires:
+
+1. **Step through the intermediate release.** Run `edikt upgrade` while pinned to the intermediate
+   line first (it lands you on the N-1 line), then run `edikt upgrade` again to reach the current
+   release.
+2. **Fresh install.** `install.sh` has no semver-distance check — pass `--ref <tag>` (or omit it for
+   latest) to install directly, the same path a brand-new project uses. This replaces the launcher and
+   activates the target payload version in one step, without going through `edikt upgrade`'s
+   resolve-latest-then-activate gate at all.
+
+This gate lives in the `edikt upgrade` binary itself, so it only ever runs once you're already on a
+v0.8.0+ launcher. If you're still on an older binary, `install.sh --ref <tag>` (option 2 above) is the
+reliable way to reach a specific release regardless of how many lines back you are.
 
 ---
 

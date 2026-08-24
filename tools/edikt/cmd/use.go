@@ -33,11 +33,11 @@ Fails clearly if the version is not installed.`,
 		// will not activate a payload from below the v0.6 line. Compared by
 		// major.minor so 0.6.0-rc* still counts as on-line. Downgrading
 		// further than v0.6 means reinstalling the older (v0.4.x) launcher.
-		if versionLineBelowFloor(tag) {
+		if payloadLineBelow(tag) {
 			return &exitCodeError{code: 2, msg: fmt.Sprintf(
 				"version %s predates the minimum supported payload line (v%s.x) — "+
 					"v0.5.x was retracted; install a v%s.x+ release or the older v0.4.x launcher",
-				tag, versionLineFloor, versionLineFloor,
+				tag, payloadLineFloor, payloadLineFloor,
 			)}
 		}
 
@@ -114,6 +114,11 @@ func repairExternalSymlinks(ediktRoot string) {
 	if err := os.MkdirAll(filepath.Join(claudeRoot, "commands"), 0o755); err == nil {
 		replaceSymlink(ediktCmds, ediktCmdsTarget)
 	}
+
+	// $EDIKT_ROOT/bin/edikt (Phase 6a, D10): the launcher binary itself must
+	// move with `current`, or a rollback restores old templates/hooks/commands
+	// against a binary install.sh left in place. See repairVersionedBinary.
+	repairVersionedBinary(ediktRoot)
 }
 
 // replaceSymlink atomically replaces (or creates) a symlink at dst pointing to target.

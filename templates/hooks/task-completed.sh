@@ -1,71 +1,10 @@
 #!/usr/bin/env bash
-# edikt: TaskCompleted hook — close the loop on TaskCreated.
-# Pairs with task-created.sh. Emits a structured event to events.jsonl.
-#
-# Output: {"continue": true}
-
-set -uo pipefail
-
-# Fast opt-out
-[ "${EDIKT_TASK_COMPLETED_SKIP:-0}" = "1" ] && { printf '{"continue": true}\n'; exit 0; }
-
-if [ ! -f '.edikt/config.yaml' ]; then
-    printf '{"continue": true}\n'
-    exit 0
-fi
-
-# ── python3 preflight (F-074/F-075 loud-failure bar) ────────────────────────
-# Absence used to fail every extraction/write silently and still print a
-# bare {"continue": true} — indistinguishable from a healthy run.
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "edikt: task-completed — python3 not found; this completion was not logged" >&2
-    printf '{"continue": true, "systemMessage": "⚠ edikt: python3 is missing — task completion was not logged. Install python3 to restore task/plan-phase tracking."}\n'
-    exit 0
-fi
-
-INPUT=$(cat 2>/dev/null || echo '{}')
-
-TASK_ID=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get("task_id", "") or d.get("id", ""))
-except Exception:
-    pass
-' 2>/dev/null)
-
-TASK_NAME=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get("task_name", "") or d.get("name", "") or d.get("subject", ""))
-except Exception:
-    pass
-' 2>/dev/null)
-
-STATUS=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get("status", "") or d.get("result", "completed"))
-except Exception:
-    pass
-' 2>/dev/null)
-
-mkdir -p "$HOME/.edikt" 2>/dev/null || true
-EVENTS="$HOME/.edikt/events.jsonl"
-TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
-
-python3 -c "
-import json, sys
-event = {
-    'ts': sys.argv[1],
-    'event': 'task_completed',
-    'task_id': sys.argv[2],
-    'task_name': sys.argv[3],
-    'status': sys.argv[4],
-}
-print(json.dumps(event))
-" "$TS" "$TASK_ID" "$TASK_NAME" "$STATUS" >> "$EVENTS" 2>/dev/null || true
-
-printf '{"continue": true}\n'
+# edikt hook shim — dispatches to the edikt binary; first two rungs trust-gated.
+_G="${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; _T="${EDIKT_HOME:-$HOME/.edikt}/state/trusted-roots.json"
+_h() { command -v sha256sum >/dev/null 2>&1 && sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd -P)\":" "$_T" 2>/dev/null && return 0; [ -x "$_G" ] || return 1; H1="$(_h "$1")"; [ -n "$H1" ] && [ "$H1" = "$(_h "$_G")" ]; }
+EDIKT_BIN=""
+for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
+[ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook task-completed did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"TaskCompleted"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook task-completed did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+exec "$EDIKT_BIN" hook run task-completed --event TaskCompleted

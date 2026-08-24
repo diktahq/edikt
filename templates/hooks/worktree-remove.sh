@@ -1,43 +1,10 @@
 #!/usr/bin/env bash
-# edikt: WorktreeRemove hook — log the teardown.
-# Idempotent: tolerates missing worktree state.
-#
-# Output: {"continue": true}
-
-set -uo pipefail
-
-# Fast opt-out (shared with worktree-create)
-[ "${EDIKT_WORKTREE_SKIP:-0}" = "1" ] && { printf '{"continue": true}\n'; exit 0; }
-
-INPUT=$(cat 2>/dev/null || echo '{}')
-
-# ── python3 preflight (F-074/F-075 loud-failure bar) ────────────────────────
-# Absence used to fail extraction and the event write silently and still
-# print a bare {"continue": true} — indistinguishable from a healthy run.
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "edikt: worktree-remove — python3 not found; this teardown was not logged" >&2
-    printf '{"continue": true, "systemMessage": "⚠ edikt: python3 is missing — worktree teardown was not logged."}\n'
-    exit 0
-fi
-
-WORKTREE_PATH=$(printf '%s' "$INPUT" | python3 -c '
-import json, sys
-try:
-    d = json.load(sys.stdin)
-    print(d.get("worktree_path", "") or d.get("path", ""))
-except Exception:
-    pass
-' 2>/dev/null)
-
-mkdir -p "$HOME/.edikt" 2>/dev/null || true
-TS=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date +%Y-%m-%dT%H:%M:%SZ)
-# Build the event via json.dumps — `printf '%s'` is not JSON-escape-safe
-# and a worktree path with a quote or newline would corrupt the line.
-python3 - "$TS" "${WORKTREE_PATH:-unknown}" "$HOME/.edikt/events.jsonl" <<'PY' 2>/dev/null || true
-import json, sys
-ts, path, out = sys.argv[1:4]
-with open(out, 'a', encoding='utf-8') as f:
-    f.write(json.dumps({"ts": ts, "event": "worktree_remove", "worktree": path}) + "\n")
-PY
-
-printf '{"continue": true}\n'
+# edikt hook shim — dispatches to the edikt binary; first two rungs trust-gated.
+_G="${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt"; _T="${EDIKT_HOME:-$HOME/.edikt}/state/trusted-roots.json"
+_h() { command -v sha256sum >/dev/null 2>&1 && sha256sum "$1" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$1" 2>/dev/null | cut -d' ' -f1; }
+_ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd -P)\":" "$_T" 2>/dev/null && return 0; [ -x "$_G" ] || return 1; H1="$(_h "$1")"; [ -n "$H1" ] && [ "$H1" = "$(_h "$_G")" ]; }
+EDIKT_BIN=""
+for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
+[ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook worktree-remove did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"WorktreeRemove"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook worktree-remove did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+exec "$EDIKT_BIN" hook run worktree-remove --event WorktreeRemove

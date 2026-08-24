@@ -398,7 +398,7 @@ Apply the migration now? [y/N]
 
   After apply completes:
 
-  1. **Post-migration sentinel verification** runs automatically. The migrate tool's last step scans every migrated `.md` and fails the run with a per-file list if any column-0 `[edikt:directives:start]: #` survived the strip. If you see this error: the user's pre-migration backup at `.edikt/backups/` is intact and recovery is straightforward. Do NOT proceed past this gate.
+  1. **Post-migration sentinel verification** runs automatically. The migrate tool's last step scans every migrated `.md` and fails the run with a per-file list if any column-0 `[edikt:directives:start]: #` survived the strip. If you see this error: recovery is from version control — `migrate sidecars` writes NO backup of the user's `.md` files. Do NOT proceed past this gate.
 
   2. **Run `edikt migrate to-v2`.** `--apply` writes v1-shaped (single-anchor) skeletons; `gov compile`'s Phase A dispatch gate refuses to run at all while any v1-shaped sidecar exists in the corpus. This step upgrades every skeleton to the current v2 (multi-anchor `source_excerpts[]`) shape. Confirmed directly: running Phase B before this step fails fast with "Run `bin/edikt migrate to-v2` first" and a non-zero exit — not a partial or silent failure, but also not a step to skip.
 
@@ -428,7 +428,7 @@ Apply the migration now? [y/N]
     📊 Compile-quality grade: {overall}/100 ({dimension}: {score}, ...)
     ```
     This is advisory only — a low grade does not block the upgrade or require action — but it must be visible, not merely available. Continue to Step 2 regardless of the grade.
-  - On non-zero exit from `migrate sidecars --apply` or `migrate to-v2` (including the post-migration sentinel verification failure): leave `MIGRATION_COMPLETE=false`, print the migration tool's output verbatim, and stop. The user's pre-migration backup at `.edikt/backups/` is intact. Do NOT proceed to Step 2.
+  - On non-zero exit from `migrate sidecars --apply` or `migrate to-v2` (including the post-migration sentinel verification failure): leave `MIGRATION_COMPLETE=false`, print the migration tool's output verbatim, and stop. Recovery is from version control — `migrate sidecars` writes NO backup of the user's `.md` files. Do NOT proceed to Step 2.
 - **On `N` / `no` / empty** — leave `MIGRATION_COMPLETE=false` and print:
   ```
   Migration deferred. Run /edikt:gov:compile to apply when ready.

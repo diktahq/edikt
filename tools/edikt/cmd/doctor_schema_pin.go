@@ -9,7 +9,7 @@ package cmd
 // the version write but before this binary can re-verify — where the
 // config claims a schema line the corpus does not actually have.
 //
-// Once edikt_version is on the v0.7+ line (versionLineFloor), every
+// Once edikt_version is on the v0.8+ line (versionLineFloor), every
 // governed sidecar is expected to be schema_version 2. A schema_version 1
 // sidecar surviving alongside that pin means a future `gov compile`
 // silently inherits a corpus the running binary cannot fully process
@@ -26,7 +26,7 @@ import (
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
-// runSchemaPinCheck reports a WARN when edikt_version is on the v0.7+ line
+// runSchemaPinCheck reports a WARN when edikt_version is on the v0.8+ line
 // (which requires v2-shaped sidecars) but the corpus still contains a
 // schema_version 1 sidecar. Returns 1 if it warned, 0 otherwise — 0 covers
 // both "no disagreement" and "nothing to check" (no config, no pin, no

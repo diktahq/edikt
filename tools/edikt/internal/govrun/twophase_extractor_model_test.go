@@ -38,30 +38,21 @@ import (
 // forked subagent that performs extraction, so the assertion pinned the defect.
 // It is not weakened here — it is pointed at the value that governs.
 
-// fakeClaude writes an executable stub at <dir>/claude that exits non-zero.
-// Phase A's dispatch therefore fails — which is fine and is the point: the
-// model is resolved and announced BEFORE any task runs, so the recording is
-// observable without an LLM, and asserting it on the failure path proves it
-// does not depend on extraction succeeding.
-func fakeClaude(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "claude")
-	script := "#!/bin/sh\nexit 1\n"
-	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
-		t.Fatalf("write fake claude: %v", err)
-	}
-	return bin
-}
 
 // stageExtractorAgent installs an agent file pinning `model` under root.
+//
+// It also pins prompt_version, which `phasea plan` requires: an UNKNOWN
+// extraction contract makes plan refuse outright (ADR-055 §4 by analogy)
+// rather than silently baking an unpinned contract into a plan. Without it,
+// every test that expects a plan to be emitted fails on the refusal instead
+// of on its own subject.
 func stageExtractorAgent(t *testing.T, root, model string) {
 	t.Helper()
 	p := filepath.Join(root, phasea.ExtractorAgentRelPath)
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	body := "---\nname: sidecar-extractor\nmodel: " + model + "\n---\n\nbody\n"
+	body := "---\nname: sidecar-extractor\nmodel: " + model + "\nprompt_version: 4\n---\n\nbody\n"
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -79,16 +70,17 @@ func TestRunTwoPhase_RecordsExtractorAgentModel(t *testing.T) {
 
 	res, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      &phasea.ClaudeRunner{Binary: fakeClaude(t)},
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",
 	}, model.RealClock{})
 
-	// The stub exits 1, so Phase A fails and compile returns an error. The
-	// result is still returned, and the model was recorded before dispatch.
+	// Phase A emits a plan and refuses, so compile returns an error. The
+	// result is still returned, and the model was recorded before the hand-off.
+	// (This used to be forced with a fake `claude` that exits 1; there is no
+	// dispatch to fail any more, and the refusal is now the ordinary path.)
 	if err == nil {
-		t.Fatalf("fake claude exits 1; phase A was expected to fail\nstderr:\n%s", errBuf.String())
+		t.Fatalf("phase A was expected to emit a plan and refuse\nstderr:\n%s", errBuf.String())
 	}
 	if res.ExtractorModel != "claude-sonnet-5" {
 		t.Errorf("ExtractorModel = %q, want the AGENT's model %q — the reported value must name the process that performs extraction",
@@ -119,7 +111,6 @@ func TestRunTwoPhase_UnknownExtractorModelIsReportedNotSubstituted(t *testing.T)
 
 	res, _ := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      &phasea.ClaudeRunner{Binary: fakeClaude(t)},
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",
@@ -136,36 +127,56 @@ func TestRunTwoPhase_UnknownExtractorModelIsReportedNotSubstituted(t *testing.T)
 	}
 }
 
-func TestRunTwoPhase_InjectedRunnerReportsNoExtractorModel(t *testing.T) {
+// The extractor model must be reported on the plan-emitting path too.
+//
+// This replaces TestRunTwoPhase_InjectedRunnerReportsNoExtractorModel, which
+// pinned the opposite rule: report a model ONLY when the runner in play was
+// ClaudeRunner, on the reasoning that a caller-injected runner dispatches to
+// no model and naming one would report a measurement nothing made.
+//
+// That gate cannot hold any more. Tier-2 no longer dispatches at all
+// (SPEC-013), so `runner is ClaudeRunner` is permanently false and the gate
+// would have silently made ExtractorModel a permanent empty string — an
+// unmeasured value dressed as a measured one, which is the shape the original
+// test existed to prevent, arrived at from the other direction.
+//
+// The rule that survives is ADR-055's: the value comes from the extractor
+// AGENT'S frontmatter and never from the CLI/env pin. A run that emits a plan
+// for tier-1 to fan out is exactly a run whose output needs attributing to a
+// model, so it is reported here even though this process will not dispatch.
+func TestRunTwoPhase_PlanEmittingRunReportsAgentModel(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
-	// Set the override so a failure here cannot be read as "the env was
-	// simply unset". If the recording ever widens past ClaudeRunner, this
-	// picks up the value and fails.
-	t.Setenv(phasea.ExtractorModelEnv, "claude-sonnet-5")
+	// A DIFFERENT value than the agent's, so a pass cannot be read as "the
+	// env was simply unset". If the report ever tracks the pin again, D27 is
+	// back and this fails.
+	t.Setenv(phasea.ExtractorModelEnv, "claude-opus-5")
 
 	root := stageNeverInitialised(t)
-	runner := &bootstrapRunner{}
+	stageExtractorAgent(t, root, "claude-sonnet-5")
 	var errBuf, outBuf bytes.Buffer
 
 	res, err := RunTwoPhase(TwoPhaseOptions{
 		ProjectRoot: root,
-		Runner:      runner,
 		Stderr:      &errBuf,
 		Stdout:      &outBuf,
 		OnLoss:      "accept",
 	}, model.RealClock{})
-	if err != nil {
-		t.Fatalf("compile failed: %v\nstderr:\n%s", err, errBuf.String())
+
+	// Phase A refuses by design once it has work: it emits a plan and hands
+	// off. Guard that it refused for THAT reason — a refusal for any other
+	// cause would make the assertions below vacuous, the same guard the test
+	// this replaces kept against a run that never dispatched.
+	if err == nil {
+		t.Fatal("expected Phase A to emit a plan and refuse; it completed instead")
 	}
-	if len(runner.dispatched) == 0 {
-		t.Fatalf("phase A never dispatched, so this test would pass vacuously\nstderr:\n%s", errBuf.String())
+	if !strings.Contains(err.Error(), "await tier-1 extraction") {
+		t.Fatalf("refused for the wrong reason, so the model assertions prove nothing: %v\nstderr:\n%s", err, errBuf.String())
 	}
 
-	if res.ExtractorModel != "" {
-		t.Errorf("ExtractorModel = %q, want empty — this runner dispatches to no model, and reporting one anyway names a measurement nothing made",
-			res.ExtractorModel)
+	if res.ExtractorModel != "claude-sonnet-5" {
+		t.Errorf("ExtractorModel = %q, want %q from the agent frontmatter", res.ExtractorModel, "claude-sonnet-5")
 	}
-	if strings.Contains(errBuf.String(), "extractor model:") {
-		t.Errorf("stderr announces an extractor model for a runner that never used one:\n%s", errBuf.String())
+	if strings.Contains(errBuf.String(), "claude-opus-5") {
+		t.Error("reported the CLI/env pin instead of the agent's model — the exact shape ADR-055 §4 forbids (D27)")
 	}
 }
