@@ -22,7 +22,7 @@ layout: home
       <button class="install-copy" type="button" aria-label="Copy install command">Copy</button>
     </div>
     <div class="install-code-row">
-      <code id="install-curl" role="tabpanel"><span class="prompt">$</span> curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.1/install.sh | bash</code>
+      <code id="install-curl" role="tabpanel"><span class="prompt">$</span> curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash</code>
       <code id="install-brew" role="tabpanel" hidden><span class="prompt">$</span> brew install diktahq/tap/edikt</code>
     </div>
   </div>

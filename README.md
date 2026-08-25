@@ -13,10 +13,10 @@ The `bin/edikt` CLI exists too and is fully discoverable (`edikt --help`). It's 
 ## Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.3/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash
 ```
 
-Installs the v0.7.3 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
+Installs the v0.8.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
 
 Then open any project in Claude Code and say "initialize edikt" or run `/edikt:init`.
 
@@ -26,24 +26,24 @@ The launcher manages multiple installed versions side-by-side. Use `/edikt:upgra
 
 ```bash
 edikt list                 # show all installed versions
-edikt install v0.7.3       # download and install a specific v0.7.x release
-edikt use v0.7.3           # activate it (switches the ~/.edikt/current symlink)
+edikt install v0.8.0       # download and install a specific v0.8.x release
+edikt use v0.8.0           # activate it (switches the ~/.edikt/current symlink)
 edikt rollback             # revert to the previous version
 ```
 
 `/edikt:upgrade-pin` updates your project's `.edikt/config.yaml` to match whatever is active.
 
-### Pin to a specific v0.7.x version at install time
+### Pin to a specific v0.8.x version at install time
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.3/install.sh | bash -s -- --ref v0.7.3
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash -s -- --ref v0.8.0
 ```
 
 Works for any tag with release assets (v0.7.0 and forward). `--ref` is the only supported way to pin a version — there is no `EDIKT_REF` environment variable, and passing one has no effect.
 
 ### Stay on the v0.4 line (legacy)
 
-If your project isn't ready for the sidecar architecture (introduced in v0.6.0 and current through v0.7.3), the v0.4.5 install path is still supported. v0.4.x lives in [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only) — the current repo's history starts at v0.7.0:
+If your project isn't ready for the sidecar architecture (introduced in v0.6.0 and current through v0.8.0), the v0.4.5 install path is still supported. v0.4.x lives in [diktahq/edikt-legacy](https://github.com/diktahq/edikt-legacy) (archived, read-only) — the current repo's history starts at v0.7.0:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install.sh | bash
@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/diktahq/edikt-legacy/v0.4.5/install
 
 v0.5.x is retracted. v0.7.x's installer cannot install v0.4.x (no release assets at those tags); use the v0.4.5 URL directly.
 
-### Upgrading from v0.4.x to v0.7.3
+### Upgrading from v0.4.x to v0.8.0
 
 Run `/edikt:upgrade` from inside Claude Code in your project. The flow handles the cross-major layout migration (flat → versioned `~/.edikt/`), launcher install, and the one-time `migrate sidecars --apply` step that lifts legacy in-body sentinels into `.edikt.yaml` sidecars.
 

@@ -266,8 +266,8 @@ edikt rollback
 Stay on a specific version:
 
 ```bash
-edikt use v0.7.1        # activate v0.7.1 immediately
-edikt upgrade --pin v0.7.1  # fetch v0.7.1 and pin it
+edikt use v0.8.0        # activate v0.8.0 immediately
+edikt upgrade --pin v0.8.0  # fetch v0.8.0 and pin it
 ```
 
 When pinned, `edikt upgrade` is a no-op until you clear the pin:

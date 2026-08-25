@@ -19,7 +19,7 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 ## 1. Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.7.1/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash
 ```
 
 Installs the v0.7.1 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
