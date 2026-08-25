@@ -23,7 +23,7 @@ Before upgrading the project, edikt checks if a newer version is available on Gi
 - **No network** — warns and continues with the installed version.
 
 ```text
-📦 edikt v0.7.1 is available (you have v0.7.0).
+📦 edikt v0.8.0 is available (you have v0.7.3).
 
   Update now:
     curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash

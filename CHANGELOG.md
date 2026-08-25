@@ -37,11 +37,39 @@ hook's exit code, stdout, stderr, and filesystem effect byte-for-byte.
   fixtures a regeneration had just obliged them to write. YAML treats the two as the same
   string; nothing downstream changes. Existing sidecars carrying the quoted form are still
   counted correctly by edikt's own tooling.
+- **`gov compile` no longer dispatches the extractor itself — it emits a plan.** When artifacts need
+  extraction, Phase A now writes a schema-valid dispatch plan and stops; `/edikt:gov:compile` fans
+  out one `sidecar-extractor` per item and then calls `edikt phasea verify` to check the results
+  against the plan. Three new verbs support that flow (`phasea plan`, `phasea verify`,
+  `phasea restore`), each item is verified independently with a named cause when it fails, and a
+  failing item is re-dispatched under a bounded attempt budget instead of failing the whole compile.
+  The in-binary LLM dispatcher is deleted outright, so the rule that tier-2 never invokes an LLM now
+  holds with zero exemptions rather than a documented carve-out.
 - **All 22 hooks now ship as Go-backed exec shims**, removing the `python3` dependency
   from the hook tier entirely.
 
 ### Added
 
+- **Per-directive `paths` and `enforcement` on sidecars (schema v2.1).** A single directive or
+  prohibition can now narrow itself to its own globs instead of inheriting the sidecar's, and can
+  escalate or de-escalate itself with `enforcement: deny` / `enforcement: advisory`. Both fields
+  are optional and additive — `schema_version` is unchanged at 2, and a sidecar using neither
+  compiles byte-identical to before. Useful when one artifact governs several areas and only some
+  of its rules should block a write.
+- **Write-time grade is derived from what a rule is, not asserted by hand.** Invariants and ADR
+  prohibitions default to `must`; everything else defaults to `advisory`. A per-directive
+  `enforcement` value always wins over that default. No re-extraction is needed — every input
+  already exists in every sidecar.
+- **Narrowed directives now also reach you before the edit, not only at it.** A directive scoped by
+  its own `paths` renders a compact digest (text and id) into its topic file's ambient body, on top
+  of full `directive-index.yaml` delivery. Directives relying only on sidecar-level `paths` are
+  unchanged and stay index-only. A hard token-budget test keeps the ambient surface far below its
+  pre-existing baseline.
+- **An injection-volume regression gate.** `test/test-injection-budget.sh` measures the compiled
+  directive index against a pinned baseline and names the specific globs that grew. It runs inside
+  `gov compile` as a non-blocking report alongside the existing fail-closed verify, so a change that
+  quietly doubles what gets injected on every write is visible in the run that caused it. The
+  detector is itself proven by positive and negative fixtures rather than assumed to work.
 - **`test/test-hook-corpus-replay.sh`** — replays the committed hook corpus for every
   migrated hook and fails on any behavioural difference, so byte-parity with the
   original bash hooks is checked automatically instead of only by hand.

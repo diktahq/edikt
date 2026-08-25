@@ -1,7 +1,7 @@
 # Keeping edikt Up to Date
 
 ::: tip Current entry point
-**v0.7.1** is the current release and the entry point for upgrading. `diktahq/edikt`'s prior public releases stopped at **v0.4.5** — v0.5.x was retracted (ADR-042) and v0.6.0 was never published — but v0.7.0 restarted the release line and it, along with v0.7.1, is fully installable. If you have an installed project on v0.4.x, run `/edikt:upgrade` and it carries you straight to v0.7.1 in one pass — the migration and schema-upgrade steps handle the full jump uniformly. **This one-pass jump is historical**, specific to the v0.4.x → v0.7.1 gap left by the retracted/unpublished v0.5.x–v0.6.0 lines. Starting with v0.8.0, `edikt upgrade` only jumps one minor line at a time (the N-1 policy below) — it is not a general "always straight to latest" guarantee for future releases.
+**v0.8.0** is the current release. **v0.7.x is the entry point for upgrading from v0.4.x** — the one-pass jump described below lands you on v0.7.1, and you then move to v0.8.0 under the N-1 policy. `diktahq/edikt`'s prior public releases stopped at **v0.4.5** — v0.5.x was retracted (ADR-042) and v0.6.0 was never published — but v0.7.0 restarted the release line and it, along with v0.7.1, is fully installable. If you have an installed project on v0.4.x, run `/edikt:upgrade` and it carries you straight to v0.7.1 in one pass — the migration and schema-upgrade steps handle the full jump uniformly. **This one-pass jump is historical**, specific to the v0.4.x → v0.7.1 gap left by the retracted/unpublished v0.5.x–v0.6.0 lines. Starting with v0.8.0, `edikt upgrade` only jumps one minor line at a time (the N-1 policy below) — it is not a general "always straight to latest" guarantee for future releases.
 :::
 
 edikt has two layers that need updating separately: the **global templates** (installed on your machine) and the **project configuration** (committed in each repo).
@@ -286,8 +286,9 @@ Output:
 
 ```
   v0.4.3
-  v0.7.0
-* v0.7.1   (current)
+  v0.7.1
+  v0.7.3
+* v0.8.0   (current)
 ```
 
 ### Pruning old versions

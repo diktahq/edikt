@@ -115,7 +115,7 @@ layout: home
 </section>
 
 <section class="proof reveal">
-  <span class="chip"><b>v0.7.1</b> · Cosign-signed releases</span>
+  <span class="chip"><b>v0.8.0</b> · Cosign-signed releases</span>
   <span class="chip"><b>Elastic-2.0</b> · Open source</span>
   <span class="chip"><b>No build step</b> · No npm, no compiler</span>
   <span class="chip"><b>Plain markdown</b> · You own every file</span>
