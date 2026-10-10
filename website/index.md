@@ -22,11 +22,11 @@ layout: home
       <button class="install-copy" type="button" aria-label="Copy install command">Copy</button>
     </div>
     <div class="install-code-row">
-      <code id="install-curl" role="tabpanel"><span class="prompt">$</span> curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash</code>
+      <code id="install-curl" role="tabpanel"><span class="prompt">$</span> curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash</code>
       <code id="install-brew" role="tabpanel" hidden><span class="prompt">$</span> brew install diktahq/tap/edikt</code>
     </div>
   </div>
-  <p class="harness-note">Homebrew installs the launcher only — follow with <code>edikt install v0.8.0</code> and <code>edikt use v0.8.0</code> to fetch the payload. Already running edikt? <a href="/guides/upgrading">Upgrading</a>.</p>
+  <p class="harness-note">Homebrew installs the launcher only — follow with <code>edikt install v0.9.0</code> and <code>edikt use v0.9.0</code> to fetch the payload. Already running edikt? <a href="/guides/upgrading">Upgrading</a>.</p>
   <p class="harness-note"><span class="now">Claude Code</span> today — Codex and other harnesses next.</p>
 </section>
 

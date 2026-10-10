@@ -13,10 +13,10 @@ The `edikt` CLI exists too and is fully discoverable (`edikt --help`). It's how 
 ## Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
 ```
 
-Installs the v0.8.0 Go launcher (`edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
+Installs the v0.9.0 Go launcher (`edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
 
 The installer asks whether to install globally or into the current project only. Pass `--global` or `--project` to skip the question.
 
@@ -29,8 +29,8 @@ brew install diktahq/tap/edikt
 Homebrew installs **only the launcher binary**. The payload — commands, agents, hooks, rule packs — is fetched separately on first use, so a `brew install` alone does not set a project up.
 
 ```bash
-edikt install v0.8.0    # fetch the payload
-edikt use v0.8.0        # activate it and link the /edikt:* commands
+edikt install v0.9.0    # fetch the payload
+edikt use v0.9.0        # activate it and link the /edikt:* commands
 ```
 
 **The two halves upgrade independently.** `brew upgrade edikt` replaces the launcher; `edikt upgrade` fetches a new payload and never touches the binary. Run both when moving between versions — a launcher newer than its payload, or the reverse, is a supported state but not usually the one you want.
@@ -43,17 +43,17 @@ The launcher manages multiple installed versions side-by-side. Use `/edikt:upgra
 
 ```bash
 edikt list                 # show all installed versions
-edikt install v0.8.0       # download and install a specific v0.8.x release
-edikt use v0.8.0           # activate it (switches the ~/.edikt/current symlink)
+edikt install v0.9.0       # download and install a specific v0.9.x release
+edikt use v0.9.0           # activate it (switches the ~/.edikt/current symlink)
 edikt rollback             # revert to the previous version
 ```
 
 `/edikt:upgrade-pin` updates your project's `.edikt/config.yaml` to match whatever is active.
 
-### Pin to a specific v0.8.x version at install time
+### Pin to a specific v0.9.x version at install time
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh | bash -s -- --ref v0.8.0
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash -s -- --ref v0.9.0
 ```
 
 Works for any tag with release assets (v0.7.0 and forward). `--ref` is the only supported way to pin a version — there is no `EDIKT_REF` environment variable, and passing one has no effect.
