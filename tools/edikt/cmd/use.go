@@ -59,7 +59,11 @@ Fails clearly if the version is not installed.`,
 			return fmt.Errorf("activating version: %w", err)
 		}
 
-		if err := writeLock(ediktRoot, tag, "launcher"); err != nil {
+		// The payload in versions/<tag> is not being replaced, only
+		// activated, so its provenance travels with it rather than being
+		// restamped as published (SR-002).
+		prevLock, _ := readLock(ediktRoot)
+		if err := writeLock(ediktRoot, tag, "launcher", lockSourceFor(prevLock, tag)); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: version activated but lock.yaml update failed: %v\n", err)
 		}
 

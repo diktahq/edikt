@@ -133,7 +133,7 @@ func Marshal(reg Registry) ([]byte, error) {
 
 	var sb strings.Builder
 	sb.WriteString("# edikt topic registry — human-owned pinned judgment.\n")
-	sb.WriteString("# Written by `bin/edikt sidecar approve --kind topic-description`.\n")
+	sb.WriteString("# Written by `edikt sidecar approve --kind topic-description`.\n")
 	sb.WriteString("# Consumed VERBATIM by every rendered surface. The compile pipeline never writes this file.\n")
 
 	enc := yaml.NewEncoder(&sb)
@@ -265,7 +265,15 @@ func (c Coverage) Report() string {
 			len(c.HashMismatch), strings.Join(names, ", "))
 	}
 	if len(c.Orphans) > 0 {
-		s += fmt.Sprintf("; %d orphan entr(y/ies) (%s)", len(c.Orphans), strings.Join(c.Orphans, ", "))
+		// THE REMEDY, not just the count. An orphan entry describes a topic
+		// the corpus no longer has — the last source artifact was archived,
+		// the compile stopped producing the topic, and its skill package was
+		// deleted while the sentence describing it stayed. The count has been
+		// reported for releases with nothing a reader could do about it.
+		s += fmt.Sprintf("; %d orphan entr(y/ies) (%s) — the corpus no longer carries these topics; "+
+			"remove each with `edikt sidecar approve <topic> --kind=topic-description --decision=reject --removal` "+
+			"(never automatic: a topic missing from one compile may be an artifact mid-rename)",
+			len(c.Orphans), strings.Join(c.Orphans, ", "))
 	}
 	return s
 }

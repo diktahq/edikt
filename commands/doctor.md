@@ -30,7 +30,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 3. Run all checks in parallel where possible. Use the check definitions in the Reference section below. For each check, report `[ok]`, `[!!]`, or `[FAIL]` as defined there.
 
-4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, Routed source files, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Directive sentinel schema, Linter sync, Evaluator, edikt version.
+4. Run checks in this order: Config, Project Context, Decisions, Invariants, Rules, Rule pack freshness, Routed source files, CLAUDE.md sentinel, Hooks (PreToolUse + PreCompact), Hooks (SessionStart + Stop), Product spec, Plans, Auto-memory, Agents, Extensibility, Project templates, Template reference examples, Compiled governance, Linter sync, Evaluator, edikt version.
 
 5. Run the Decision Graph checks from the Reference section. Report findings inline with the other checks.
 
@@ -69,7 +69,7 @@ CRITICAL: NEVER skip a check or assume it passes — run every check from the Re
 
 **Config:**
 ```bash
-bin/edikt util yaml validate .edikt/config.yaml 2>&1 || echo "INVALID"
+edikt util yaml validate .edikt/config.yaml 2>&1 || echo "INVALID"
 ```
 - `[ok]` if valid YAML
 - `[FAIL]` if parse error — show the error
@@ -108,7 +108,6 @@ For each `.claude/rules/*.md` file that has the `edikt:generated` marker:
 3. Compare versions:
    - Installed version == registry version: no output (already covered by Rules check)
    - Installed version < registry version: `[!!] {name} outdated (installed: {old}, available: {new}) — run /edikt:rules-update`
-   - No `version:` in installed file: `[!!] {name} has no version — may predate versioning`
    - Pack not in registry (custom rule): skip silently
 
 **Routed source files:**
@@ -119,10 +118,10 @@ A surface the manifest lists but that cannot be READ is also a failure, reported
 
 The enumeration comes from the manifest rather than a directory walk because a walk finds orphans left by a renamed topic and misses anything rendered elsewhere. A project with no manifest yet falls back to the walk, so an upgrade is not a doctor failure.
 
-Implementation: in the tier-2 binary. The check runs automatically as part of `bin/edikt doctor` (see `tools/edikt/cmd/doctor_routed_sources.go`). The markdown surface delegates to the helper; the helper is LLM-agnostic and pure Go.
+Implementation: in the tier-2 binary. The check runs automatically as part of `edikt doctor` (see `tools/edikt/cmd/doctor_routed_sources.go`). The markdown surface delegates to the helper; the helper is LLM-agnostic and pure Go.
 
 ```bash
-bin/edikt doctor
+edikt doctor
 ```
 
 - `[ok] Routed sources — {n} of {n} resolve` when every cited ID's source file exists.
@@ -149,7 +148,7 @@ fi
 
 **StatusLine type field check:**
 
-Implemented in `bin/edikt doctor` (see `tools/edikt/cmd/doctor_settings_status.go`). The check runs automatically as part of doctor's main loop. The markdown surface delegates to the helper.
+Implemented in `edikt doctor` (see `tools/edikt/cmd/doctor_settings_status.go`). The check runs automatically as part of doctor's main loop. The markdown surface delegates to the helper.
 
 Critical signal — fire `[!!]` because a missing `type` field invalidates the WHOLE settings.json from Claude Code's perspective; every hook stops firing too.
 
@@ -169,25 +168,6 @@ jq -e '.hooks.PreCompact // [] | length > 0' .claude/settings.json >/dev/null &&
 - `[ok] PreCompact hook` if present
 - `[!!] PreCompact hook missing` — suggest `/edikt:init`
 
-**Hooks (SessionStart + Stop):**
-
-Check for SessionStart and Stop hooks in `.claude/settings.json`:
-
-```python
-import json
-s = json.load(open('.claude/settings.json'))
-# SessionStart
-cmd = s.get('hooks', {}).get('SessionStart', [{}])[0].get('hooks', [{}])[0].get('command', '')
-# Stop
-stop = s.get('hooks', {}).get('Stop', [{}])[0].get('hooks', [{}])[0]
-stop_prompt = stop.get('prompt', '') if stop.get('type') == 'prompt' else ''
-```
-- `[ok] SessionStart hook` if command references `.edikt/hooks/session-start.sh`
-- `[!!] SessionStart hook outdated (inline bash) — run /edikt:upgrade` if command is inline bash
-- `[ok] Stop hook` if prompt contains `"ok": true` AND does not use `"ok": false` for signals
-- `[!!] Stop hook outdated (JSON validation error) — run /edikt:upgrade` if prompt uses old free-text format
-- `[!!] Stop hook causes blocking error — run /edikt:upgrade` if prompt uses `{"ok": false, "reason":` to deliver signals (causes "Prompt hook condition was not met" error)
-
 **Product spec:**
 ```bash
 ls {paths.specs}/SPEC-*/spec.md 2>/dev/null | wc -l
@@ -205,7 +185,7 @@ ls {paths.plans}/PLAN-*.md 2>/dev/null
 **Auto-memory:**
 ```bash
 ENCODED=$(echo "$PWD" | sed 's|/|-|g')
-MEMORY="$HOME/.claude/projects/${ENCODED}/memory/MEMORY.md"
+MEMORY="${CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}/projects/${ENCODED}/memory/MEMORY.md"
 ```
 - `[ok] Memory exists ({N} days old, {lines}/200 lines)` if present and fresh
 - `[!!] Memory is stale ({N} days old)` — suggest `/edikt:context` to refresh
@@ -235,11 +215,7 @@ ls .claude/agents/*.md 2>/dev/null
 
 **Project templates:**
 
-Check the state of the three per-artifact project templates that `/edikt:<artifact>:new` consults via the lookup chain. Reports differ based on the project's `edikt_version` because v0.2.x legacy projects are allowed to run without project templates (they fall through to the inline fallback with a warning).
-
-```bash
-PROJECT_EDIKT_VERSION=$(grep '^edikt_version:' .edikt/config.yaml 2>/dev/null | awk '{print $2}' | tr -d '"')
-```
+Check the state of the three per-artifact project templates that `/edikt:<artifact>:new` consults.
 
 For each of the three templates (`.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, `.edikt/templates/guideline.md`):
 
@@ -247,10 +223,13 @@ For each of the three templates (`.edikt/templates/adr.md`, `.edikt/templates/in
   -  (sidecar architecture, v0.6.0): templates MUST NOT contain an in-body `[edikt:directives:start]: #` / `[edikt:directives:end]: #` sentinel block. The block is replaced by the co-located `<artifact>.edikt.yaml` sidecar that `/edikt:<artifact>:new` generates atomically.
   - If the template contains a sentinel block: `[!!] Project {artifact} template contains a legacy [edikt:directives:start] block — stale pre-v0.6.0 shape. Run /edikt:init --reset-templates to regenerate, or remove the block manually.`
   - If no sentinel block: `[ok] Project {artifact} template: .edikt/templates/{artifact}.md ({kind})` where `{kind}` is derived from a marker comment in the template (`Adapted`, `Nygard-minimal`, `MADR-extended`, `Minimal`, `Full`, `Extended`, or `Custom` if no marker).
-- **Template absent AND project is v0.3.0+** (`edikt_version >= 0.3.0`):
+- **Template absent**:
   - `[!!] Project {artifact} template missing (.edikt/templates/{artifact}.md) — required for v0.3.0+. Run /edikt:init or /edikt:init --reset-templates to set up.`
-- **Template absent AND project is v0.2.x legacy** (`edikt_version < 0.3.0` or missing):
-  - `[--] Project {artifact} template not set up (v0.2.x legacy mode). Run /edikt:upgrade followed by /edikt:init to opt into the v0.3.0 template adaptation feature.`
+
+After the three: classify once, so the summary names the state rather than three lines the reader has to add up (this diagnosis lives here only — `/edikt:upgrade` reports nothing about project templates):
+- all three present → nothing more.
+- some missing → `[!!] Project templates — Partially configured ({n}/3 missing: {list}). Run /edikt:init --reset-templates to complete the setup; the existing ones are preserved.`
+- all three missing on a project whose `edikt_version` is ≥ 0.3.0 → `[!!] Project templates — Broken state: no templates on v{version}. Until they exist, /edikt:<artifact>:new will HARD REFUSE. Run /edikt:init --reset-templates.` This is advisory only — doctor never runs `/edikt:init`.
 
 For the Invariant Record template specifically: always refer to it as "Invariant Record template" in doctor output, not just "invariant template". Uses the formal name consistently.
 
@@ -282,7 +261,7 @@ done
 ```
 
 - `[ok] Reference templates installed ({n}/6)` if all six are present.
-- `[!!] Reference templates incomplete ({n}/6 found) — run curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash to reinstall` if any are missing.
+- `[!!] Reference templates incomplete ({n}/6 found) — run curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash to reinstall` if any are missing.
 
 **Compiled governance:**
 - Read the render manifest at `.claude/rules/governance/manifest.yaml`. It is the enumeration of what compile produced; the four checks below are asked of THAT set, not of a directory listing.
@@ -290,15 +269,12 @@ done
   - **Index fresh** — the manifest's recorded hash for `directive-index.yaml` matches the bytes on disk.
   - **Skills installed** — every `kind: skill-package` surface the manifest lists is present and readable.
   - **Ambient under budget** — the ambient core is at or under its token ceiling, stated as chars/4 rather than tokens, with the instrument named in the output.
-- These four replaced the routing-table check. The routing table was retired with the tier-3 render; a check for its presence would now fail on a correctly compiled project, which is worse than no check.
 - `[ok] Compiled governance — ambient core + {n} topic files + {m} skill packages` when the manifest resolves
-- `[!!] Compiled governance uses flat format (v0.1.x) — run /edikt:gov:compile to migrate` if governance.md exists but no governance/ directory
 - `[!!] No compiled governance — run /edikt:gov:compile` if governance.md missing
 - **Compile schema version check.** The current schema is `COMPILE_SCHEMA_VERSION = 3`, declared at the top of `commands/gov/compile.md`. For generated `governance.md`:
   - Read `compile_schema_version` from YAML frontmatter.
-  - If missing: `[!!] Governance uses legacy version stamp (no compile_schema_version) — run /edikt:gov:compile to regenerate`
   - If `< 3`: `[!!] Governance compiled with schema v{n} (current: v3) — run /edikt:gov:compile to regenerate`
-  - If `> 2`: `[!!] Governance compiled with schema v{n} — installed edikt only supports v2. Upgrade edikt: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash`
+  - If `> 2`: `[!!] Governance compiled with schema v{n} — installed edikt only supports v2. Upgrade edikt: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash`
   - If equal: no output (covered by the `[ok]` line above)
   - Note: `compiled_by` and `compiled_at` HTML comments are informational only. NEVER check them programmatically or use them to determine staleness.
 - For each topic file in `governance/`, check `paths:` frontmatter exists:
@@ -360,12 +336,10 @@ ls .claude/rules/linter-*.md 2>/dev/null
 
 **Legacy in-body sentinel detection (v0.6.0+):**
 
-> The v0.2.x/v0.3.x three-list schema check was removed in v0.6.0. The canonical schema now lives in `<artifact>.edikt.yaml` sidecars (validated by the SIDECAR HEALTH check above). The only remaining concern is whether any pre-v0.6.0 in-body sentinel blocks still exist in the project — if so, `/edikt:gov:compile` refuses to run.
-
 Scan every artifact under `{paths.decisions}`, `{paths.invariants}`, `{paths.guidelines}` for a column-0 `[edikt:directives:start]: #` line outside fenced code regions and outside the documentation skip-list. The `edikt` binary handles fence detection and skip-list correctly:
 
 ```bash
-edikt migrate sidecars --dry-run > /tmp/edikt-doctor-sidecar.out 2>&1
+EDIKT_INVOKER=/edikt:doctor edikt migrate sidecars --dry-run > /tmp/edikt-doctor-sidecar.out 2>&1
 ```
 
 - Exit 0 and `0 sidecars to create` → report `✓ Legacy sentinels: none detected`.
@@ -396,7 +370,7 @@ Probe the phase-end evaluator's runtime health. The evaluator defaults to headle
 
 3. **Headless probe** (only if CLI is on PATH):
    ```bash
-   claude -p "echo ok" --allowedTools "Bash" --bare 2>&1
+   claude -p "echo ok" --allowedTools "Bash" --safe-mode 2>&1
    ```
    Capture exit code and stderr.
    - If exit 0 and output contains `ok`: `[ok] Evaluator: headless probe succeeded (claude -p "echo ok")`
@@ -510,7 +484,7 @@ Report:
 For each PRD `.yaml` sidecar (read the `schema_version` key with any YAML-aware tool — `yq` is fine; a 1-line python form is also acceptable, as long as it uses stdlib only):
 
 ```bash
-bin/edikt util yaml get "$YAML_PATH" schema_version --default missing
+edikt util yaml get "$YAML_PATH" schema_version --default missing
 ```
 
 - `schema_version == "1.0"` → `[ok]`
@@ -522,7 +496,7 @@ bin/edikt util yaml get "$YAML_PATH" schema_version --default missing
 For each v2 PRD sidecar with `_sync.md_hash` non-empty:
 
 ```bash
-CURRENT=$(bin/edikt util hash "$PRD_MD")
+CURRENT=$(edikt util hash "$PRD_MD")   # shell guard refuses "hash"? shasum -a 256 "$PRD_MD" | cut -d' ' -f1
 ```
 
 Compare to `_sync.md_hash`. On mismatch:

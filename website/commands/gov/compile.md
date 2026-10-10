@@ -2,7 +2,7 @@
 
 Compile accepted ADRs, active invariants, and team guidelines into topic-grouped governance rule files.
 
-The output is four rendered surfaces under `.claude/rules/` (`compile_schema_version: 3`, ADR-059): an always-loaded ambient core (`.claude/rules/governance.md`), per-topic files under `.claude/rules/governance/` loaded when a matching file is edited, a glob-keyed `directive-index.yaml` that drives write-time enforcement, and a `manifest.yaml` that proves nothing drifted. A topic file's own directive region is populated only from sidecars with no `paths:` — path-scoped directive text renders in `directive-index.yaml` instead (ADR-066), so a topic file is not guaranteed to be "full-fidelity" on its own. See [Output structure](#output-structure) below.
+The output is four rendered surfaces under `.claude/rules/` (`compile_schema_version: 3`, ADR-059): an always-loaded ambient core (`.claude/rules/governance.md`), per-topic files under `.claude/rules/governance/` loaded when a matching file is edited, a glob-keyed `delivery-map.yaml` recording which directive governs which path and which surface delivers it, and a `manifest.yaml` that proves nothing drifted. A topic file carries every directive of its topic, whether or not the contributing sidecar declares `paths:` — so an empty directive region means a topic with no directives. See [Output structure](#output-structure) below.
 
 In v0.6.0, compile runs in two phases: **Phase A** (resync, conditional, LLM-backed) and **Phase B** (merge, always, deterministic). Phase B preserves a tight latency budget; Phase A has no SLO but emits mandatory progress UI.
 
@@ -18,10 +18,10 @@ In v0.6.0, compile runs in two phases: **Phase A** (resync, conditional, LLM-bac
 
 | Argument | Description |
 |----------|-------------|
-| (none) | Run Phase A (if stale) + Phase B + post-merge verify gate; write governance index + topic rule files |
-| `--check` | Phase B only; exit 1 with stale-sidecar list if any sidecar is stale. Verify gate is skipped (nothing was written). |
+| (none) | Run Phase A (if stale) + Phase B + the post-merge directive verify (reported, not enforced); write the ambient core, topic files, delivery map and manifest |
+| `--check` | Never writes. Exit 1 with a `stale:` line per stale sidecar, including anchor drift autorepair could fix (reported, not applied). The post-merge verify is skipped (nothing was written). `--trust` is refused with it (exit 2). |
 | `--no-wait` | Fail fast (exit 1) instead of waiting on the `.edikt/state/compile.lock` |
-| `--skip-verify` | Skip the post-merge verify gate. Use sparingly — disabling the gate defeats the completion-evidence discipline. |
+| `--skip-verify` | Skip the post-merge directive verify entirely, so not even its report is printed. |
 
 ## Two-phase architecture (v0.6.0)
 
@@ -46,7 +46,7 @@ If any sidecar fails, Phase B does not run. Compile prints the aggregated failur
 
 ### Phase B — Merge (always)
 
-Reads every `<artifact>.edikt.yaml` under `docs/architecture/decisions/`, `docs/architecture/invariants/`, and `docs/guidelines/`. Validates against `templates/schemas/gov-sidecar.v2.schema.json`. Groups by topic. Renders the four `compile_schema_version: 3` output surfaces from the merged directive set with canonical serialization — the ambient core, per-topic files, `directive-index.yaml`, and `manifest.yaml` (see [Output structure](#output-structure) below).
+Reads every `<artifact>.edikt.yaml` under `docs/architecture/decisions/`, `docs/architecture/invariants/`, and `docs/guidelines/`. Validates against `templates/schemas/gov-sidecar.v2.schema.json`. Groups by topic. Renders the four `compile_schema_version: 3` output surfaces from the merged directive set with canonical serialization — the ambient core, per-topic files, `delivery-map.yaml`, and `manifest.yaml` (see [Output structure](#output-structure) below).
 
 Pure deterministic merge — no LLM, no `Task`/`Agent` dispatch, no shell-out. A static-analysis test (`tools/edikt/check/no-llm-in-merge.sh`) verifies that no LLM-dispatch symbol is reachable from the Phase B code path. The check runs in CI.
 
@@ -84,33 +84,37 @@ Phase B done: 3 topic files rendered
 summary: 39 sidecars (0 failing); 168 items: 14 passed, 0 failed, 0 timeout, 154 skipped
 ```
 
-If any verify failed or timed out, `gov compile` exits 1 with a remediation summary:
+If any verify failed or timed out, `gov compile` says so and carries on:
 
 ```text
-error: gov compile produced output, but the verify gate found failing sidecar(s).
-Re-run gov compile after fixing the failing directives or removing their verify commands.
+note: post-compile directive verify exited 1 — reported only; the compile is not failed by it. Phase-end review verifies.
 ```
 
-Output bytes are still on disk — `gov compile` does not roll back Phase B on a verify failure. The exit code is the signal; the user fixes the failing directive or removes its `verify:` line and re-runs.
+**This is reported, not enforced, and that is a deliberate demotion (ADR-083 f).** A directive's `verify:` is a shell command guessed from prose by an extractor and then run without judgement, which was never a fit gate for whether a compile is good; the phase-end reviewer is the one verification surface. The compile's exit code now answers only whether the render succeeded. If you were gating CI on `gov compile` catching a failing directive verify, gate on `bin/edikt verify` instead.
 
-The gate is **skipped** in three cases:
+The post-merge verify is **skipped** in three cases:
 
-- `--check` mode — nothing was written, so there's nothing to gate.
-- `--json` mode — the gate's text output would corrupt the structured payload. JSON consumers should run `edikt verify all --json` themselves if they need both.
+- `--check` mode — nothing was written, so there's nothing to verify.
+- `--json` mode — its text output would corrupt the structured payload. JSON consumers should run `edikt verify all --json` themselves if they need both.
 - `--skip-verify` — explicit opt-out, recorded in compile output.
 
 Items declared without a `verify:` field are recorded as `skipped:operational` so coverage can be measured separately from health. The doctor's "Sidecar Verify Coverage" line surfaces low coverage as a soft warning.
 
 ### `--check` mode
 
-Skips Phase A entirely. If any sidecar is stale, exits 1 with:
+`--check` (and its alias `--dry-run`) **never writes** — not a sidecar, not a rendered surface, not the trust store. It skips Phase A dispatch and Phase B. If any sidecar is stale it prints one `stale:` line per sidecar and exits 1:
 
 ```text
-✗ Stale sidecars: ADR-001, ADR-007, ADR-022
-  Run /edikt:gov:compile to resync.
+  stale: ADR-001 — anchor drift, 2 anchor(s) mechanically repairable; not written (--check) — run edikt gov compile
+  stale: ADR-007 — directive[3].anchor[0]: quote not found at lines 52-53
+error: 2 sidecar(s) stale — 1 mechanically repairable (run edikt gov compile), 1 need extraction (run /edikt:gov:compile in Claude Code)
 ```
 
-CI gates run `--check`. Because `--check` never dispatches a subagent, it is deterministic and fast.
+Anchor drift that the deterministic autorepair can resolve still counts as stale. `--check` measures the repair on a copy and reports it; `edikt gov compile` applies it, keeping the sidecar's `$schema` header and copying only the matched span of the prose into the quote. A partially repairable sidecar is listed once, naming the anchor that is still stale after the repair. When nothing is stale, the verdict line carries the computed count: `edikt gov compile --check: anchor drift: 0 stale (N sidecar(s))`.
+
+`--trust` records the project in your user trust store, which is a write, so `--check --trust` and `--dry-run --trust` are refused with exit 2.
+
+CI gates run `--check`. Because `--check` never dispatches a subagent and never writes, it is deterministic and fast.
 
 ### Concurrent compile
 
@@ -128,6 +132,10 @@ Shape:
   "phase_a": {
     "dispatched": 0,
     "stale": 0,
+    "stale_ids": [],
+    "bootstrap": 0,
+    "repairable": 0,
+    "repairable_ids": [],
     "errors": []
   },
   "phase_b": {
@@ -139,7 +147,7 @@ Shape:
 }
 ```
 
-`status` is `"ok"` on a successful run, `"error"` when compile exited non-zero (the run still completed enough to emit JSON; check `error` for the message). Phase A's `dispatched` and `stale` counts agree on a successful resync (every stale sidecar was dispatched). On Phase A failure, `phase_a.errors[]` lists each artifact that failed and `phase_b` is omitted (Phase B does not run when Phase A failed). Output shape is the contract — exit codes carry status; output is for machine-to-machine piping or human consumption.
+`status` is `"ok"` on a successful run, `"error"` when compile exited non-zero (the run still completed enough to emit JSON; check `error` for the message). Phase A's `dispatched` and `stale` counts agree on a successful resync (every stale sidecar was dispatched). Under `--check`, `repairable` / `repairable_ids` name the subset of `stale_ids` whose anchor drift `edikt gov compile` repairs without an extraction; `repairable_ids` is always an array, `[]` when there are none. On Phase A failure, `phase_a.errors[]` lists each artifact that failed and `phase_b` is omitted (Phase B does not run when Phase A failed). Output shape is the contract — exit codes carry status; output is for machine-to-machine piping or human consumption.
 
 `--dry-run` is an alias for `--check` (added for parity with `migrate sidecars` and `verify` flag conventions).
 
@@ -181,7 +189,9 @@ Directives from all sources are grouped by topic. All caching rules from differe
 ### Two loading mechanisms
 
 1. **`paths:` frontmatter** — Claude Code auto-loads a topic file when editing a matching file. Platform-enforced, no reasoning step.
-2. **Write-time hook match** — `bin/edikt hook match` reads `directive-index.yaml` and matches the file actually being written against each directive's own glob, independent of whether the topic file happens to be loaded. This is what fires the PreToolUse deny (`must`) or PostToolUse `additionalContext` (`advisory`) described in [Two-phase architecture](#two-phase-architecture-v0-6-0) above.
+2. **Skill-package selection** — a topic whose contributing sidecars declare no globs has no rules file to load, so it ships as `.claude/skills/edikt-<topic>/SKILL.md` and is selected by the task's language, before anything has been touched.
+
+Through v0.8.x there was a third: `bin/edikt hook match` read `directive-index.yaml` and matched the file being written against each directive's own glob, firing a PreToolUse refusal for `must` or PostToolUse `additionalContext` for `advisory`. That channel is retired (ADR-083). `delivery-map.yaml` keeps the routing record it needed — which directive governs which path, at which grade, through which surface — and nothing is injected as an edit lands.
 
 There is no keyword-matched routing table in the current output (`compile_schema_version: 3`) — that mechanism was retired. See [How Governance Compiles](/governance/compile) for the full history.
 
@@ -195,11 +205,11 @@ Phase B renders four surfaces under `.claude/rules/`, per `compile_schema_versio
 └── governance/
     ├── architecture.md                  ← topic file: pathless/manual content for topic "architecture"
     ├── cache.md                         ← topic file: pathless/manual content for topic "cache"
-    ├── directive-index.yaml             ← glob-keyed index; bin/edikt hook match's exclusive input
+    ├── delivery-map.yaml                ← glob-keyed routing record; carries no directive text
     └── manifest.yaml                    ← every surface's path + kind + SHA-256, no timestamp
 ```
 
-A topic whose contributing sidecars all declare `paths:` still renders a topic file (to carry the `paths:` frontmatter and its Reminders/Verification Checklist), but its `Directives`/`Prohibitions` region is empty — that content lives in `directive-index.yaml` instead, per ADR-066's single-home rule. A topic with no `paths:`-declaring or pathless sidecars at all renders no topic file and is reached only through its skill package (`.claude/skills/edikt-<topic>/SKILL.md`).
+A topic file carries every directive of its topic, so an empty `Directives`/`Prohibitions` region means a topic with no directives rather than one whose directives were routed elsewhere. A topic with no `paths:`-declaring or pathless sidecars at all renders no topic file and is reached only through its skill package (`.claude/skills/edikt-<topic>/SKILL.md`).
 
 ### Governance index (governance.md)
 
@@ -213,13 +223,13 @@ No routing table, no aggregate reminders, no verification checklist — those we
 
 Each contains:
 - `paths:` frontmatter for auto-loading — the union of every contributing sidecar's declared globs
-- A `Directives`/`Prohibitions` region, populated only from sidecars that declare no `paths:` (may be empty)
+- A `Directives`/`Prohibitions` region carrying every directive of the topic, `paths:`-scoped or not (empty only when the topic has none)
 - A hand-authored `ManualDirectives` region (may also be empty)
 - Always-present `Reminders` and `Verification Checklist` sections, scoped to that topic
 
-### Directive index (directive-index.yaml) and manifest (manifest.yaml)
+### Delivery map (delivery-map.yaml) and manifest (manifest.yaml)
 
-`directive-index.yaml` is the machine-readable surface: glob-keyed, carrying each directive's pinned `grade`, its `text`, a `falsifying_observation`, and its reminders. It's not meant for ambient reading — `bin/edikt hook match` is its only consumer. `manifest.yaml` lists every rendered surface with its SHA-256, deliberately with no timestamp, so it's byte-identical across byte-identical input and can tell a stale render from a fresh one.
+`delivery-map.yaml` is the machine-readable routing record, not a delivery surface: glob-keyed, naming under each glob the `id`, pinned `grade`, `class`, `topic` and delivering `surface` of every directive that governs that path, and deliberately carrying no directive text. It is the one source of path→directive scope — read by `bin/edikt hook match`, `edikt gov scope`, the session tally and the prune counter — and nothing loads it into a model's context. `manifest.yaml` lists every rendered surface with its SHA-256, deliberately with no timestamp, so it's byte-identical across byte-identical input and can tell a stale render from a fresh one.
 
 ## Compilation summary
 
@@ -272,7 +282,7 @@ This also runs in `/edikt:gov:review` when scoring sidecars.
 /edikt:gov:compile --check
 ```
 
-Reports contradictions, conflicts, sidecar staleness, and directive counts without writing any files. Exits 1 if any sidecar is stale (use `/edikt:gov:compile` without flags to resync).
+Reports contradictions, conflicts, sidecar staleness, and directive counts without writing any files. Exits 1 if any sidecar is stale, including drift autorepair could fix (run `edikt gov compile` to apply a mechanical repair, `/edikt:gov:compile` without flags to re-extract).
 
 ## Orphan ADR detection
 

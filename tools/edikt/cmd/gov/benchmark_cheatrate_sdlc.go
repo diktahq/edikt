@@ -301,6 +301,146 @@ func discoverPlanCriteriaSidecars(plansDir string) ([]sidecar.Pair, error) {
 	return pairs, nil
 }
 
+// sdlcExcludedBehavioral counts entries across paths.{specs,prds,plans}
+// that declare `verify_kind: behavioral` but carry no `verify` command,
+// separately from discoverSDLCSidecars's own silent per-entry filter.
+//
+// D213: `verify_kind: behavioral` means opposite things in the two
+// corpora this adapter bridges. In governance sidecars it asserts an
+// EXISTING mechanical verify's medium ("this verify runs code"), and
+// every behavioral directive carries one (compile enforces it). In
+// the SDLC corpus, authors have historically written `verify_kind:
+// behavioral` on criteria that need human/behavioral judgment and
+// carry NO verify at all — the near-opposite claim, closer to what
+// D251's evidence_kind:judged now names. Because adaptSDLCEntries'
+// filter requires BOTH verify_kind == "behavioral" AND a non-empty
+// verify, every SDLC entry using the legacy meaning is silently
+// dropped, and a corpus with real candidates (27 in one of this
+// repo's own plan-criteria sidecars, at the time of writing) surfaces
+// to cheat-rate scoring as if it had none.
+//
+// A control that had a subject and could not observe it must say so
+// (see the D130/D167 fail-closed-discovery-count precedent this
+// mirrors), so this exclusion must be counted and reported, not left
+// indistinguishable from "this file has no behavioral criteria." It
+// is deliberately a separate, read-only pass over the same
+// directories rather than a change to discoverSDLCSidecars' own
+// return shape — the existing discovery/adaptation functions and
+// their tests are untouched.
+func sdlcExcludedBehavioral(projectRoot string) (int, error) {
+	cfg := loadSDLCPathsConfig(projectRoot)
+	excluded := 0
+
+	if cfg.Paths.Specs != "" {
+		n, err := countExcludedInSpecOrPRD(filepath.Join(projectRoot, cfg.Paths.Specs), true)
+		if err != nil {
+			return 0, fmt.Errorf("count excluded specs: %w", err)
+		}
+		excluded += n
+	}
+	if cfg.Paths.PRDs != "" {
+		n, err := countExcludedInSpecOrPRD(filepath.Join(projectRoot, cfg.Paths.PRDs), false)
+		if err != nil {
+			return 0, fmt.Errorf("count excluded prds: %w", err)
+		}
+		excluded += n
+	}
+	if cfg.Paths.Plans != "" {
+		n, err := countExcludedInPlanCriteria(filepath.Join(projectRoot, cfg.Paths.Plans))
+		if err != nil {
+			return 0, fmt.Errorf("count excluded plan criteria: %w", err)
+		}
+		excluded += n
+	}
+	return excluded, nil
+}
+
+// countExcludedInSpecOrPRD counts verify_kind:behavioral entries with
+// no verify command across either SPEC (nested under specDir/*/spec.yaml)
+// or PRD (flat prdDir/PRD-*.yaml) sidecars, mirroring
+// discoverSpecSidecars/discoverPRDSidecars' own directory walks.
+func countExcludedInSpecOrPRD(dir string, isSpec bool) (int, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	excluded := 0
+	for _, e := range entries {
+		var sidecarPath string
+		if isSpec {
+			if !e.IsDir() {
+				continue
+			}
+			sidecarPath = filepath.Join(dir, e.Name(), "spec.yaml")
+		} else {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if !strings.HasSuffix(name, ".yaml") || !strings.HasPrefix(name, "PRD-") {
+				continue
+			}
+			sidecarPath = filepath.Join(dir, name)
+		}
+		raw, err := os.ReadFile(sidecarPath)
+		if err != nil {
+			continue
+		}
+		var shape specYAMLShape // prdYAMLShape carries the same two fields
+		if err := yaml.Unmarshal(raw, &shape); err != nil {
+			continue
+		}
+		for _, r := range shape.Requirements {
+			if r.VerifyKind == "behavioral" && r.Verify == "" {
+				excluded++
+			}
+		}
+		for _, c := range shape.Criteria {
+			if c.VerifyKind == "behavioral" && c.Verify == "" {
+				excluded++
+			}
+		}
+	}
+	return excluded, nil
+}
+
+// countExcludedInPlanCriteria mirrors discoverPlanCriteriaSidecars'
+// own walk, counting verify_kind:behavioral criteria with no verify.
+func countExcludedInPlanCriteria(plansDir string) (int, error) {
+	entries, err := os.ReadDir(plansDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	excluded := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, "-criteria.yaml") {
+			continue
+		}
+		cf, err := verify.LoadCriteria(filepath.Join(plansDir, name))
+		if err != nil {
+			continue
+		}
+		for _, ph := range cf.Phases {
+			for _, cr := range ph.Criteria {
+				if cr.VerifyKind == "behavioral" && cr.Verify == "" {
+					excluded++
+				}
+			}
+		}
+	}
+	return excluded, nil
+}
+
 // adaptSDLCEntries walks SDLC requirements + acceptance_criteria and
 // returns only the behavioral entries adapted to gov-shaped
 // Directive structs. Non-behavioral entries are silently dropped.

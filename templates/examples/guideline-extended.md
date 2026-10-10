@@ -22,6 +22,17 @@ See guideline-minimal.md for a shorter version without Rationale
 and Examples.
 -->
 
+## In plain terms
+
+<!-- One paragraph. Declarative, present tense, no modal verb, no date. The
+     default this guideline sets, and the kind of case that legitimately falls
+     outside it — said plainly, before the Rationale explains why and the
+     Examples show the shape. Someone who reads only this paragraph should be
+     able to predict what the Correct example looks like. Keep the exception
+     class here to a phrase; When NOT to apply is where it gets its
+     conditions. -->
+{Say what the default is, plainly.}
+
 ## Rationale
 
 {Why this guideline exists. What failure mode does it prevent? What

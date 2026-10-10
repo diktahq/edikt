@@ -32,7 +32,7 @@ func runCompileQualityCheck(projectRoot string, w io.Writer) (warns int, ran boo
 	dir := filepath.Join(projectRoot, ".edikt", "state", "compile-quality")
 	entries, err := os.ReadDir(dir)
 	if err != nil || len(entries) == 0 {
-		io.WriteString(w, "  No compile-quality grade yet. Run bin/edikt gov grade-compile after gov compile.\n")
+		io.WriteString(w, "  No compile-quality grade yet. Run edikt gov grade-compile after gov compile.\n")
 		return 0, true
 	}
 
@@ -61,11 +61,11 @@ func runCompileQualityCheck(projectRoot string, w io.Writer) (warns int, ran boo
 		if quarantined > 0 {
 			// (ref: ADR-044 — void quarantine rather than a silent-zero dispatcher)
 			fmt.Fprintf(w, "  No valid compiled-governance grade — %d report(s) quarantined as void. "+
-				"Re-run bin/edikt gov grade-compile once the "+
+				"Re-run edikt gov grade-compile once the "+
 				"tier-1 dispatch has landed.\n", quarantined)
 			return 1, true
 		}
-		io.WriteString(w, "  No compile-quality grade yet. Run bin/edikt gov grade-compile after gov compile.\n")
+		io.WriteString(w, "  No compile-quality grade yet. Run edikt gov grade-compile after gov compile.\n")
 		return 0, true
 	}
 	if quarantined > 0 {

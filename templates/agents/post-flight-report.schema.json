@@ -42,6 +42,14 @@
     "l1_summary": { "$ref": "#/$defs/layerSummary" },
     "l2_summary": { "$ref": "#/$defs/layerSummary" },
     "l3_summary": { "$ref": "#/$defs/layerSummary" },
+    "cited_directives": {
+      "type": "array",
+      "description": "SR-006: the stable directive_id of every L2 verdict that was FAIL or NEEDS_REVIEW this run, deduplicated. The synthesizer already reads directive_id off every governance-verifier-verdict.schema.json entry to build findings[], so this field costs no new model call — it is a projection of data already in hand. FIELD NOTE (this schema's own discipline, not gov-sidecar's D21 — D21 governs sidecar fields and frontmatter keys; this is neither, but the same standard is written anyway): kind: compile-derived from L2 (the synthesizer computes it deterministically from verdicts it already read, never invents one). reader: `gov:score --prune-candidates`, which reads the last N reports for the active plan and lists every compiled directive with zero citations across them as a removal candidate. what breaks without it: prune-candidates has no way to distinguish 'no phase-end review has ever found anything about this directive' from 'no phase-end review has run since this field existed' — every directive looks equally uncited forever, and a removal candidate list built on that confusion is not evidence, it's silence misread as a clean bill of health. falsifying observation: a phase-end review whose l2_summary recorded at least one FAIL or NEEDS_REVIEW, but whose cited_directives is empty or omits that verdict's directive_id.",
+      "items": {
+        "type": "string",
+        "pattern": "^(ADR|INV)-\\d{3,}\\.directive\\[\\d+\\]$|^[a-z][a-z0-9-]{0,79}\\.directive\\[\\d+\\]$"
+      }
+    },
     "findings": {
       "type": "array",
       "description": "Deduplicated findings from L2 (per-directive FAIL/NEEDS_REVIEW) and L3 (specialist critical/warning/info). May be empty. L1 verdicts are summarized in l1_summary, not in findings.",

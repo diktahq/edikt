@@ -22,7 +22,7 @@ const SchemaVersion = 1
 
 // SchemaVersionV2 is the multi-anchor shape (source_excerpts[]). Both are
 // accepted during the migration window: a corpus is converted by
-// `edikt migrate to-v2` in one pass, but a project mid-upgrade — or a fixture
+// `edikt migrate lift` in one pass, but a project mid-upgrade — or a fixture
 // tree deliberately pinning the v1 shape — must still load. Anchors() is what
 // makes accepting both safe: every consumer reads one normalised list, so the
 // two versions cannot be judged by different code paths.
@@ -70,6 +70,20 @@ type Sidecar struct {
 	// into the unchanged count (INV-013).
 	BodyDigest string `yaml:"body_digest,omitempty"`
 
+	// ExtractorModel and ExtractorContract are compile-derived: written
+	// once by `phasea verify` after an `ok` receipt item, carried forward
+	// from that run's receipt, never hand-authored and never written by
+	// the extractor itself. Either the model an explicit run actually ran
+	// under, or the literal "unrecorded" when the dispatching context
+	// reported none — never a guess, never a config or constant value
+	// substituted for an observation that was not made (INV-013).
+	//
+	// Optional by design, same as BodyDigest: every sidecar written before
+	// these fields existed has no baseline, and each MUST be reported as
+	// UNMEASURED rather than folded into the unchanged count.
+	ExtractorModel    string `yaml:"extractor_model,omitempty"`
+	ExtractorContract string `yaml:"extractor_contract,omitempty"`
+
 	Signals    []string    `yaml:"signals"`
 	Directives []Directive `yaml:"directives"`
 
@@ -77,6 +91,22 @@ type Sidecar struct {
 	// MUST be present in the struct before any sidecar that uses them can
 	// round-trip through Load. Older readers (without these struct fields)
 	// will hard-fail on decode — forward-only, not forward-compatible.
+	// PathScope declares that this artifact deliberately has NO file scope, so
+	// its directives are delivered by JUDGEMENT — through the topic's skill
+	// package — rather than by a path match. The only value is "judgement".
+	//
+	// It exists to separate two states that are otherwise byte-identical: an
+	// artifact whose path inference came up EMPTY, and one that has no file
+	// scope by design. A process rule or a naming convention has nothing to
+	// trigger on, and judgement routing is CORRECT for it — for those the skill
+	// package's description is the enforcement mechanism, not a nicety, because
+	// nothing else can select the rule before a file has been touched.
+	//
+	// Undeclared pathlessness is the state worth reporting, and
+	// check-declared-pathlessness ratchets it: today's are baselined, a new one
+	// has to say which of the two it is.
+	PathScope string `yaml:"path_scope,omitempty"`
+
 	// Paths is a list of glob patterns scoping where directives apply.
 	Paths []string `yaml:"paths,omitempty"`
 	// Scope is a list of lifecycle phases from the closed enum
@@ -640,12 +670,12 @@ func (s *Sidecar) Validate() error {
 	if s.SchemaVersion == SchemaVersionV2 {
 		for i, d := range s.Directives {
 			if len(d.SourceExcerpts) == 0 && d.SourceExcerpt != (SourceExcerpt{}) {
-				return fmt.Errorf("directives[%d]: schema_version 2 but still carries singular source_excerpt; run `edikt migrate to-v2`", i)
+				return fmt.Errorf("directives[%d]: schema_version 2 but still carries singular source_excerpt; run `edikt migrate lift`", i)
 			}
 		}
 		for i, pr := range s.Prohibitions {
 			if len(pr.SourceExcerpts) == 0 && pr.SourceExcerpt != (SourceExcerpt{}) {
-				return fmt.Errorf("prohibitions[%d]: schema_version 2 but still carries singular source_excerpt; run `edikt migrate to-v2`", i)
+				return fmt.Errorf("prohibitions[%d]: schema_version 2 but still carries singular source_excerpt; run `edikt migrate lift`", i)
 			}
 		}
 	}
@@ -672,8 +702,8 @@ func (s *Sidecar) Validate() error {
 		if d.Text == "" {
 			return fmt.Errorf("directives[%d].text: required", i)
 		}
-		if len(d.Text) > 500 {
-			return fmt.Errorf("directives[%d].text: %d chars, max 500", i, len(d.Text))
+		if len(d.Text) > HardCapProse {
+			return fmt.Errorf("directives[%d].text: %d chars, max %d", i, len(d.Text), HardCapProse)
 		}
 		// Validate EVERY anchor, not just the first. A v2 item whose second
 		// anchor is malformed is as broken as one whose first is, and checking
@@ -721,8 +751,8 @@ func (s *Sidecar) Validate() error {
 		if p.Text == "" {
 			return fmt.Errorf("prohibitions[%d].text: required", i)
 		}
-		if len(p.Text) > 500 {
-			return fmt.Errorf("prohibitions[%d].text: %d chars, max 500", i, len(p.Text))
+		if len(p.Text) > HardCapProse {
+			return fmt.Errorf("prohibitions[%d].text: %d chars, max %d", i, len(p.Text), HardCapProse)
 		}
 		// Validate EVERY anchor, not just the first. A v2 item whose second
 		// anchor is malformed is as broken as one whose first is, and checking

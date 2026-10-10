@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
+	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/diktahq/edikt/tools/edikt/model"
 )
 

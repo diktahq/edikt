@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -15,9 +18,20 @@ func TestDevLinkAndUnlink(t *testing.T) {
 	// touch the host's ~/.claude/commands/edikt.
 	t.Setenv("CLAUDE_HOME", filepath.Join(root, "claude"))
 
-	// dev link points at the edikt repo which has templates/, commands/.
-	repoRoot := "../../.." // tools/edikt/cmd/ → repo root
-	abs, _ := filepath.Abs(repoRoot)
+	// A staged dev source with the shape dev link requires (templates/,
+	// commands/, VERSION) and no tools/edikt module — so this test covers
+	// the payload links and never builds or swaps a launcher. Linking the
+	// real repo here would build it on every run and refuse a dirty tree
+	// (TestDevLink_BuildsOrRefusesLoudly covers that contract).
+	abs := t.TempDir()
+	for _, d := range []string{"templates", "commands"} {
+		if err := os.MkdirAll(filepath.Join(abs, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(abs, "VERSION"), []byte("0.99.0-dev\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	buf, err := runCmd(t, "dev", "link", abs)
 	if err != nil {
@@ -46,10 +60,11 @@ func TestDevLinkAndUnlink(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "versions", "0.6.0"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "dev", "dev-link"); err != nil {
+	// A dev link is local by construction — seed it the way `dev link` does.
+	if err := writeLock(root, "dev", "dev-link", lockSourceLocal); err != nil {
 		t.Fatal(err)
 	}
 
@@ -153,10 +168,11 @@ func TestDevLink_RefreshesLauncherBinary(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "versions", "0.6.0"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "dev", "dev-link"); err != nil {
+	// A dev link is local by construction — seed it the way `dev link` does.
+	if err := writeLock(root, "dev", "dev-link", lockSourceLocal); err != nil {
 		t.Fatal(err)
 	}
 
@@ -170,5 +186,88 @@ func TestDevLink_RefreshesLauncherBinary(t *testing.T) {
 	// Backup should be removed after restore.
 	if _, err := os.Stat(backup); !os.IsNotExist(err) {
 		t.Errorf("pre-dev backup should be removed after dev unlink; stat: %v", err)
+	}
+}
+
+// dev link builds the launcher from the linked tree with the VCS stamp and
+// swaps it in only when the tree is clean; a dirty tree is refused loudly and
+// the launcher on PATH does not move.
+func TestDevLink_BuildsOrRefusesLoudly(t *testing.T) {
+	if _, err := goTool(); err != nil {
+		t.Fatalf("this test builds a module: %v", err)
+	}
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("this test needs git for the vcs stamp: %v", err)
+	}
+	root := t.TempDir()
+	t.Setenv("EDIKT_ROOT", root)
+	t.Setenv("CLAUDE_HOME", filepath.Join(root, "claude"))
+	t.Setenv("GOTOOLCHAIN", "local")
+
+	src, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range []string{"templates", "commands", filepath.Join("tools", "edikt")} {
+		if err := os.MkdirAll(filepath.Join(src, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		"VERSION":             "0.99.0-dev\n",
+		"tools/edikt/go.mod":  "module devlinktest\n\ngo 1.21\n",
+		"tools/edikt/main.go": "package main\n\nfunc main() {}\n",
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(src, filepath.FromSlash(name)), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		cmd.Dir = src
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "init")
+
+	// Clean tree: builds, stamped, swapped in.
+	if buf, err := runCmd(t, "dev", "link", src); err != nil {
+		t.Fatalf("dev link on a clean tree: %v\n%s", err, buf)
+	}
+	launcher := filepath.Join(root, "bin", "edikt")
+	prov, err := readProvenanceOf(launcher)
+	if err != nil {
+		t.Fatalf("launcher was not swapped in from the tree's build: %v", err)
+	}
+	if prov.Revision == "" || prov.Modified {
+		t.Fatalf("launcher must carry a clean vcs stamp, got revision=%q modified=%v", prov.Revision, prov.Modified)
+	}
+	before, err := os.ReadFile(launcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Dirty tree: refused loudly, launcher unchanged.
+	if err := os.WriteFile(filepath.Join(src, "tools", "edikt", "main.go"), []byte("package main\n\nfunc main() { _ = 1 }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	buf, err := runCmd(t, "dev", "link", src)
+	if err == nil {
+		t.Fatalf("dev link on a dirty tree must refuse; output:\n%s", buf)
+	}
+	if !strings.Contains(buf, "DIRTY") {
+		t.Fatalf("the refusal must name the dirty tree (%v):\n%s", err, buf)
+	}
+	after, err := os.ReadFile(launcher)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("a refused dev link must leave the launcher on PATH untouched")
 	}
 }

@@ -9,8 +9,8 @@ This directory ships the JSON Schemas that govern edikt's `*.edikt.yaml` sidecar
 | `gov-sidecar.v1.schema.json` | Governance sidecar (ADR / invariant / guideline). The on-disk shape compiled by `edikt gov compile`. |
 | `prd-sidecar.v1.schema.json` | PRD sidecar. Co-located with `<id>.md` to capture structured requirements / ACs. |
 | `spec-sidecar.v1.schema.json` | SPEC sidecar. Co-located with `<id>.md`, derives from a PRD / brainstorm / prompt. |
-| `plan-criteria.v1.schema.json` | Plan criteria sidecar (`PLAN-<slug>-criteria.yaml`). Spec-only; mirrors the strict decoder in `bin/edikt verify`. Evaluation state does not belong here. |
-| `plan-eval-state.v1.schema.json` | Plan evaluation state (`.edikt/state/plan-eval/PLAN-<slug>-eval.json`). Machine-local status / fail_count history written by the evaluator and hooks; never read by `bin/edikt verify`. |
+| `plan-criteria.v1.schema.json` | Plan criteria sidecar (`PLAN-<slug>-criteria.yaml`). Spec-only; mirrors the strict decoder in `edikt verify`. Evaluation state does not belong here. |
+| `plan-eval-state.v1.schema.json` | Plan evaluation state (`.edikt/state/plan-eval/PLAN-<slug>-eval.json`). Machine-local status / fail_count history written by the evaluator and hooks; never read by `edikt verify`. |
 
 ## Versioning policy
 

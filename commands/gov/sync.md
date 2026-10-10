@@ -9,6 +9,12 @@ allowed-tools:
   - Bash
   - Glob
   - Grep
+stops:
+  - id: overwrite-rule-file
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "A rule file already exists at this path — overwrite it?"
 ---
 
 # edikt:sync
@@ -334,8 +340,11 @@ For each generated rule:
 2. If it does NOT exist: write it
 3. If it DOES exist:
    - Show what changed (diff of new vs old content)
+   <!-- stop: overwrite-rule-file -->
    - Ask: "Rule file already exists. Overwrite? (y/N)"
-   - Only overwrite on explicit `y`
+   - Only overwrite on explicit `y`. With no human to answer, take the safe
+     side: leave the existing file untouched, print the diff, and say the
+     overwrite was declined by default rather than answered.
 
 If `--dry-run` is active: print what would be written, do not write anything.
 

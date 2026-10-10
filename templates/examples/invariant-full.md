@@ -30,6 +30,17 @@ list of qualities, traps, and self-test questions.
 
 -->
 
+## In plain terms
+
+<!-- One paragraph. Declarative, present tense, no modal verb, no date. What is
+     always true here, before the reader meets the Statement's exact wording,
+     the Anti-patterns, or the Enforcement mechanisms. The rest of this record
+     is written to be precise; this section is written to be understood, and a
+     reader who stops after it should still be able to say what the constraint
+     is. If it cannot be written without naming a file, a function, or the tool
+     you happen to use today, that content belongs under Implementation. -->
+{Say what always holds, plainly.}
+
 ## Statement
 
 {One declarative sentence, present tense, stating the constraint.}

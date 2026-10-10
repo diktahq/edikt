@@ -28,15 +28,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 )
-
-// artifactIDRe captures the <PREFIX>-<NNN> head of an artifact filename.
-var artifactIDRe = regexp.MustCompile(`^([A-Z]+)-(\d+)`)
 
 // dupHolder is one artifact claiming an id.
 type dupHolder struct {
@@ -74,11 +70,12 @@ func collectArtifactIDs(projectRoot string, dirs []string) (map[string][]string,
 			if !e.IsDir() && !strings.HasSuffix(name, ".md") {
 				continue
 			}
-			m := artifactIDRe.FindStringSubmatch(name)
-			if m == nil {
+			// artifact_id.go is the ONE extractor; this file used to carry its
+			// own `^([A-Z]+)-(\d+)` copy.
+			id, ok := artifactIDFrom(name)
+			if !ok {
 				continue
 			}
-			id := m[1] + "-" + m[2]
 			p := filepath.Join(rel, name)
 			out[id] = append(out[id], filepath.ToSlash(p))
 		}

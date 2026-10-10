@@ -133,6 +133,25 @@ type Payload struct {
 	TranscriptPath       string
 	LastAssistantMessage string
 
+	// AgentTranscriptPath is the SUBAGENT's own stream; TranscriptPath is the
+	// PARENT session's, on every event that carries one. The two are different
+	// files and both are supplied on SubagentStop, so "parent or subagent" was
+	// never the choice it appeared to be.
+	AgentTranscriptPath string
+
+	// PromptID scopes ONE user turn. session_id scopes the session and AgentID
+	// scopes a single dispatch; between them the three give a complete join
+	// without a new identifier.
+	//
+	// FOUR MORE WIRE FIELDS ARE OBSERVED AND DELIBERATELY NOT MODELLED:
+	// effort, permission_mode, background_tasks, session_crons. Nothing reads
+	// them. Adding a field with no consumer is the exact defect this corpus
+	// keeps finding — produced_accepted_sidecar, defect_axis, api_ms were all
+	// declared, never populated, and then quoted as measurements. They are
+	// recorded here so the next reader knows they exist on the wire and were
+	// left out on purpose, not missed.
+	PromptID string
+
 	// StopActive reports that a stop hook is already running — the host's
 	// re-entrancy guard. A handler that ignores it can recurse.
 	StopActive bool

@@ -13,9 +13,8 @@ package phasea
 // import cycle. Both duplicates delegate to the actual shared decision
 // procedure rather than re-deciding anything themselves:
 //
-//   - statusExcluded (below) mirrors govrun.statusExcluded's ~15-line
-//     kind-mapping wrapper, but the decision itself is parse.Document.IsIncluded
-//     — the same call govrun.statusExcluded makes.
+//   - statusExcluded (below) is sidecar.StatusExcluded, the one status
+//     filter — the same call govrun.statusExcluded makes.
 //   - artifactTypeForPair (below) reads sidecar.Pair.Kind, which
 //     sidecar.Discover already computed positionally from which configured
 //     directory the artifact was found in — govrun.artifactTypeFromPath
@@ -31,10 +30,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/idvalidate"
-	"github.com/diktahq/edikt/tools/edikt/internal/parse"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
@@ -49,39 +46,11 @@ type workItem struct {
 	beforeSidecar   []byte // raw pre-dispatch sidecar bytes; nil for "missing"
 }
 
-// statusExcluded mirrors govrun.statusExcluded (see file doc). kind mapping
-// and message wording are kept byte-identical on purpose, so a diff between
-// the two is immediately visible as a real drift rather than cosmetic churn.
+// statusExcluded is sidecar.StatusExcluded applied to a discovered pair —
+// the same call govrun.statusExcluded makes. The mirror this used to be is
+// gone: the wrapper now lives once, in internal/sidecar (D46 (a)).
 func statusExcluded(p sidecar.Pair) (bool, string) {
-	var kind string
-	switch p.Kind {
-	case sidecar.KindADR:
-		kind = "adr"
-	case sidecar.KindInvariant:
-		kind = "inv"
-	case sidecar.KindGuideline:
-		kind = "guideline"
-	default:
-		return false, ""
-	}
-
-	doc, err := parse.LoadDocument(p.ParentPath)
-	if err != nil {
-		// An unreadable parent is not a status verdict — the corpus-load-error
-		// path below reports it on its own terms.
-		return false, ""
-	}
-	if doc.IsIncluded(kind) {
-		return false, ""
-	}
-	status := strings.TrimSpace(doc.Frontmatter.Status)
-	if status == "" {
-		status = strings.TrimSpace(doc.BoldStatus)
-	}
-	if status == "" {
-		status = "no status"
-	}
-	return true, fmt.Sprintf("status: %s — only accepted ADRs and active invariants compile", status)
+	return sidecar.StatusExcluded(p.Kind, p.ParentPath)
 }
 
 // artifactTypeForPair maps sidecar.Pair.Kind (already computed positionally
@@ -168,6 +137,13 @@ func buildItem(root string, p sidecar.Pair, reason, promptVersion string, before
 			Schema:             SchemaGovSidecarV2,
 			VerifyParentSHA256: true,
 		},
+		// No prior sidecar means no pin will be taken for this item, so
+		// nothing it carried can be carried forward. Set HERE because
+		// buildItem is the one place both the corpus path and the
+		// --artifact path converge: setting it on either caller alone is
+		// how the first version of this marker came to describe only half
+		// the runs that needed it.
+		BootstrapNoPin: beforeSidecar == nil,
 	}
 	return workItem{PlanItem: item, absArtifactPath: p.ParentPath, beforeSidecar: beforeSidecar}, nil
 }

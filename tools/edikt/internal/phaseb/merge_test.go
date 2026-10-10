@@ -322,12 +322,15 @@ func TestMerge_INVDirectivesNotInTopicFiles(t *testing.T) {
 	if contains(topicBody, "INV directive") {
 		t.Error("INV directive must NOT appear in topic file ai.md — it belongs in governance.md constraints only")
 	}
-	if contains(topicBody, "ADR directive") {
-		t.Error("scoped ADR directive must NOT appear in topic file ai.md since ADR-066 — it belongs in directive-index.yaml only")
+	// ADR-079 reverses the ADR half of this pairing. An ADR directive is
+	// ADVISORY by the class table, so it now renders into the topic file and
+	// is absent from the index — the opposite of ADR-066's routing, and
+	// asserted in both directions so a regression to double-delivery fails
+	// here rather than only in the grade-split suite.
+	if !contains(topicBody, "ADR directive") {
+		t.Error("advisory ADR directive must appear in topic file ai.md under ADR-079")
 	}
-	if !contains([]byte(readDirectiveIndex(t, root)), "ADR directive") {
-		t.Error("ADR directive must appear in directive-index.yaml")
-	}
+	assertNoDirectiveIndex(t, root)
 
 	indexBody, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance.md"))
 	if err != nil {
@@ -440,13 +443,11 @@ func TestMerge_RemindersAndVerificationAggregated(t *testing.T) {
 	// land on, because WHICH one is a tier decision that has now moved twice.
 	// What must never change is that it lands somewhere.
 	skill, serr := os.ReadFile(filepath.Join(root, ".claude", "skills", "edikt-ai", "SKILL.md"))
-	idx, ierr := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance", "directive-index.yaml"))
 	topic, terr := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance", "ai.md"))
-	if serr != nil && ierr != nil && terr != nil {
-		t.Fatalf("no destination surface exists at all: skill=%v index=%v topic=%v", serr, ierr, terr)
+	if serr != nil && terr != nil {
+		t.Fatalf("no destination surface exists at all: skill=%v topic=%v", serr, terr)
 	}
 	if !contains(skill, "Before AI derivation") &&
-		!contains(idx, "Before AI derivation") &&
 		!contains(topic, "Before AI derivation") {
 		t.Error("the INV reminder reached NO surface — moved out of the ambient core and dropped, " +
 			"which is the silent loss the split must not cause")
@@ -539,12 +540,12 @@ func TestMerge_PathlessInvariantDoesNotRetireItsTopic(t *testing.T) {
 			"topic; the invariant contributes nothing to this file: %v (retired=%v)",
 			rerr, res.TopicsRetiredToSkill)
 	}
-	// ADR-066: a scoped ADR's directive text renders into directive-index.yaml,
-	// not the topic file — the topic file's job here is just to still EXIST
-	// (proving the pathless invariant didn't retire it), which the stat above
-	// already checked.
-	if !strings.Contains(readDirectiveIndex(t, root), "Scoped ADR rule.") {
-		t.Errorf("scoped ADR directive missing from directive-index.yaml")
+	// ADR-079: a scoped ADR's directive is advisory, so its text renders into
+	// the topic file itself. Asserting on the CONTENT rather than only on the
+	// file's existence is what makes this test fail if the topic survives as
+	// an empty shell — which is the failure the stat above cannot see.
+	if !strings.Contains(readFileString(t, topic), "Scoped ADR rule.") {
+		t.Errorf("advisory ADR directive missing from the topic file body")
 	}
 	for _, n := range res.TopicsRetiredToSkill {
 		if n == "arch" {

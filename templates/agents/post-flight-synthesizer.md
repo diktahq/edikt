@@ -57,6 +57,12 @@ For each of `l1_summary`, `l2_summary`, `l3_summary`, populate `status` based on
 
 L2 NEEDS_REVIEW is a per-directive verdict, not a layer status — it is reflected via the `needs_review` counter inside `l2_summary.counts`, and the `l2_summary.status` is `passed` if there are no FAILs and `failed` only if there is at least one FAIL. NEEDS_REVIEW alone does not flip the L2 status to failed.
 
+## cited_directives
+
+Collect the `directive_id` of every L2 verdict entry whose `status` is `FAIL` or `NEEDS_REVIEW`, deduplicated (a directive that fails against two different diff hunks contributes one id, not two). This costs no new reading beyond what you already did to build `findings[]` from L2 — you are projecting a field you already have, not computing anything new. Emit them as `cited_directives` at the top level of the report (a sibling of `l2_summary`, never nested under it).
+
+Absence of the field means "no measurement" downstream — `gov:score --prune-candidates` reads a missing `cited_directives` as unmeasured, never as zero. So the rule is: if L2 actually ran this pass (its `l2_summary.status` is `passed`, `failed`, or `partial` — you read real verdicts, even if there were zero FAIL/NEEDS_REVIEW among them), emit `cited_directives: []` when none qualified — that is a genuine, measured zero. If L2 was `skipped` or `unavailable` — you have no verdicts to project from — OMIT `cited_directives` entirely. Never emit `[]` to stand in for "I couldn't check."
+
 ## Output format
 
 Emit EXACTLY ONE JSON object conforming to `templates/agents/post-flight-report.schema.json`. No preamble, no postscript, no markdown fences, no commentary outside the JSON. The first character of your output MUST be `{` and the last MUST be `}`.
@@ -69,7 +75,7 @@ Shape:
     "plan": "<plan slug>",
     "phase": <integer>,
     "ran_at": "<ISO 8601>",
-    "synthesizer_version": "<e.g. 1.0.0>",
+    "synthesizer_version": "1.1.0",
     "dispatch_mode": "auto-hook | manual | stub"
   },
   "l1_summary": {
@@ -84,6 +90,7 @@ Shape:
     "status": "passed | failed | skipped | partial | unavailable",
     "counts": { "critical": <n>, "warning": <n>, "info": <n>, "skipped": <n> }
   },
+  "cited_directives": ["<directive_id>", ...],
   "findings": [
     {
       "file": "<repo-relative path>",
@@ -97,7 +104,7 @@ Shape:
 }
 ```
 
-`findings` MAY be empty. `meta` is always required.
+`findings` MAY be empty. `meta` is always required. `cited_directives` is present (possibly `[]`) whenever L2 actually ran, and OMITTED when L2 was skipped or unavailable — see the cited_directives section above.
 
 `description` is plain text. Do NOT include backticks, markdown code fences, or shell-command examples. Cite code in `(file, line_range)`, not in `description`.
 

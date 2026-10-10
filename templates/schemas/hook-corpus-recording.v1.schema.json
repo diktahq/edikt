@@ -3,7 +3,7 @@
   "$id": "https://edikt.dev/schemas/hook-corpus-recording/v1.json",
   "$comment": "edikt:artifact type=contract spec=SPEC-014 status=draft reviewed_by=architect",
   "title": "edikt hook corpus recording (ADR-063 Decision §2)",
-  "description": "One recording.json per scenario, at test/fixtures/hook-corpus/<hook>/recordings/<scenario-id>/recording.json, sitting beside the raw captured bytes (stdout.raw, stderr.raw) and a fs-diff.json tree snapshot. Written by the recorder (SR-009) executing the current bash hook — the living oracle — for that scenario; read by the migration gate (bin/edikt dev hook-corpus diff) that compares a Go replacement's live output against this recording before that hook's shim is allowed to swap to the FR-004 shape.",
+  "description": "One recording.json per scenario, at test/fixtures/hook-corpus/<hook>/recordings/<scenario-id>/recording.json, sitting beside the raw captured bytes (stdout.raw, stderr.raw) and a fs-diff.json tree snapshot. Written by the recorder (SR-009) executing the current bash hook — the living oracle — for that scenario; read by the migration gate (edikt dev hook-corpus diff) that compares a Go replacement's live output against this recording before that hook's shim is allowed to swap to the FR-004 shape.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "hook", "scenario_id", "scenario_input_sha256", "normalizer_version", "recorded_at", "oracle", "exit_code", "stdout_sha256", "stderr_sha256", "fs_diff"],
@@ -55,7 +55,7 @@
     "oracle_sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$",
-      "description": "sha256 of the exact implementation artifact this recording was captured by executing: for oracle \"bash\", the bytes of templates/hooks/<file> as they stood at record time; for oracle \"go\", the bytes of the bin/edikt binary that ran `hook run <name>`. This is what makes `oracle` an auditable claim rather than a self-assertion — a reviewer can hash the pre-migration hook file out of git history and confirm the recording was captured against the bash body being replaced, not against a shim that already dispatched to Go. The recorder additionally REFUSES to write oracle \"bash\" for a file whose shape is the FR-004 exec shim, and refuses it outright for a registry row whose status is `migrated`."
+      "description": "sha256 of the exact implementation artifact this recording was captured by executing: for oracle \"bash\", the bytes of templates/hooks/<file> as they stood at record time; for oracle \"go\", the bytes of the edikt binary that ran `hook run <name>`. This is what makes `oracle` an auditable claim rather than a self-assertion — a reviewer can hash the pre-migration hook file out of git history and confirm the recording was captured against the bash body being replaced, not against a shim that already dispatched to Go. The recorder additionally REFUSES to write oracle \"bash\" for a file whose shape is the FR-004 exec shim, and refuses it outright for a registry row whose status is `migrated`."
     },
     "volatile_fields_normalized": {
       "type": "array",

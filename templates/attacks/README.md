@@ -81,7 +81,8 @@ global templates. To override a template:
 
 1. Create the override file in your project's attack catalog directory (configurable
    via `.edikt/config.yaml` `paths.attacks`; defaults to
-   `~/.claude/commands/edikt/templates/attacks/`).
+   `${CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}/commands/edikt/templates/attacks/`,
+   the active Claude profile).
 2. Name it identically to the template you are overriding.
 3. Follow the same comment-header format: `signal_type`, `required_inputs`,
    `pass_condition`, `fail_condition`.

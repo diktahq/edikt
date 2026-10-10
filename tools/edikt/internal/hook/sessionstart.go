@@ -97,7 +97,7 @@ func sessionStart(inv *Invocation) Result {
 		_ = os.Rename(logFile, logFile+".prev")
 	}
 
-	memory := adapter.MemoryPath(home, cwd)
+	memory := adapter.MemoryPath(adapter.ConfigRoot(), cwd)
 
 	age := int64(0)
 	memoryPresent := false

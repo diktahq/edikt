@@ -1,3 +1,11 @@
+//go:build edikt_dev
+
+// The gov-benchmark installer is DEV TOOLING (ADR-082 packaging decision;  edikt-guard:allow
+// PLAN-migration-blindness Phase 3): it ships only in the edikt_dev build. A
+// user's `edikt install --help` never shows `benchmark`; the audience gate
+// (test/test-audience-gate.sh, TestHelperManifest_UserAudienceOnly) proves
+// both builds.
+
 package cmd
 
 import (
@@ -14,6 +22,10 @@ import (
 
 // exitTier2Prereq is returned when a Python or venv prerequisite fails.
 const exitTier2Prereq = 10
+
+// devBuild is true only under the edikt_dev tag; the default build's value
+// lives in audience_default.go.
+const devBuild = true
 
 var installBenchmarkCmd = &cobra.Command{
 	Use:          "benchmark",

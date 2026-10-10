@@ -18,11 +18,11 @@ Score the overall quality of compiled governance output. Measures context budget
 
 ## What it measures
 
-Scoring reads the render manifest (`.claude/rules/governance/manifest.yaml`) and scores exactly the surfaces it lists — the ambient core, topic files, skill packages, and the directive index — rather than walking a directory, so it can't silently score a set nobody rendered. If the manifest is absent, `gov:score` says so and scores nothing rather than falling back to a walk.
+Scoring reads the render manifest (`.claude/rules/governance/manifest.yaml`) and scores exactly the surfaces it lists — the ambient core, topic files, skill packages, and the delivery map — rather than walking a directory, so it can't silently score a set nobody rendered. If the manifest is absent, `gov:score` says so and scores nothing rather than falling back to a walk.
 
 ### Context budget
 
-Total tokens across the **ambient surfaces only** — the ambient core (`.claude/rules/governance.md`) plus anything else loaded on every edit. Topic files load conditionally (only when a touched path matches their `paths:` frontmatter), and skill packages and the directive index are trigger- or write-time-loaded, not ambient cost — none of those count against this budget, since counting them would report a cost nobody actually pays on a typical edit.
+Total tokens across the **ambient surfaces only** — the ambient core (`.claude/rules/governance.md`) plus anything else loaded on every edit. Topic files load conditionally (only when a touched path matches their `paths:` frontmatter), skill packages load on a trigger match, and the delivery map is never loaded into context at all — none of those count against this budget, since counting them would report a cost nobody actually pays on a typical edit.
 
 | Budget | Rating |
 |--------|--------|

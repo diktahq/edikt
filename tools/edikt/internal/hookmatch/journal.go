@@ -44,6 +44,7 @@ package hookmatch
 
 import (
 	"bufio"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,6 +81,23 @@ type Record struct {
 	AgentType       string `json:"agent_type,omitempty"` // subagent slug when resolvable
 	ParentSessionID string `json:"parent_session_id,omitempty"`
 	ContextID       string `json:"context_id,omitempty"`
+
+	// PromptID and AgentTranscriptPath make a hook_run record SELF-SUFFICIENT
+	// for an exporter: the first joins this record to the user turn that
+	// produced it, the second points at the per-turn stream it summarises.
+	//
+	// Added 2026-08-30 because the subagent hooks were being handed identity
+	// and discarding it. Measured before the change: all 1,703 subagent-stop
+	// and 22 subagent-start records were kind=hook_run carrying only hook,
+	// exit_code and duration_us — no agent_type, no agent_id, nothing that
+	// could say WHICH skill produced them. The host sends agent_type on both
+	// events (observed: "general-purpose"); edikt simply never wrote it down.
+	//
+	// This is NOT the same defect as the constant "-" seen on 491 records:
+	// those come from the injection path on PreToolUse, where the host sends
+	// no agent identity at all and "-" is the honest fallback.
+	PromptID            string `json:"prompt_id,omitempty"`
+	AgentTranscriptPath string `json:"agent_transcript_path,omitempty"`
 
 	// DirectiveIDs is what makes the staleness and outcome views possible at
 	// all. A count answers "how much fired"; only the ids answer "you keep
@@ -127,13 +145,72 @@ type Record struct {
 	DurationUS *int64 `json:"duration_us,omitempty"`
 }
 
-// JournalPath is the per-user hook journal.
-func JournalPath() (string, error) {
-	home, err := os.UserHomeDir()
+// ediktHome resolves the user-global edikt home: $EDIKT_ROOT, then
+// $EDIKT_HOME, then $HOME/.edikt — the same three-rung priority the hook
+// shim's own bash ladder uses to resolve the edikt binary itself
+// (${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/bin/edikt, see
+// internal/hook/shim/shim.go). Every user-global state path in this package
+// MUST resolve through this, not os.UserHomeDir() directly.
+//
+// Found 2026-08-27: a benchmark sandbox that redirects EDIKT_ROOT to isolate
+// the BINARY it runs, without also redirecting HOME (HOME redirection
+// itself breaks host keychain auth on macOS — the CLI subprocess cannot
+// authenticate once $HOME/Library/Keychains/login.keychain-db leaves the
+// search path), needs its STATE to follow EDIKT_ROOT too, or every hook
+// journal/dedup write silently lands in the real machine's ~/.edikt/state/
+// while the sandbox believes it measured its own isolated journal — a
+// verification mechanism (BRAIN-017 §8's hook_events check) reporting a
+// false UNMEASURED for a hook that actually fired, or worse, reading nothing
+// and never noticing the miss at all.
+func ediktHome() (string, error) {
+	// A RELATIVE root is refused, not accepted and joined.
+	//
+	// Traced 2026-08-27, reproduced directly: with EDIKT_ROOT=".",
+	// JournalPath's filepath.Join(home, "state") yields the relative path
+	// "state", and MkdirAll then creates it in whatever the process's cwd
+	// happens to be. A hook firing with cwd at a repo root writes a stray
+	// state/hook-journal.jsonl there — untracked, un-ignored, and reachable
+	// by a `git add` sweep. For an adopter that means edikt littering a
+	// directory into their repository root.
+	//
+	// The three-rung ladder below is otherwise sound: an unset HOME makes
+	// os.UserHomeDir() error, which propagates. The defect was never an empty
+	// `home` — it was a NON-EMPTY relative one, which every rung's `!= ""`
+	// check accepts. Emptiness was the wrong property to test for.
+	//
+	// INV-014: assert the published outcome, never let a resolution failure
+	// look like a resolution. A path that "works" and lands in the wrong place
+	// is worse than an error, because nothing reports it.
+	absOrErr := func(v, source string) (string, error) {
+		if !filepath.IsAbs(v) {
+			return "", fmt.Errorf("%s must be an absolute path, got %q — "+
+				"a relative root resolves against the process's cwd and writes "+
+				"state into whatever directory a hook happened to fire in", source, v)
+		}
+		return v, nil
+	}
+	if root := os.Getenv("EDIKT_ROOT"); root != "" {
+		return absOrErr(root, "EDIKT_ROOT")
+	}
+	if home := os.Getenv("EDIKT_HOME"); home != "" {
+		return absOrErr(home, "EDIKT_HOME")
+	}
+	userHome, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(home, ".edikt", "state")
+	// Defence in depth: os.UserHomeDir() reads $HOME, which a caller can set
+	// to a relative value without tripping Go's own emptiness check.
+	return absOrErr(filepath.Join(userHome, ".edikt"), "$HOME")
+}
+
+// JournalPath is the per-user hook journal.
+func JournalPath() (string, error) {
+	home, err := ediktHome()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(home, "state")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", err
 	}
@@ -155,9 +232,25 @@ const KindHookRun = "hook_run"
 //
 // TWO MECHANISMS, BECAUSE THEY SOLVE DIFFERENT HALVES.
 //
-//	ROTATION bounds what is on disk. Past MaxJournalBytes the file is renamed
-//	to <name>.1 and a fresh one starts. Exactly ONE generation is kept: the
-//	point is to stop unbounded growth, not to build an archive nothing reads.
+//	ROTATION bounds what the LIVE file costs. Past MaxJournalBytes it is moved
+//	into journal-archive/ under a UNIQUE, timestamped name and a fresh one
+//	starts.
+//
+//	IT USED TO RENAME TO <name>.1, AND THAT DESTROYED EVIDENCE. A fixed
+//	suffix means every rotation overwrites the previous generation, so the
+//	entire retention policy was two files: on 2026-08-29 that was 21 hours,
+//	and figures measured that morning and reproduced twice could not be
+//	re-derived the same evening. The original comment here said the point was
+//	"to stop unbounded growth, not to build an archive nothing reads", and
+//	that was true when two call sites appended. There are now twenty-two
+//	Record construction sites, and this journal is the only real-usage
+//	evidence edikt has about its own delivery behaviour. Losing a generation
+//	is losing the measurement.
+//
+//	NOTHING EVER READ THE ROTATED FILE — the only references to <name>.1 were
+//	the rename itself and an unrelated rotation in migrate.go. So rotation was
+//	pure deletion. Readers still read ONLY the live file and still window its
+//	tail; nothing about read cost changes here.
 //
 //	WINDOWING bounds what is PARSED. A reader seeks to the tail and parses the
 //	last WindowBytes only. Rotation alone would not give this — a 4 MB file
@@ -172,7 +265,31 @@ const (
 
 	// DefaultWindowBytes is how much of the tail an ordinary read parses.
 	DefaultWindowBytes int64 = 512 << 10 // 512 KiB
+
+	// MaxArchiveBytes caps the TOTAL on-disk size of rotated generations.
+	//
+	// CHOSEN OVER THE TWO ALTERNATIVES, deliberately. Compress-on-rotate
+	// alone does not bound anything — it only makes unbounded growth grow
+	// more slowly, and shipping unbounded growth onto a user's disk is not
+	// acceptable. Prune-by-age does not bound it either: retention in DAYS
+	// says nothing about retention in BYTES, so a heavy week can still fill a
+	// disk. A byte cap is the only one of the three that gives a hard
+	// guarantee, and it matches the posture MaxJournalBytes already sets.
+	//
+	// Compression is applied as well, because it buys history for free inside
+	// a fixed cap: JSONL of this shape compresses roughly 10:1, so 32 MiB of
+	// archive holds on the order of 80 rotations — months of ordinary use,
+	// where the old policy held one generation.
+	//
+	// Worst case on disk goes from 8 MiB (live 4 + one 4 MiB generation) to
+	// 36 MiB (live 4 + 32 MiB archive). That is a real increase and it is
+	// stated rather than buried.
+	MaxArchiveBytes int64 = 32 << 20 // 32 MiB
 )
+
+// ArchiveDirName is the subdirectory of the edikt state dir holding rotated
+// generations. Readers do not read it; it exists so evidence survives.
+const ArchiveDirName = "journal-archive"
 
 // Append writes one record.
 //
@@ -211,7 +328,7 @@ func Append(r Record) error {
 	// this file is built around.
 	if st, serr := f.Stat(); serr == nil && st.Size() > MaxJournalBytes {
 		f.Close()
-		_ = os.Rename(p, p+".1")
+		rotate(p)
 		return nil
 	}
 	return f.Close()
@@ -343,6 +460,154 @@ func ReadSummaryWindow(window int64) (Summary, error) {
 	return s, nil
 }
 
+// SessionScope is ReadSessionScope's result (SR-005): what one session
+// touched, for the Stop hook's end-of-session tally line.
+type SessionScope struct {
+	SessionID    string
+	Paths        []string // distinct, non-empty, sorted
+	JournalFound bool
+
+	// MayUndercount is true when the journal's own OVERALL first record
+	// already belongs to this session — meaning any history the session
+	// produced before that record, if it exists, was rotated or truncated
+	// away before this read. The counts derived from Paths are then a lower
+	// bound, not a maximum, and the caller must say so rather than imply
+	// completeness (INV-013).
+	MayUndercount bool
+}
+
+// ReadSessionScope reads the WHOLE live journal — never windowed — and
+// returns the distinct file paths touched by records carrying sessionID.
+//
+// Unlike ReadSummaryWindow, this is NOT tail-windowed: a session that
+// interleaves with others (subagents, concurrent sessions on the same
+// machine) can have its early records pushed outside a 512 KiB tail long
+// before the session itself is stale, which would silently undercount rather
+// than report a smaller, honest number. A 4 MiB journal parses in
+// single-digit milliseconds (TestReadSessionScope_LargeJournalIsFast), so
+// there is no latency reason to window this read the way ReadSummaryWindow
+// windows the doctor-facing aggregate.
+func ReadSessionScope(sessionID string) (SessionScope, error) {
+	scope := SessionScope{SessionID: sessionID}
+	p, err := JournalPath()
+	if err != nil {
+		return scope, err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return scope, nil
+		}
+		return scope, err
+	}
+	defer f.Close()
+	scope.JournalFound = true
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+
+	seenPaths := map[string]bool{}
+	sawFirstRecord := false
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var r Record
+		if json.Unmarshal([]byte(line), &r) != nil {
+			continue
+		}
+		if !sawFirstRecord {
+			sawFirstRecord = true
+			if r.SessionID == sessionID {
+				// The file's own first surviving record already belongs to
+				// this session — there is no way to tell, from this journal
+				// alone, whether earlier records for it ever existed and
+				// were rotated away.
+				scope.MayUndercount = true
+			}
+		}
+		if r.SessionID != sessionID {
+			continue
+		}
+		if r.Path != "" {
+			seenPaths[r.Path] = true
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return scope, err
+	}
+
+	paths := make([]string, 0, len(seenPaths))
+	for p := range seenPaths {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	scope.Paths = paths
+	return scope, nil
+}
+
+// HookDurations returns every recorded DurationUS for kind_hook_run records
+// of the given hook name, oldest first — the raw material for a p50/max
+// claim that is MEASURED rather than guessed (AC-4.4). A record with no
+// DurationUS (the pointer is nil — an older binary, or a non-hook_run
+// record) is skipped, never treated as a recorded zero.
+func HookDurations(hookName string) ([]time.Duration, error) {
+	p, err := JournalPath()
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64<<10), 4<<20)
+
+	var out []time.Duration
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			continue
+		}
+		var r Record
+		if json.Unmarshal([]byte(line), &r) != nil {
+			continue
+		}
+		if r.Hook != hookName || r.DurationUS == nil {
+			continue
+		}
+		out = append(out, time.Duration(*r.DurationUS)*time.Microsecond)
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DurationPercentile returns the value at the given percentile (0-100) of a
+// SORTED durations slice using nearest-rank. Callers sort once and may query
+// several percentiles without re-sorting. An empty slice returns 0 — the
+// caller must check len() first rather than reading 0 as "measured zero".
+func DurationPercentile(sorted []time.Duration, pct int) time.Duration {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := (pct*len(sorted) + 99) / 100 // nearest-rank, 1-indexed
+	if idx < 1 {
+		idx = 1
+	}
+	if idx > len(sorted) {
+		idx = len(sorted)
+	}
+	return sorted[idx-1]
+}
+
 // Report renders the summary for `doctor`.
 //
 // It always names the denominator, and it never renders an absent journal as a
@@ -351,11 +616,11 @@ func (s Summary) Report() string {
 	if !s.JournalFound {
 		return "hook chain: NO JOURNAL — the injection hooks have never run on this machine.\n" +
 			"  This is not the same as 'no directives fired'. It means the chain is unwired,\n" +
-			"  never invoked, or unable to write its journal. Run `bin/edikt hook probe`."
+			"  never invoked, or unable to write its journal. Run `edikt hook probe`."
 	}
 	if s.Total == 0 {
 		return "hook chain: journal present but EMPTY — no recorded invocations.\n" +
-			"  Run `bin/edikt hook probe` to confirm the chain is live."
+			"  Run `edikt hook probe` to confirm the chain is live."
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "hook chain: %d invocation(s) recorded, last %s\n", s.Total, s.LastTS)
@@ -405,4 +670,114 @@ func (s Summary) Report() string {
 		b.WriteString("  no suppressed invocations recorded\n")
 	}
 	return b.String()
+}
+
+// rotate moves the live journal into the archive under a unique name, then
+// compresses it and prunes the archive back under MaxArchiveBytes.
+//
+// ORDER MATTERS AND IS THE POINT. The rename happens FIRST and is atomic, so
+// the generation is preserved the instant it leaves the live path. Compression
+// and pruning are best-effort afterwards: if gzip fails the archive keeps a
+// plain .jsonl and nothing is lost, and if pruning fails the cap is exceeded
+// until the next rotation rather than a generation being dropped to enforce it.
+// Every failure is swallowed for the same reason the caller swallows its own —
+// a journal that cannot be rotated is still a journal, and breaking the write
+// being observed in order to tidy up would invert this file's priority.
+func rotate(p string) {
+	dir := filepath.Join(filepath.Dir(p), ArchiveDirName)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	// Two rotations inside the same second must not collide — a collision
+	// silently overwrites, which is the whole defect being fixed here.
+	//
+	// The candidate must be free under BOTH extensions. Checking only .jsonl
+	// is not enough and was wrong in the first draft of this function: a
+	// rotated generation ends up as .jsonl.gz and its .jsonl is removed, so
+	// the plain name always looks free and the NEXT rotation truncates the
+	// existing .gz. Caught by TestRotate_NeverOverwritesAPreviousGeneration.
+	ts := time.Now().UTC().Format("20060102T150405Z")
+	base := filepath.Join(dir, "hook-journal-"+ts)
+	dst := base + ".jsonl"
+	for i := 1; taken(dst); i++ {
+		dst = fmt.Sprintf("%s-%d.jsonl", base, i)
+	}
+	if err := os.Rename(p, dst); err != nil {
+		return
+	}
+	if compressFile(dst) == nil {
+		_ = os.Remove(dst)
+	}
+	pruneArchive(dir)
+}
+
+// compressFile writes <src>.gz. The source is left alone; the caller removes
+// it only on success, so a failed compression degrades to a plain archive
+// rather than to a lost one.
+func compressFile(src string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(src+".gz", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	zw := gzip.NewWriter(out)
+	if _, err := io.Copy(zw, in); err != nil {
+		zw.Close()
+		out.Close()
+		_ = os.Remove(src + ".gz")
+		return err
+	}
+	if err := zw.Close(); err != nil {
+		out.Close()
+		_ = os.Remove(src + ".gz")
+		return err
+	}
+	return out.Close()
+}
+
+// pruneArchive deletes OLDEST-FIRST until the archive fits MaxArchiveBytes.
+//
+// Names are timestamp-prefixed and fixed-width, so lexical order is
+// chronological order and no stat-based sort is needed. The newest generation
+// is never deleted even if it alone exceeds the cap: a cap that can empty the
+// archive would reintroduce exactly the data loss this change removes.
+func pruneArchive(dir string) {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	names := make([]string, 0, len(ents))
+	for _, e := range ents {
+		if !e.IsDir() && strings.HasPrefix(e.Name(), "hook-journal-") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names) // oldest first
+	var total int64
+	sizes := make(map[string]int64, len(names))
+	for _, n := range names {
+		if fi, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			sizes[n] = fi.Size()
+			total += fi.Size()
+		}
+	}
+	for i := 0; i < len(names)-1 && total > MaxArchiveBytes; i++ {
+		if err := os.Remove(filepath.Join(dir, names[i])); err == nil {
+			total -= sizes[names[i]]
+		}
+	}
+}
+
+// taken reports whether a rotation candidate is already used, in either the
+// plain or the compressed form.
+func taken(path string) bool {
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	_, err := os.Stat(path + ".gz")
+	return err == nil
 }

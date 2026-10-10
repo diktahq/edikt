@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://edikt.dev/schemas/verify-report/v1.json",
   "title": "VerifyReport",
-  "description": "Report written by tools/edikt/internal/verify/reporter.go (verify.Report) after `bin/edikt verify` runs a plan's criteria sidecar. Written as a pair of files, JSON + human-readable .txt, under .edikt/state/verify/. Filename convention: for a single-phase run, `<PlanID>-phase-<N>-<timestamp>.json` (and matching .txt); for a full run across all phases, `<PlanID>-all-<timestamp>.json`. <timestamp> is UTC, formatted `20060102T150405Z` (Go reference layout). This schema pins the JSON sibling only; the .txt file is a rendered, non-machine-readable summary. Consumed by commands/sdlc/post-flight.md's L1 (criteria verify) stage, which globs this directory for the most recent report matching the active plan and phase.",
+  "description": "Report written by tools/edikt/internal/verify/reporter.go (verify.Report) after `edikt verify` runs a plan's criteria sidecar. Written as a pair of files, JSON + human-readable .txt, under .edikt/state/verify/. Filename convention: for a single-phase run, `<PlanID>-phase-<N>-<timestamp>.json` (and matching .txt); for a full run across all phases, `<PlanID>-all-<timestamp>.json`. <timestamp> is UTC, formatted `20060102T150405Z` (Go reference layout). This schema pins the JSON sibling only; the .txt file is a rendered, non-machine-readable summary. Consumed by commands/sdlc/post-flight.md's L1 (criteria verify) stage, which globs this directory for the most recent report matching the active plan and phase.",
   "type": "object",
   "additionalProperties": false,
   "required": ["plan_id", "phase", "ran_at", "ran_by", "git_sha", "summary", "criteria"],

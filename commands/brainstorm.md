@@ -15,7 +15,7 @@ allowed-tools:
 tier_2_dependency: edikt next-id brain
 on_absent: skip-with-warning
 ---
-!`${HOME}/.edikt/bin/edikt next-id brain`
+!`edikt next-id brain`
 
 # edikt:brainstorm
 
@@ -179,11 +179,11 @@ Resolve the brainstorms path from `.edikt/config.yaml` (`paths.brainstorms`, def
 
 Create the directory if it doesn't exist.
 
-**Determine the next BRAIN number.** The correct next number is provided at the top of this prompt in the `<!-- edikt:live -->` block (from `bin/edikt next-id brain`). Use it exactly — do not guess or count files yourself.
+**Determine the next BRAIN number.** The correct next number is provided at the top of this prompt in the `<!-- edikt:live -->` block (from `edikt next-id brain`). Use it exactly — do not guess or count files yourself.
 
 **Absence fallback (this command's frontmatter declares `on_absent: skip-with-warning`).** If no `<!-- edikt:live -->` block is present, the tier-2 binary is not on PATH. Check explicitly:
 ```bash
-command -v edikt >/dev/null 2>&1 || command -v bin/edikt >/dev/null 2>&1
+command -v edikt >/dev/null 2>&1
 ```
 If the check fails, emit exactly:
 ```

@@ -317,6 +317,9 @@ func Dispatch(o Options) int {
 	if event == "" {
 		event = o.Event
 	}
+	if event == "" {
+		event = declaredEvent(o.Name, o.RootFn)
+	}
 
 	// ── 3. RUN IT, UNDER THE ONE RECOVERY SITE ──────────────────────────
 	inv := &Invocation{Name: o.Name, Payload: payload, PayloadErr: payloadErr, Stderr: stderr, rootFn: o.RootFn, Step: o.Step}
@@ -403,12 +406,30 @@ func Dispatch(o Options) int {
 		}
 	}
 
+	// IDENTITY IS RECORDED WHERE THE HOST SUPPLIES IT.
+	//
+	// Every hook_run record used to carry only hook/exit_code/duration, so a
+	// journal full of subagent-stop entries could not say which skill produced
+	// any of them. The host sends agent_type and agent_id on the Subagent
+	// events and prompt_id on all four lifecycle events; this writes them
+	// down. hookmatch.ResolveIdentity is REUSED rather than reimplemented — it
+	// already encodes the rule that unknown is never guessed as "parent".
+	//
+	// Events that carry no identity are unaffected: actor resolves to parent,
+	// agentType to "-", and PromptID/AgentTranscriptPath stay empty and are
+	// omitempty, so no record grows a field the host never sent.
+	actor, contextID, agentType := hookmatch.ResolveIdentity(payload)
 	journal(o, hookmatch.Record{
-		Kind:      hookmatch.KindHookRun,
-		Hook:      o.Name,
-		Outcome:   string(hookmatch.OutcomeHookRan),
-		SessionID: payload.SessionID,
-		Path:      payload.FilePath,
+		Kind:                hookmatch.KindHookRun,
+		Hook:                o.Name,
+		Outcome:             string(hookmatch.OutcomeHookRan),
+		SessionID:           payload.SessionID,
+		Path:                payload.FilePath,
+		Actor:               actor,
+		AgentType:           agentType,
+		ContextID:           contextID,
+		PromptID:            payload.PromptID,
+		AgentTranscriptPath: payload.AgentTranscriptPath,
 	}, res.ExitCode, elapsed)
 	return res.ExitCode
 }
@@ -482,7 +503,16 @@ func journal(o Options, r hookmatch.Record, exitCode int, d time.Duration) {
 	if appendFn == nil {
 		appendFn = hookmatch.Append
 	}
-	_ = appendFn(r)
+	// Fail-open, but NEVER SILENT — the tier's standing posture. The append
+	// still cannot break the event it is observing, so the error does not
+	// propagate; it is announced instead. Before this, a journal that could
+	// not be resolved at all (an EDIKT_ROOT that is relative, refused since
+	// 2026-08-27) produced no record and no diagnostic, so the journal simply
+	// stopped growing and nothing said why. `hook report` reports staleness
+	// eventually; this names the cause at the moment it happens.
+	if err := appendFn(r); err != nil && o.Stderr != nil {
+		fmt.Fprintf(o.Stderr, "edikt hook %s: journal unavailable (%v); the hook ran, but its record was not written\n", r.Hook, err)
+	}
 }
 
 func truncate(s string, n int) string {
@@ -498,4 +528,50 @@ func indent(s string) string {
 		lines[i] = "  " + l
 	}
 	return strings.Join(lines, "\n")
+}
+
+// declaredEvent resolves the FIRING event from the hook's own registry row,
+// for the case where neither the payload nor the --event flag named one.
+//
+// The host always sends hook_event_name. The hook test harness, the corpus
+// recordings, and any older host do not — and with the event keyed on the
+// payload alone, adapter.Encode's union gate (hookevents.go, 2026-09-02)
+// refused to emit a PreToolUse deny it could not name and the dispatcher
+// FAILED OPEN with "{}": a MUST-grade governed write went through, loud only
+// on stderr. Found by test_inject_directives_pre.sh ("MUST-grade match did NOT
+// deny") and the governed-write-denied corpus scenario, both first
+// mis-attributed to the routing fix of the same day. A validation gate whose
+// missing input turns into an allow is the INV-013 shape exactly.
+//
+// The registry row is the authority on what a hook fires on; the payload's
+// field, when present, is the host's word about THIS firing and still wins.
+// Returns "" when the registry cannot be resolved or the row declares no
+// event, which leaves the encoder's refusal in place — for a hook with no
+// declared event there is nothing truthful to put in the envelope.
+func declaredEvent(name string, rootFn func() (string, error)) string {
+	root := "."
+	if rootFn != nil {
+		if r, err := rootFn(); err == nil && r != "" {
+			root = r
+		}
+	} else if wd, err := os.Getwd(); err == nil {
+		root = wd
+	}
+	path, _, err := ResolveRegistryPath(root)
+	if err != nil {
+		return ""
+	}
+	f, err := LoadRegistryFile(path)
+	if err != nil {
+		return ""
+	}
+	for _, r := range f.Hooks {
+		if r.Name == name {
+			if e, ok := r.EventName(); ok {
+				return e
+			}
+			return ""
+		}
+	}
+	return ""
 }

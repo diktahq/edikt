@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/diktahq/edikt/tools/edikt/internal/parse"
 )
 
 // Pair couples a parent .md with its co-located .edikt.yaml.
@@ -303,66 +302,6 @@ func HasAnySidecar(projectRoot string, dirs []string) bool {
 	return false
 }
 
-// HasAnyLegacySentinel returns true iff at least one governance .md under
-// the artifact dirs still carries a column-0 `[edikt:directives:start]: #`
-// block outside a fenced region.
-//
-// This is what separates the two states that both present as
-// "markdown but no sidecars":
-//
-//   - PRE-MIGRATION — the project used edikt <v0.6.0, so directives live in
-//     in-body sentinel blocks. `edikt migrate sidecars --apply` lifts them.
-//   - NEVER-INITIALISED — the artifacts predate edikt entirely (hand-written
-//     ADRs, no edikt history). There is nothing to migrate; the sidecars must
-//     be extracted from prose by the per-artifact `:compile` commands.
-//
-// Conflating the two is what deadlocked adoption on existing codebases:
-// compile said "run migrate", migrate found nothing to lift and exited 0,
-// and compile still refused. Skip-listed artifacts (superseded ADRs,
-// migration:skip markers, READMEs) are excluded — they are never migrated,
-// so their sentinels must not pin the whole project to the pre-migration
-// path.
-func HasAnyLegacySentinel(projectRoot string, dirs []string) bool {
-	for _, dir := range dirs {
-		if dir == "" {
-			continue
-		}
-		absDir := filepath.Join(projectRoot, dir)
-		entries, err := os.ReadDir(absDir)
-		if err != nil {
-			continue
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if strings.HasSuffix(name, ".edikt.yaml") || !strings.HasSuffix(name, ".md") {
-				continue
-			}
-			p := filepath.Join(absDir, name)
-			if skip, _ := isSkipListed(p); skip {
-				continue
-			}
-			body, err := os.ReadFile(p)
-			if err != nil {
-				continue
-			}
-			// parse.ExtractSentinel screens fenced regions via the
-			// CommonMark-conformant fence tracker, so a documentation
-			// example inside a ``` block does not count.
-			sent, perr := parse.ExtractSentinel(string(body))
-			if perr != nil {
-				continue
-			}
-			if sent.Present {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // HasAnyGovernanceMarkdown returns true iff at least one governance .md
 // (a non-sidecar .md whose basename does not start with "_") exists under
 // any of the artifact dirs. Distinguishes a pre-migration project (has
@@ -398,14 +337,68 @@ func HasAnyGovernanceMarkdown(projectRoot string, dirs []string) bool {
 	return false
 }
 
+// artifactIDFromName extracts the artifact id from a filename.
+//
+// SR-005 (SPEC-018). The previous rule consumed only DIGITS after the 4-char
+// prefix, so any id that was not exactly PREFIX-NNN was truncated at the first
+// non-digit: `ADR-GOLD-001` and `ADR-GOLD-002` both resolved to `ADR-`, two
+// artifacts collided on one id, and the hook's dedup silently dropped one of
+// them. edikt's own corpus is entirely ADR-NNN so it never fired here — but
+// edikt's own GOLDEN FIXTURE is not, and the pinned 0.8.0 arm carries three
+// `ADR-:` entries as a result. Invisible to dogfooding, material to adopters.
+//
+// The rule now consumes whole SEGMENTS while they are uppercase-or-digit, and
+// stops at the first lowercase segment. That is the boundary the filename
+// convention already encodes: an id segment is `042` or `GOLD`, a slug segment
+// is `hook-characterization`. It needs no schema change and no new metadata.
+//
+//	ADR-042-some-slug      -> ADR-042        (unchanged)
+//	INV-002-immutability   -> INV-002        (unchanged)
+//	ADR-GOLD-001-a-slug    -> ADR-GOLD-001   (was ADR-)
+//
+// A GL id keeps the whole basename, which is why this branch is entered only
+// for ADR- and INV-: GL-002-verify-coverage IS the id, slug included, and the
+// fallthrough already returns it whole.
 func artifactIDFromName(name string) string {
 	base := strings.TrimSuffix(name, ".md")
-	if strings.HasPrefix(base, "ADR-") || strings.HasPrefix(base, "INV-") {
-		end := 4
-		for end < len(base) && base[end] >= '0' && base[end] <= '9' {
-			end++
-		}
-		return base[:end]
+	if !strings.HasPrefix(base, "ADR-") && !strings.HasPrefix(base, "INV-") {
+		return base
 	}
-	return base
+	// end starts PAST the prefix dash, so a degenerate "ADR-" returns "ADR-"
+	// exactly as the digit-scan did. Preserving that keeps the change scoped to
+	// ids the old rule got wrong.
+	end := 4
+	for {
+		segStart := end
+		if segStart > 4 {
+			segStart++ // step over the '-' joining this segment to the last
+		}
+		segEnd := segStart
+		for segEnd < len(base) && base[segEnd] != '-' {
+			segEnd++
+		}
+		if segEnd == segStart || !isIDSegment(base[segStart:segEnd]) {
+			break
+		}
+		end = segEnd
+		if end >= len(base) || base[end] != '-' {
+			break
+		}
+	}
+	return base[:end]
+}
+
+// isIDSegment reports whether a filename segment belongs to the id rather than
+// to the descriptive slug. Uppercase letters and digits only — the convention
+// the corpus already follows, made explicit so it stops being an assumption
+// buried in a digit scan.
+func isIDSegment(seg string) bool {
+	for i := 0; i < len(seg); i++ {
+		c := seg[i]
+		if (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') {
+			continue
+		}
+		return false
+	}
+	return true
 }

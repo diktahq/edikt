@@ -1,7 +1,7 @@
 package phasea
 
 // plan_types.go — the on-disk shapes plan.go emits, mirrored field-for-field
-// from templates/schemas/phasea-dispatch-plan.v1.schema.json and
+// from templates/schemas/phasea-dispatch-plan.v2.schema.json and
 // templates/schemas/phasea-journal.v1.schema.json (SPEC-013, Phase 1 of
 // PLAN-v080-reliability-core). Those schemas are authoritative; these
 // structs exist only to produce bytes that validate against them. Do not
@@ -10,7 +10,7 @@ package phasea
 // would fail the round-trip test that validates emitted output against the
 // schema.
 
-// DispatchPlan is templates/schemas/phasea-dispatch-plan.v1.schema.json.
+// DispatchPlan is templates/schemas/phasea-dispatch-plan.v2.schema.json.
 type DispatchPlan struct {
 	SchemaVersion int         `json:"schema_version"`
 	PlanID        string      `json:"plan_id"`
@@ -31,6 +31,10 @@ type Budget struct {
 	Ceiling        int    `json:"ceiling"`
 	ForceCeiling   int    `json:"force_ceiling"`
 	AppliedCeiling string `json:"applied_ceiling"` // "ceiling" | "force_ceiling"
+	// MaxConcurrency is the fan-out cap the tier-1 dispatcher reads from the
+	// plan it executes (SPEC-013 SR-012) — the one machine-readable home of
+	// what used to be a sentence in adr/compile.md. From phasea.max_concurrency.
+	MaxConcurrency int `json:"max_concurrency"`
 }
 
 // PlanItem is one entry of DispatchPlan.items.
@@ -39,8 +43,20 @@ type PlanItem struct {
 	ArtifactPath   string         `json:"artifact_path"`
 	ArtifactSHA256 string         `json:"artifact_sha256"`
 	Reason         string         `json:"reason"` // "missing" | "stale-quote-drift" | "stale-migration-preserved"
+
+	// BootstrapNoPin records that NOTHING WAS PINNED for this item because no
+	// sidecar existed when the plan was built. It is written only on a
+	// DECLARED bootstrap of a `requested` item (D414) — the corpus path's
+	// ReasonMissing already says the same thing by name.
+	//
+	// It exists so restore can report "0 pins TAKEN, nothing was protected"
+	// rather than a bare "0 unrestorable pin(s)", which reads as success. Zero
+	// pins taken and zero pins needed are different facts, and the field run
+	// that found D414 could not tell them apart from the output (INV-013).  // edikt-guard:allow
+	BootstrapNoPin bool `json:"bootstrap_no_pin,omitempty"`
 	Agent          string         `json:"agent"`  // always "sidecar-extractor"
 	PromptVersion  string         `json:"prompt_version"`
+	ContractDigest string         `json:"contract_digest"`
 	ExpectedOutput ExpectedOutput `json:"expected_output"`
 }
 
@@ -61,6 +77,10 @@ const (
 	ReasonMissing                 = "missing"
 	ReasonStaleQuoteDrift         = "stale-quote-drift"
 	ReasonStaleMigrationPreserved = "stale-migration-preserved"
+	// ReasonRequested — planned by `phasea plan --artifact <path>` whether or
+	// not the stale detector would have selected it (SPEC-013 SR-011): the
+	// per-artifact compile commands' "the extractor missed a rule" case.
+	ReasonRequested = "requested"
 )
 
 // AgentSidecarExtractor is the locked subagent type every plan item names.
@@ -70,8 +90,12 @@ const AgentSidecarExtractor = "sidecar-extractor"
 // against.
 const SchemaGovSidecarV2 = "gov-sidecar.v2"
 
-// SchemaVersionPlan is phasea-dispatch-plan.v1's schema_version constant.
-const SchemaVersionPlan = 1
+// SchemaVersionPlan is phasea-dispatch-plan.v3's schema_version constant.
+// Bumped 2 -> 3 to add contract_digest per item and as config_hash's fifth
+// input.
+// Bumped 1 → 2 by SPEC-013's Amendment of 2026-09-02: budget.max_concurrency
+// and the `requested` reason are contract changes under additionalProperties:false.
+const SchemaVersionPlan = 3
 
 // AppliedCeilingCeiling / AppliedCeilingForce are Budget.applied_ceiling's
 // two enum values.
@@ -140,10 +164,29 @@ const (
 	CauseAlreadyConsumed      = "already-consumed" // verify.go (Phase 3)
 
 	CausePromptVersionUnknown = "prompt-version-unknown"
+	// CauseSidecarAbsentOnRequest — a `requested` extraction (--artifact)
+	// found no sidecar on disk and no --bootstrap declaration, so planning it
+	// would have destroyed any authored directives it had carried (D414).
+	CauseSidecarAbsentOnRequest = "sidecar-absent-on-request"
 	CauseCorpusLoadError      = "corpus-load-error"
 	CauseItemValidationFailed = "item-validation-failed"
 	CausePinCaptureFailed     = "pin-capture-failed"
 	CauseInvalidConfig        = "invalid-config"
+
+	// CausePlanIDTerminal — the corpus path derived the id of a plan that is
+	// already terminal (consumed, or FAILED: every item terminal and at least
+	// one not ok). Re-planning onto it would overwrite a closed transaction's
+	// plan file and pins. A REQUESTED extraction derives a successor instead
+	// (plan_hash.go's `supersedes` line); the corpus path refuses, journaled
+	// with the terminal plan's id.
+	CausePlanIDTerminal = "plan-id-terminal"
+
+	// CauseUnclosedPlan — the latest plan covering an item was never closed
+	// (dispatched and not restored, mid-retry, or FAILED) and the item's
+	// sidecar has moved since that plan pinned it. Planning now would pin the
+	// unrestored or failed extractor output as the new baseline. Journaled
+	// with the id the refused plan would have carried.
+	CauseUnclosedPlan = "unclosed-plan"
 )
 
 // PlanIDUnresolved is the plan_id journaled for a refusal that occurs BEFORE

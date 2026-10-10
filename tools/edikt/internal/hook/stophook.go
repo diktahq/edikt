@@ -54,6 +54,9 @@ import (
 	"time"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/hook/adapter"
+	"github.com/diktahq/edikt/tools/edikt/internal/hookmatch"
+	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
+	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
 func init() {
@@ -201,7 +204,11 @@ func stopHook(inv *Invocation) Result {
 	}
 
 	var typed []typedSignal
-	typed = append(typed, stopHookADRCandidate(root, configBytes, lastMsg)...)
+	if stopHookADRCandidateMode(configBytes) == "eager" {
+		typed = append(typed, stopHookADRCandidateEager(root, configBytes, lastMsg)...)
+	} else {
+		typed = append(typed, stopHookADRCandidateQuiet(root, configBytes, lastMsg)...)
+	}
 	typed = append(typed, stopHookDocGap(lastMsg)...)
 	typed = append(typed, stopHookSecurity(lastMsg)...)
 	typed = append(typed, stopHookSidecarDrift(root)...)
@@ -217,7 +224,7 @@ func stopHook(inv *Invocation) Result {
 	}
 
 	stopHookAppendSessionLog(typed)
-	return stopHookRender(root, typed)
+	return stopHookRender(root, inv.Payload.SessionID, typed)
 }
 
 // ── the duplicate-invocation guard ──────────────────────────────────────────
@@ -286,7 +293,46 @@ func stopHookPruneDedup(dir string) {
 
 // ── signal 1: adr-candidate, with the G0 "already captured" gate ────────────
 
-func stopHookADRCandidate(root string, configBytes []byte, lastMsg string) []typedSignal {
+// stopHookADRCandidateMode reads `signals.adr_candidate` (SR-004). Default
+// "quiet". Mirrors stopHookPlansDir's nested-key line scan rather than a full
+// YAML unmarshal — every other nested config read in this file does the
+// same, matching the bash original's grep/sed style rather than a parser.
+func stopHookADRCandidateMode(configBytes []byte) string {
+	const fallback = "quiet"
+	inSignals := false
+	for _, raw := range strings.Split(string(configBytes), "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if !inSignals {
+			if strings.HasPrefix(line, "signals:") {
+				inSignals = true
+			}
+			continue
+		}
+		if line != "" && !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			break
+		}
+		s := strings.TrimSpace(line)
+		if s == "" || strings.HasPrefix(s, "#") {
+			continue
+		}
+		if !strings.HasPrefix(s, "adr_candidate:") {
+			continue
+		}
+		v := strings.TrimSpace(strings.SplitN(s, ":", 2)[1])
+		v = strings.Trim(v, `"'`)
+		if v == "eager" {
+			return "eager"
+		}
+		return fallback
+	}
+	return fallback
+}
+
+// stopHookADRCandidateEager is the pre-SR-004 detector: it fires on decision
+// LANGUAGE alone (a "chose X over Y", a named trade-off), with no requirement
+// that a reversal cost or a re-litigation risk is also named. Selected by
+// `signals.adr_candidate: eager`.
+func stopHookADRCandidateEager(root string, configBytes []byte, lastMsg string) []typedSignal {
 	if !stopHookADRTriggerRe.MatchString(lastMsg) {
 		return nil
 	}
@@ -303,6 +349,46 @@ func stopHookADRCandidate(root string, configBytes []byte, lastMsg string) []typ
 		kind:     "adr-candidate",
 		subject:  subject,
 		evidence: "decision language detected in the last response",
+		ask:      "run /edikt:adr:new — the intake gates (GL-001) will classify it",
+	}}
+}
+
+// The three GL-001 Q2 prongs, each independently extractable so the quiet-
+// mode emission below can name what it found rather than merely that
+// something matched. Longest() per the file's own convention for extraction
+// regexes (see the comment on the five signal regexes above).
+var (
+	stopHookProng1Re = mustLongest(`(?i)chose [a-z0-9_-]+ over [a-z0-9_-]+( for [a-z0-9 _-]{0,30})?|rather than [a-z0-9 _-]{1,40}|instead of [a-z0-9 _-]{1,40}|rejected [a-z0-9 _-]{1,40} in favor of [a-z0-9 _-]{1,40}`)
+	stopHookProng2Re = mustLongest(`(?i)(expensive|costly|hard|difficult) to (reverse|undo|change|unwind)|reversal cost|would require (rewriting|restructuring|migrating|redesigning)( [a-z0-9 _-]{0,30})?`)
+	stopHookProng3Re = mustLongest(`(?i)re-?litigat[a-z]*|revisit(ed)? this (decision|choice)|come up again|questioned again|would be re-?debated|kept? (getting )?(asked|revisited|debated)`)
+)
+
+// stopHookADRCandidateQuiet is SR-004's default detector: it emits only when
+// the session's own evidence answers ALL THREE of GL-001 Q2's prongs — a real
+// rejected alternative, a reversal cost, a re-litigation risk — and the
+// signal names the matched text for each rather than a generic "decision
+// detected" evidence line. With no choice in the evidence (any prong absent),
+// it emits nothing. Selected by `signals.adr_candidate: quiet` (the default).
+func stopHookADRCandidateQuiet(root string, configBytes []byte, lastMsg string) []typedSignal {
+	m1 := stopHookProng1Re.FindString(lastMsg)
+	m2 := stopHookProng2Re.FindString(lastMsg)
+	m3 := stopHookProng3Re.FindString(lastMsg)
+	if m1 == "" || m2 == "" || m3 == "" {
+		return nil
+	}
+	// Sanitized as one joined string — same discipline as the eager path's
+	// single subject, over the concatenation of all three prong matches.
+	subject := stopHookSanitizeSubject(m1 + " " + m2 + " " + m3)
+	if subject == "" {
+		return nil
+	}
+	if stopHookG0Hit(root, configBytes, subject) {
+		return nil
+	}
+	return []typedSignal{{
+		kind:     "adr-candidate",
+		subject:  subject,
+		evidence: "all three Q2 prongs evidenced: a rejected alternative, a reversal cost, a re-litigation risk",
 		ask:      "run /edikt:adr:new — the intake gates (GL-001) will classify it",
 	}}
 }
@@ -489,32 +575,34 @@ func stopHookSecurity(lastMsg string) []typedSignal {
 // Three outcomes, and all three MUST be distinguishable at the hook's own
 // output:
 //
-//	the binary could not be resolved, or answered unusably → UNCHECKED
-//	the check ran and named stale artifacts                → sidecar-stale
-//	the check ran and found none                           → nothing at all
+//	no basis to determine staleness at all      → UNCHECKED
+//	the check ran and named stale artifacts     → sidecar-stale
+//	the check ran and found none                → nothing at all
 //
 // The first two emit different kinds with different wording; the third is
 // silent because there is nothing to report. What must never happen is the
 // first collapsing into the third — "I could not look" rendered as "I looked
 // and everything is fine". That is the defect INV-013 is named after, and it
 // is asserted on literal bytes in TestStopHookStaleSidecars.
+//
+// AC-4.4 (2026-09-03): this used to exec `gov compile --check --json` on
+// every Stop — p50 13s / max 46s on this repo, because a full check re-runs
+// the two-phase pipeline as a SEPARATE PROCESS. stopHookSidecarDriftFast
+// runs the identical per-sidecar predicate (internal/sidecar.Sidecar.IsStale,
+// the ONE staleness implementation this file's own history already fought a
+// second-implementation drift over) IN-PROCESS, and skips any pair whose
+// prose and sidecar have not moved since the last compile's own
+// manifest.yaml — the "compile fingerprint" — was written. No binary
+// resolution is needed any more: this process already IS the edikt binary.
 func stopHookSidecarDrift(root string) []typedSignal {
 	staleCount := 0
 	staleIDs := ""
 	unchecked := false
 
-	bin := stopHookResolveBinary(root)
-	if bin == "" {
+	if ids, ok := stopHookSidecarDriftFast(root); !ok {
 		unchecked = true
 	} else {
-		out := stopHookGovCompileCheck(root, bin)
-		if out == "" {
-			unchecked = true
-		} else if count, ids, ok := stopHookParseStaleJSON(out); !ok {
-			unchecked = true
-		} else {
-			staleCount, staleIDs = count, ids
-		}
+		staleCount, staleIDs = len(ids), strings.Join(ids, ",")
 	}
 
 	// Derived state carries its provenance, or it is regenerated: a reader
@@ -558,8 +646,8 @@ func stopHookSidecarDrift(root string) []typedSignal {
 		return []typedSignal{{
 			kind:     "sidecar-stale-unchecked",
 			subject:  "sidecar staleness",
-			evidence: "not checked — the edikt binary is unavailable, so no staleness determination was made",
-			ask:      "install the binary (see README → Install) to restore the check; this is not a report that sidecars are current",
+			evidence: "not checked — no compiled governance manifest exists yet, so no staleness determination was made",
+			ask:      "run /edikt:gov:compile once to establish a baseline; this is not a report that sidecars are current",
 		}}
 	case staleCount > 0:
 		subject := staleIDs
@@ -576,106 +664,70 @@ func stopHookSidecarDrift(root string) []typedSignal {
 	return nil
 }
 
-// stopHookResolveBinary is the four-rung discovery ladder, most specific
-// first. Rung 2 (`bin/edikt`) is deliberately BELOW rung 1
-// (`.edikt/bin/edikt`): only the installer ever creates the latter, while
-// `bin/edikt` is an ordinary relative path any Go project might occupy, and a
-// downstream repo's unrelated binary must not shadow their real install.
-// Returning "" is rung 5 — UNCHECKED, never a silent "0 stale".
-func stopHookResolveBinary(root string) string {
-	ediktRoot := os.Getenv("EDIKT_ROOT")
-	if ediktRoot == "" {
-		ediktRoot = os.Getenv("EDIKT_HOME")
-	}
-	if ediktRoot == "" {
-		ediktRoot = filepath.Join(os.Getenv("HOME"), ".edikt")
-	}
-	for _, cand := range []string{
-		filepath.Join(root, ".edikt", "bin", "edikt"),
-		filepath.Join(root, "bin", "edikt"),
-		filepath.Join(ediktRoot, "bin", "edikt"),
-	} {
-		if isExecutable(cand) {
-			return cand
-		}
-	}
-	if commandAvailable("edikt") {
-		// The bare name, resolved through PATH at exec time — bash's own
-		// `_edikt_bin="edikt"`, not the absolute path `command -v` printed.
-		return "edikt"
-	}
-	return ""
-}
-
-// stopHookGovCompileCheck runs the ONE canonical staleness predicate.
+// stopHookSidecarDriftFast computes sidecar staleness IN-PROCESS, using
+// internal/sidecar.Sidecar.IsStale — the ONE staleness predicate this
+// package's own history already fought a second-implementation drift over
+// (stop-hook.sh once carried a ~90-line python reimplementation that
+// disagreed with it, per this function's own git history) — never a second
+// implementation, only a cheaper way to decide which pairs need it.
 //
-// stop-hook.sh used to carry a ~90-line python reimplementation of the drift
-// check. It diverged from internal/sidecar/drift.go — which tolerates
-// whitespace and line shift — and reported two artifacts stale while
-// `gov compile --check` said zero. Both false positives were then ACKed, and
-// the held ack swallowed a genuine finding into the same bundle. Exit code
-// plus one JSON field, per the tier-2 consumption contract; never a second
-// implementation.
-func stopHookGovCompileCheck(root, bin string) string {
-	cmd := exec.Command(bin, "gov", "compile", "--check", "--json") //nolint:gosec // discovery-ladder path
-	cmd.Dir = root
-	cmd.Env = append(os.Environ(), "EDIKT_VERIFY_TRUST=1", "EDIKT_SKIP_VERSION_GATE=1")
-	out, err := cmd.Output()
-	if err != nil && len(out) == 0 {
-		return ""
-	}
-	// `$( )` strips trailing newlines; an all-whitespace answer is "" to the
-	// `[ -z … ]` that follows.
-	return strings.TrimRight(string(out), "\n")
-}
-
-// stopHookParseStaleJSON reproduces the embedded python's deliberately picky
-// decode. ok=false means UNCHECKED, and each refusal below is one of INV-013's
-// own listed shapes:
+// ok=false is UNCHECKED: no compile has ever produced
+// .claude/rules/governance/manifest.yaml (nothing to compare against), or
+// the corpus itself could not be discovered (an unreadable .edikt/config.yaml
+// or governed directory). Both are INV-013's "I could not look", never a
+// guessed zero.
 //
-//	no phase_a               the binary answered something else entirely
-//	stale_ids ABSENT         an older binary predates the field — `.get(k, [])`
-//	                         here would turn "this binary cannot tell you" into
-//	                         "nothing is stale"
-//	stale_ids not a list     the field exists and means something else
-func stopHookParseStaleJSON(body string) (count int, ids string, ok bool) {
-	var doc map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(body), &doc); err != nil {
-		return 0, "", false
+// The manifest's own file mtime is the "compile fingerprint": a pair whose
+// parent prose AND sidecar are BOTH older than it cannot have drifted since
+// the corpus was last confirmed consistent, and IsStale is skipped for it
+// entirely. Only pairs that changed since are actually re-examined — on this
+// repo's corpus that is usually zero or a handful of files, not the ~150
+// IsStale would otherwise re-run on every single Stop fire.
+func stopHookSidecarDriftFast(root string) (staleIDs []string, ok bool) {
+	manifestPath := hookmatch.ManifestPath(root)
+	mst, err := os.Stat(manifestPath)
+	if err != nil {
+		return nil, false
 	}
-	rawPhase, present := doc["phase_a"]
-	if !present {
-		return 0, "", false
+	lastCompile := mst.ModTime()
+
+	cfg, err := phasea.LoadConfig(root)
+	if err != nil {
+		return nil, false
 	}
-	var phase map[string]json.RawMessage
-	if err := json.Unmarshal(rawPhase, &phase); err != nil {
-		return 0, "", false
+	pairs, err := sidecar.Discover(root, cfg.Dirs())
+	if err != nil {
+		return nil, false
 	}
-	rawIDs, present := phase["stale_ids"]
-	if !present {
-		return 0, "", false
-	}
-	var list []json.RawMessage
-	if err := json.Unmarshal(rawIDs, &list); err != nil {
-		return 0, "", false
-	}
-	head := list
-	if len(head) > 6 {
-		head = head[:6] // `ids[:6]`
-	}
-	rendered := make([]string, 0, len(head))
-	for _, item := range head {
-		var s string
-		if json.Unmarshal(item, &s) == nil {
-			rendered = append(rendered, s)
+
+	for _, p := range pairs {
+		if p.Skip || p.LoadErr != nil || p.Sidecar == nil {
+			// A missing sidecar is a COVERAGE gap (doctor's delivery-gaps
+			// check, INV-009), not an ANCHOR-drift finding — this function's  edikt-guard:allow
+			// one subject is "does an existing sidecar still match its
+			// prose", so no-sidecar-at-all is out of scope here, exactly as
+			// it was under the old mechanism (bootstrap items were dispatch
+			// candidates for gov compile, never a Stop-hook finding).
 			continue
 		}
-		// `str(i)` over a non-string id. Real ids are strings; the raw JSON
-		// text is the closest faithful rendering for anything else, and the
-		// allowlist guard downstream discards whatever it does not like.
-		rendered = append(rendered, string(item))
+		pst, perr := os.Stat(p.ParentPath)
+		if perr != nil {
+			continue
+		}
+		sst, serr := os.Stat(p.SidecarPath)
+		changed := pst.ModTime().After(lastCompile) || (serr == nil && sst.ModTime().After(lastCompile))
+		if !changed {
+			continue
+		}
+		stale, _, ierr := p.Sidecar.IsStale(root)
+		if ierr != nil {
+			continue
+		}
+		if stale {
+			staleIDs = append(staleIDs, p.ArtifactID)
+		}
 	}
-	return len(list), strings.Join(rendered, ","), true
+	return staleIDs, true
 }
 
 // stopHookWriteStaleLog writes the out-of-band artifact /edikt:gov:compile
@@ -693,7 +745,7 @@ func stopHookWriteStaleLog(root, path, staleIDs string) {
 		}
 	}
 	var b strings.Builder
-	b.WriteString("# generated by stop-hook.sh from `edikt gov compile --check --json`\n")
+	b.WriteString("# generated by stop-hook's own fingerprint-based drift check (AC-4.4)\n")
 	b.WriteString("# generated_at: " + time.Now().UTC().Format("2006-01-02T15:04:05Z") + "\n")
 	b.WriteString("# corpus_head: " + head + "\n")
 	b.WriteString(strings.ReplaceAll(staleIDs, ",", "\n") + "\n")
@@ -735,7 +787,7 @@ func stopHookCompletionClaim(root string, configBytes []byte, lastMsg string) []
 		kind:     "completion-claim",
 		subject:  plan + " phase " + phase,
 		evidence: "completion phrase during an in-progress plan phase",
-		ask:      "run: bin/edikt verify " + plan + " --phase " + phase + " before declaring done",
+		ask:      "run: edikt verify " + plan + " --phase " + phase + " before declaring done",
 	}}
 }
 
@@ -871,7 +923,7 @@ type stopHookLedgerRecord struct {
 	Fingerprint string `json:"fingerprint"`
 }
 
-func stopHookRender(root string, typed []typedSignal) Result {
+func stopHookRender(root, sessionID string, typed []typedSignal) Result {
 	state := filepath.Join(root, ".edikt", "state")
 	ledgerPath := filepath.Join(state, "hook-ledger.jsonl")
 	acksPath := filepath.Join(state, "hook-acks.json")
@@ -927,7 +979,141 @@ func stopHookRender(root string, typed []typedSignal) Result {
 	if len(lines) == 0 {
 		return Result{Response: adapter.Response{Text: adapter.ContinueTrueReply}}
 	}
+	// SR-005: the end-of-session tally rides ALONGSIDE an already-nonempty
+	// fire — it is an APPENDED line, never the reason a silent turn stops
+	// being silent. A turn where nothing else fired stays `{"continue":
+	// true}` unchanged (AC-4.2's seven tests and the corpus both pin that).
+	if tally, ok := stopHookRenderTally(root, sessionID, ledgerPath, acksPath); ok {
+		lines = append(lines, tally)
+	}
 	return Result{Response: adapter.Response{Message: strings.Join(lines, "\n")}}
+}
+
+// stopHookRenderTally builds SR-005's end-of-session governance line. It
+// returns ok=false — nothing to append — when it cannot measure at least
+// one of its inputs (no live journal, no compiled delivery map, no usable
+// session id): a false "0 rules in scope" is worse than no line at all
+// (INV-013).
+func stopHookRenderTally(root, sessionID, ledgerPath, acksPath string) (string, bool) {
+	if !adapter.ValidSessionID(sessionID) {
+		return "", false
+	}
+	scope, err := hookmatch.ReadSessionScope(sessionID)
+	if err != nil || !scope.JournalFound || len(scope.Paths) == 0 {
+		return "", false
+	}
+	if _, err := os.Stat(hookmatch.DeliveryMapPath(root)); err != nil {
+		return "", false
+	}
+
+	ruleIDs := map[string]bool{}
+	for _, p := range scope.Paths {
+		res := hookmatch.MatchGoverning(root, p)
+		if res.Outcome != hookmatch.OutcomeMatched && res.Outcome != hookmatch.OutcomeNoMatch {
+			// The map went missing or stopped parsing partway through this
+			// read (a compile racing this Stop fire). Reporting a partial
+			// count as final would understate it with nothing saying so.
+			return "", false
+		}
+		for _, e := range res.Entries {
+			ruleIDs[e.ID] = true
+		}
+	}
+
+	held := stopHookHeldCandidateCount(root, ledgerPath, acksPath)
+
+	line := fmt.Sprintf(
+		"governance this session: %d rules in scope for %d files touched "+
+			"(ambient + topic + skill loads, hook-journal.jsonl session %s); "+
+			"%d candidate artifact(s) held (stop-hook)",
+		len(ruleIDs), len(scope.Paths), sessionID, held)
+	if cited, ok := stopHookCitedDirectiveCount(root); ok {
+		line += fmt.Sprintf("; %d cited by phase-end review (post-flight reports)", cited)
+	}
+	if scope.MayUndercount {
+		line += " — journal history may predate this session's earliest visible record; counts are a lower bound"
+	}
+	return line, true
+}
+
+// stopHookCitedDirectiveCount is SR-006's counter: the number of
+// distinct directive ids any post-flight report under
+// .edikt/state/post-flight/ has ever cited (a FAIL or NEEDS_REVIEW L2
+// verdict, per cited_directives). Returns ok=false — never 0 — when no
+// report on disk carries the field at all, so a project that has not
+// yet run a post-flight review under the new schema gets no clause,
+// not a false "0 cited" (the same false-zero the "rules in scope"
+// half of this line already refuses to print on absent input).
+//
+// Deliberately UNWINDOWED and un-scoped to the active plan: this is a
+// running lifetime tally for the session line, a cheap presence/absence
+// signal — not `gov prune-candidates`' windowed, active-plan-scoped
+// removal-candidate computation, which answers a different question
+// and is intentionally not reused here.
+func stopHookCitedDirectiveCount(root string) (int, bool) {
+	dir := filepath.Join(root, ".edikt", "state", "post-flight")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, false
+	}
+	seen := map[string]bool{}
+	any := false
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasSuffix(e.Name(), ".raw.json") {
+			continue
+		}
+		body, rerr := os.ReadFile(filepath.Join(dir, e.Name())) //nolint:gosec // project-local state
+		if rerr != nil {
+			continue
+		}
+		var shape struct {
+			CitedDirectives *[]string `json:"cited_directives"`
+		}
+		if json.Unmarshal(body, &shape) != nil || shape.CitedDirectives == nil {
+			continue
+		}
+		any = true
+		for _, id := range *shape.CitedDirectives {
+			seen[id] = true
+		}
+	}
+	if !any {
+		return 0, false
+	}
+	return len(seen), true
+}
+
+// stopHookHeldCandidateCount counts distinct candidate-kind fingerprints
+// (kind ending "-candidate") recorded in the ledger that are not currently
+// silenced by an active ack — SR-005's "C candidate artifact(s) held".
+func stopHookHeldCandidateCount(root, ledgerPath, acksPath string) int {
+	acks := stopHookLoadAcks(acksPath)
+	seen := map[string]bool{}
+	body, err := os.ReadFile(ledgerPath) //nolint:gosec // project-local state
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(body), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var rec struct {
+			Kind        string `json:"kind"`
+			Fingerprint string `json:"fingerprint"`
+		}
+		if json.Unmarshal([]byte(line), &rec) != nil {
+			continue
+		}
+		if rec.Fingerprint == "" || !strings.HasSuffix(rec.Kind, "-candidate") {
+			continue
+		}
+		if ack, acked := acks[rec.Fingerprint]; acked && stopHookAckActive(root, ack) {
+			continue
+		}
+		seen[rec.Fingerprint] = true
+	}
+	return len(seen)
 }
 
 // stopHookAppendLedger opens the ledger in append mode even when there is
@@ -1048,14 +1234,6 @@ func stopHookAckActive(root string, a stopHookAck) bool {
 func dirExists(path string) bool {
 	fi, err := os.Stat(path)
 	return err == nil && fi.IsDir()
-}
-
-// isExecutable mirrors `[ -x path ]`, including its acceptance of a directory
-// with the execute bit — the bash then fails to exec it and degrades to
-// UNCHECKED, which is the correct answer either way.
-func isExecutable(path string) bool {
-	fi, err := os.Stat(path)
-	return err == nil && fi.Mode().Perm()&0o111 != 0
 }
 
 func stopHookAllDigits(s string) bool {

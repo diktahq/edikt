@@ -1,0 +1,36 @@
+schema_version: 1
+verbs:
+- verb: verify
+  audience: user
+- verb: doctor
+  audience: user
+- verb: version
+  audience: user
+- verb: migrate
+  audience: user
+- verb: util
+  audience: user
+- verb: prd
+  audience: user
+- verb: plan
+  audience: user
+- verb: gov
+  audience: user
+- verb: install
+  audience: user
+- verb: upgrade
+  audience: user
+- verb: upgrade-pin
+  audience: user
+- verb: use
+  audience: user
+- verb: rollback
+  audience: user
+- verb: sidecar
+  audience: user
+- verb: phasea
+  audience: user
+- verb: next-id
+  audience: user
+- verb: hook
+  audience: user

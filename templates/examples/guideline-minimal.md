@@ -24,6 +24,16 @@ sections. See the invariant writing guide for additional discipline
 that also applies to guidelines.
 -->
 
+## In plain terms
+
+<!-- One paragraph. Declarative, present tense, no modal verb, no date. The
+     default this guideline sets, and the kind of case that legitimately falls
+     outside it — said plainly. The Rules below carry the MUST and the NEVER;
+     this is what a reader takes away if they read nothing else. A guideline
+     whose plain-terms paragraph has no exception to name is describing a
+     constraint, and belongs in an Invariant Record instead. -->
+{Say what the default is, plainly.}
+
 ## Rules
 
 - {Rule 1 using MUST or NEVER — specific and verifiable}

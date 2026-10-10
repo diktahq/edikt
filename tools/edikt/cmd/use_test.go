@@ -38,7 +38,7 @@ func TestUseExistingVersion(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := writeLock(root, "0.8.1", "test"); err != nil {
+	if err := writeLock(root, "0.8.1", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 

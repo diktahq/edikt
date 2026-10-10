@@ -45,6 +45,13 @@ const (
 const (
 	OracleBash = "bash"
 	OracleGo   = "go"
+	// OracleHostContract labels a recording captured from the CURRENT Go
+	// implementation because the bash oracle encoded a reply the host does not
+	// read — PostCompact's additionalContext, rejected by the 2.1.257 reply
+	// union. Such a recording must name its contract and the date it was read
+	// (Recording.Contract / ContractRecordedAt); without them it would be
+	// oracle=go under another name, an implementation graded against itself.
+	OracleHostContract = "host-contract"
 )
 
 // RegistryRow is one hook's declaration.
@@ -74,6 +81,9 @@ func (r RegistryRow) IsLibrary() bool { return r.Class == ClassLibrary || r.Even
 type RegistryFile struct {
 	SchemaVersion int           `yaml:"schema_version"`
 	Hooks         []RegistryRow `yaml:"hooks"`
+	// Retired is accepted and ignored here: the recorder iterates hooks that
+	// run, and a retired hook has no handler to record (ADR-083).  edikt-guard:allow
+	Retired []map[string]any `yaml:"retired,omitempty"`
 
 	// Path records where this was read from, so a report about the registry
 	// can name its subject instead of asserting about an unnamed file.

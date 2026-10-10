@@ -127,7 +127,15 @@ func TestCompileGolden(t *testing.T) {
 		}
 	}
 	actEntries, _ := os.ReadDir(actualDir)
-	expectedNonMD := map[string]bool{"directive-index.yaml": true, "manifest.yaml": true}
+	// delivery-map.yaml joins the expected set rather than being tolerated:
+	// this map is an allow-list AND a required-presence list (see the
+	// seenNonMD loop below), so a surface added here is one whose absence
+	// also fails. A generated file the golden test merely ignored could go
+	// missing without anything reporting it.
+	expectedNonMD := map[string]bool{
+		"manifest.yaml":     true,
+		"delivery-map.yaml": true,
+	}
 	seenNonMD := map[string]bool{}
 	for _, e := range actEntries {
 		if e.IsDir() {

@@ -32,6 +32,14 @@ If you prefer a lighter format focused on brevity, see
 adr-nygard-minimal.md.
 -->
 
+## In plain terms
+
+<!-- One paragraph. Declarative, present tense, no modal verb, no date. What this
+     record means to someone reading it cold, before they read anything else.
+     A record whose plain-terms paragraph cannot be written without naming a
+     plan step or a code site is a record about the wrong subject. -->
+{Say what this means, plainly.}
+
 ## Context and Problem Statement
 
 {Describe the situation driving the decision. What forces are at play?
@@ -85,6 +93,11 @@ Chosen option: **{Option N}**, because {primary reason tied to decision drivers}
 
 - ✅ {Pro 1}
 - ❌ {Con 1 — the reason we rejected this}
+
+## Reversal Cost
+
+<!-- REQUIRED (GL-001 G2): /edikt:adr:new refuses an ADR without this section. -->
+{What it costs to undo this decision, concretely — what would need to change, what data, interfaces or dependencies it constrains, and how long it would take.}
 
 ## Confirmation
 

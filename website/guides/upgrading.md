@@ -1,7 +1,7 @@
 # Keeping edikt Up to Date
 
-::: tip Current entry point
-**v0.8.0** is the current release. **v0.7.x is the entry point for upgrading from v0.4.x** — the one-pass jump described below lands you on v0.7.1, and you then move to v0.8.0 under the N-1 policy. `diktahq/edikt`'s prior public releases stopped at **v0.4.5** — v0.5.x was retracted (ADR-042) and v0.6.0 was never published — but v0.7.0 restarted the release line and it, along with v0.7.1, is fully installable. If you have an installed project on v0.4.x, run `/edikt:upgrade` and it carries you straight to v0.7.1 in one pass — the migration and schema-upgrade steps handle the full jump uniformly. **This one-pass jump is historical**, specific to the v0.4.x → v0.7.1 gap left by the retracted/unpublished v0.5.x–v0.6.0 lines. Starting with v0.8.0, `edikt upgrade` only jumps one minor line at a time (the N-1 policy below) — it is not a general "always straight to latest" guarantee for future releases.
+::: tip Current release
+**v0.9.0** is the current release. From v0.8.x, follow [Upgrading to v0.9.0](v0.9.0-upgrade.md). `edikt upgrade` moves one minor line at a time (the N-1 policy below), so a project on v0.7.x goes to v0.8.0 first. A project still on v0.4.x runs `/edikt:upgrade`, which carries it to v0.7.1 in one pass; that one-pass jump exists only because v0.5.x was retracted (ADR-042) and v0.6.0 was never published, and it is not a general "straight to latest" path.
 :::
 
 edikt has two layers that need updating separately: the **global templates** (installed on your machine) and the **project configuration** (committed in each repo).
@@ -127,7 +127,7 @@ cp ~/.edikt/current/templates/schemas/*.schema.json .edikt/schemas/
 ```
 
 ::: warning Do not `rm -rf .edikt/schemas`
-Deleting the directory does not regenerate it. Only three of the schemas kept there have any auto-install path at all — `gov-sidecar.v2`, `prd-sidecar.v1` and `spec-sidecar.v1` — and each is written by one specific command. The rest (`gov-sidecar.v1`, `directive-index.v1`, `plan-criteria.v1`, `plan-eval-state.v1`, `topic-registry.v1`) have no writer and would simply stay missing. Copy over them instead.
+Deleting the directory does not regenerate it. Only three of the schemas kept there have any auto-install path at all — `gov-sidecar.v2`, `prd-sidecar.v1` and `spec-sidecar.v1` — and each is written by one specific command. The rest (`gov-sidecar.v1`, `plan-criteria.v1`, `plan-eval-state.v1`, `topic-registry.v1`) have no writer and would simply stay missing. Copy over them instead.
 :::
 
 ---
@@ -176,12 +176,19 @@ install separately.
 
 **Read this before you run it, not after — one change here isn't a migration step at all.** Grading now
 reads the actual obligation strength of what you wrote (RFC-2119 modal force: MUST/SHALL/REQUIRED,
-either polarity) instead of a three-word negative-marker list, and the deny channel that was supposed to
-block `must`-grade writes now actually does. Measured directly against this project's own corpus before
-shipping: **404 of 420 directives previously graded `advisory` move to `must`.** The moment you upgrade,
-roughly 400 rules that were previously informational-only become enforced, blocking write-time rules —
-against a corpus you didn't just change. This isn't a bug to route around; it's existing rules finally
-enforcing what they say. If a refusal looks wrong, reword the directive rather than bypassing the gate.
+either polarity) instead of a three-word negative-marker list. Measured directly against this project's
+own corpus before shipping: **404 of 420 directives previously graded `advisory` move to `must`.** The
+moment you upgrade, roughly 400 rules that were previously informational-only start binding — against a
+corpus you didn't just change. This isn't a bug to route around; it's existing rules finally saying what
+they mean. If a directive reads stricter than you meant it, reword it rather than working around it.
+
+v0.7.0 paired that grading fix with a deny channel that refused a `must`-grade edit as it landed. **That
+channel is retired as of v0.9.0 (ADR-083).** Grade still decides which surface carries a rule, and a
+`must` still binds — but no edit is denied, warned about, or annotated at the moment it lands. Rules
+reach the model beforehand, through the always-loaded ambient core and the topic file for the path being
+touched, and `/edikt:gov:verify-diff` reviews the finished diff against every directive at phase end. If
+you are landing on v0.9.0 rather than stopping at v0.7.1, that is what the 404 reclassified directives
+do today.
 
 **Recommended upgrade steps:**
 
@@ -191,7 +198,7 @@ enforcing what they say. If a refusal looks wrong, reword the directive rather t
                       (auto-runs sentinel migration, schema v1→v2 upgrade, and compile)
 3. Review the result: /edikt:doctor
 4. Spot-check a few directives your team wrote as bare "MUST" statements — expect them to
-   now grade `must` and enforce at write time, correctly, if that's what you intended.
+   now grade `must`, correctly, if that's what you intended.
 5. Commit:           git add .claude/ .edikt/ docs/ && git commit -m "chore: upgrade edikt to 0.7.1"
 ```
 
@@ -247,7 +254,7 @@ Fetch the latest payload and activate it:
 edikt upgrade
 ```
 
-If you're on Homebrew, `brew upgrade edikt` updates the launcher. `edikt upgrade` updates the payload. They're independent.
+**Homebrew installs are two halves, upgraded separately.** `brew upgrade edikt` replaces the launcher binary; `edikt upgrade` fetches a new payload and never touches the binary. Verified rather than asserted: `edikt upgrade` downloads `edikt-payload-<tag>.tar.gz`, which ships no `bin/` directory, and the formula's install stanza is `bin.install "bin/edikt"` — the launcher alone. Neither command can update the other, so run both when moving between versions, launcher first.
 
 ### Rollback
 
@@ -266,8 +273,8 @@ edikt rollback
 Stay on a specific version:
 
 ```bash
-edikt use v0.8.0        # activate v0.8.0 immediately
-edikt upgrade --pin v0.8.0  # fetch v0.8.0 and pin it
+edikt use v0.9.0        # activate v0.9.0 immediately
+edikt upgrade --pin v0.9.0  # fetch v0.9.0 and pin it
 ```
 
 When pinned, `edikt upgrade` is a no-op until you clear the pin:
@@ -288,7 +295,8 @@ Output:
   v0.4.3
   v0.7.1
   v0.7.3
-* v0.8.0   (current)
+  v0.8.0
+* v0.9.0   (current)
 ```
 
 ### Pruning old versions

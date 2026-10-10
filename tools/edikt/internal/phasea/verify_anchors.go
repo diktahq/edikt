@@ -68,3 +68,86 @@ func verifyAnchorsAgainstParent(sidecarPath, parentPath string) error {
 	}
 	return fmt.Errorf("%s", b.String())
 }
+
+// tallyAnchors counts valid vs broken anchors instead of returning on the first
+// fault.
+//
+// It deliberately reuses sidecar.VerifyAnchors — the SAME oracle
+// verifyAnchorsAgainstParent above calls — so the gate and the diagnostic can
+// never disagree about whether an anchor holds. A second implementation here
+// would be a second definition of "quotes the parent", and the receipt would
+// eventually claim something the gate does not.
+//
+// Anchor state is reported even when the sidecar is over the length cap, which
+// is the point: the guideline-event-transport artifact had 83 valid anchors and
+// four over-cap sentences, and collapsing that into "schema-invalid" made a
+// four-sentence split indistinguishable from a failed extraction.
+func tallyAnchorsOn(sc *sidecar.Sidecar, parentPath string) (valid, broken int) {
+	valid, faults := anchorFaultsOn(sc, parentPath)
+	return valid, len(faults)
+}
+
+// anchorFaultsOn is tallyAnchorsOn with the faults themselves, which the
+// correction prompt needs: each one's parent line range, class and, for a
+// whitespace-only quote, the parent's own bytes.
+func anchorFaultsOn(sc *sidecar.Sidecar, parentPath string) (valid int, faults []sidecar.AnchorFault) {
+	if len(sc.Directives) == 0 && len(sc.Prohibitions) == 0 {
+		return 0, nil
+	}
+	body, err := os.ReadFile(parentPath)
+	if err != nil {
+		// Unmeasured, not clean. Zero/zero says "no anchor evidence", which is
+		// what the caller must not read as "all anchors fine".
+		return 0, nil
+	}
+	v := sidecar.VerifyAnchors(sc, string(body))
+	valid = v.Anchors - len(v.Faults)
+	if valid < 0 {
+		valid = 0
+	}
+	return valid, v.Faults
+}
+
+// verifyNoBehavioralOverclaim is the third post-extraction over-claim (D46
+// (b), D47): after extraction no directive or prohibition may carry
+// verify_kind behavioral unless BOTH fixture files exist under the project
+// root. The extractor cannot author fixtures, so a behavioral it asserts
+// without them is a claim about files that do not exist; the gate reports
+// it as a content defect and the correction pass re-dispatches with the
+// fault, rather than letting it reach the router as a proposal it never
+// meant to make.
+func verifyNoBehavioralOverclaim(projectRoot, sidecarPath string) error {
+	sc, err := sidecar.Load(sidecarPath)
+	if err != nil {
+		return err
+	}
+	var faults []string
+	check := func(list string, i int, kind, pos, neg string) {
+		if kind != "behavioral" {
+			return
+		}
+		missing := []string{}
+		for _, f := range []struct{ name, path string }{{"positive_fixture_path", pos}, {"negative_fixture_path", neg}} {
+			if f.path == "" {
+				missing = append(missing, f.name+" is empty")
+				continue
+			}
+			if _, serr := os.Stat(filepath.Join(projectRoot, filepath.FromSlash(f.path))); serr != nil {
+				missing = append(missing, f.name+" "+f.path+" does not exist")
+			}
+		}
+		if len(missing) > 0 {
+			faults = append(faults, fmt.Sprintf("%s[%d]: verify_kind is behavioral but %s — the extractor cannot author fixtures; use structural/tooling with a named test, or falsifying_observation only", list, i, strings.Join(missing, ", ")))
+		}
+	}
+	for i, d := range sc.Directives {
+		check("directives", i, d.VerifyKind, d.PositiveFixturePath, d.NegativeFixturePath)
+	}
+	for i, pr := range sc.Prohibitions {
+		check("prohibitions", i, pr.VerifyKind, pr.PositiveFixturePath, pr.NegativeFixturePath)
+	}
+	if len(faults) == 0 {
+		return nil
+	}
+	return fmt.Errorf("behavioral over-claim: %s", strings.Join(faults, "; "))
+}

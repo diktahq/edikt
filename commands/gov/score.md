@@ -2,6 +2,8 @@
 name: gov:score
 description: "Score overall governance quality — context budget, directive compliance metrics, manual directive health"
 effort: normal
+tier_2_dependency: "edikt gov prune-candidates"
+on_absent: "skip-with-warning"
 allowed-tools:
   - Read
   - Glob
@@ -20,6 +22,7 @@ CRITICAL: This command reads the compiled output — it does NOT score source do
 ## Arguments
 
 - `--json` — output JSON only (for CI)
+- `--prune-candidates N` — list compiled directives with zero citations across the active plan's last N post-flight reports (default N=5). Additive to the base score; does not require `--json`.
 - No arguments — human-readable report
 
 ## Instructions
@@ -149,6 +152,27 @@ Overall: {x}/10
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+### 6b. Prune Candidates (if `--prune-candidates N` given)
+
+Detect absence of the `edikt` binary on PATH first:
+
+```bash
+command -v edikt >/dev/null 2>&1 || {
+  echo "✗ edikt binary not found on PATH. Install it, then re-run to include prune-candidates — the base score above is unaffected."
+  # skip the rest of this section; on_absent: skip-with-warning, this dependency is additive
+}
+```
+
+Otherwise run:
+
+```bash
+EDIKT_INVOKER=/edikt:gov:score edikt gov prune-candidates --window N --json
+```
+
+Consume only the exit code for control flow — never parse the stdout JSON to make decisions here. Display the command's own JSON output verbatim (or, when `--json` was not also passed to `/edikt:gov:score`, print its human-readable rendering by re-running the same command without `--json`). This command passes the report through; it does not summarize, reformat, or extract fields from it.
+
+If the report's `measured` field is `false` (visible in the JSON, not parsed — just read as displayed): the output already says why (no active plan, no reports in the window, or every report in the window predates `cited_directives`). Do not present that as "0 candidates" — the command's own output already distinguishes unmeasured from a genuine zero.
 
 ### 7. JSON Output (if `--json`)
 

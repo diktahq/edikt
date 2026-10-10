@@ -117,8 +117,8 @@ saw it on is worse than one missing the command.`,
 				if res.SidecarRewritten {
 					restored++
 					if !restorePinnedJSON {
-						fmt.Fprintf(os.Stdout, "  would restore %s: %d directive pin(s)%s\n",
-							id, res.DirectivePins, pathsNote(res.PathsRestored))
+						fmt.Fprintf(os.Stdout, "  would restore %s: %d entry pin(s)%s\n",
+							id, res.DirectivePins, pathsNote(res))
 					}
 				}
 				unrestorable = append(unrestorable, res.Unrestorable...)
@@ -136,8 +136,8 @@ saw it on is worse than one missing the command.`,
 				restored++
 				rewritten[id] = full
 				if !restorePinnedJSON {
-					fmt.Fprintf(os.Stdout, "  restored %s: %d directive pin(s)%s\n",
-						id, res.DirectivePins, pathsNote(res.PathsRestored))
+					fmt.Fprintf(os.Stdout, "  restored %s: %d entry pin(s)%s\n",
+						id, res.DirectivePins, pathsNote(res))
 				}
 			}
 			unrestorable = append(unrestorable, res.Unrestorable...)
@@ -178,11 +178,14 @@ saw it on is worse than one missing the command.`,
 	},
 }
 
-func pathsNote(b bool) string {
-	if b {
-		return ", approved paths"
-	}
-	return ""
+// pathsNote labels the artifact-level paths a restore carried back by what
+// backs them on disk — "approved" only when a receipt covers them. It never
+// strips anything: dropping extractor-introduced paths is phasea restore's
+// rule, made where the pre-dispatch state is known. This command only knows a
+// git ref, and a ref without paths is not evidence an extractor wrote the
+// live ones.
+func pathsNote(res *pinpreserve.PreserveResult) string {
+	return res.PathsLabel()
 }
 
 func artifactIDFromPath(rel string) string {

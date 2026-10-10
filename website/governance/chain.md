@@ -45,10 +45,10 @@ The governance chain connects edikt's two systems — architecture governance & 
 
 <line x1="190" y1="292" x2="190" y2="324" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
-<!-- LEFT: Enforcement surface (4 rendered surfaces, compile_schema_version: 3) -->
+<!-- LEFT: Enforcement surface (rendered surfaces, compile_schema_version: 3) -->
 <rect x="45" y="324" width="290" height="58" rx="6" fill="var(--diagram-left-fill)" stroke="var(--vp-c-text-2)" stroke-width="0.5"/>
 <text x="190" y="346" text-anchor="middle" dominant-baseline="central" font-family="Space Grotesk, sans-serif" font-size="15" font-weight="600" fill="var(--vp-c-text-1)">Enforcement surface</text>
-<text x="190" y="368" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Ambient · topic · directive-index · skill</text>
+<text x="190" y="368" text-anchor="middle" dominant-baseline="central" font-family="IBM Plex Sans, sans-serif" font-size="12" fill="var(--vp-c-text-1)">Ambient core · topic files · skills</text>
 
 <line x1="190" y1="382" x2="190" y2="414" stroke="var(--vp-c-text-2)" stroke-width="1.5" marker-end="url(#arr-slate)"/>
 
@@ -172,7 +172,7 @@ The governance chain connects edikt's two systems — architecture governance & 
 
 Two systems working together:
 
-**Architecture governance & compliance** — ADRs, invariants, and guidelines are your current engineering decisions. They compile into four rendered surfaces under `.claude/rules/`: an always-loaded ambient core, per-topic files, a glob-keyed `directive-index.yaml` that drives write-time enforcement, and a manifest — see [Compile](compile) for the full render model. edikt's writes are confined to co-located `<artifact>.edikt.yaml` sidecars and the compiled surfaces above. The prose `.md` you author is never touched by `gov:compile` — the boundary between human-owned and tool-owned bytes is structural, not definitional. See [Sidecar Architecture](sidecar).
+**Architecture governance & compliance** — ADRs, invariants, and guidelines are your current engineering decisions. They compile into four rendered surfaces under `.claude/rules/`: an always-loaded ambient core, per-topic files, a glob-keyed `delivery-map.yaml` recording which directive governs which path and which surface delivers it, and a manifest — see [Compile](compile) for the full render model. edikt's writes are confined to co-located `<artifact>.edikt.yaml` sidecars and the compiled surfaces above. The prose `.md` you author is never touched by `gov:compile` — the boundary between human-owned and tool-owned bytes is structural, not definitional. See [Sidecar Architecture](sidecar).
 
 **Agentic SDLC governance** — (Brainstorm) → (Discovery) → PRD → Spec → Artifacts → Plan → Execute → Drift. Brainstorm and discovery are optional, conditional entry points — an idea can go straight to a PRD. Each step feeds the next. Each is constrained by compiled decisions and produces new ones. PRDs and specs use the same split as ADRs and invariants: a narrative `.md` for humans plus a co-located `.yaml` sidecar that's the actual structured source of truth — FRs, ACs, coverage mappings, revision history. See [Traceability](#traceability) below for what's really in each.
 

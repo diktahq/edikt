@@ -113,6 +113,33 @@ func TestSchema_validRoundTrip(t *testing.T) {
 	t.Skip("repo criteria sidecar not found from this CWD; covered elsewhere")
 }
 
+// TestSchema_UnrelatedSchemaConstraintDoesNotBlockLoad is D390's
+// regression: a criteria file that violates a schema constraint having
+// nothing to do with `requirements:` — here `timeout_s`'s `minimum: 1` —
+// must still load. The Go decoder never enforced that minimum (TimeoutS is a
+// plain int with no Validate() check), so a real pre-existing file carrying
+// `timeout_s: 0` loaded and verified before AC-1.5 wired the third schema
+// copy into LoadCriteria at all.
+//
+// Running the WHOLE-document schema validator at load (the shape AC-1.5
+// first shipped as) would refuse this file on upgrade for a reason that has
+// nothing to do with the field this phase adds — the exact breaking change
+// SSP-004 exists to forbid, arriving through a route SSP-004's text does not
+// name. LoadCriteria must validate only `requirements:` at load time.
+func TestSchema_UnrelatedSchemaConstraintDoesNotBlockLoad(t *testing.T) {
+	body := "plan: x\nschema_version: 1\nphases:\n  - id: '1'\n    classification: testable\n    " +
+		"criteria:\n      - id: 1.1\n        statement: a\n        verify: 'true'\n        timeout_s: 0\n"
+	cf, err := LoadCriteria(writeYAML(t, body))
+	if err != nil {
+		t.Fatalf("a document violating an UNRELATED schema constraint (timeout_s's minimum, "+
+			"nothing to do with requirements:) was refused at load — this breaks upgrades for "+
+			"downstream files SSP-004 promises not to break: %v", err)
+	}
+	if got := cf.Phases[0].Criteria[0].TimeoutS; got != 0 {
+		t.Fatalf("timeout_s = %d, want 0 (decoded as written, the schema minimum is not enforced here)", got)
+	}
+}
+
 func TestSchema_findPhase(t *testing.T) {
 	cf := &CriteriaFile{
 		Phases: []Phase{

@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/benchmark/cheatrate"
+	"github.com/diktahq/edikt/tools/edikt/internal/ediktpaths"
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/spf13/cobra"
@@ -74,7 +75,10 @@ var (
 // cheatRateIDRe matches the allowed shape of a sidecar id passed on
 // the command line — same shape verify gov accepts (ADR-NNN, INV-NNN,
 // or a slug). Validated before any filesystem interpolation per INV-006.  // edikt-guard:allow
-var cheatRateIDRe = regexp.MustCompile(`^(ADR|INV)-\d{3,}$|^[a-z][a-z0-9-]{0,79}$`)
+// SR-005 (SPEC-018): id segments are uppercase-or-digit, not digits only.
+// `ADR-GOLD-001` is a valid id; the old `\d{3,}` form rejected or truncated it,
+// and fixing only discover.go would relocate the collision to this consumer.
+var cheatRateIDRe = regexp.MustCompile(`^(ADR|INV)(?:-[A-Z0-9]+)*-\d{3,}$|^[a-z][a-z0-9-]{0,79}$`)
 
 var cheatRateCmd = &cobra.Command{
 	Use:   "cheat-rate [id]",
@@ -158,7 +162,7 @@ func runCheatRate(cmd *cobra.Command, args []string) error {
 	return &exitErr{code: 3, msg: "cheat-rate: this binary does not dispatch an LLM.\n" +
 		"The adversary is dispatched from tier-1: run /edikt:gov:benchmark, which dispatches\n" +
 		"cheat-rate-adversary per verify and feeds the results back for scoring.\n" +
-		"For a token-free pipeline check: EDIKT_CHEAT_RATE_STUB=1 bin/edikt gov benchmark cheat-rate --all"}
+		"For a token-free pipeline check: EDIKT_CHEAT_RATE_STUB=1 edikt gov benchmark cheat-rate --all"}
 }
 
 // runCheatRateProduction is the Phase 4 production wiring. Flow:
@@ -193,6 +197,29 @@ func runCheatRateProduction(cmd *cobra.Command, args []string) error {
 	pairs, err := selectSidecarPairs(projectRoot, args, cheatRateAll)
 	if err != nil {
 		return err
+	}
+
+	// D213: report, don't silently swallow, SDLC entries that declared
+	// verify_kind: behavioral but were excluded from scoring because
+	// they carry no verify command — see sdlcExcludedBehavioral's own
+	// doc comment for why this corpus produces that shape. A --all run
+	// with real excluded candidates must not read as a clean sweep.
+	if cheatRateAll {
+		excluded, cerr := sdlcExcludedBehavioral(projectRoot)
+		if cerr != nil {
+			return &exitErr{code: 1, msg: fmt.Sprintf("cheat-rate: count excluded SDLC entries: %v", cerr)}
+		}
+		if excluded > 0 {
+			entryWord := "entries"
+			if excluded == 1 {
+				entryWord = "entry"
+			}
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"cheat-rate: SDLC corpus — filter matched nothing for %d %s declaring "+
+					"verify_kind: behavioral with no verify command (excluded, not scored). "+
+					"This is not a clean result for them — see D213.\n",
+				excluded, entryWord)
+		}
 	}
 
 	now := time.Now
@@ -252,12 +279,25 @@ func runCheatRateProduction(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// baselinePackDir is the canonical location of the cheat-rate
-// baseline pack — orphan .edikt.yaml sidecars (no .md parent) that
-// ship with edikt as a starter corpus for adopters. They are
-// gov-schema-shaped, carry verify_kind: behavioral on real
-// directives, and are part of the SR-008 corpus union.
-const baselinePackDir = "templates/sidecars/baseline"
+// baselinePackRel is the cheat-rate baseline pack's location inside a
+// templates tree — orphan .edikt.yaml sidecars (no .md parent) that ship
+// with edikt as a starter corpus for adopters. They are gov-schema-shaped,
+// carry verify_kind: behavioral on real directives, and are part of the
+// SR-008 corpus union.
+const baselinePackRel = "sidecars/baseline"
+
+// baselinePackDir resolves the pack through the ADR-005 §1 ladder. It used to  // edikt-guard:allow
+// be joined onto the project root, which holds templates/ only in a checkout
+// of edikt itself, so adopters — the audience the pack ships for — never saw
+// it. No pack anywhere is not an error: discovery reads a missing directory
+// as an empty pack, and the returned path is the last rung tried.
+func baselinePackDir(projectRoot string) string {
+	if dir, err := ediktpaths.ResolveTemplateDir(projectRoot, baselinePackRel); err == nil {
+		return dir
+	}
+	c := ediktpaths.Candidates(projectRoot, baselinePackRel)
+	return c[len(c)-1]
+}
 
 // selectSidecarPairs resolves the positional id or --all flag to a
 // slice of sidecar.Pair entries to score. Exit-2 on single-id miss
@@ -280,7 +320,8 @@ func selectSidecarPairs(projectRoot string, args []string, all bool) ([]sidecar.
 	if err != nil {
 		return nil, &exitErr{code: 2, msg: fmt.Sprintf("cheat-rate: discover sidecars: %v", err)}
 	}
-	baselinePairs, err := discoverBaselinePackSidecars(filepath.Join(projectRoot, baselinePackDir))
+	baselineDir := baselinePackDir(projectRoot)
+	baselinePairs, err := discoverBaselinePackSidecars(baselineDir)
 	if err != nil {
 		return nil, &exitErr{code: 2, msg: fmt.Sprintf("cheat-rate: discover baseline pack: %v", err)}
 	}
@@ -314,7 +355,7 @@ func selectSidecarPairs(projectRoot string, args []string, all bool) ([]sidecar.
 	}
 	return nil, &exitErr{code: 2, msg: fmt.Sprintf(
 		"cheat-rate: sidecar %q not found in governance dirs %v, baseline pack %s, or SDLC dirs",
-		targetID, govDirs, baselinePackDir)}
+		targetID, govDirs, baselineDir)}
 }
 
 // discoverBaselinePackSidecars walks templates/sidecars/baseline/
@@ -555,26 +596,17 @@ func computeSummary(verifies []cheatrate.Verify) cheatrate.Summary {
 	return s
 }
 
-// resolveAdversaryTemplate locates the cheat-rate-adversary prompt
-// template, honoring the project-template override pattern (ADR-005):  // edikt-guard:allow
-//
-//  1. `<projectRoot>/.edikt/templates/agents/cheat-rate-adversary.md`
-//  2. `<projectRoot>/templates/agents/cheat-rate-adversary.md`
-//
-// Returns an error if neither resolves to a readable file. Plan C
-// Phase 1 ships #2 under the edikt repo; #1 is the adopter override
-// slot.
+// resolveAdversaryTemplate locates the cheat-rate-adversary prompt template
+// through the ADR-005 §1 ladder (internal/ediktpaths): the project override  // edikt-guard:allow
+// under .edikt/templates/agents/, then the installed payload, then a checkout
+// of edikt itself. It used to try only the first and the last, so the verb
+// could not run on any project but edikt's own.
 func resolveAdversaryTemplate(projectRoot string) (string, error) {
-	candidates := []string{
-		filepath.Join(projectRoot, ".edikt", "templates", "agents", "cheat-rate-adversary.md"),
-		filepath.Join(projectRoot, "templates", "agents", "cheat-rate-adversary.md"),
+	p, err := ediktpaths.ResolveTemplate(projectRoot, "agents/cheat-rate-adversary.md")
+	if err != nil {
+		return "", fmt.Errorf("cheat-rate-adversary %w", err)
 	}
-	for _, p := range candidates {
-		if info, err := os.Stat(p); err == nil && !info.IsDir() {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf("cheat-rate-adversary template not found (looked under .edikt/templates/agents/ and templates/agents/)")
+	return p, nil
 }
 
 // hashFile returns the hex SHA-256 of the file at path. Returns the

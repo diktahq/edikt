@@ -8,6 +8,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -36,16 +37,16 @@ var mustNotRe = regexp.MustCompile(`\b(MUST NOT|NEVER)\b`)
 // Returns (warns, ran). ran is false when the decisions dir is absent
 // (non-edikt project root or pre-init state).
 func runRejectedOptionsCheck(projectRoot string, w io.Writer) (warns int, ran bool) {
-	dirs := resolveArtifactDirs(projectRoot)
-	if dirs.decisions == "" {
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	if dirs.Decisions == "" {
 		return 0, false
 	}
-	if _, err := os.Stat(dirs.decisions); err != nil {
+	if _, err := os.Stat(dirs.Decisions); err != nil {
 		return 0, false
 	}
 
 	var mdFiles []string
-	_ = filepath.Walk(dirs.decisions, func(p string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(dirs.Decisions, func(p string, info os.FileInfo, err error) error {
 		if err != nil || info == nil || info.IsDir() {
 			return nil
 		}
@@ -73,7 +74,7 @@ func runRejectedOptionsCheck(projectRoot string, w io.Writer) (warns int, ran bo
 			continue
 		}
 
-		sidecarPath := sidecarPathFor(mdPath)
+		sidecarPath := migrate.SidecarPathFor(mdPath)
 		if _, err := os.Stat(sidecarPath); err != nil {
 			// Sidecar absent — Phase 1 MISSING check covers this gap.
 			// Emit INFO so the user knows we skipped, then continue.
@@ -114,7 +115,7 @@ func runRejectedOptionsCheck(projectRoot string, w io.Writer) (warns int, ran bo
 		fmt.Fprintf(w,
 			"  WARN: %s has %d considered options but no prohibition coverage. "+
 				"The chosen design rejected %d alternatives — without MUST NOT directives, an LLM may re-propose them. "+
-				"Run: bin/edikt sidecar add-manual-directive --path %s --text 'MUST NOT use %s — superseded by %s'\n",
+				"Run: edikt sidecar add-manual-directive --path %s --text 'MUST NOT use %s — superseded by %s'\n",
 			slug, optCount, optCount-1,
 			rel(projectRoot, sidecarPath),
 			alternative, adrID,

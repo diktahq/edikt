@@ -304,9 +304,30 @@ const (
 type File struct {
 	SchemaVersion int   `yaml:"schema_version"`
 	Hooks         []Row `yaml:"hooks"`
+	// Retired lists hooks that once had a Row and no longer run (ADR-083).  edikt-guard:allow
+	// A retired name is NOT registered — dispatch treats it exactly like a
+	// name that never existed; the list is for upgrade and doctor, which
+	// meet a settings.json still registering one and must say "retired".
+	Retired []RetiredRow `yaml:"retired,omitempty"`
 	// Path records where this was read from, so a caller reporting on the
 	// registry can name its subject rather than assert about an unnamed file.
 	Path string `yaml:"-"`
+}
+
+// RetiredRow is one entry under registry.yaml's `retired:` list.
+type RetiredRow struct {
+	Name  string `yaml:"name"`
+	Event string `yaml:"event"`
+	Since string `yaml:"since"`
+}
+
+// RetiredNames returns the names under `retired:`, in file order.
+func (f File) RetiredNames() []string {
+	out := make([]string, 0, len(f.Retired))
+	for _, r := range f.Retired {
+		out = append(out, r.Name)
+	}
+	return out
 }
 
 // MigratedNames returns the names of rows claiming a Go handler exists.

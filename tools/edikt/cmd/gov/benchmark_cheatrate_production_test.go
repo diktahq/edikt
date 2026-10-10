@@ -47,6 +47,7 @@ func setupProductionEnv(t *testing.T, sidecars map[string]string) *productionTes
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
 	root, _ = filepath.EvalSymlinks(root)
+	isolateEdiktRoot(t, root)
 
 	// Adversary template — small interpolatable stub.
 	tmplDir := filepath.Join(root, "templates", "agents")
@@ -384,5 +385,70 @@ func TestProductionDispatch_StubModeShortCircuit(t *testing.T) {
 	_ = runCheatRate(cobraCmd, []string{"ADR-001"})
 	if calls := atomic.LoadInt64(&dispatchCalls); calls != 0 {
 		t.Errorf("EDIKT_CHEAT_RATE_STUB=1 should short-circuit; dispatcher called %d times", calls)
+	}
+}
+
+// TestProductionDispatch_ReportsExcludedSDLCBehavioral covers D213:
+// a --all run whose SDLC corpus carries verify_kind:behavioral
+// entries with no verify command must print an explicit report line,
+// not return a silent clean (nil-error, zero-mention) result.
+func TestProductionDispatch_ReportsExcludedSDLCBehavioral(t *testing.T) {
+	env := setupProductionEnv(t, map[string]string{}) // no governance sidecars
+	cheatRateAll = true
+	cheatRateRefresh = false
+	cheatRateAdversaryModel = "claude-opus-4-7"
+	t.Cleanup(func() { cheatRateAll = false })
+
+	// Extend the project config with an SDLC plans path, then write a
+	// plan-criteria sidecar carrying only excluded entries (mirrors
+	// this repo's own PLAN-SPEC-010-extractor-quality-criteria.yaml).
+	cfg := "paths:\n  decisions: docs/architecture/decisions\n  invariants: docs/architecture/invariants\n" +
+		"  guidelines: docs/architecture/guidelines\n  plans: docs/internal/plans\n"
+	if err := os.WriteFile(filepath.Join(env.projectRoot, ".edikt", "config.yaml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("rewrite config: %v", err)
+	}
+	writeOperationalPlanCriteriaSidecar(t, filepath.Join(env.projectRoot, "docs/internal/plans"),
+		"PLAN-x-criteria.yaml", "PLAN-x",
+		planCritSpec{id: "AC-1.1", statement: "needs judgment", verify: "", verifyKind: "behavioral"},
+		planCritSpec{id: "AC-1.2", statement: "needs judgment", verify: "", verifyKind: "behavioral"},
+	)
+
+	// No dispatcher/verify-runner fakes needed: nothing qualifies for
+	// scoring, so the pairs loop body never runs.
+	err := runCheatRateProduction(env.cmd, nil)
+	if err != nil {
+		t.Fatalf("runCheatRateProduction: unexpected error: %v (out=%q)", err, env.out.String())
+	}
+
+	got := env.out.String()
+	if !strings.Contains(got, "filter matched nothing") {
+		t.Errorf("expected the D213 exclusion report line in output, got %q", got)
+	}
+	if !strings.Contains(got, "2") {
+		t.Errorf("expected the excluded count (2) in output, got %q", got)
+	}
+}
+
+// TestProductionDispatch_NoExclusionReportWhenClean confirms the
+// D213 report line stays silent when there is nothing excluded —
+// INV-013 cuts both ways: a control must speak when it has something
+// to say and stay silent otherwise.
+func TestProductionDispatch_NoExclusionReportWhenClean(t *testing.T) {
+	env := setupProductionEnv(t, map[string]string{
+		"ADR-001": behavioralSidecar("true"),
+	})
+	cheatRateAll = true
+	cheatRateRefresh = false
+	cheatRateAdversaryModel = "claude-opus-4-7"
+	t.Cleanup(func() { cheatRateAll = false })
+
+	var dispatchCalls int64
+	installFakes(t, alwaysSucceedDispatcher(&dispatchCalls), constantVerifyRunner(0))
+
+	if err := runCheatRateProduction(env.cmd, nil); err != nil {
+		t.Fatalf("runCheatRateProduction: %v", err)
+	}
+	if got := env.out.String(); strings.Contains(got, "filter matched nothing") {
+		t.Errorf("D213 report line should not fire when nothing is excluded, got %q", got)
 	}
 }

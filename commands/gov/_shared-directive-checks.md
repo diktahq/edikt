@@ -79,7 +79,7 @@ The procedure returns a list of warning strings, one per triggered condition acr
 
 ## Tier-2 Subcommand
 
-The three checks are implemented in `bin/edikt gov directive-check` (Go, pure deterministic — see `tools/edikt/internal/dircheck/`).  + ADR-NNN this is an authorized tier-2 orchestration call; the helper is LLM-agnostic.
+The three checks are implemented in `edikt gov directive-check` (Go, pure deterministic — see `tools/edikt/internal/dircheck/`).  + ADR-NNN this is an authorized tier-2 orchestration call; the helper is LLM-agnostic.
 
 **Input contract (stdin):** a JSON object with keys `adr_id`, `directive_body`, `canonical_phrases` (list), and `no_directives_reason` (string or null).
 
@@ -105,7 +105,7 @@ echo '{
   "directive_body": "All DB access MUST go through the repository layer. NEVER bypass the repository.",
   "canonical_phrases": ["repository layer", "NEVER bypass"],
   "no_directives_reason": null
-}' | bin/edikt gov directive-check
+}' | edikt gov directive-check
 ```
 
 ### Collecting and surfacing results

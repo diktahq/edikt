@@ -27,10 +27,15 @@ type Recording struct {
 	RecordedAt          string `json:"recorded_at"`
 	Oracle              string `json:"oracle"`
 	OracleSHA256        string `json:"oracle_sha256,omitempty"`
-	ExitCode            int    `json:"exit_code"`
-	StdoutSHA256        string `json:"stdout_sha256"`
-	StderrSHA256        string `json:"stderr_sha256"`
-	StdoutBytes         int    `json:"stdout_bytes"`
+	// Contract and ContractRecordedAt are REQUIRED when Oracle is
+	// OracleHostContract and forbidden otherwise: the expectation's source is
+	// the named host contract, and a reader must be able to check it.
+	Contract           string `json:"contract,omitempty"`
+	ContractRecordedAt string `json:"contract_recorded_at,omitempty"`
+	ExitCode           int    `json:"exit_code"`
+	StdoutSHA256       string `json:"stdout_sha256"`
+	StderrSHA256       string `json:"stderr_sha256"`
+	StdoutBytes        int    `json:"stdout_bytes"`
 
 	// WallClockMS is INFORMATIONAL and never compared. SPEC-014 spec.md:265
 	// declines to set a runtime-path budget for the recorder, so a gate here
@@ -71,8 +76,18 @@ func LoadRecording(dir string) (*Recording, error) {
 		return nil, fmt.Errorf("recording %s: missing scenario_input_sha256 or normalizer_version — "+
 			"both are required pins; a recording without them cannot be compared safely", p)
 	}
-	if r.Oracle != OracleBash && r.Oracle != OracleGo {
-		return nil, fmt.Errorf("recording %s: oracle %q is not %q or %q", p, r.Oracle, OracleBash, OracleGo)
+	switch r.Oracle {
+	case OracleBash, OracleGo:
+		if r.Contract != "" || r.ContractRecordedAt != "" {
+			return nil, fmt.Errorf("recording %s: oracle %q must not carry contract fields", p, r.Oracle)
+		}
+	case OracleHostContract:
+		if r.Contract == "" || r.ContractRecordedAt == "" {
+			return nil, fmt.Errorf("recording %s: oracle %q must name its contract and contract_recorded_at — "+
+				"without them this is an implementation graded against itself", p, r.Oracle)
+		}
+	default:
+		return nil, fmt.Errorf("recording %s: oracle %q is not %q, %q or %q", p, r.Oracle, OracleBash, OracleGo, OracleHostContract)
 	}
 	return &r, nil
 }

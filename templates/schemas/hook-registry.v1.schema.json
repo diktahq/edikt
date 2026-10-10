@@ -3,27 +3,42 @@
   "$id": "https://edikt.dev/schemas/hook-registry/v1.json",
   "$comment": "edikt:artifact type=contract spec=SPEC-014 status=draft reviewed_by=architect",
   "title": "edikt hook registration surface (SP-007)",
-  "description": "The DATA-driven registration surface SP-007 requires: bin/edikt hook run <name> resolves names from this file, never from a hardcoded Go enumeration. Ships at templates/hooks/registry.yaml (tier-1, INV-001 permits .yaml). Read at runtime by three independent consumers who must never drift apart: (1) the shim generator, which renders one templates/hooks/<file> per row from the canonical FR-004 template; (2) tools/edikt/internal/hook's registry.go, which asserts every row with status:migrated has a matching Go-side Register() call (registry_test.go, the SP-007 parity gate); (3) the corpus recorder (SR-009), which iterates this file to know which hooks to run the bash oracle against and where each hook's matrix lives. A name absent from this file is unregistered — bin/edikt hook run <name> for an unregistered name never silently no-ops (SP-007); it exits 0 (fail-open per the hook tier's standing posture) but journals a distinctly-typed 'unregistered-hook-name' cause and writes a loud stderr diagnostic.",
+  "description": "The DATA-driven registration surface SP-007 requires: edikt hook run <name> resolves names from this file, never from a hardcoded Go enumeration. Ships at templates/hooks/registry.yaml (tier-1, INV-001 permits .yaml). Read at runtime by three independent consumers who must never drift apart: (1) the shim generator, which renders one templates/hooks/<file> per row from the canonical FR-004 template; (2) tools/edikt/internal/hook's registry.go, which asserts every row with status:migrated has a matching Go-side Register() call (registry_test.go, the SP-007 parity gate); (3) the corpus recorder (SR-009), which iterates this file to know which hooks to run the bash oracle against and where each hook's matrix lives. A name absent from this file is unregistered — edikt hook run <name> for an unregistered name never silently no-ops (SP-007); it exits 0 (fail-open per the hook tier's standing posture) but journals a distinctly-typed 'unregistered-hook-name' cause and writes a loud stderr diagnostic.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "hooks"],
+  "required": [
+    "schema_version",
+    "hooks"
+  ],
   "properties": {
-    "schema_version": { "type": "integer", "const": 1 },
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
     "hooks": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "event", "file", "class", "status"],
+        "required": [
+          "name",
+          "event",
+          "file",
+          "class",
+          "status"
+        ],
         "properties": {
           "name": {
             "type": "string",
             "pattern": "^[a-z][a-z0-9-]*$",
-            "description": "The <name> argument to `bin/edikt hook run <name>` and the token substituted into the canonical shim template. Matches the .sh basename minus extension for every directly-registered hook."
+            "description": "The <name> argument to `edikt hook run <name>` and the token substituted into the canonical shim template. Matches the .sh basename minus extension for every directly-registered hook."
           },
           "event": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "enum": [
               "CwdChanged",
               "FileChanged",
@@ -54,24 +69,62 @@
           },
           "class": {
             "type": "string",
-            "enum": ["gate", "multi-call", "injector", "library"],
+            "enum": [
+              "gate",
+              "multi-call",
+              "injector",
+              "library"
+            ],
             "description": "gate = the three write-deny hooks (pre-tool-use, verify-gate, inject-directives-pre), migrated last per FR-007. multi-call = stop-hook, phase-end-detector, subagent-stop, migrated second. injector = every other directly-registered hook, migrated first (parallel with the installer track). library = a sourced bash helper (the deleted event-log.sh helper (see ADR-058's 2026-08-23 amendment), _plan-naming.sh) with no direct Claude Code registration — see spec.md 'Existing Architecture' for how its python3 removal is handled without a shim of its own."
           },
           "status": {
             "type": "string",
-            "enum": ["pending", "migrated"],
+            "enum": [
+              "pending",
+              "migrated"
+            ],
             "description": "pending = still the pre-FR-004 hand-written bash+python3 body. migrated = swapped to the FR-004 exec shim, with a corresponding Go handler registered under tools/edikt/internal/hook. Flips exactly once, per-hook, per FR-007's per-hook-not-per-batch rule."
           },
           "shape": {
             "type": "string",
-            "enum": ["exec-shim", "dispatch-orchestrator"],
-            "description": "WHAT the shipped templates/hooks/<file> is, read by the byte-stability gate (tools/edikt/check/hook-shim-byte-stability.sh, via `bin/edikt hook shim check`). Absent or \"exec-shim\" \u2014 the default for 21 of 22 rows \u2014 means the canonical FR-004 exec shim, whose shipped bytes are diffed against a fresh render of the canonical template and must match it exactly. \"dispatch-orchestrator\" is the ADR-063 Amendment (2026-08-22) second shape, admitted for a hook that must perform genuine multi-round-trip LLM dispatch itself because INV-012 forbids the tier-2 binary from exec'ing a model: its body is deliberately NOT the canonical render, so the gate asserts its declared properties (non-empty, zero python3 invocation sites, execs `hook run <name>`) instead of diffing it, and reports it as its own subject count rather than skipping it silently. Declared as DATA rather than hardcoded in the gate for the same SP-007 reason `name` is \u2014 a second such hook must be a registry edit, not a binary edit.",
+            "enum": [
+              "exec-shim",
+              "dispatch-orchestrator"
+            ],
+            "description": "WHAT the shipped templates/hooks/<file> is, read by the byte-stability gate (tools/edikt/check/hook-shim-byte-stability.sh, via `edikt hook shim check`). Absent or \"exec-shim\" — the default for 21 of 22 rows — means the canonical FR-004 exec shim, whose shipped bytes are diffed against a fresh render of the canonical template and must match it exactly. \"dispatch-orchestrator\" is the ADR-063 Amendment (2026-08-22) second shape, admitted for a hook that must perform genuine multi-round-trip LLM dispatch itself because INV-012 forbids the tier-2 binary from exec'ing a model: its body is deliberately NOT the canonical render, so the gate asserts its declared properties (non-empty, zero python3 invocation sites, execs `hook run <name>`) instead of diffing it, and reports it as its own subject count rather than skipping it silently. Declared as DATA rather than hardcoded in the gate for the same SP-007 reason `name` is — a second such hook must be a registry edit, not a binary edit.",
             "$comment": "A row omitting this field is an exec shim. Adding a THIRD value requires amending ADR-063, whose Amendment scopes the second shape to phase-end-detector and requires any future claimant to demonstrate genuine multi-round-trip dispatch."
           },
           "python3_baseline_count": {
             "type": "integer",
             "minimum": 0,
             "description": "Informational only — the python3 invocation count measured at spec-authoring time (re-measured from ADR-058's stale 19-of-22 figure), carried here so a reader can see the per-hook removal target without re-running grep. Not consumed by any gate; drifts out of date the moment a hook migrates and that is expected."
+          }
+        }
+      }
+    },
+    "retired": {
+      "type": "array",
+      "description": "Hooks that once had a row under `hooks` and no longer run (the write-time channel's retirement took verify-gate and inject-directives-pre with it; see the changelog). A name here is NOT registered — `edikt hook run <name>` journals unregistered-hook-name for it exactly as for a name that never existed. The list exists so `edikt upgrade`'s settings reconciliation and `edikt doctor` can name a settings.json entry that still registers one of these as 'retired — run /edikt:upgrade' rather than 'unknown hook'. A retired hook's history (its corpus matrix, its python3 baseline) is the record of the channel it served; it is not carried here.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "event",
+          "since"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "event": {
+            "type": "string",
+            "description": "The Claude Code event the hook was registered under, so a settings.json entry can be matched by event and command basename."
+          },
+          "since": {
+            "type": "string",
+            "description": "The first edikt version that ships without the hook. The decision that retired it is named in that version's changelog entry."
           }
         }
       }

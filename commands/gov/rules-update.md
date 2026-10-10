@@ -9,6 +9,12 @@ allowed-tools:
   - Grep
   - Bash
   - AskUserQuestion
+stops:
+  - id: overwrite-edited-pack
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "This rule pack was edited by hand — update it anyway, overwriting those edits?"
 ---
 
 # edikt:rules-update
@@ -155,9 +161,15 @@ For each pack to update:
 3. Replace the installed file with the new template content
 
 **Manually edited files** (no `edikt:generated` marker) are always skipped unless the user explicitly asks to include them:
+
+<!-- stop: overwrite-edited-pack -->
 ```
 security.md was manually edited. Update anyway? This will overwrite your customizations. (y/n)
 ```
+
+With no human to answer, take the safe side: leave the hand-edited pack alone,
+list it as skipped, and say the overwrite was declined by default rather than
+answered. Nobody's customizations are overwritten on silence.
 
 ### 7. Output Results
 

@@ -10,6 +10,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -111,9 +112,7 @@ Used by:
 				emitItemProgress(cmd.OutOrStdout(), r)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\nreport: %s\n", jsonPath)
-			fmt.Fprintf(cmd.OutOrStdout(), "summary: %d passed, %d failed, %d timeout, %d skipped (total %d)\n",
-				report.Summary.Passed, report.Summary.Failed,
-				report.Summary.Timeout, report.Summary.Skipped, report.Summary.Total)
+			fmt.Fprintln(cmd.OutOrStdout(), report.Summary.Line())
 		}
 
 		if report.AnyFailures() && !verifyAllowFailures {
@@ -151,20 +150,20 @@ func runSPECVerifies(sc *specSidecar, projectRoot string) []verify.Result {
 }
 
 func locateSPECSidecar(projectRoot, id string) (string, error) {
-	dirs := resolveArtifactDirs(projectRoot)
-	if dirs.specs == "" {
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	if dirs.Specs == "" {
 		return "", fmt.Errorf("verify spec: paths.specs not configured")
 	}
-	entries, err := os.ReadDir(dirs.specs)
+	entries, err := os.ReadDir(dirs.Specs)
 	if err != nil {
-		return "", fmt.Errorf("verify spec: read %s: %w", dirs.specs, err)
+		return "", fmt.Errorf("verify spec: read %s: %w", dirs.Specs, err)
 	}
 	for _, e := range entries {
 		name := e.Name()
 		// Nested layout (canonical for v2 SPECs): paths.specs/<id>-<slug>/spec.yaml
 		// Mirrors the per-spec directory convention already used for spec.md.
 		if e.IsDir() && (name == id || startsWithPrefix(name, id+"-")) {
-			cand := filepath.Join(dirs.specs, name, "spec.yaml")
+			cand := filepath.Join(dirs.Specs, name, "spec.yaml")
 			if _, err := os.Stat(cand); err == nil {
 				return cand, nil
 			}
@@ -175,10 +174,10 @@ func locateSPECSidecar(projectRoot, id string) (string, error) {
 			continue
 		}
 		if name == id+".yaml" || startsWithPrefix(name, id+"-") {
-			return filepath.Join(dirs.specs, name), nil
+			return filepath.Join(dirs.Specs, name), nil
 		}
 	}
-	return "", fmt.Errorf("verify spec: no sidecar for %q under %s", id, dirs.specs)
+	return "", fmt.Errorf("verify spec: no sidecar for %q under %s", id, dirs.Specs)
 }
 
 func init() {

@@ -12,33 +12,34 @@ import (
 	"os"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/hookmatch"
-	"github.com/diktahq/edikt/tools/edikt/internal/injectmatch"
 	"github.com/spf13/cobra"
 )
 
 func newHookMatchCmd() *cobra.Command {
-	var path, grade, sessionID, shim, root string
-	var actorFlag, agentTypeFlag, parentSessionFlag, contextFlag string
-	var jsonOut, dedup bool
+	var path, root string
+	var jsonOut bool
 
 	cmd := &cobra.Command{
 		Use:   "match",
-		Short: "Report compiled directives covering a path (write-time injection tier)",
-		Long: `Report the compiled directives scoped to a path.
+		Short: "Report the compiled directives that govern a path, and the surface each is delivered on",
+		Long: `Report what GOVERNS a path: every compiled directive whose scope covers
+it, with the surface that delivers it (topic file or skill package) and the
+topic it belongs to.
 
-Grades are PINNED in the directive index at render time and are never
-re-derived here: a consumer that re-derived grade could silently downgrade an
-invariant to advisory with nothing reporting the difference.
+Grades are PINNED in the delivery map at render time and are never re-derived
+here: a consumer that re-derived grade could silently downgrade an invariant
+to advisory with nothing reporting the difference.
+
+This verb answers a question about the compiled corpus. It does not inject:
+the write-time injection tier that once used this verb (inject-directives-pre)
+is retired with the write-time channel, so nothing is delivered per write and there is nothing
+to dedup, budget or grade-filter here.
 
 Exit codes:
   0  matched, or a clean no-match
-  0  every fail-open class (missing binary is the caller's problem; a missing,
-     corrupt or empty index returns no directives and lets the write proceed)
-
-Fail-open is deliberate — blocking an editor on a governance bug is worse than
-missing an injection. It is never SILENT: every invocation is journaled with
-its outcome, and 'edikt hook report' names the classes where governance did
-not run.`,
+  0  a missing, corrupt or empty delivery map returns no directives; the
+     outcome names which, so "nothing governs this path" and "the map is
+     absent" are never the same answer`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if root == "" {
 				wd, err := os.Getwd()
@@ -47,51 +48,28 @@ not run.`,
 				}
 				root = wd
 			}
-			// ONE implementation, shared with the Go handler that replaced
-			// inject-directives-pre.sh. This used to be the only copy, and the
-			// shims reached it by shelling out to the binary they already ran
-			// inside; the handler now calls the same function directly. See
-			// injectmatch's package comment for why a second copy in the handler
-			// would have drifted in the direction nobody watches.
-			out := injectmatch.Run(injectmatch.Request{
-				Root:            root,
-				Path:            path,
-				Grade:           grade,
-				SessionID:       sessionID,
-				Shim:            shim,
-				Dedup:           dedup,
-				Actor:           actorFlag,
-				AgentType:       agentTypeFlag,
-				ParentSessionID: parentSessionFlag,
-				ContextID:       contextFlag,
-			}, os.Stderr)
-			res := out.Result
-
+			gres := hookmatch.MatchGoverning(root, path)
 			if jsonOut {
 				enc := json.NewEncoder(cmd.OutOrStdout())
 				enc.SetIndent("", " ")
-				return enc.Encode(out)
+				return enc.Encode(gres)
 			}
-			for _, e := range res.Entries {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", e.ID, e.Grade, e.Text)
+			for _, e := range gres.Entries {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\t%s\n", e.ID, e.Grade, e.Surface, e.Topic)
 			}
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&path, "path", "", "file path being written (required)")
-	cmd.Flags().StringVar(&grade, "grade", "", "filter to one grade: must | advisory")
-	cmd.Flags().StringVar(&sessionID, "session", "", "session id, for once-per-session dedup")
-	cmd.Flags().StringVar(&shim, "shim", "probe", "which shim is calling: pre | post | probe")
+	cmd.Flags().StringVar(&path, "path", "", "file path to resolve (required)")
 	cmd.Flags().StringVar(&root, "root", "", "project root (defaults to cwd)")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit JSON")
-	cmd.Flags().BoolVar(&dedup, "dedup", false, "suppress a repeat bounce for the same session+directives")
-	// NEVER INFERRED. A resolver that guessed "parent" when it could not tell
-	// would make every subagent look like the session that spawned it, and in
-	// this repo one corpus pass is ~70 subagent writes to governed paths.
-	cmd.Flags().StringVar(&actorFlag, "actor", "unknown", "who is being governed: parent | subagent | unknown")
-	cmd.Flags().StringVar(&agentTypeFlag, "agent-type", "", "subagent slug, when the caller can resolve one")
-	cmd.Flags().StringVar(&parentSessionFlag, "parent-session", "", "the spawning session id, for a subagent")
-	cmd.Flags().StringVar(&contextFlag, "context", "", "the RECEIVING context id (agent_id, or empty when unresolvable — empty never suppresses)")
+	// --governing is accepted and ignored: it was the flag that selected this
+	// (then secondary) behaviour while the injection path was the default.
+	// Callers written against it keep working; there is no other behaviour
+	// left for the flag to select.
+	var governing bool
+	cmd.Flags().BoolVar(&governing, "governing", false, "accepted for compatibility; this is the only behaviour now")
+	_ = cmd.Flags().MarkHidden("governing")
 	_ = cmd.MarkFlagRequired("path")
 	return cmd
 }
@@ -111,7 +89,7 @@ produce the same empty journal.`,
 				wd, _ := os.Getwd()
 				root = wd
 			}
-			res := hookmatch.Match(root, ".edikt/probe-heartbeat")
+			res := hookmatch.MatchGoverning(root, ".edikt/probe-heartbeat")
 			_ = hookmatch.Append(hookmatch.Record{
 				Shim:    "probe",
 				Outcome: string(res.Outcome),

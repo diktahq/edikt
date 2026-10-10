@@ -140,12 +140,12 @@
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that returns exit 0 when this SR is satisfied. Run via `bin/edikt verify spec <SPEC-ID>`. Used by `/edikt:sdlc:drift` (verify failures contribute to the drift signal) and by the completion-evidence discipline. Omit when no programmatic check is possible — the field stays absent, not empty."
+            "description": "Optional shell command that returns exit 0 when this SR is satisfied. Run via `edikt verify spec <SPEC-ID>`. Used by `/edikt:sdlc:drift` (verify failures contribute to the drift signal) and by the completion-evidence discipline. Omit when no programmatic check is possible — the field stays absent, not empty."
           },
           "verify_kind": {
             "type": "string",
             "enum": ["behavioral", "tooling", "structural"],
-            "description": "Discriminator for the cheat-rate benchmark. Optional; required only when this SR should be scored by `bin/edikt gov benchmark cheat-rate`. Same semantics as gov-sidecar verify_kind."
+            "description": "Discriminator for the cheat-rate benchmark. Optional; required only when this SR should be scored by `edikt gov benchmark cheat-rate`. Same semantics as gov-sidecar verify_kind."
           },
           "intent": {
             "type": "string",
@@ -194,7 +194,7 @@
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that mechanically validates the Given/When/Then. Exit 0 = the AC passes. Run via `bin/edikt verify spec <SPEC-ID>`; used by the drift command and the completion-evidence discipline. Omit when no programmatic check is possible."
+            "description": "Optional shell command that mechanically validates the Given/When/Then. Exit 0 = the AC passes. Run via `edikt verify spec <SPEC-ID>`; used by the drift command and the completion-evidence discipline. Omit when no programmatic check is possible."
           },
           "verify_kind": {
             "type": "string",

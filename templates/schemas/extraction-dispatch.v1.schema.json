@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/extraction-dispatch/v1.json",
+  "$comment": "edikt:artifact type=contract spec=none status=draft. THE EXTRACTION BENCHMARK's per-dispatch record. This is NOT the compliance benchmark's report schema (cheat-rate-report.v1 / the by_dimension summary under test/integration/benchmarks/results/). Different subject, different oracle, different failure modes: the compliance benchmark asks whether governance HOLDS under adversarial pressure; this asks what PRODUCING governance costs. They must never share a results directory, a summary schema, or a METHODOLOGY document.",
+  "title": "edikt extraction-cost dispatch record",
+  "description": "One record per extractor dispatch, written to test/integration/extraction-cost/results/<model>/<ts>-dispatches.jsonl. Exists because none of this was recorded anywhere: every cost figure edikt had for extraction came from a human watching a terminal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "dispatch_id",
+    "artifact_path",
+    "attempt_number",
+    "terminal_reason",
+    "wall_clock_ms",
+    "turns"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "enum": [
+        1,
+        2
+      ],
+      "description": "1 = archived records predating the 2026-08-27 null-vs-zero fix. 2 = current. Both must validate: v1 records are on disk and the schema is the only thing that can read them. record.py has emitted 2 since 74f99e60 while this file pinned const:1, so NO record the harness actually writes could validate \u2014 invisible because every fixture was v1."
+    },
+    "dispatch_id": {
+      "type": "string",
+      "description": "Stable id for this dispatch within the run."
+    },
+    "artifact_path": {
+      "type": "string",
+      "description": "The parent .md the extractor was asked to extract from."
+    },
+    "artifact_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Size of the PARENT artifact. One of the three candidate independent variables \u2014 see artifact_anchor_count and artifact_directive_count. Cost may scale with bytes, with anchors, or with directives, and those are three different curves; recording all three is what lets the regression run against the right variable rather than the convenient one."
+    },
+    "artifact_anchor_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Anchors the produced sidecar carries. Candidate independent variable 2. null means UNMEASURED, not zero \u2014 the v2 convention from 74f99e60. The schema rejected null here, so any record honestly reporting an unmeasured metric could not validate."
+    },
+    "artifact_directive_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Directives the produced sidecar carries. Candidate independent variable 3. null means UNMEASURED, not zero \u2014 the v2 convention from 74f99e60. The schema rejected null here, so any record honestly reporting an unmeasured metric could not validate."
+    },
+    "attempt_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1 for the first dispatch of this artifact in this run; N for the Nth retry. Paired with seeded to distinguish an unseeded re-run from a correction pass."
+    },
+    "seeded": {
+      "type": "boolean",
+      "description": "Whether this dispatch carried a correction prompt derived from the previous attempt's diagnostic. FALSE is the pre-fix behaviour and the thing being corrected: an unseeded retry draws its second sample from the same distribution as the first. Not trusted on its own \u2014 see correction_prompt."
+    },
+    "terminal_reason": {
+      "type": "string",
+      "enum": [
+        "completed",
+        "watchdog_killed",
+        "validation_rejected",
+        "length_rejected",
+        "anchor_rejected",
+        "schema_rejected",
+        "error"
+      ],
+      "description": "How the dispatch ended. length_rejected and anchor_rejected are deliberately NOT folded into validation_rejected: the measured guideline-event-transport case had 83 VALID anchors and failed only on length, and one bucket makes 'split four sentences' indistinguishable from 'the extraction grounded nothing'."
+    },
+    "produced_accepted_sidecar": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Whether this dispatch produced a sidecar that was ACCEPTED. The waste ratio is computed from this field: every token and millisecond spent on a dispatch where this is false produced nothing. 'Average cost per ADR' hides that completely, which is why it is not the headline number. null means UNMEASURED, not zero \u2014 the v2 convention from 74f99e60. The schema rejected null here, so any record honestly reporting an unmeasured metric could not validate."
+    },
+    "defect_axis": {
+      "type": "string",
+      "enum": [
+        "none",
+        "length",
+        "anchor",
+        "schema",
+        "parse"
+      ],
+      "description": "DEPRECATED 2026-08-27, retained ONLY so the seven archived records that carry it still validate \u2014 this schema is additionalProperties: false, so removing the declaration would invalidate history. It is no longer emitted: nothing in this harness ever produced it, so every record written before that date carries the dataclass default as though it were a measurement. Its absence in new records is deliberate, not an oversight. Defect classification belongs to phasea (tier-2 Go), which this harness does not run. Previously: (none)"
+    },
+    "defect_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "DEPRECATED 2026-08-27, retained ONLY so the seven archived records that carry it still validate \u2014 this schema is additionalProperties: false, so removing the declaration would invalidate history. It is no longer emitted: nothing in this harness ever produced it, so every record written before that date carries the dataclass default as though it were a measurement. Its absence in new records is deliberate, not an oversight. Defect classification belongs to phasea (tier-2 Go), which this harness does not run. Previously: Defects on defect_axis. Compared against the previous attempt to yield convergence."
+    },
+    "convergence": {
+      "type": "string",
+      "enum": [
+        "first-attempt",
+        "improved",
+        "unchanged",
+        "diverged",
+        "unknown"
+      ],
+      "description": "Established from the attempt number since 2026-08-27: \"first-attempt\" when attempt_number == 1, \"unknown\" otherwise. Records written BEFORE that date carry \"first-attempt\" as an unassigned dataclass default and must not be read as a measurement. \"improved\" is not producible by this harness, which does not compare defect state between attempts."
+    },
+    "wall_clock_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total for the dispatch, first byte of the request to last byte of the response."
+    },
+    "api_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "SDK-reported in-flight time. On the compliance run of 2026-08-25 this was 96% of wall across 32 cases, so throttling was not a factor THERE \u2014 but that is 32 short adversarial prompts, not one extractor producing 83 anchors, and the inference does not transfer. This field is what settles it for this workload. null means UNMEASURED, not zero \u2014 the v2 convention from 74f99e60. The schema rejected null here, so any record honestly reporting an unmeasured metric could not validate."
+    },
+    "queue_wait_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Dispatch to first byte."
+    },
+    "backoff_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Total time asleep in rate-limit backoff. null means UNMEASURED, not zero \u2014 the v2 convention from 74f99e60. The schema rejected null here, so any record honestly reporting an unmeasured metric could not validate."
+    },
+    "backoff_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "NUMBER of backoff sleeps, recorded separately from their total. The measured 1h42m dispatch happened while the account was near its weekly cap; yesterday's clean 96%-API run happened at low usage. That confound is currently unmeasurable, and a total alone cannot distinguish one long sleep from thirty short ones. null means UNMEASURED, not zero \u2014 the v2 convention from 74f99e60. The schema rejected null here, so any record honestly reporting an unmeasured metric could not validate."
+    },
+    "stream_idle_max_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Longest gap between consecutive stream events. THE WATCHDOG QUESTION, answered directly: compare against the 600,000 ms stream watchdog. One compliance case already reached 553,042 ms of API time \u2014 92% of that ceiling \u2014 on a workload whose outputs are far SMALLER than an extractor's. If large artifacts routinely idle at 400-500s then the watchdog is itself a cause of the failures under investigation, and no amount of retry-seeding helps."
+    },
+    "turn_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "turns": {
+      "type": "array",
+      "description": "PER-TURN records. A dispatch-level total cannot distinguish one slow turn from six fast ones, and those have opposite fixes. An 18k-token system prompt resent across five turns is 90k of input before a single token of output; turn-level records make that resend amplification visible and a total hides it.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "turn_index",
+          "tokens_in",
+          "tokens_out"
+        ],
+        "properties": {
+          "turn_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tokens_in": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Input tokens for THIS turn. Rising across turns with a flat prompt is resend amplification."
+          },
+          "tokens_out": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cache_read_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cache_write_tokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "wall_clock_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "api_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "idle_before_ms": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Gap between the previous turn's last event and this turn's first."
+          },
+          "tool_calls": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "tokens_in_total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tokens_out_total": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "billed_input_tok_eq": {
+      "description": "Input tokens weighted by what they bill at: uncached 1.0x, cache read 0.1x, cache write 1.25x. Recorded alongside the raw tokens_in_total, never instead of it — reconstructing billed later needs the cache split, so a record carrying only raw cannot be corrected after the fact. Input side only; output bills on a different scale and stays in tokens_out_total.",
+      "type": "integer",
+      "minimum": 0
+    },
+    "model": {
+      "type": "string"
+    },
+    "prompt_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Static extractor prompt size shipped on every dispatch. Pinned by test/test-extractor-prompt-budget.sh."
+    },
+    "ts": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "correction_prompt": {
+      "type": "string",
+      "maxLength": 4000,
+      "description": "The correction instruction this dispatch actually carried, copied from the receipt item. `seeded` alone is a CLAIM; this is the evidence for it. A dispatch that sets seeded:true while carrying nothing actionable produces a retry that looks corrected and is not \u2014 worse than an unseeded retry, because the metric that exists to catch unseeded retries would report it as fixed. The summary counts a retry as seeded only when this is non-empty, and reports the shortfall separately rather than dropping it."
+    },
+    "sdk_session_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The SDK's own session id, read off ResultMessage. null when no ResultMessage arrived \u2014 a dispatch that never produced one had no session to name, and that absence is the measurement, not a missing field. Recorded because the hook journal carries session_id on every record while this module carried it on none, so whether the two identify the same session was unprovable after the process exited. Joining a dispatch to the hook events it caused depends on it."
+    },
+    "tokens_in_uncached": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Computed by to_dict(): input tokens excluding cache. Declared 2026-08-27 \u2014 it was emitted on every record while undeclared, and with additionalProperties: false that made 5 of 7 archived records invalid against their own schema. Nothing validated them, so nobody saw it."
+    },
+    "cache_read_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Computed by to_dict(): summed cache_read_tokens across turns. Declared 2026-08-27, same reason."
+    },
+    "cache_write_total": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Computed by to_dict(): summed cache_creation_tokens across turns. Declared 2026-08-27, same reason."
+    },
+    "outcome_class": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "looped",
+        "sidecar_written",
+        "sidecar_write_rejected",
+        "no_sidecar_write_attempted",
+        "no_tool_calls",
+        "unclassified",
+        null
+      ],
+      "description": "WHY the dispatch ended that way, as opposed to HOW the stream ended. terminal_reason answers only the latter, which is why four of the first nine failures read 'completed' while producing nothing. null means classification never ran."
+    },
+    "loop_detected": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "True when one tool was called with identical arguments at or above the repeat threshold. null means nothing looked."
+    },
+    "loop_signature": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The repeated call, name(sorted-json-args), when loop_detected."
+    },
+    "loop_repeats": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Repeat count of the most-repeated identical call."
+    },
+    "distinct_tool_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Distinct call signatures observed. Low against a high total is the repetition signature."
+    },
+    "total_tool_calls": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "tool_error_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Tool results whose is_error was true."
+    },
+    "tool_result_unobserved_count": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Tool calls whose result never arrived before the stream ended. Distinct from an error: nothing was observed, which is not evidence of failure."
+    },
+    "tools_used": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "transcript_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Raw per-message log for this dispatch. The aggregate is not the evidence."
+    }
+  }
+}

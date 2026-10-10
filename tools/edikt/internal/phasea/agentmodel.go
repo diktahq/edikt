@@ -1,6 +1,8 @@
 package phasea
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -40,11 +42,11 @@ func candidateAgentPaths(projectRoot string) []string {
 // ExtractorModelUnknown is what a run reports when it cannot determine which
 // model will perform extraction.
 //
-// It is a distinct value and NEVER a fallback. Substituting
-// DefaultExtractorModel — or the CLI's --model value — is exactly how ADR-054
-// came to print `claude-opus-5` over work Sonnet did: a value that was not
-// measured was rendered as one that was. INV-013 forbids that shape, and
-// ADR-055 §4 names this specific case.
+// It is a distinct value and NEVER a fallback. Substituting the
+// dispatching session's own model default — or its CLI `--model` value —
+// is exactly how ADR-054 came to print `claude-opus-5` over work Sonnet
+// did: a value that was not measured was rendered as one that was.
+// INV-013 forbids that shape, and ADR-055 §4 names this specific case.
 const ExtractorModelUnknown = "UNKNOWN"
 
 // ErrNoAgentModel reports that the extractor agent exists but pins no model.
@@ -65,7 +67,7 @@ const ExtractorPromptVersionUnknown = "UNKNOWN"
 // prompt_version key.
 var ErrNoPromptVersion = errors.New("extractor agent declares no prompt_version key")
 
-// ResolveExtractorPromptVersion reads the extraction contract's own version
+// ResolveExtractorPromptVersion (and its Detail form below) reads the extraction contract's own version
 // from the installed subagent's frontmatter.
 //
 // It is read from the INSTALLED agent (.claude/agents/), not from templates/,
@@ -77,32 +79,119 @@ var ErrNoPromptVersion = errors.New("extractor agent declares no prompt_version 
 // different prompt versions were produced by different contracts and are not
 // comparable, so a re-extraction ledger keyed on it starts a fresh batch when
 // the contract changes rather than reporting old work as current.
-func ResolveExtractorPromptVersion(projectRoot string) (string, error) {
-	var firstErr error
-	for _, path := range candidateAgentPaths(projectRoot) {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("reading %s: %w", path, err)
-			}
-			continue
-		}
-		fm, err := parseAgentFrontmatter(data, path)
-		if err != nil {
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		if fm.PromptVersion <= 0 {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("%s: %w", path, ErrNoPromptVersion)
-			}
-			continue
-		}
-		return fmt.Sprintf("v%d", fm.PromptVersion), nil
+// candidateKind names where a candidate came from, for the selection note.
+type candidateKind string
+
+const (
+	candidateProject candidateKind = "project"
+	candidateProfile candidateKind = "profile"
+)
+
+func candidateAgentPathsKinded(projectRoot string) []struct {
+	Path string
+	Kind candidateKind
+} {
+	return []struct {
+		Path string
+		Kind candidateKind
+	}{
+		{filepath.Join(projectRoot, ExtractorAgentRelPath), candidateProject},
+		{filepath.Join(claudepaths.ResolveClaudeRoot(), "agents", "sidecar-extractor.md"), candidateProfile},
 	}
-	return ExtractorPromptVersionUnknown, firstErr
+}
+
+// ErrPromptVersionConflict reports two pinned extractor definitions that
+// disagree. A first-match resolver would have silently used whichever came
+// first; the contract's version identifies a batch of extractions, so two
+// answers is no answer.
+var ErrPromptVersionConflict = errors.New("extractor prompt_version conflict between installed definitions")
+
+// ResolveExtractorPromptVersionDetail is ResolveExtractorPromptVersion with
+// the selection made visible (D40). It reads EVERY candidate, then:
+//
+//   - none readable         → refuse, naming every path it looked at;
+//   - readable but unpinned → refuse, naming each found-but-unpinned path
+//     ("definition found at P but carries no prompt_version") — distinct
+//     from not-found, because the remedy is different (pin the file vs.
+//     install it);
+//   - one pinned            → select it; the note says what else was found;
+//   - several pinned, equal → select project over profile; note says so;
+//   - several pinned, differ→ refuse with ErrPromptVersionConflict naming both.
+//
+// The note is empty when exactly one definition exists and it is pinned —
+// there is nothing to say.
+func ResolveExtractorPromptVersionDetail(projectRoot string) (version string, note string, err error) {
+	type found struct {
+		path    string
+		kind    candidateKind
+		version int
+		problem string // "" when pinned
+	}
+	var (
+		lookedAt []string
+		foundAll []found
+	)
+	for _, c := range candidateAgentPathsKinded(projectRoot) {
+		lookedAt = append(lookedAt, c.Path)
+		data, rerr := os.ReadFile(c.Path)
+		if rerr != nil {
+			continue
+		}
+		fm, perr := parseAgentFrontmatter(data, c.Path)
+		switch {
+		case perr != nil:
+			foundAll = append(foundAll, found{path: c.Path, kind: c.Kind, problem: perr.Error()})
+		case fm.PromptVersion <= 0:
+			foundAll = append(foundAll, found{path: c.Path, kind: c.Kind, problem: "carries no prompt_version"})
+		default:
+			foundAll = append(foundAll, found{path: c.Path, kind: c.Kind, version: fm.PromptVersion})
+		}
+	}
+	if len(foundAll) == 0 {
+		return ExtractorPromptVersionUnknown, "", fmt.Errorf("extractor definition not found; looked at: %s", strings.Join(lookedAt, ", "))
+	}
+	var pinned []found
+	var problems []string
+	for _, f := range foundAll {
+		if f.problem == "" {
+			pinned = append(pinned, f)
+		} else {
+			problems = append(problems, fmt.Sprintf("definition found at %s but %s", f.path, f.problem))
+		}
+	}
+	if len(pinned) == 0 {
+		return ExtractorPromptVersionUnknown, "", fmt.Errorf("%s: %w", strings.Join(problems, "; "), ErrNoPromptVersion)
+	}
+	sel := pinned[0] // candidate order is project first
+	for _, p := range pinned[1:] {
+		if p.version != sel.version {
+			return ExtractorPromptVersionUnknown, "", fmt.Errorf("%w: %s pins v%d, %s pins v%d — resolve the conflict rather than trusting whichever is read first",
+				ErrPromptVersionConflict, sel.path, sel.version, p.path, p.version)
+		}
+	}
+	if len(foundAll) > 1 {
+		var others []string
+		for _, f := range foundAll {
+			if f.path == sel.path {
+				continue
+			}
+			if f.problem != "" {
+				others = append(others, fmt.Sprintf("%s %s", f.path, f.problem))
+			} else {
+				others = append(others, fmt.Sprintf("%s pins v%d (same)", f.path, f.version))
+			}
+		}
+		note = fmt.Sprintf("found %d definitions, selected %s (%s overrides profile); %s", len(foundAll), sel.path, sel.kind, strings.Join(others, "; "))
+	}
+	return fmt.Sprintf("v%d", sel.version), note, nil
+}
+
+// ResolveExtractorPromptVersion keeps the original signature for callers
+// that only need the answer; the selection note is dropped here and
+// surfaced by the callers that print (phasea plan).
+func ResolveExtractorPromptVersion(projectRoot string) (string, error) {
+	v, _, err := ResolveExtractorPromptVersionDetail(projectRoot)
+	return v, err
 }
 
 func parseAgentFrontmatter(data []byte, path string) (agentFrontmatter, error) {
@@ -172,4 +261,35 @@ func ResolveExtractorAgentModel(projectRoot string) (string, error) {
 		return model, nil
 	}
 	return ExtractorModelUnknown, firstErr
+}
+
+// ExtractorContractUnrecorded is what a run reports when the extractor
+// agent definition's body digest cannot be determined. Same rule as
+// ExtractorModelUnknown: a distinct value, never a fallback.
+const ExtractorContractUnrecorded = "unrecorded"
+
+// ResolveExtractorContractDigest returns the hex SHA-256 of the resolved
+// extractor agent definition's exact bytes — the same file
+// ResolveExtractorAgentModel and ResolveExtractorPromptVersion read,
+// candidate order (project-local first, then the active Claude profile).
+// Distinguishes two dispatches sharing a prompt_version but not a body,
+// such as a prompt patched and then reverted.
+//
+// Returns (ExtractorContractUnrecorded, err) when no candidate is
+// readable — never a guess, never a zero-value digest standing in for an
+// observation that was not made.
+func ResolveExtractorContractDigest(projectRoot string) (string, error) {
+	var firstErr error
+	for _, path := range candidateAgentPaths(projectRoot) {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("reading %s: %w", path, err)
+			}
+			continue
+		}
+		sum := sha256.Sum256(data)
+		return hex.EncodeToString(sum[:]), nil
+	}
+	return ExtractorContractUnrecorded, firstErr
 }

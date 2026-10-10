@@ -11,6 +11,21 @@
 // byte-for-byte equivalent to their Python counterparts so the two never
 // silently drift on what counts as "named" (GL-002: one rule, one
 // implementation, or the weaker one is the one that gets used).
+//
+// THAT EQUIVALENCE IS NOW MEASURED for the glob half, and was not before. This
+// comment claimed parity across languages while nothing compared them: when
+// internal/globmatch's `**` semantics were corrected on 2026-09-06, both Python
+// readings of a `paths:` glob stayed where they were and the two languages
+// began disagreeing on four shapes — invisibly, because the gate positioned to
+// notice (tier1-arrival-scan.py, pinning six baselines) measures WITH the
+// Python copy. There is now ONE Python matcher, test/lib/globmatch.py, which
+// both paths-calibration.py and spec018/stage0_payload_diff.py route through,
+// and ONE shared corpus, test/fixtures/globmatch-parity.tsv, run through every
+// implementation by test/test-globmatch-python-parity.sh.
+//
+// The PATH_TOKEN / covered_by_named half below is still a promise rather than a
+// gate. It is said plainly here so the sentence above cannot be read as
+// covering it.
 package pathsproposal
 
 import (

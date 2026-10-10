@@ -1,7 +1,9 @@
 package gov
 
 import (
+	"bytes"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -37,5 +39,20 @@ func TestRunPostCompileVerify_LaunchFailureIsNotAPass(t *testing.T) {
 	if rc != 3 {
 		t.Errorf("launch failure should map to the documented invocation-problem "+
 			"code 3, got %d", rc)
+	}
+}
+
+// The compile-side half of the write-time retirement: a failing directive
+// verify is reported and never fails `gov compile`. The launch-failure case
+// is the strongest one — runPostCompileVerify itself returns 3 for it, and
+// even that reaches the caller as 0 with the note on the console.
+func TestPostCompileVerify_ReportsNeverFails(t *testing.T) {
+	missingRoot := filepath.Join(t.TempDir(), "does-not-exist")
+	var out bytes.Buffer
+	if rc := reportPostCompileVerify(missingRoot, &out); rc != 0 {
+		t.Fatalf("the report must never fail the compile; got %d", rc)
+	}
+	if !strings.Contains(out.String(), "reported only") {
+		t.Fatalf("a non-zero verify must be written to the console with its reason:\n%s", out.String())
 	}
 }

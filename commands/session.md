@@ -64,12 +64,17 @@ Then check existing ADRs:
 ls {paths.decisions}/*.md 2>/dev/null || ls docs/architecture/decisions/*.md 2>/dev/null
 ```
 
-Read the ADR list. Only flag a decision as a possible ADR if:
-1. A clear decision was made (not just a preference)
-2. There was reasoning or an alternative considered
-3. The topic is NOT already covered in an existing ADR
+Read the ADR list. **Run every candidate through the GL-001 capture gates before surfacing it**, the same gates `/edikt:capture` uses. Burden of proof is on CAPTURE, not silence; the default is DEMOTE, and a healthy session produces zero ADRs. Auto-reject candidates that restate upstream docs or defaults, are derivable from code or tests, are living state, are task-scoped, or exist to justify a change to a reviewer. G0: skip anything already covered by an existing ADR or invariant. Then G2 needs all three: a REAL rejected alternative, a choice that is expensive to reverse or constrains future structure, dependencies, interfaces, data, or security, and a re-litigation risk without the record. A candidate with no real rejected alternative is a fact, not a decision — surface nothing.
 
-Only surface STRONG signals — skip implementation details and style choices.
+Surface an ADR candidate only for a product architecture choice: a new boundary, a contract others depend on (an API, an event, a shared schema), a data store, a cross-context dependency, or an external provider in the product's call path.
+
+Never surface any of these as an ADR candidate:
+- implementation inside existing boundaries (algorithms, data structures, refactors, a library behind an existing port, style choices)
+- tooling used to build the product that does not ship in it (linters, test runners, local tracing or observability stacks, editor and agent config)
+- local dev setup (docker-compose for development, bootstrap scripts)
+- experiments and measurements (spikes, benchmarks, prototypes)
+
+Every ADR candidate is a suggestion. Never draft one from this sweep, and never treat a missing ADR as blocking.
 
 ## Step 4: Scan for uncaptured constraints
 
@@ -92,7 +97,7 @@ From the git diff, look for:
 - New services or infrastructure components
 - Breaking changes to existing APIs
 
-Same logic as `/edikt:docs`, but scoped to this session's changes only. Skip internal refactors, test changes, and formatting.
+Same logic as `/edikt:docs:review`, but scoped to this session's changes only. Skip internal refactors, test changes, and formatting.
 
 ## Step 6: Cross-reference to avoid noise
 
@@ -113,17 +118,17 @@ Commits:  {recent commit messages, or "none yet"}
 Updated:  {plan progress changes, or "no plans updated"}
 
 Possible captures:
-  💡 ADR: {decision description} — {why it qualifies as an ADR}
-     → Run /edikt:adr:new to capture
+  💡 ADR: {decision description} — {the G2 verdict: the rejected alternative, the reversal cost, the re-litigation risk}
+     → suggestion only — /edikt:adr:new if you want it recorded
 
   💡 Invariant: {constraint description}
      → Run /edikt:invariant:new to capture
 
   📄 Doc gap: {new public surface} — not in {doc file}
-     → Run /edikt:docs to review
+     → Run /edikt:docs:review to review
 
 ─────────────────────────────────────────────────────
-{count} possible captures. Context compaction coming — capture now or later.
+{count} possible captures — none of them blocks anything; record only what you choose to.
 ```
 
 If there are no possible captures, output instead:

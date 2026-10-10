@@ -16,6 +16,17 @@ allowed-tools:
   - AskUserQuestion
   - Glob
   - Task
+stops:
+  - id: dispatch
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Proceed with dispatching re-extraction for the artifacts listed above?"
+  - id: accept-artifact
+    class: risk
+    default: "skip-decide-later"
+    on_silence: safe-side
+    prompt: "Accept this artifact's re-extraction, reject it, or decide later?"
 ---
 
 # /edikt:gov:reextract
@@ -27,9 +38,9 @@ is considered final.
 
 **Manual, opt-in only.** This command is never invoked automatically by
 `/edikt:upgrade` or any other flow — `/edikt:upgrade` may *offer* to run it
-(its own Step 7, gated on real `--status` numbers and an explicit
-`AskUserQuestion` yes), but the offer is declined by default and dispatch
-only ever happens on an explicit human yes, here or there. EXP-006 measured
+(its own Step 7, gated on real `--status` numbers and an explicit yes to the
+question it asks), but the offer is declined by default and dispatch only ever
+happens on an explicit human yes, here or there. EXP-006 measured
 3–8 minutes of
 wall-clock per artifact (parallelizable, no observed degradation at 8-way
 concurrency on its sample) and explicitly flagged that the cost at true
@@ -38,16 +49,16 @@ that should gate default-on vs opt-in, not an estimate." Until that
 confirmation exists, re-extraction stays something a user deliberately
 runs, never something a project is upgraded into unasked.
 
-**Why this is safe to run repeatedly.** The tier-2 binary (`bin/edikt gov
-reextract`) already:
-- operates on the sidecar co-located next to its parent doc, never a
+**Why this is safe to run repeatedly.** The tier-2 binaries already:
+- operate on the sidecar co-located next to its parent doc, never a
   stripped copy — this is what lets the extractor see and preserve
   `suppressed_directives`, `manual_directives`, and `# DORMANT` comments on
   a dormant artifact (EXP-006 Finding 2/3);
-- restores `human_approved_at`, `verify`, `verify_kind`, the fixture paths,
-  and approved `paths:`/`paths_approval` from the pre-extraction sidecar
-  onto the regenerated one (`internal/reextract/preserve.go`), reporting
-  anything it could not confidently re-attach rather than guessing;
+- restore (`edikt phasea restore`, step 4c) `manual_directives`,
+  `suppressed_directives`, `human_approved_at`, `verify`, `verify_kind`, the
+  fixture paths, and `paths:`/`paths_approval:` exactly as they stood, from
+  the pre-extraction pin onto the regenerated sidecar, reporting anything
+  they could not confidently re-attach rather than guessing;
 - is resumable — a kill mid-batch costs only the unfinished artifacts, and
   a contract-version change starts a fresh batch rather than reporting old
   work as current.
@@ -55,6 +66,18 @@ reextract`) already:
 What it does NOT do on its own is let a human review and accept or reject
 each artifact's result before it's treated as final. That is this command's
 job.
+
+**One preserved field has a stated limit: `actor_scope`.** It is a bare
+boolean and `true` is the pin — a `false` pin is permanently unrepresentable,
+because the field carries `omitempty`, so `false` is dropped when the sidecar
+is written and an absent key decodes back to `false`. The two states are the
+same bytes on disk, so nothing downstream could tell them apart and no restore
+can recover the difference. A directive that should NOT be actor-scoped is
+therefore expressed by leaving the key out, never by writing `actor_scope:
+false` and expecting that to survive. This is a decision (D319), not a defect:
+the alternative was changing the Go field to a pointer, which is a wider change
+than the preservation contract needed. If you need a false pin to mean
+something, that is an ADR, not a bug report.
 
 ## Arguments
 
@@ -67,13 +90,13 @@ job.
 ### 1. Verify binary presence
 
 ```bash
-command -v bin/edikt >/dev/null 2>&1 || command -v edikt >/dev/null 2>&1
+command -v edikt >/dev/null 2>&1
 ```
 
 If absent, print:
 
 ```
-✗ bin/edikt not found.
+✗ edikt not found.
   This command requires the edikt tier-2 helper. Install via:
     edikt install edikt
   Then re-run /edikt:gov:reextract.
@@ -100,7 +123,7 @@ Do not check `git status` here. Do not pass `--clean-tree` in Step 4.
 ### 3. Show current batch status and get confirmation
 
 ```bash
-bin/edikt gov reextract --status --json
+EDIKT_INVOKER=/edikt:gov:reextract edikt gov reextract --status --json
 ```
 
 Render the eligible/done/remaining/failed counts to the user. Then state
@@ -114,12 +137,15 @@ result will be shown to you individually afterward — nothing is final
 until you accept it.
 ```
 
+<!-- stop: dispatch -->
 Ask via `AskUserQuestion`: "Proceed with dispatch?" (yes / no). Stop on
-"no" with no further action.
+"no" with no further action. With no human to answer, take the safe side —
+dispatch nothing, print the work-list, and say the dispatch was declined by
+default rather than answered.
 
 ### 4. Plan, fan out, restore, verify
 
-**The binary does not dispatch.** `bin/edikt gov reextract` computes the
+**The binary does not dispatch.** `edikt gov reextract` computes the
 work-list and emits a plan; fanning extractors out means invoking an LLM,
 which INV-012 forbids a tier-2 binary from doing (ADR-030, SPEC-013). You are
 the dispatcher. This is the same Phase A contract `/edikt:gov:compile` runs.
@@ -127,7 +153,7 @@ the dispatcher. This is the same Phase A contract `/edikt:gov:compile` runs.
 **4a — plan.**
 
 ```bash
-bin/edikt gov reextract --force --json \
+EDIKT_INVOKER=/edikt:gov:reextract edikt gov reextract --force --json \
   $( [ -n "$ARGUMENTS" ] && for id in $ARGUMENTS; do printf -- '--only %s ' "$id"; done )
 ```
 
@@ -141,6 +167,17 @@ was HANDED OFF, not what completed. `succeeded` and `failed` are zero at this
 point by construction — this process performed no extraction, and a success
 count for work it did not do would be a measurement nobody made. They are
 filled in by step 4d.
+
+If it refuses instead (`re-extraction could not emit a dispatch plan: …`),
+report the message verbatim and stop. The refusal that needs a decision is
+an earlier plan for one of these artifacts that
+was never closed (dispatched and not restored, mid-retry, or FAILED) while
+its sidecar has moved since that plan pinned it. The message names the plan,
+its state and what to do — finish its `phasea restore` and `phasea verify`,
+or copy its pin back before re-running.
+Planning over it would pin unrestored or failed output as the new baseline. An
+artifact whose last plan is already closed (consumed or FAILED) is planned
+under a successor plan id, never the closed one's.
 
 Read `.edikt/state/phasea/<plan_id>.plan.json` and validate it is well-formed
 JSON with its four required top-level keys before acting on any part of it.
@@ -158,24 +195,53 @@ Task(subagent_type: "sidecar-extractor",
 
 **No add, drop, merge, retry-with-changes, or reword.** Never combine two
 items into one context (ADR-027), never dispatch an item absent from the
-plan, and on a retry re-dispatch the identical fields. Continue on error —
-one failure does not stop the rest.
+plan. That covers every first dispatch; a retry is the correction pass in 4d,
+whose one permitted change is the receipt's `correction_prompt` prepended.
+Continue on error — one failure does not stop the rest.
+
+**A stall is any final response other than the extractor's one-line
+result.** If a subagent's final response is
+anything other than exactly one `SIDECAR WRITTEN: <path>` line — including
+an empty response, the stream watchdog, a kill or a crash — note its
+`item_id` for `--stalled` in 4d.
+Reporting an item that did write costs nothing: verify judges a written output
+on its bytes and ignores the report.
+
+**The extractor's hand-back is not evidence.** Never relay what a subagent
+says it did — its count of entries or of `needs_review`, or what it kept. In
+particular a hand-back may say a sidecar's scope was lost, or that it needs
+re-approval with `edikt sidecar approve --kind paths`. Restore owns `paths:`:
+it writes `paths:` and `paths_approval:` back exactly as they stood before the
+dispatch, labels globs that no approval receipt covers as unreceipted (never as
+approved), and drops a `paths:` the extractor wrote on a sidecar that had none.
+A hand-back saying scope was lost or needs re-approval
+is wrong — do not act on it.
 
 **4c — restore and record.**
 
 ```bash
-bin/edikt phasea restore --plan <plan_id>
+edikt phasea restore --plan <plan_id>
 ```
 
-This reinstates human-pinned state the extractor could not have seen,
-quarantines any regenerated sidecar that fails the content gate, records the
-ADR-053 body-drift baseline, and writes one ledger entry per artifact as it
-finishes — so a run killed here loses only the work still outstanding.
+This reinstates human-pinned state the extraction does not carry forward
+(including `paths:` as above), quarantines any regenerated sidecar that fails
+the content gate, records the ADR-053 body-drift baseline, and writes one
+ledger entry per artifact as it finishes — so a run killed here loses only the
+work still outstanding.
+
+It is also where "did the extractor write anything" is measured: a sidecar
+byte-identical to the plan's pre-dispatch pin (or, on a retry round, to what
+the previous restore left) is left exactly as found, listed as `unwritten` in
+the restore receipt and ledgered failed, never done. 4d grades it
+`output-missing` (`stalled` under `--stalled`) with the diagnostic
+`restore observed no write since plan <plan_id>`. Run restore again after
+every re-dispatch round.
 
 **4d — verify, and act on the exit code.**
 
 ```bash
-bin/edikt phasea verify --plan <plan_id>
+edikt phasea verify --plan <plan_id>                    # or, for the stalls 4b noted:
+edikt phasea verify --plan <plan_id> --stalled <item_id>[,<item_id>...]
 ```
 
 **Check whether `.edikt/state/phasea/<plan_id>.receipt.json` exists BEFORE
@@ -186,13 +252,42 @@ and a receipt full of failures are different events.
 | Exit | Meaning | What you do |
 |------|---------|-------------|
 | 0 | every item ok | continue to Step 5 |
-| 1 | some items failed | re-dispatch 4b for each receipt item with `attempts < phasea.max_attempts_per_item`, then repeat 4d |
-| 2 | plan rejected (unknown, malformed, already consumed) | abort; report verbatim; never retry |
+| 1 | some items failed | re-dispatch each receipt item with `attempts < phasea.max_attempts_per_item` as below, then repeat 4c and 4d |
+| 2 | plan rejected (unknown, malformed, already consumed, or FAILED) | abort; report verbatim; never retry |
 | 3 | receipt unwritable | abort; report verbatim; never retry |
 | 5 | failed-terminal | **stop and report the failing items. Do NOT retry.** The retry budget is spent |
+| 6 | diverged | **stop and report. Do NOT retry** — the item got worse than its previous attempt |
+| 7 | restore has not run | run 4c, then 4d again |
 
 Exit 1 and exit 5 differ only in whether anything is still owed an attempt.
 Treating 5 as 1 is an unbounded loop that looks like progress.
+
+On exit 1, each receipt item decides its own re-dispatch — the same
+correction pass `/edikt:gov:compile` runs (its § A4-bis):
+
+- `output-missing` or `stalled` — no output to correct; re-dispatch fresh
+  with the plain 4b prompt.
+- a status with a `correction_prompt` — `anchor-invalid`, `length-exceeded`,
+  a quarantined write (classified from its quarantine copy), or
+  `lossless-loss` — prepend the `correction_prompt` verbatim to the 4b prompt;
+  nothing else changes.
+- any other status with an empty `correction_prompt` — report it; do not
+  re-dispatch.
+
+`lossless-loss` is the guard on this command's whole purpose: the output
+dropped a directive or prohibition body whose source prose is still in the
+artifact. Its `correction_prompt` names each lost body and its line range.
+The remedies are that correction pass; restoring the lost entries by hand and
+re-running; or, only on the user's explicit say,
+`edikt phasea verify --plan <plan_id> --on-loss=accept`, which passes the item
+with the loss recorded. An `ok` item can carry a diagnostic too — a prior body
+matched only by the weaker lexical fallback, or `source-removed` because its
+prose is gone from the artifact. Quote it in Step 5; it is not a failure.
+
+**Report results from the receipt, never from the extractor's hand-back:**
+each item's `status`, `anchors_valid`, `anchors_whitespace_only` and
+`needs_review` (an absent count is zero), and the verify summary's
+`needs_review: K (counted on N sidecar(s))`.
 
 If artifacts failed, they remain pending in the ledger and nothing was
 written for them; this is not a partial-corruption state.
@@ -225,8 +320,12 @@ For each snapshot file, in turn:
    (or `git diff --no-index` for nicer coloring, if `git` is available — both
    work with no repo-clean precondition, since `--no-index` diffs two
    arbitrary files).
+   <!-- stop: accept-artifact -->
 3. Ask via `AskUserQuestion`: "Accept this artifact's re-extraction?"
-   (accept / reject / skip-decide-later)
+   (accept / reject / skip-decide-later). With no human to answer, take the
+   safe side — `skip-decide-later`: the live file and its snapshot both stay
+   where they are, and the artifact is reported as decided-by-default, not
+   accepted.
 4. **accept** — leave the live file as re-extracted, then delete the
    snapshot: `rm .edikt/state/reextract-snapshots/<id>.edikt.yaml`. Deleting
    on resolution is what keeps step 5's listing accurate on a future run —
@@ -281,10 +380,16 @@ regardless of whether their artifact was accepted:
 ```
 
 For each, state the remedy directly: a `human_approved_at`/`verify` pin
-needs `bin/edikt sidecar approve`; a `paths_approval` pin needs
-`bin/edikt sidecar approve --kind paths`. Do not attempt either
-automatically — an unrestorable pin was left unrestorable because
-attaching it to a guess would be worse than surfacing it.
+needs `edikt sidecar approve`. An unrestorable `paths_approval` is a receipt
+whose hash no longer covers the globs restore carried back; it has no pending
+proposal behind it, so `edikt sidecar approve --kind paths` has nothing to
+approve (it exits 2, pending-id not found). Compare the globs with the
+pre-extraction snapshot (`.edikt/state/reextract-snapshots/<id>.edikt.yaml`)
+or git history and put back the pair that matches; a genuinely new scope
+enters only as `proposed_paths`, through compile, and is approved from the
+pending proposal it creates. Do not attempt any of these automatically — an
+unrestorable pin was left unrestorable because attaching it to a guess would
+be worse than surfacing it.
 
 ## Completion
 

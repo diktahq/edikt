@@ -27,6 +27,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"path/filepath"
 	"sort"
@@ -432,7 +433,7 @@ func runApprovePaths(pendingID, decision string) error {
 	if err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("marshal sidecar: %v", err)}
 	}
-	if err := atomicWriteNoFollow(sidecarPath, out, 0o644); err != nil {
+	if err := migrate.AtomicWriteNoFollow(sidecarPath, out, 0o644); err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("write sidecar: %v", err)}
 	}
 	if err := os.Remove(pendingPath); err != nil {
@@ -456,7 +457,40 @@ func runApprovePaths(pendingID, decision string) error {
 		}
 		fmt.Fprintln(os.Stdout)
 	}
+
+	for _, line := range pathsApprovalNote(pendingID) {
+		fmt.Fprintln(os.Stdout, line)
+	}
 	return nil
+}
+
+// pathsApprovalNote says what approving path globs actually buys, for artifact
+// kinds where the ceremony implies more than it delivers.
+//
+// Grade is class-weighted (ADR-071) and grade is the routing key (ADR-079), so
+// an ADR or guideline directive is advisory and reaches the topic file, never
+// directive-index.yaml. Approving its globs decides WHEN THE TOPIC FILE LOADS —
+// a real effect, and demonstrably so: all five of ADR-021's approved globs
+// appear in tooling.md's frontmatter. It does not make the rule deny a write.
+//
+// On edikt-dev's own corpus, 563 directives across 39 ADR/guideline artifacts
+// state a binding obligation on approved globs and cannot deny anything. Most
+// are correctly advisory — an ADR records a decision, and "we chose Go over
+// Rust" should not block a write. The problem was never the routing; it was
+// that an author completed a ceremony and was told nothing about its limits.
+//
+// Returns nil for invariants: their directives DO route, so the note would be
+// false for them, and a caveat that is wrong half the time trains people to
+// skip it.
+func pathsApprovalNote(artifactID string) []string {
+	if !strings.HasPrefix(artifactID, "ADR-") && !strings.HasPrefix(artifactID, "GL-") {
+		return nil
+	}
+	return []string{
+		"    note: these globs scope which TOPIC FILE loads, not write-time enforcement.",
+		"          An ADR/guideline directive is advisory by class (ADR-071) and cannot deny",
+		"          a write. Set `enforcement: deny` on a directive that must block.",
+	}
 }
 
 func loadPendingPaths(path string) (*pendingPaths, error) {
@@ -604,7 +638,7 @@ func runApproveTopicDescription(pendingID, decision string) error {
 	if err := os.MkdirAll(filepath.Dir(registryPath), 0o755); err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("mkdir registry dir: %v", err)}
 	}
-	if err := atomicWriteNoFollow(registryPath, out, 0o644); err != nil {
+	if err := migrate.AtomicWriteNoFollow(registryPath, out, 0o644); err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("write registry: %v", err)}
 	}
 	if err := os.Remove(pendingPath); err != nil {

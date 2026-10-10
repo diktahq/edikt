@@ -61,17 +61,25 @@ func readTopic(t *testing.T, root, name string) string {
 	return string(b)
 }
 
-// readDirectiveIndex returns the rendered directive-index.yaml body — the
-// sole home for a scoped sidecar's directive/prohibition text since
-// ADR-066 (a sidecar declaring paths: no longer duplicates that text into
-// its topic file).
-func readDirectiveIndex(t *testing.T, root string) string {
+// assertNoDirectiveIndex pins the retirement of the write-time surface
+// (ADR-083): the compiler renders no directive-index.yaml, so a scoped
+// sidecar's directive and prohibition text has exactly one home — the topic
+// file (or the skill package for a tier-3 topic).
+func readFileString(t *testing.T, path string) string {
 	t.Helper()
-	b, err := os.ReadFile(filepath.Join(root, ".claude", "rules", "governance", "directive-index.yaml"))
+	b, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read directive-index.yaml: %v", err)
+		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(b)
+}
+
+func assertNoDirectiveIndex(t *testing.T, root string) {
+	t.Helper()
+	p := filepath.Join(root, ".claude", "rules", "governance", "directive-index.yaml")
+	if _, err := os.Stat(p); err == nil {
+		t.Fatalf("directive-index.yaml was rendered at %s — the write-time surface is retired (ADR-083)", p)
+	}
 }
 
 // TestRender_ManualInterleaved — manual directives appear in the directives
@@ -79,8 +87,7 @@ func readDirectiveIndex(t *testing.T, root string) string {
 //
 // The "auto" side uses a PATHLESS invariant's second directive rather than a
 // scoped ADR: since ADR-066, a sidecar declaring paths: (the ordinary ADR
-// shape) renders its directive text into directive-index.yaml only, not the
-// topic file — the topic file's compiled-directives region is this test's
+// shape) renders its directive text into the topic file, as every shape does since ADR-083 — the topic file's compiled-directives region is this test's
 // subject, so its auto content has to come from the one artifact shape that
 // still lands there. The first directive is the invariant's canonical
 // statement and goes to the ambient core instead (merge.go), which is why
@@ -362,12 +369,115 @@ func TestCompile_DeterminismExtended(t *testing.T) {
 	}
 }
 
-// TestRegionSHA_EmptyEqualsSHA256OfEmpty — the empty-region anchor is
-// sha256("") so a freshly bootstrapped empty region carries a known value.
-func TestRegionSHA_EmptyEqualsSHA256OfEmpty(t *testing.T) {
-	want := sha256.Sum256(nil)
-	got := regionSHA(nil, false)
-	if got != hex.EncodeToString(want[:]) {
-		t.Errorf("empty regionSHA: got %q want %q", got, hex.EncodeToString(want[:]))
+// TestCompile_AnchorsDescribeTheRegionsOnDisk — every anchor in a compiled
+// topic file is the sha256 of the bytes THAT FILE carries between that
+// region's own markers.
+//
+// It replaces TestRegionSHA_EmptyEqualsSHA256OfEmpty, which asserted that
+// phaseb's own regionSHA(nil, false) equalled sha256("") — a check on this
+// package's RESTATEMENT of the renderer's layout, not on anything that
+// reaches disk. It survived the mutation that mattered: making regionSHA stop
+// prepending the prohibitions heading, which makes every prohibitions anchor
+// in every compiled file wrong, left the suite green. regionSHA is gone
+// (D357) and the renderer anchors what it emits; what is asserted here is the
+// artifact.
+//
+// FALSIFIED BY MUTATING THE WRITE-PATH, never the renderer (D359). Under D357
+// the renderer emits RegionSHA(body) for the body it just emitted, so an
+// in-memory comparison of the declared anchor against RegionSHA(body) is
+// f(x) == f(x) — true by construction, and green under the very mutation that
+// drops a directive. That identity is the WIN of option D, which is exactly
+// why it is not a control. What remains falsifiable is the ROUND TRIP, so
+// both mutations were applied to writeAtomicIfChanged (merge.go), the one
+// function standing between the rendered string and the file. Measured
+// 2026-09-06, `go test -count=1 ./internal/phaseb/ ./internal/render/`; each
+// mutation was reverted from a byte-for-byte backup (merge.go sha256
+// 36187ae0… before and after):
+//
+//	W1 the writer "tidies" the in-marker heading —
+//	   ReplaceAll(content, "## Prohibitions\n",
+//	   "## Prohibitions\n\n")                                    → RED
+//	   region "prohibitions": the file declares anchor df4ce315…
+//	   but its own bytes hash to f463878b…
+//	W2 the writer drops the first bullet on its way to disk —
+//	   Replace(content, "\n- ", "\n", 1)                         → RED
+//	   region "directives": the file declares anchor bcb240bc…
+//	   but its own bytes hash to 5a7b651e…
+//
+// Under each write-path mutation this was the ONLY test in package phaseb
+// that moved, and the whole internal/render suite stayed GREEN: an in-memory
+// identity cannot see a writer that transforms bytes on the way out. That
+// asymmetry is why this assertion lives here, on the write-path, rather than
+// beside the renderer.
+func TestCompile_AnchorsDescribeTheRegionsOnDisk(t *testing.T) {
+	root := t.TempDir()
+	pair := mkPairWith(t, root, "ADR-001-anchors", "alpha",
+		[]sidecar.Directive{
+			{Text: "Auto. (ref: ADR-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "x"}},
+		},
+		// No manual entries: the empty-region case, which must land on
+		// sha256("") by HASHING an empty body, not by defaulting to a constant.
+		nil,
+		[]sidecar.Prohibition{
+			{Text: "MUST NOT do X. (ref: ADR-001)", SourceExcerpt: sidecar.SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "y"}},
+		},
+	)
+	if _, err := Merge(root, []sidecar.Pair{pair}, Options{CompiledAt: "2026-05-03T00:00:00Z", CompilerVersion: "0.6.0-test"}); err != nil {
+		t.Fatal(err)
 	}
+	body := readTopic(t, root, "alpha")
+
+	for _, kind := range []string{"directives", "prohibitions", "manual"} {
+		region := regionBytesOnDisk(t, body, kind)
+		sum := sha256.Sum256([]byte(region))
+		if got, want := regionAnchorOnDisk(t, body, kind), hex.EncodeToString(sum[:]); got != want {
+			t.Errorf("region %q: the file declares anchor %s but its own bytes hash to %s\nbody was %q",
+				kind, got, want, region)
+		}
+	}
+
+	// The prohibitions region is the one whose body is NEVER empty — the
+	// template emits its heading inside the markers. Naming it here so the
+	// next reader sees why "hash the bullets" is not the same scheme.
+	if proh := regionBytesOnDisk(t, body, "prohibitions"); !strings.HasPrefix(proh, "## Prohibitions\n") {
+		t.Errorf("prohibitions region no longer opens with its in-marker heading: %q", proh)
+	}
+	// And the empty region reaches sha256("") by hashing nothing.
+	empty := sha256.Sum256(nil)
+	if got, want := regionAnchorOnDisk(t, body, "manual"), hex.EncodeToString(empty[:]); got != want {
+		t.Errorf("empty manual region anchored %s, want sha256(\"\") = %s", got, want)
+	}
+}
+
+// regionBytesOnDisk returns the bytes a compiled topic file carries strictly
+// between one region's start-marker line and its end marker.
+func regionBytesOnDisk(t *testing.T, file, kind string) string {
+	t.Helper()
+	start := "[edikt:" + kind + ":start]: #\n"
+	i := strings.Index(file, start)
+	if i < 0 {
+		t.Fatalf("region %q: no start marker in:\n%s", kind, file)
+	}
+	rest := file[i+len(start):]
+	j := strings.Index(rest, "[edikt:"+kind+":end]: #")
+	if j < 0 {
+		t.Fatalf("region %q: no end marker after the start marker in:\n%s", kind, file)
+	}
+	return rest[:j]
+}
+
+// regionAnchorOnDisk returns the hex a region's sha256 anchor line declares.
+func regionAnchorOnDisk(t *testing.T, file, kind string) string {
+	t.Helper()
+	anchor := "[edikt:" + kind + ":sha256]: # "
+	i := strings.Index(file, anchor)
+	if i < 0 {
+		t.Fatalf("region %q: no sha256 anchor line in:\n%s", kind, file)
+	}
+	rest := file[i+len(anchor):]
+	nl := strings.Index(rest, "\n")
+	if nl < 0 {
+		nl = len(rest)
+	}
+	return strings.TrimSpace(rest[:nl])
 }

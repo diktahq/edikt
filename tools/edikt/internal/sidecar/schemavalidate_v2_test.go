@@ -63,8 +63,16 @@ func TestV2RejectsSingularSourceExcerpt(t *testing.T) {
 	// reported the missing PLURAL field would have satisfied a Contains check while
 	// saying nothing about the offending singular key. The assertion must be able to
 	// tell the two apart, or it is agreeing with a coincidence.
-	const wantSingular = "additional properties 'source_excerpt' not allowed"
-	const wantPlural = "missing property 'source_excerpts'"
+	//
+	// Phrasing updated 2026-08-30 for rejectfmt.go, which renders every cause
+	// field-first. The disambiguation this comment describes still holds and is
+	// now stronger: the CLOSING QUOTE after the singular key is what stops
+	// 'source_excerpt' matching inside 'source_excerpts', and the new format
+	// additionally names the containing path and index (directives[0]), which
+	// the old library phrasing did not carry at all.
+	const wantSingular = "unknown key 'source_excerpt'"
+	const wantPlural = "missing required key 'source_excerpts'"
+	const wantPath = "directives[0]"
 	if !strings.Contains(err.Error(), wantSingular) {
 		t.Fatalf("rejected, but the error never names the offending singular key, so the user "+
 			"cannot tell what to fix.\nwant substring: %q\ngot: %v", wantSingular, err)
@@ -72,6 +80,11 @@ func TestV2RejectsSingularSourceExcerpt(t *testing.T) {
 	if !strings.Contains(err.Error(), wantPlural) {
 		t.Fatalf("rejected, but the error never says which field is missing.\n"+
 			"want substring: %q\ngot: %v", wantPlural, err)
+	}
+	if !strings.Contains(err.Error(), wantPath) {
+		t.Fatalf("rejected, but the error never says WHICH directive is at fault, so a "+
+			"sidecar with many directives leaves the user searching.\n"+
+			"want substring: %q\ngot: %v", wantPath, err)
 	}
 	t.Logf("rejected naming the field: %v", err)
 }

@@ -106,9 +106,14 @@ For each item on the public surface, check if it appears in relevant docs. Flag:
 
 ### 4. Report and fix
 
-Report all findings grouped by type. For `audit` mode, draft the missing content and confirm before writing:
+Report all findings grouped by type. For `audit` mode, draft the missing
+content, **state which doc file each addition lands in, then write it** — this
+command does not ask permission to write the docs it was invoked to fix. The
+host's permission system is the write control; a second confirm-before-writing
+prompt in the prose duplicates it and is the first thing to hang when nobody is
+watching. Show the draft and name its destination first:
 
-```
+````
 Missing: POST /webhooks (routes/webhooks.go:42)
 
 Suggested addition to docs/api.md:
@@ -128,7 +133,7 @@ Register a webhook endpoint.
 **Response:** 201 Created
 
 Add this to docs/api.md? [y/n/skip]
-```
+````
 
 ### 5. What NOT to flag
 

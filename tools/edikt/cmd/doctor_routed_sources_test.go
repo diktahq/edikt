@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/phaseb"
+	"github.com/diktahq/edikt/tools/edikt/internal/surfaces"
 )
 
 func TestRoutedSources_AllResolve(t *testing.T) {
@@ -117,6 +120,50 @@ func TestRoutedSources_MixedState(t *testing.T) {
 	}
 	if strings.Contains(out, "Missing source for routed directive: ADR-001") {
 		t.Errorf("ADR-001 has a source file and must not be reported missing: %s", out)
+	}
+}
+
+// A manifest that names a surface no compile wrote is a BROKEN CONTRACT, and
+// this check is the caller that iterates rather than resolves: it took
+// surfaces.PathsOfKind's word for two of its three surface kinds, and that form
+// did not stat what it returned. The result was a routing file the check listed
+// in its own "surfaces (from the render manifest)" line and an exit code that
+// said nothing was wrong.
+//
+// Two separate silences closed here, and the test asserts both: the missing
+// surface is REPORTED, and it is COUNTED — the early `return 0, 0, true` on the
+// all-sources-resolve path discarded the errors already printed above it, so a
+// broken manifest was a cosmetic message.
+func TestRoutedSources_ManifestNamingAMissingSurfaceIsCounted(t *testing.T) {
+	root := t.TempDir()
+	mustMkAll(t, filepath.Join(root, "docs", "architecture", "decisions"))
+	mustMkAll(t, filepath.Join(root, ".claude", "rules", "governance"))
+	mustWrite(t, filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-test.md"), "# ADR-001\n")
+
+	// One topic file rendered and listed; one listed and never written.
+	mustWrite(t, filepath.Join(root, ".claude", "rules", "governance", "architecture.md"),
+		"- Rule one. (ref: ADR-001)\n")
+	// Serialised through phaseb's own writer, not a hand-built YAML string: a
+	// fixture in this file would keep passing while the compiler's format moved.
+	mustWrite(t, filepath.Join(root, surfaces.ManifestRelPath), phaseb.RenderManifest([]phaseb.ManifestEntry{
+		{Kind: surfaces.KindTopicFile, Path: ".claude/rules/governance/architecture.md", Topic: "architecture"},
+		{Kind: surfaces.KindTopicFile, Path: ".claude/rules/governance/security.md", Topic: "security"},
+	}))
+
+	var buf bytes.Buffer
+	errs, _, ran := runRoutedSourcesCheck(root, &buf)
+	if !ran {
+		t.Fatal("expected ran=true — a manifest that names a missing surface is the case this check applies to most")
+	}
+	out := buf.String()
+	if errs == 0 {
+		t.Errorf("the manifest names .claude/rules/governance/security.md, which is not on disk, and the check reported %d errors. Output:\n%s", errs, out)
+	}
+	if !strings.Contains(out, "security.md") {
+		t.Errorf("output does not name the missing surface:\n%s", out)
+	}
+	if strings.Contains(out, "Routed sources — 1 of 1 resolve") {
+		t.Errorf("the check reported a clean [ok] line while a listed surface was missing:\n%s", out)
 	}
 }
 

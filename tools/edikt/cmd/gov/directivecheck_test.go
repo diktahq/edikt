@@ -2,10 +2,29 @@ package gov
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+// declareInvoker gives an exec'd `gov` the caller identity ADR-084's front door
+// requires. These three tests predate the door (test written 2026-05-05, door
+// landed 3caad16b on 2026-09-04) and had been failing ever since, invoking the
+// binary with no declared caller and getting exit 4 instead of the exit each
+// asserts. The subject here is what `directive-check` DOES with its stdin, not
+// whether the door is shut.
+//
+// Set per call site, deliberately NOT in this package's TestMain: the door's
+// refusal is itself under test in this package (losslesscheck_nothing_test.go
+// expects exit 4), and a package-wide EDIKT_INVOKER is inherited by every
+// exec'd subprocess, so it would quietly disarm the control that proves the
+// door works. The value is the slash command this verb's own error message
+// names, so the test takes the route a real caller takes.
+func declareInvoker(cmd *exec.Cmd) *exec.Cmd {
+	cmd.Env = append(os.Environ(), "EDIKT_INVOKER=/edikt:gov:directive-check")
+	return cmd
+}
 
 func TestDirectiveCheck_Clean(t *testing.T) {
 	out := runDirectiveCheckStdin(t, `{"adr_id":"ADR-001","directive_body":"Use repo layer.","canonical_phrases":[],"no_directives_reason":null}`, 0)
@@ -28,7 +47,7 @@ func TestDirectiveCheck_PhraseMissing(t *testing.T) {
 
 func TestDirectiveCheck_BadJSON(t *testing.T) {
 	bin := buildBinary(t)
-	cmd := exec.Command(bin, "gov", "directive-check")
+	cmd := declareInvoker(exec.Command(bin, "gov", "directive-check"))
 	cmd.Stdin = strings.NewReader("{not json")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -42,7 +61,7 @@ func TestDirectiveCheck_BadJSON(t *testing.T) {
 func runDirectiveCheckStdin(t *testing.T, payload string, wantCode int) string {
 	t.Helper()
 	bin := buildBinary(t)
-	cmd := exec.Command(bin, "gov", "directive-check")
+	cmd := declareInvoker(exec.Command(bin, "gov", "directive-check"))
 	cmd.Stdin = strings.NewReader(payload)
 	var out bytes.Buffer
 	cmd.Stdout = &out

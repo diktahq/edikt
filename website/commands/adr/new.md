@@ -47,13 +47,17 @@ When capturing a new ADR, three additional prompts follow the core decision capt
 
 Skipping any prompt produces empty values — `canonical_phrases: []` or `behavioral_signal: {}`. No error, no prompt repeat. You can retrofit these fields later with `/edikt:adr:review --backfill`.
 
-## Proactive suggestions
+## Stop-hook suggestions
 
-You don't need to remember to run this. The `Stop` hook installed by `/edikt:init` watches every response for significant technical choices with trade-offs. When it detects one, it ends the response with:
+The `Stop` hook installed by `/edikt:init` can surface an ADR candidate. In its default quiet mode it fires only when a response names all three: a rejected alternative, a reversal cost, and a re-litigation risk. It prints one line for you, the owner:
 
 ```text
-💡 This looks like an ADR — run `/edikt:adr:new` to capture it.
+💡 adr-candidate: chose Postgres over DynamoDB for the order store … — all three Q2 prongs evidenced: a rejected alternative, a reversal cost, a re-litigation risk. run /edikt:adr:new — the intake gates (GL-001) will classify it [e890494c81c9d6ff]
 ```
+
+It is a suggestion, never required. The detector is lexical: it cannot tell a product architecture choice from an implementation detail, so act on it only for a product architecture choice — a new boundary, a contract others depend on, a data store, a cross-context dependency, or an external provider in the product's call path. Implementation inside existing boundaries, tooling that does not ship in the product, local dev setup, and experiments never need an ADR, and a missing ADR never blocks a build or a review. Most sessions produce none.
+
+Running `/edikt:adr:new` yourself is unchanged: the intake gates classify whatever you bring to it.
 
 ## Template
 

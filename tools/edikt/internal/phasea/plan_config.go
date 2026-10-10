@@ -19,6 +19,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/idvalidate"
 )
 
 // Defaults for the phasea: config section (SAC-004). Absent keys resolve to
@@ -28,7 +30,18 @@ const (
 	DefaultCeiling            = 50
 	DefaultForceCeiling       = 200
 	DefaultMaxAttemptsPerItem = 2
+	// DefaultMaxConcurrency is the fan-out width the plan carries when the
+	// config is silent. 2 is D19's measured-safe number, dated 2026-09-02 by
+	// FINDING-2026-09-02-fanout-stall.md (3-wide completed 3/3 on 2.1.257 —
+	// one run, not a reason to widen a default whose failure is a silently
+	// dropped artifact). It moves when a wider sample does.
+	DefaultMaxConcurrency = 2
 )
+
+// ExtractorModelInherit is the reserved literal for `extractor.model`. It is
+// checked before idvalidate.ModelID, never passed through it: "inherit" is
+// not a model ID, and must never reach a dispatch call as though it were one.
+const ExtractorModelInherit = "inherit"
 
 // Config is the resolved plan.go configuration: the governed-artifact
 // directories plus the phasea: budget section.
@@ -40,6 +53,11 @@ type Config struct {
 	Ceiling            int
 	ForceCeiling       int
 	MaxAttemptsPerItem int
+	MaxConcurrency     int
+
+	// ExtractorModel is `extractor.model`: "inherit" (default) or a value
+	// that has passed idvalidate.ModelID.
+	ExtractorModel string
 }
 
 // Dirs returns the [decisions, invariants, guidelines] slice in the
@@ -58,7 +76,11 @@ type rawPlanConfig struct {
 		Ceiling            *int `yaml:"ceiling"`
 		ForceCeiling       *int `yaml:"force_ceiling"`
 		MaxAttemptsPerItem *int `yaml:"max_attempts_per_item"`
+		MaxConcurrency     *int `yaml:"max_concurrency"`
 	} `yaml:"phasea"`
+	Extractor struct {
+		Model string `yaml:"model"`
+	} `yaml:"extractor"`
 }
 
 // LoadConfig reads .edikt/config.yaml under root. A missing file is not an
@@ -78,6 +100,8 @@ func LoadConfig(root string) (*Config, error) {
 		Ceiling:            DefaultCeiling,
 		ForceCeiling:       DefaultForceCeiling,
 		MaxAttemptsPerItem: DefaultMaxAttemptsPerItem,
+		MaxConcurrency:     DefaultMaxConcurrency,
+		ExtractorModel:     ExtractorModelInherit,
 	}
 
 	data, err := os.ReadFile(filepath.Join(root, ".edikt", "config.yaml"))
@@ -132,6 +156,26 @@ func LoadConfig(root string) (*Config, error) {
 				*raw.Phasea.MaxAttemptsPerItem, DefaultMaxAttemptsPerItem)
 		}
 		cfg.MaxAttemptsPerItem = *raw.Phasea.MaxAttemptsPerItem
+	}
+	if raw.Phasea.MaxConcurrency != nil {
+		if *raw.Phasea.MaxConcurrency <= 0 {
+			return nil, fmt.Errorf(
+				"phasea.max_concurrency: %d is refused — must be a positive integer; a "+
+					"configured non-positive value is a configuration error, not an implicit "+
+					"\"use the default of %d\" (SPEC-013 SR-012)",
+				*raw.Phasea.MaxConcurrency, DefaultMaxConcurrency)
+		}
+		cfg.MaxConcurrency = *raw.Phasea.MaxConcurrency
+	}
+
+	if raw.Extractor.Model != "" && raw.Extractor.Model != ExtractorModelInherit {
+		// "inherit" is the reserved literal (checked above, never passed
+		// through ModelID: it is not a model ID). An absent key or an
+		// explicit "inherit" both leave cfg.ExtractorModel at its default.
+		if err := idvalidate.ModelID(raw.Extractor.Model); err != nil {
+			return nil, fmt.Errorf("extractor.model: %w", err)
+		}
+		cfg.ExtractorModel = raw.Extractor.Model
 	}
 
 	return cfg, nil

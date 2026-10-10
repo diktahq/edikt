@@ -6,5 +6,5 @@ _ok() { [ -x "$1" ] || return 1; [ "$1" = "$_G" ] && return 0; grep -qF "\"$(pwd
 EDIKT_BIN=""
 for c in "${PWD}/.edikt/bin/edikt" "${PWD}/bin/edikt" "$_G"; do _ok "$c" && { EDIKT_BIN="$c"; break; }; done
 [ -n "$EDIKT_BIN" ] || { command -v edikt >/dev/null 2>&1 && EDIKT_BIN="edikt"; }
-[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"hookSpecificOutput":{"additionalContext":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook worktree-remove did not run (cause: binary-absent). Run /edikt:doctor to diagnose.","hookEventName":"WorktreeRemove"},"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook worktree-remove did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
+[ -n "$EDIKT_BIN" ] || { printf '%s\n' '{"systemMessage":"⚠ edikt: bin/edikt not found on any trusted discovery rung — hook worktree-remove did not run (cause: binary-absent). Run /edikt:doctor to diagnose."}'; exit 0; }
 exec "$EDIKT_BIN" hook run worktree-remove --event WorktreeRemove

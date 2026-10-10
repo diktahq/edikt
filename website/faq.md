@@ -55,25 +55,29 @@ Gates fire automatically via the SubagentStop hook and pre-flight review. You do
 
 Quality gates make enforcement visible. They're the difference between "we have standards" and "standards are enforced."
 
-## Why did a write get refused that used to go through?
+## Why is a rule that used to be informational now binding?
 
-Because as of v0.7.0 a `must`-grade write is refused *before* it hits disk. A deny-channel bug
-previously let that write land and only killed the assistant's turn afterward; that's fixed. Landing
-alongside it, grade derivation now reads the actual obligation strength of what you wrote — a plain,
+Because as of v0.7.0 grade derivation reads the actual obligation strength of what you wrote — a plain,
 unconditional "MUST" grades as `must`, not just "MUST NOT"/"NEVER" as before — which reclassified 404
-of 420 previously-`advisory` directives in this project's own corpus. Together, on a corpus you didn't
-change, those 404 rules went from informational-only to enforced.
+of 420 previously-`advisory` directives in this project's own corpus. On a corpus you didn't change,
+those 404 rules stopped being informational and started binding.
 
-This isn't a bug to route around — it's an existing rule finally enforcing what it says. If a specific
-refusal looks wrong for what you actually meant, reword the directive to genuinely conditional language
-(`SHOULD`, `MAY`, or a qualified `MUST`) rather than bypassing the gate. Full detail:
+v0.7.0 also refused a `must`-grade edit at the moment it landed. That channel is **retired** as of
+v0.9.0 (ADR-083): nothing is denied, warned about, or annotated when an edit lands. A `must`-grade
+directive reaches the model *before* it writes — through the always-on core and through the topic file
+for the path being touched — and `/edikt:gov:verify-diff` reviews the finished diff against every
+directive at phase end.
+
+This isn't a bug to route around — it's an existing rule finally saying what it means. If a directive
+reads stricter than you meant it, reword it to genuinely conditional language (`SHOULD`, `MAY`, or a
+qualified `MUST`) rather than working around it. Full detail:
 [Upgrading to v0.7.0](/guides/v0.7.0-upgrade).
 
 ## How do I compile governance?
 
 After capturing decisions with "Save this decision" or adding invariants with "That's a hard rule", say: "Compile governance."
 
-edikt reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on core loaded every session, per-topic files (under `.claude/rules/governance/`) that load when you touch matching code, a machine-readable index the write-time hooks read, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format.
+edikt reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on core loaded every session, per-topic files (under `.claude/rules/governance/`) that load when you touch matching code, a machine-readable `delivery-map.yaml` recording which directive governs which path and which surface delivers it, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format.
 
 **Command reference:** `/edikt:gov:compile`
 

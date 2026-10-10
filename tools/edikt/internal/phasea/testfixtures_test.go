@@ -1,6 +1,5 @@
 package phasea
 
-
 // The exact bytes GL-003's extraction produced: a backtick escaped inside a
 // double-quoted YAML scalar. Backtick is not a YAML escape — only \" and \\
 // are — so this is a hard parse error and the sidecar cannot be loaded.

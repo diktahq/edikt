@@ -16,14 +16,14 @@ func TestPathNormalize_CleansTraversalBeforeMatching(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "tools", "edikt"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeIndex(t, root, `
+	writeDeliveryMap(t, root, `
 schema_version: 1
 globs:
   "tools/**/*.go":
     - id: "INV-901:d01"
       grade: must
-      text: "governed"
-      reminders: []
+      surface: topic-file
+      topic: tooling
 `)
 	for _, p := range []string{
 		"tools/edikt/x.go",
@@ -31,7 +31,7 @@ globs:
 		"tools/../tools/edikt/x.go",
 		"tools/edikt/../edikt/x.go",
 	} {
-		res := Match(root, p)
+		res := MatchGoverning(root, p)
 		if res.Outcome != OutcomeMatched {
 			t.Errorf("%q did not match after normalisation (outcome=%s, norm=%q)", p, res.Outcome, res.NormPath)
 		}
@@ -44,7 +44,7 @@ globs:
 // `docs/link.go` matches no governed glob as a literal string. Its TARGET is
 // `tools/edikt/real.go`, which `tools/**/*.go` covers. An agent that writes
 // through the link edits governed code, and a matcher comparing literals
-// injects nothing and reports nothing wrong.
+// resolves nothing and reports nothing wrong.
 func TestSymlinkResolve_LiteralMissesButTargetMatches(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "tools", "edikt"), 0o755); err != nil {
@@ -61,14 +61,14 @@ func TestSymlinkResolve_LiteralMissesButTargetMatches(t *testing.T) {
 	if err := os.Symlink(real, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	writeIndex(t, root, `
+	writeDeliveryMap(t, root, `
 schema_version: 1
 globs:
   "tools/**/*.go":
     - id: "INV-901:d01"
       grade: must
-      text: "governed"
-      reminders: []
+      surface: topic-file
+      topic: tooling
 `)
 
 	// PIN THE PREMISE: the literal path must genuinely NOT match, or the test
@@ -77,10 +77,10 @@ globs:
 		t.Fatalf("premise broken: path was not resolved at all (%q)", got)
 	}
 
-	res := Match(root, "docs/link.go")
+	res := MatchGoverning(root, "docs/link.go")
 	if res.Outcome != OutcomeMatched {
 		t.Fatalf("a symlink whose TARGET is governed did not match: outcome=%s norm=%q — "+
-			"an agent can write governed code through a link with nothing injected",
+			"an agent can write governed code through a link that resolves to no rule",
 			res.Outcome, res.NormPath)
 	}
 }
@@ -108,17 +108,17 @@ func TestSymlinkResolve_LiteralMatchesButTargetDoesNot(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	writeIndex(t, root, `
+	writeDeliveryMap(t, root, `
 schema_version: 1
 globs:
   "tools/**/*.go":
     - id: "INV-901:d01"
       grade: must
-      text: "governed"
-      reminders: []
+      surface: topic-file
+      topic: tooling
 `)
 
-	res := Match(root, "tools/edikt/alias.go")
+	res := MatchGoverning(root, "tools/edikt/alias.go")
 	if res.Outcome == OutcomeMatched {
 		t.Errorf("a link whose literal path matches but whose TARGET is a text file was "+
 			"treated as governed Go code (norm=%q); false positives are how a gate gets disabled",
@@ -136,28 +136,33 @@ func TestPathNormalize_NonexistentPathIsNotAnError(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "tools", "edikt"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeIndex(t, root, `
+	writeDeliveryMap(t, root, `
 schema_version: 1
 globs:
   "tools/**/*.go":
     - id: "INV-901:d01"
       grade: must
-      text: "governed"
-      reminders: []
+      surface: topic-file
+      topic: tooling
 `)
-	res := Match(root, "tools/edikt/brand-new.go")
+	res := MatchGoverning(root, "tools/edikt/brand-new.go")
 	if res.Outcome != OutcomeMatched {
 		t.Fatalf("a not-yet-created file was not matched: outcome=%s norm=%q", res.Outcome, res.NormPath)
 	}
 }
 
-func writeIndex(t *testing.T, root, body string) {
+// writeDeliveryMap plants the routing table the matcher reads. The tests
+// above were written against the write-time index and its injecting matcher;
+// ADR-083 retired both, and the path-normalisation contract they pin (AC-3.4)
+// now holds for MatchGoverning over delivery-map.yaml — the one path->directive
+// scope source left.
+func writeDeliveryMap(t *testing.T, root, body string) {
 	t.Helper()
 	dir := filepath.Join(root, ".claude", "rules", "governance")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "directive-index.yaml"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "delivery-map.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

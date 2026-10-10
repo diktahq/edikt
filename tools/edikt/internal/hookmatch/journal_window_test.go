@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -133,7 +134,14 @@ func TestJournalMalformedLinesAreCounted(t *testing.T) {
 	}
 }
 
-// TestJournalRotates — bounded disk, one retained generation.
+// TestJournalRotates — bounded LIVE file, and the generation is preserved.
+//
+// Updated 2026-08-29 with the contract it pins. It previously asserted a
+// rotated file at <name>.1, i.e. exactly one retained generation. That fixed
+// suffix meant every rotation overwrote the previous one, and the assertion
+// was pinning the data loss. Rotation now moves the generation into
+// journal-archive/ under a unique timestamped name; the live-file half of the
+// contract, asserted below, is unchanged.
 func TestJournalRotates(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -152,8 +160,22 @@ func TestJournalRotates(t *testing.T) {
 	if err := Append(Record{Kind: KindHookRun, Hook: "session-start", Outcome: string(OutcomeHookRan)}); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	if _, err := os.Stat(p + ".1"); err != nil {
-		t.Fatalf("no rotated generation at %s.1: %v", p, err)
+	arc := filepath.Join(filepath.Dir(p), ArchiveDirName)
+	ents, err := os.ReadDir(arc)
+	if err != nil {
+		t.Fatalf("no archive directory at %s: %v", arc, err)
+	}
+	var gens []string
+	for _, e := range ents {
+		if strings.HasPrefix(e.Name(), "hook-journal-") {
+			gens = append(gens, e.Name())
+		}
+	}
+	if len(gens) != 1 {
+		t.Fatalf("want exactly one preserved generation in %s, got %v", arc, gens)
+	}
+	if _, err := os.Stat(p + ".1"); err == nil {
+		t.Fatalf("the fixed-suffix .1 name reappeared — that shape overwrites history")
 	}
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Fatalf("the live journal should have been rotated away, stat gave: %v", err)

@@ -1,0 +1,9 @@
+{
+  "session_id": "f585a313-b5a7-43ae-a7be-8b2e4c483192",
+  "transcript_path": "/Users/testuser/.agent-home/projects/-Users-testuser-MyProjects-personal--hookprobe-20260830/f585a313-b5a7-43ae-a7be-8b2e4c483192.jsonl",
+  "cwd": "/Users/testuser/MyProjects/personal/_hookprobe-20260830",
+  "prompt_id": "2cdf39a9-17c0-4b57-a140-e5ff8172da61",
+  "permission_mode": "default",
+  "hook_event_name": "UserPromptSubmit",
+  "prompt": "Use the Task tool to launch exactly one general-purpose subagent whose entire job is to reply with the single word: pong. Then reply with just: done."
+}

@@ -249,14 +249,32 @@ func phaseNumDigits(field string) string {
 	return digits.String()
 }
 
-// planNameFromHeading mirrors: head -5 "$PLAN" | grep '^# ' | head -1 | sed 's/^# //'.
+// planNameFromHeading mirrors: head -5 "$PLAN" | grep '^# ' | head -1 | sed 's/^# //',
+// counted from the end of a leading YAML frontmatter block. Plans written from
+// /edikt:sdlc:plan's template open with frontmatter that pushes the heading
+// well past line 5 (issue #13); with no heading, the frontmatter's id: names
+// the plan.
 func planNameFromHeading(planBody []byte) string {
-	sc := bufio.NewScanner(bytes.NewReader(planBody))
+	body := strings.ReplaceAll(string(planBody), "\r\n", "\n")
+	frontmatter := ""
+	if strings.HasPrefix(body, "---\n") {
+		if end := strings.Index(body[4:], "\n---\n"); end != -1 {
+			frontmatter = body[4 : 4+end]
+			body = strings.TrimLeft(body[4+end+len("\n---\n"):], "\n")
+		}
+	}
+	sc := bufio.NewScanner(strings.NewReader(body))
 	for i := 0; i < 5 && sc.Scan(); i++ {
 		line := sc.Text()
 		if strings.HasPrefix(line, "# ") {
 			return strings.TrimPrefix(line, "# ")
 		}
 	}
+	if m := planFrontmatterIDRe.FindStringSubmatch(frontmatter); m != nil {
+		return strings.Trim(strings.TrimSpace(m[1]), `"'`)
+	}
 	return ""
 }
+
+// planFrontmatterIDRe matches a top-level `id:` key in plan frontmatter.
+var planFrontmatterIDRe = regexp.MustCompile(`(?m)^id:[ \t]*(\S.*)$`)

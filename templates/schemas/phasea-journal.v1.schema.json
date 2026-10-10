@@ -33,7 +33,7 @@
     "plan_id": {
       "type": "string",
       "pattern": "^pap-[0-9a-f]{12}$",
-      "description": "The plan this event concerns. Present even for a plan-time \"refuse\" event: plan_id is derived from corpus_hash + config_hash alone (see phasea-dispatch-plan.v1.schema.json), so it is computable whether or not a plan file was actually written \u2014 recording it ties the refusal to the specific corpus/config state that would have produced that plan."
+      "description": "The plan this event concerns. Present even for a plan-time \"refuse\" event: plan_id is derived from corpus_hash + config_hash alone (see phasea-dispatch-plan.v2.schema.json), so it is computable whether or not a plan file was actually written \u2014 recording it ties the refusal to the specific corpus/config state that would have produced that plan."
     },
     "items": {
       "type": "integer",
@@ -59,9 +59,12 @@
         "corpus-load-error",
         "item-validation-failed",
         "pin-capture-failed",
-        "invalid-config"
+        "invalid-config",
+        "sidecar-absent-on-request",
+        "plan-id-terminal",
+        "unclosed-plan"
       ],
-      "description": "Populated only on a \"refuse\" event (see the if/then below), naming which of the four refusal reasons applied. Plan-time causes: \"ceiling-exceeded\" \u2014 the stale count exceeded phasea.ceiling on the default (non-forced) path. \"force-ceiling-exceeded\" \u2014 the stale count exceeded phasea.force_ceiling on a `--force` run. Verify-time causes: \"unknown-plan-id\" \u2014 the plan_id named on the `phasea verify --plan <id>` invocation does not match any emitted plan. \"already-consumed\" \u2014 the named plan_id's receipt already has consumed:true (AC-013-4's re-verify rejection). Added per the SPEC-013 pre-flight correction: without this field, every refuse event collapsed into one undifferentiated journal line, and a plan-time budget refusal was indistinguishable from a verify-time replay-protection refusal by grepping the journal alone. Widened 2026-08-20: SPEC-013 SR-006 requires EVERY refusal to journal, and the original four causes covered only ceiling refusals \u2014 leaving prompt_version UNKNOWN, corpus load failure, item validation failure, pin-capture failure and invalid config as refusals that left no audit trace. FR-018 asks for auditable spend at both ends; a refusal nobody can see is not auditable. Additive enum members are non-breaking within a major version (templates/schemas/README.md)."
+      "description": "Populated only on a \"refuse\" event (see the if/then below), naming which of the four refusal reasons applied. Plan-time causes: \"ceiling-exceeded\" \u2014 the stale count exceeded phasea.ceiling on the default (non-forced) path. \"force-ceiling-exceeded\" \u2014 the stale count exceeded phasea.force_ceiling on a `--force` run. Verify-time causes: \"unknown-plan-id\" \u2014 the plan_id named on the `phasea verify --plan <id>` invocation does not match any emitted plan. \"already-consumed\" \u2014 the named plan_id's receipt already has consumed:true (AC-013-4's re-verify rejection). Added per the SPEC-013 pre-flight correction: without this field, every refuse event collapsed into one undifferentiated journal line, and a plan-time budget refusal was indistinguishable from a verify-time replay-protection refusal by grepping the journal alone. Widened 2026-08-20: SPEC-013 SR-006 requires EVERY refusal to journal, and the original four causes covered only ceiling refusals \u2014 leaving prompt_version UNKNOWN, corpus load failure, item validation failure, pin-capture failure and invalid config as refusals that left no audit trace. FR-018 asks for auditable spend at both ends; a refusal nobody can see is not auditable. Additive enum members are non-breaking within a major version (templates/schemas/README.md). Widened again 2026-10-04 (#11; SPEC-013 revision of that date), additively: \"sidecar-absent-on-request\" \u2014 a requested extraction (`--artifact`) found no sidecar and no `--bootstrap` declaration (D414), which plan.go journaled from 0.9.0 dev builds without the value ever reaching this enum; \"plan-id-terminal\" \u2014 the corpus path derived the id of a plan that is already consumed or FAILED (a requested extraction derives a successor instead); \"unclosed-plan\" \u2014 the latest plan covering an item was never closed (dispatched and not restored, mid-retry, or FAILED) and the item's sidecar has moved since that plan pinned it."
     },
     "ts": {
       "type": "string",

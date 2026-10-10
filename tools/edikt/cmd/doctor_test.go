@@ -52,7 +52,7 @@ func TestDoctorMinimalLayout(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 

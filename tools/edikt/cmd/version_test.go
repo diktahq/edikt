@@ -25,7 +25,7 @@ func TestVersion(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "versions", "0.5.0", "VERSION"), []byte("0.5.0\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.5.0", "test"); err != nil {
+	if err := writeLock(root, "0.5.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 

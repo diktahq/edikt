@@ -102,7 +102,7 @@ func runSnapshotCheck(projectRoot string, opts snapshotOpts, w io.Writer) int {
 		if os.IsNotExist(err) {
 			fmt.Fprintf(w, "  Snapshot: NOT FOUND at %s\n", snapshotRelPath)
 			fmt.Fprintf(w, "    To capture the current compiled governance tree as the baseline:\n")
-			fmt.Fprintf(w, "      bin/edikt doctor --check-snapshot --create-snapshot\n")
+			fmt.Fprintf(w, "      edikt doctor --check-snapshot --create-snapshot\n")
 			return 0
 		}
 		fmt.Fprintf(w, "  ERROR: snapshot read: %v\n", err)
@@ -128,7 +128,7 @@ func runSnapshotCheck(projectRoot string, opts snapshotOpts, w io.Writer) int {
 		fmt.Fprintf(w, "    ~ %s\n", f)
 	}
 	fmt.Fprintf(w, "    To refresh the baseline after a deliberate change:\n")
-	fmt.Fprintf(w, "      bin/edikt doctor --check-snapshot --create-snapshot\n")
+	fmt.Fprintf(w, "      edikt doctor --check-snapshot --create-snapshot\n")
 
 	if opts.FailOnDrift {
 		return 1

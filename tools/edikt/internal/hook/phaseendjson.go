@@ -246,3 +246,21 @@ func runeHead(s string, n int) string {
 	}
 	return string(runes[:n])
 }
+
+// truthy mirrors the bash original's `evidence_reads.get(id)` test: a
+// consumed read is stored as null and must not re-unlock a claim, and an
+// empty string is not a timestamp.
+func truthy(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	case string:
+		return t != ""
+	case float64:
+		return t != 0
+	default:
+		return true
+	}
+}

@@ -1,0 +1,15 @@
+{
+  "session_id": "f585a313-b5a7-43ae-a7be-8b2e4c483192",
+  "transcript_path": "/Users/testuser/.agent-home/projects/-Users-testuser-MyProjects-personal--hookprobe-20260830/f585a313-b5a7-43ae-a7be-8b2e4c483192.jsonl",
+  "cwd": "/Users/testuser/MyProjects/personal/_hookprobe-20260830",
+  "prompt_id": "2cdf39a9-17c0-4b57-a140-e5ff8172da61",
+  "permission_mode": "default",
+  "effort": {
+    "level": "high"
+  },
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "done",
+  "background_tasks": [],
+  "session_crons": []
+}

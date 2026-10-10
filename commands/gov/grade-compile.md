@@ -5,7 +5,7 @@ effort: medium
 tier: 2
 tier_2_dependency: "edikt gov grade-compile"
 on_absent: "refuse-and-direct-user"
-argument-hint: "[--dir <governance-dir>] [--model <id>]"
+argument-hint: "[--dir <governance-dir>] [--model <id-that-actually-graded>]"
 allowed-tools:
   - Read
   - Glob
@@ -40,7 +40,7 @@ never affects compile determinism.
 Before running, confirm the tier-2 binary is available. Run:
 
 ```bash
-command -v edikt >/dev/null 2>&1 || test -x bin/edikt
+command -v edikt >/dev/null 2>&1
 ```
 
 If neither resolves, **refuse and direct the user** — do not attempt a fallback:
@@ -63,11 +63,13 @@ agent's JSON, and persisting it (ADR-044).
 ### 1. Resolve the inputs
 
 ```bash
-bin/edikt gov grade-compile --print-inputs
+EDIKT_INVOKER=/edikt:gov:grade-compile edikt gov grade-compile --print-inputs
 ```
 
 Exit 0 means the governance dir, rubric, report schema, and agent template all
-resolved (honouring `.edikt/templates/` project overrides). **Gate on the exit
+resolved. The binary finds the project root from any subdirectory, and looks
+for each template in the project's `.edikt/templates/` override first, then in
+the installed edikt payload. **Gate on the exit
 code, not the text** — per the tier-1 → tier-2 contract, this command consumes
 the binary's exit status only. On non-zero, surface the message and stop: a
 grader dispatched without its rubric would produce a confident, meaningless
@@ -83,13 +85,13 @@ Agent(
 )
 ```
 
-**Prompt body construction.** Build it with `bin/edikt util render`, passing the
+**Prompt body construction.** Build it with `edikt util render`, passing the
 resolved paths as `--field` values — never by shell-string interpolation.
 Substitution there is literal and single-pass. The grader
 reads the files itself; file CONTENT is never interpolated into the prompt.
 
 ```bash
-PROMPT_BODY=$(bin/edikt util render \
+PROMPT_BODY=$(edikt util render \
   --field "gov_dir=$GOV_DIR" --field "rubric=$RUBRIC" --field "schema=$SCHEMA" <<'TMPL'
 Grade the compiled governance tree at: {{gov_dir}}
 Rubric: {{rubric}}
@@ -116,9 +118,9 @@ report, and the agent is told not to produce one.
 Write the agent's JSON to a file, or pipe it:
 
 ```bash
-bin/edikt gov grade-compile --record report.json
+EDIKT_INVOKER=/edikt:gov:grade-compile edikt gov grade-compile --record report.json
 # or
-printf '%s' "$AGENT_JSON" | bin/edikt gov grade-compile --record -
+printf '%s' "$AGENT_JSON" | EDIKT_INVOKER=/edikt:gov:grade-compile edikt gov grade-compile --record -
 ```
 
 The binary validates before persisting: a missing dimension, a
@@ -128,7 +130,7 @@ recorded. An absent grade is a failure, never a zero.
 ### Stub mode (testing / CI)
 
 ```bash
-EDIKT_GRADE_COMPILE_STUB=1 bin/edikt gov grade-compile
+EDIKT_GRADE_COMPILE_STUB=1 EDIKT_INVOKER=/edikt:gov:grade-compile edikt gov grade-compile
 ```
 
 Writes a canned fixture report — exercises the record pipeline with no agent.

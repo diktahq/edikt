@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"io/fs"
 	"os"
@@ -341,7 +342,10 @@ func runM1(ctx context.Context, ediktRoot, claudeRoot, version, ts, staging, pre
 	}
 
 	// Write lock.yaml.
-	if err := writeLock(ediktRoot, version, "migration"); err != nil {
+	// A flat layout carries no record of where its payload came from, and
+	// this command must not invent one: lockSourceUnknown is written, and
+	// reads as published the same way every pre-provenance install does.
+	if err := writeLock(ediktRoot, version, "migration", lockSourceUnknown); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: activated but lock.yaml update failed: %v\n", err)
 	}
 
@@ -418,7 +422,7 @@ func migrateM2ClaudemSentinels(ediktRoot string, dryRun bool, backupDir *string)
 	newContent = replaceAll(newContent, endToken, []byte("[edikt:end]: #"))
 
 	// Atomic write with O_NOFOLLOW pre-check.
-	if err := atomicWriteNoFollow(f, newContent, 0o644); err != nil {
+	if err := migrate.AtomicWriteNoFollow(f, newContent, 0o644); err != nil {
 		return false, fmt.Errorf("M2: atomic write failed: %w", err)
 	}
 
@@ -531,54 +535,16 @@ func migrateM3FlatCommands(ediktRoot, claudeRoot string, dryRun bool) (bool, []s
 	return ran, preserved, nil
 }
 
-// ─── M4: compile schema v1 → v2 ──────────────────────────────────────────────
-
+// ─── M4: compile schema v1 → v2 — RETIRED (ADR-082 (b)) ──────────────────────
+//
+// M4 used to write an `.edikt/.m4-pending` marker so "the tier-1 path knows
+// there is work outstanding". Nothing ever read it: gov compile decides what
+// to render from the corpus in front of it, per artifact, and a marker that
+// says "recompile" to a compiler that always recompiles is migration
+// awareness with no consumer. The step is kept as a named no-op so the M1–M6
+// numbering in the summary and the tests stays stable; it writes nothing.
 func migrateM4CompileSchema(ediktRoot, claudeRoot string, dryRun bool) (bool, error) {
-	gov := filepath.Join(claudeRoot, "rules", "governance.md")
-	if _, err := os.Stat(gov); os.IsNotExist(err) {
-		return false, nil
-	}
-	data, err := os.ReadFile(gov)
-	if err != nil {
-		return false, nil
-	}
-	// 2 OR 3: this asks "is this a post-v0.1.x tree", not "is this exactly
-	// schema 2". ADR-059 bumped the value to 3 for the four-surface render, and  edikt-guard:allow
-	// the field has always been documented as monotonic — an exact-equality
-	// read was never the contract.
-	if containsStr(string(data), "compile_schema_version: 2") ||
-		containsStr(string(data), "compile_schema_version: 3") {
-		return false, nil
-	}
-	pendingMarker := filepath.Join(ediktRoot, ".m4-pending")
-	if _, err := os.Stat(pendingMarker); err == nil {
-		return false, nil
-	}
-
-	if dryRun {
-		fmt.Fprintln(os.Stderr, "M4 (compile schema): would write .m4-pending so the host agent's /edikt:gov:compile run upgrades governance.md to schema v2")
-		return true, nil
-	}
-
-	// The
-	// compile schema upgrade is structurally deferred to the host
-	// agent's /edikt:gov:compile slash command, which fires naturally
-	// at the end of /edikt:upgrade. Write the pending marker so the
-	// tier-1 path knows there is work outstanding.
-	fmt.Fprintln(os.Stderr, "M4 (compile schema): writing .m4-pending marker — run /edikt:gov:compile (or /edikt:upgrade) under your host agent to complete the schema-v2 migration")
-
-	// Write .m4-pending marker.
-	f, err2 := os.OpenFile(pendingMarker, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err2 != nil {
-		fmt.Fprintf(os.Stderr, "warn: M4: could not write %s (non-fatal)\n", pendingMarker)
-		return false, nil
-	}
-	f.Close()
-	emitEvent(ediktRoot, "migration_step_completed", map[string]interface{}{
-		"step": "M4", "action": "pending", "marker": pendingMarker,
-	})
-	fmt.Fprintln(os.Stderr, "warn: M4: governance.md schema migration pending — run /edikt:gov:compile to complete")
-	return true, nil
+	return false, nil
 }
 
 // ─── M5: config.yaml schema additions ────────────────────────────────────────
@@ -731,7 +697,7 @@ func printSecondarySummary(s secondarySummary, backupDir string) {
 		ranAny = true
 	}
 	if s.ranM4 {
-		fmt.Println("  M4: compile schema marked pending (deferred to Phase 7b)")
+		fmt.Println("  M4: compile schema (no-op — the compiler decides from the corpus, ADR-082)")
 		ranAny = true
 	}
 	if !ranAny {
@@ -1408,35 +1374,6 @@ func openNoFollow(path string) ([]byte, error) {
 		return nil, fmt.Errorf("%s is a symlink", path)
 	}
 	return os.ReadFile(path)
-}
-
-// atomicWriteNoFollow writes data to path atomically (tmp + rename), with
-// a pre-rename check that path has not become a symlink.
-func atomicWriteNoFollow(path string, data []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp := filepath.Join(dir, fmt.Sprintf(".%s.tmp.%d", filepath.Base(path), os.Getpid()))
-
-	if err := os.WriteFile(tmp, data, mode); err != nil {
-		return err
-	}
-	// Sync.
-	f, err := os.Open(tmp)
-	if err == nil {
-		_ = f.Sync()
-		f.Close()
-	}
-
-	// Pre-rename check: ensure path is still not a symlink.
-	if fi, err := os.Lstat(path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
-		os.Remove(tmp)
-		return fmt.Errorf("%s became a symlink during migration — aborting", path)
-	}
-
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	return nil
 }
 
 func safeRemoveOrQuarantine(tgt, reason string) error {

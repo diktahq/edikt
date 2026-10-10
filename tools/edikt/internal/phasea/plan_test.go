@@ -693,23 +693,24 @@ func TestPlanExitCodes(t *testing.T) {
 //
 // SPEC-013 SR-006 requires every refusal (at plan time or verify time) to
 // append exactly one phasea-journal.v1 line. This is a table-driven proof,
-// over all seven causes Plan() can produce, that:
+// over every cause Plan() can produce, that:
 //
 //  1. the refusal actually happens (ExitRefused, non-nil error);
-//  2. exactly one line lands in .edikt/state/phasea-dispatch.jsonl — not
+//  2. exactly one line is appended to .edikt/state/phasea-dispatch.jsonl — not
 //     zero (the pre-widening gap this task closes) and not two (a
 //     double-journal bug would be just as much an SR-006 violation as
 //     silence); and
 //  3. that line's `cause` names the specific refusal that occurred.
 //
-// Each subtest runs in its own fresh t.TempDir() with no pre-existing
-// journal file, so "exactly one line in the file" is equivalent to "exactly
-// one line was appended by this Plan() call" without needing to diff
-// before/after journal state.
+// Each subtest runs in its own fresh t.TempDir(). Most start with no journal
+// at all; plan-id-terminal and unclosed-plan need a prior plan to exist, so
+// the assertion counts the lines this Plan() call APPENDED, not the lines in
+// the file.
 func TestEveryRefusalJournals(t *testing.T) {
 	type refusalCase struct {
 		name      string
 		setup     func(t *testing.T, root string)
+		artifact  func(root string) string // non-nil: a requested plan of this path
 		force     bool
 		wantCause string
 	}
@@ -826,6 +827,61 @@ func TestEveryRefusalJournals(t *testing.T) {
 			},
 			wantCause: CausePinCaptureFailed,
 		},
+		{
+			name: "sidecar-absent-on-request",
+			setup: func(t *testing.T, root string) {
+				isolate(t)
+				writeExtractorAgent(t, root, 3)
+				writeADR(t, root, "ADR-090", "prose.")
+				// No sidecar and no --bootstrap: D414's refusal.
+			},
+			artifact: func(root string) string {
+				return filepath.Join(root, "docs", "architecture", "decisions", "ADR-090-test.md")
+			},
+			wantCause: CauseSidecarAbsentOnRequest,
+		},
+		{
+			name: "plan-id-terminal",
+			setup: func(t *testing.T, root string) {
+				isolate(t)
+				writeExtractorAgent(t, root, 3)
+				writeConfig(t, root, "phasea:\n  max_attempts_per_item: 1\n")
+				writeADR(t, root, "ADR-091", gateQuote)
+				out, err := Plan(PlanOptions{ProjectRoot: root})
+				if err != nil {
+					t.Fatalf("setup plan: %v", err)
+				}
+				if err := writeRestoreReceipt(root, out.Plan.PlanID, &RestoreOutcome{ExitCode: ExitRestoreOK}); err != nil {
+					t.Fatal(err)
+				}
+				// Nothing was extracted and the budget is 1: FAILED, terminal.
+				if v, _ := Verify(VerifyOptions{ProjectRoot: root, PlanID: out.Plan.PlanID}); v.ExitCode != ExitVerifyFailed {
+					t.Fatalf("setup verify: exit %d, want FAILED\n%s", v.ExitCode, v.Message)
+				}
+			},
+			wantCause: CausePlanIDTerminal,
+		},
+		{
+			name: "unclosed-plan",
+			setup: func(t *testing.T, root string) {
+				isolate(t)
+				writeExtractorAgent(t, root, 3)
+				md := writeADR(t, root, "ADR-092", gateQuote)
+				sc := sidecarPathFor(md)
+				writeMarshalledSidecar(t, sc, &sidecar.Sidecar{SchemaVersion: 2, Topic: "testing",
+					Directives: []sidecar.Directive{anchoredAtGateQuote("A rule MUST hold. (ref: ADR-092)")}})
+				if _, err := Plan(PlanOptions{ProjectRoot: root, Artifact: md}); err != nil {
+					t.Fatalf("setup plan: %v", err)
+				}
+				// The extractor rewrote the sidecar; restore never ran.
+				writeMarshalledSidecar(t, sc, &sidecar.Sidecar{SchemaVersion: 2, Topic: "testing",
+					Directives: []sidecar.Directive{anchoredAtGateQuote("A new rule MUST hold. (ref: ADR-092)")}})
+			},
+			artifact: func(root string) string {
+				return filepath.Join(root, "docs", "architecture", "decisions", "ADR-092-test.md")
+			},
+			wantCause: CauseUnclosedPlan,
+		},
 	}
 
 	// INV-013: a table-driven test over zero refusal paths would compile,
@@ -839,8 +895,21 @@ func TestEveryRefusalJournals(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			root := t.TempDir()
 			c.setup(t, root)
+			// Count lines appended by THIS call: a refusal that needs a prior
+			// plan to exist (plan-id-terminal, unclosed-plan) starts with a
+			// journal that is not empty.
+			linesBefore := 0
+			if data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(JournalRelPath))); err == nil {
+				if trimmed := strings.TrimRight(string(data), "\n"); trimmed != "" {
+					linesBefore = len(strings.Split(trimmed, "\n"))
+				}
+			}
+			opts := PlanOptions{ProjectRoot: root, Force: c.force}
+			if c.artifact != nil {
+				opts.Artifact = c.artifact(root)
+			}
 
-			out, err := Plan(PlanOptions{ProjectRoot: root, Force: c.force})
+			out, err := Plan(opts)
 			if err == nil {
 				t.Fatalf("expected a refusal, got nil error (exit %d, message %q)", out.ExitCode, out.Message)
 			}
@@ -852,9 +921,9 @@ func TestEveryRefusalJournals(t *testing.T) {
 			if rerr != nil {
 				t.Fatalf("journal file was not written at all for a %q refusal: %v", c.wantCause, rerr)
 			}
-			lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+			lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")[linesBefore:]
 			if len(lines) != 1 {
-				t.Fatalf("journal has %d line(s) for a %q refusal, want exactly 1:\n%s", len(lines), c.wantCause, data)
+				t.Fatalf("journal gained %d line(s) for a %q refusal, want exactly 1:\n%s", len(lines), c.wantCause, data)
 			}
 
 			var rec JournalRecord

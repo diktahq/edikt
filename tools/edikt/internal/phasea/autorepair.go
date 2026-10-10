@@ -5,9 +5,16 @@ package phasea
 // when the pure-Go repair resolves every stale anchor.
 //
 // This file is the integration seam between govrun's Phase A bookkeeping
-// and sidecar.AutoRepairAnchors: govrun calls TryAutoRepair for each
-// stale pair, persists the rewritten sidecar on success, and only enqueues
-// a phasea.Task when TryAutoRepair reports the sidecar is still stale.
+// and sidecar.AutoRepairAnchors. PHASEA NEVER PERSISTS A SIDECAR: it repairs
+// the sidecar it is handed in memory and RETURNS the repaired bytes. Whether
+// those bytes reach disk is govrun's decision, made through its one writer
+// (writeSourceSidecar), which refuses under --check / --dry-run and keeps
+// the `$schema` header the file opened with.
+//
+// It used to write here (#9, c4-a): a direct file write reachable from every
+// caller, including the non-writing flags, which re-marshalled the file and
+// dropped its header. A write that lives in the callee cannot be gated by a
+// flag the callee is never told about.
 
 import (
 	"fmt"
@@ -21,31 +28,32 @@ import (
 // RepairOutcome reports the result of one TryAutoRepair invocation.
 type RepairOutcome struct {
 	// AnchorsRepaired is the count of directive/prohibition source
-	// excerpts whose LineStart/LineEnd were updated by the quote-primary,
-	// line-secondary strategy.
+	// excerpts whose LineStart/LineEnd (or quote) were updated by the
+	// quote-primary, line-secondary strategy.
 	AnchorsRepaired int
 
 	// StillStale is true when at least one anchor remains stale after
 	// the repair pass — caller MUST proceed with LLM dispatch.
 	StillStale bool
 
-	// Rewrote is true when AutoRepairAnchors mutated the sidecar and
-	// the new YAML was persisted back to SidecarPath.
-	Rewrote bool
+	// Repaired is the canonical YAML of the repaired sidecar, set only when
+	// AnchorsRepaired > 0. Nil means there is nothing to persist. It carries
+	// no `$schema` header: the caller's writer re-attaches the one the file
+	// opened with.
+	Repaired []byte
 }
 
-// TryAutoRepair reads the parent .md, runs sidecar.AutoRepairAnchors on a
-// loaded sidecar, persists the repaired sidecar to disk when any anchor
-// was updated, and re-checks IsStale.
+// TryAutoRepair reads the parent .md, runs sidecar.AutoRepairAnchors on sc
+// IN MEMORY, and re-checks staleness. It never writes a file.
 //
 // Pure-Go, no LLM dispatch. Errors that prevent the repair (parent read,
-// sidecar marshal, sidecar write) are surfaced to the caller — phasea
-// callers fall back to LLM dispatch on error rather than aborting.
+// sidecar marshal) are surfaced to the caller — phasea callers fall back to
+// LLM dispatch on error rather than aborting.
 //
 // projectRoot resolves the sidecar's relative `path:` field. parentPath is
 // the absolute path to the parent .md, when the caller already has it; if
 // empty, TryAutoRepair joins projectRoot with sc.Path.
-func TryAutoRepair(sc *sidecar.Sidecar, projectRoot, parentPath, sidecarPath string) (RepairOutcome, error) {
+func TryAutoRepair(sc *sidecar.Sidecar, projectRoot, parentPath string) (RepairOutcome, error) {
 	out := RepairOutcome{}
 	if sc == nil {
 		return out, fmt.Errorf("autorepair: nil sidecar")
@@ -73,24 +81,16 @@ func TryAutoRepair(sc *sidecar.Sidecar, projectRoot, parentPath, sidecarPath str
 	out.AnchorsRepaired = sidecar.AutoRepairAnchors(sc, lines)
 	out.StillStale = sidecar.IsStale(sc, lines)
 
-	if out.AnchorsRepaired > 0 && sidecarPath != "" {
-		// Persist the repaired sidecar so subsequent loads see the
-		// corrected anchors. Failure to write surfaces to the caller
-		// but does not change StillStale — the in-memory repair still
-		// stands for the current Phase A invocation.
-		// Marshal, NOT Marshal: sc was mutated after Load, and Marshal
-		// returns the load-time cached bytes — which silently persisted the
-		// ORIGINAL stale file on every repair (the phantom-stale loop:
-		// compile reports "fully resolved", disk keeps the drifted anchors,
-		// the stop-hook re-reads them and warns again).
+	if out.AnchorsRepaired > 0 {
+		// Marshal, NOT the load-time cache: sc was mutated after Load, and
+		// returning the cached bytes is what once persisted the ORIGINAL
+		// stale file on every repair (the phantom-stale loop: compile
+		// reported "fully resolved", disk kept the drifted anchors).
 		yamlBytes, merr := sidecar.Marshal(sc)
 		if merr != nil {
 			return out, fmt.Errorf("autorepair: marshal repaired sidecar: %w", merr)
 		}
-		if werr := os.WriteFile(sidecarPath, yamlBytes, 0o644); werr != nil {
-			return out, fmt.Errorf("autorepair: write %s: %w", sidecarPath, werr)
-		}
-		out.Rewrote = true
+		out.Repaired = yamlBytes
 	}
 	return out, nil
 }

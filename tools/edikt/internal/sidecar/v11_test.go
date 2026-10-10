@@ -11,6 +11,7 @@ package sidecar
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -154,9 +155,9 @@ func TestValidate_ProhibitionsRequireSourceExcerpt(t *testing.T) {
 			"text: required",
 		},
 		{
-			"text-over-500",
-			Prohibition{Text: strings.Repeat("a", 501), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
-			"max 500",
+			"text-over-hard-cap",
+			Prohibition{Text: strings.Repeat("a", HardCapProse+1), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
+			fmt.Sprintf("max %d", HardCapProse),
 		},
 		{
 			"line-start-zero",

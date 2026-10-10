@@ -2,7 +2,7 @@
 #
 # WHY THIS FILE EXISTS AT ALL
 #
-# `bin/edikt hook run <name>` must resolve <name> from DATA, never from a
+# `edikt hook run <name>` must resolve <name> from DATA, never from a
 # hardcoded Go switch. PRD-007's owner rider is explicit about it: a future
 # name-pattern change must not require a binary change. This file is that data,
 # and it is tier-1 (`.yaml` under `templates/`, permitted by INV-001), so it
@@ -42,27 +42,16 @@
 schema_version: 1
 
 hooks:
-  # -- gate: the three write-deny hooks, migrated LAST (FR-007) -------------
-  # A regression here blocks the user's editor, so they move only once the
-  # injector and multi-call classes have shipped and soaked.
+  # -- gate: the one write-deny hook left (INV-005 managed-region guard) -----  edikt-guard:allow
+  # It was one of three; verify-gate and inject-directives-pre are retired by
+  # ADR-083 and listed under `retired:` below so upgrade and doctor can name a  edikt-guard:allow
+  # settings.json still registering them.
   - name: pre-tool-use
     event: PreToolUse
     file: pre-tool-use.sh
     class: gate
     status: migrated
     python3_baseline_count: 8
-  - name: verify-gate
-    event: PreToolUse
-    file: verify-gate.sh
-    class: gate
-    status: migrated
-    python3_baseline_count: 20
-  - name: inject-directives-pre
-    event: PreToolUse
-    file: inject-directives-pre.sh
-    class: gate
-    status: migrated
-    python3_baseline_count: 11
 
   # -- multi-call: hooks that fan out to several tier-2 verbs per fire ------
   - name: stop-hook
@@ -118,12 +107,6 @@ hooks:
     class: injector
     status: migrated
     python3_baseline_count: 0
-  - name: inject-directives-post
-    event: PostToolUse
-    file: inject-directives-post.sh
-    class: injector
-    status: migrated
-    python3_baseline_count: 7
   - name: stop-failure
     event: StopFailure
     file: stop-failure.sh
@@ -136,6 +119,16 @@ hooks:
     class: injector
     status: migrated
     python3_baseline_count: 8
+  # session-compact: the SessionStart(matcher "compact") carrier for the
+  # post-compaction context. PostCompact is not a hookSpecificOutput event
+  # (adapter/hookevents.go), so the re-injection moved here on 2026-09-02.
+  # Go-native from birth — no bash baseline ever existed for it.
+  - name: session-compact
+    event: SessionStart
+    file: session-compact.sh
+    class: injector
+    status: migrated
+    python3_baseline_count: 0
   - name: instructions-loaded
     event: InstructionsLoaded
     file: instructions-loaded.sh
@@ -206,3 +199,17 @@ hooks:
     class: library
     status: pending
     python3_baseline_count: 0
+
+# Hooks that once had a row above and no longer run. A name here is NOT
+# registered: `edikt hook run <name>` for it journals unregistered-hook-name
+# exactly as for a name that never existed. The list exists so the two
+# consumers that meet a stale settings.json — `edikt upgrade`'s settings
+# reconciliation and `edikt doctor` — can say "retired, run /edikt:upgrade"
+# rather than "unknown hook". (ADR-083; PLAN-v090-release Phase 0, AC-0.4/0.8/0.9)  edikt-guard:allow
+retired:
+  - name: verify-gate
+    event: PreToolUse
+    since: 0.9.0
+  - name: inject-directives-pre
+    event: PreToolUse
+    since: 0.9.0

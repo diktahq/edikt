@@ -61,7 +61,7 @@ CRITICAL: Every finding must cite the specific text that fails the check and pro
 ⚠ Manual directive (no source_excerpt anchor — verify still accurate): "{text}" (sidecar: {path})
 ```
 
-Manual directives have no `source_excerpt` line range — they were authored directly via `bin/edikt sidecar add-manual-directive` and cannot be drift-checked against parent prose. Surface every entry once so the reviewer eyeballs each for staleness.
+Manual directives have no `source_excerpt` line range — they were authored directly via `edikt sidecar add-manual-directive` and cannot be drift-checked against parent prose. Surface every entry once so the reviewer eyeballs each for staleness.
 
 5b. **Directive-quality sub-procedure (shared with `/edikt:gov:compile`).** For each document in scope, run the inline Python script from `commands/gov/_shared-directive-checks.md §Inline Script` once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
 
@@ -115,14 +115,14 @@ If no warnings for a document, omit the sub-heading for that document. These war
 
 10. Display progress: `Step 2/3: Checking sidecar staleness...`
 
-11. Run the tier-2 deterministic staleness check. v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars; staleness is detected by `bin/edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. If any quote no longer matches, the sidecar is stale.
+11. Run the tier-2 deterministic staleness check. v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars; staleness is detected by `edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. If any quote no longer matches, the sidecar is stale.
 
     ```bash
-    if ! command -v bin/edikt >/dev/null 2>&1 && ! command -v edikt >/dev/null 2>&1; then
-      echo "error: bin/edikt not found on PATH. Run: edikt install edikt"
+    if ! command -v edikt >/dev/null 2>&1; then
+      echo "error: edikt not found on PATH. Run: edikt install edikt"
       exit 1
     fi
-    if check_output=$(bin/edikt gov compile --check 2>&1); then
+    if check_output=$(EDIKT_INVOKER=/edikt:gov:review edikt gov compile --check 2>&1); then
       stale_count=0
       missing_count=0
     else
@@ -131,12 +131,8 @@ If no warnings for a document, omit the sub-heading for that document. These war
     fi
     ```
 
-    Why this replaces the v0.2.x `content_hash:` mechanism:
-    - The legacy approach hashed everything-above-the-sentinel-marker. Compile's writer computed the hash *before* appending the sentinel + blank-line separator, but the read-time check hashed *after* — write/read disagreed by exactly one trailing newline. Every freshly-compiled file was born stale, forever.
-    - v0.6.0 sidecars don't store a content_hash. Drift is detected via per-directive `source_excerpts[]` `quote` lookups against current `.md` line ranges. Round-trips correctly because no synthesised separator confuses the comparison.
-    - For projects still on the legacy v0.2-v0.4 sentinel schema, `/edikt:doctor` flags them with a one-line migration prompt; `/edikt:gov:review` does not retry the broken hash check.
 
-12. Parse `bin/edikt gov compile --check` output to populate per-document findings:
+12. Parse `edikt gov compile --check` output to populate per-document findings:
     - Each `stale: ADR-NNN — directive[K]: ...` line maps to one stale finding for `ADR-NNN`'s parent `.md`.
     - Each `<path>: sidecar missing — run /edikt:<kind>:compile` line maps to one missing finding.
     - Exit code 0 with empty stdout = all current.
@@ -159,7 +155,7 @@ If no warnings for a document, omit the sub-heading for that document. These war
 
 ---
 
-REMEMBER: This command reviews LANGUAGE QUALITY and generates DIRECTIVE SENTINELS. The question is: "If Claude reads this directive, will it know exactly what to do?" Every finding must include the original text and a concrete rewrite. Sentinel blocks are the bridge between human-readable governance and LLM-enforceable rules.
+REMEMBER: This command reviews LANGUAGE QUALITY and reports SIDECAR STALENESS. The question is: "If Claude reads this directive, will it know exactly what to do?" Every finding must include the original text and a concrete rewrite. Sentinel blocks are the bridge between human-readable governance and LLM-enforceable rules.
 
 ## Reference
 
@@ -225,7 +221,7 @@ Apply these to the compiled output (`.claude/rules/governance.md`) as a whole:
 
 3. **Primacy**: Check if invariants appear first. If not: `[!!] Invariants should be the first section — primacy bias means earlier directives get more attention.`
 
-4. **Single-home rendering** (rewritten 2026-08-16; the prior wording of this criterion was stale against schema v3): schema v3 deliberately does NOT restate content for a U-shaped-attention-curve recency effect — repeating a directive's full text across both a topic file and `directive-index.yaml` was a fixed defect (measured live: 78 of 110 directive lines appearing verbatim in both). "Reinforcement" in v3 comes from precision of delivery (a topic file loads on file-touch; write-time injection fires per matched directive) rather than repetition. Running the OLD wording of this criterion against correct v3 output reports a fixed defect as a live one — do not do that. Check instead for the actual v3 defect class: does any directive's full text appear more than once across `governance.md`'s body, a topic file, and `directive-index.yaml`? If so: `[!!] Directive duplicated across surfaces — "{directive text}" appears in both {surface A} and {surface B}. Scoped directive text has exactly one home: the topic file for a pathless artifact, the index for a paths-declaring one — never both.`
+4. **Single-home rendering**: schema v3 deliberately does NOT restate content for a U-shaped-attention-curve recency effect — repeating a directive's full text across both a topic file and `directive-index.yaml` was a fixed defect (measured live: 78 of 110 directive lines appearing verbatim in both). "Reinforcement" in v3 comes from precision of delivery (a topic file loads on file-touch; write-time injection fires per matched directive) rather than repetition. Running the OLD wording of this criterion against correct v3 output reports a fixed defect as a live one — do not do that. Check instead for the actual v3 defect class: does any directive's full text appear more than once across `governance.md`'s body, a topic file, and `directive-index.yaml`? If so: `[!!] Directive duplicated across surfaces — "{directive text}" appears in both {surface A} and {surface B}. Scoped directive text has exactly one home: the topic file for a pathless artifact, the index for a paths-declaring one — never both.`
 
 5. **Cross-references**: Check if every directive has a `(ref: ADR-NNN)` or `(ref: INV-NNN)` source. If not: `[!!] {n} directives without source references — traceability is lost.`
 
@@ -320,5 +316,5 @@ These criteria are grounded in empirical results:
 - **EXP-004** (123 runs): well-written rules achieve 100% compliance on invented conventions. Poorly phrased rules were not tested because all edikt rules are already strong — this command catches user-authored governance docs before they degrade the system.
 - **IFEval++ (2025)**: phrasing inconsistency costs 18-31% compliance. Consistent NEVER/MUST phrasing outperforms mixed emphasis.
 - **IFScale (2025)**: primacy bias peaks at 150-200 instructions. Earlier directives get more attention.
-- **Lost in the Middle (Liu et al., 2023)**: 20%+ degradation for content in mid-document positions. U-shaped attention curve supports primacy design — this is why Criterion 3 (invariants first) is a real check on `governance.md`. v3's answer to the RECENCY half of that curve is not restatement (measured live as 78-of-110-line double-loading, now fixed) but precision of delivery: scoped content reaches the reader again at the moment it is relevant — a topic file loading on file-touch, or write-time injection firing per matched directive — rather than a second static copy sitting in a document nobody re-reads on demand.
+- **Lost in the Middle (Liu et al., 2023)**: 20%+ degradation for content in mid-document positions. U-shaped attention curve supports primacy design — this is why Criterion 3 (invariants first) is a real check on `governance.md`. v3's answer to the RECENCY half of that curve is not restatement but precision of delivery: scoped content reaches the reader again at the moment it is relevant — a topic file loading on file-touch, or write-time injection firing per matched directive — rather than a second static copy sitting in a document nobody re-reads on demand.
 - **Anthropic context engineering**: "Informative, yet tight" — every directive must earn its place.

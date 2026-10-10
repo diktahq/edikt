@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/diktahq/edikt/tools/edikt/internal/lossless"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -75,12 +75,12 @@ type losslessConfig struct {
 }
 
 type artifactReport struct {
-	ID           string          `json:"id"`
-	SidecarPath  string          `json:"sidecar_path"`
-	BaselinePath string          `json:"baseline_path,omitempty"`
-	Status       string          `json:"status"` // "pass" | "fail" | "skip"
-	SkipReason   string          `json:"skip_reason,omitempty"`
-	Losses       []lossless.Loss `json:"losses,omitempty"`
+	ID           string         `json:"id"`
+	SidecarPath  string         `json:"sidecar_path"`
+	BaselinePath string         `json:"baseline_path,omitempty"`
+	Status       string         `json:"status"` // "pass" | "fail" | "skip"
+	SkipReason   string         `json:"skip_reason,omitempty"`
+	Losses       []migrate.Loss `json:"losses,omitempty"`
 }
 
 type losslessReport struct {
@@ -177,7 +177,7 @@ func runLosslessCheck(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		losses := lossless.CheckLossless(baselineBytes, p.Sidecar)
+		losses := migrate.CheckLossless(baselineBytes, p.Sidecar)
 		ar := artifactReport{
 			ID:           p.ArtifactID,
 			SidecarPath:  relPath(root, p.SidecarPath),

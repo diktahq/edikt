@@ -7,6 +7,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,7 +42,10 @@ var (
 )
 
 // adrIDFromPathRe matches (case-insensitive) ADR-NNN or INV-NNN in a filename.
-var adrIDFromPathRe = regexp.MustCompile(`(?i)(ADR|INV)-\d+`)
+// SR-005 (SPEC-018): id segments are uppercase-or-digit, not digits only.
+// `ADR-GOLD-001` is a valid id; the old `\d{3,}` form rejected or truncated it,
+// and fixing only discover.go would relocate the collision to this consumer.
+var adrIDFromPathRe = regexp.MustCompile(`(ADR|INV)(?:-[A-Z0-9]+)*-\d{3,}`)
 
 var addManualDirectiveCmd = &cobra.Command{
 	Use:   "add-manual-directive",
@@ -105,8 +109,29 @@ func runAddManualDirective(cmd *cobra.Command, args []string) error {
 	if utf8.RuneCountInString(addManualText) == 0 {
 		return &exitCodeError{code: 1, msg: "error: --text is empty"}
 	}
-	if len(addManualText) > 500 {
-		return &exitCodeError{code: 1, msg: fmt.Sprintf("error: --text is %d chars, max 500", len(addManualText))}
+	// BINDING MODAL FORCE, AT THE WRITE POINT.
+	//
+	// The invariant forbids authoring a directive whose obligation is stated in
+	// soft modal force. It was enforced only by CI archaeology: this command
+	// accepted "Sidecar writes should ideally be atomic where possible" and
+	// exited 0, writing it to disk. A rule that only a later scan can catch is
+	// a rule the author never hears.
+	//
+	// Checked BEFORE the length rule so the more specific diagnosis wins: a
+	// soft-modal directive that is also over-cap should be told it is soft, not
+	// told to shorten a sentence that must be rewritten anyway.
+	if verb, ok := softModalVerb(addManualText); ok {
+		return &exitCodeError{code: 1, msg: fmt.Sprintf(
+			"--text states its obligation in soft modal force (%q).\n"+
+				"  Grade is DERIVED from modal force, so this would compile to advisory and\n"+
+				"  ship as a suggestion: counted in every coverage number, binding nothing.\n"+
+				"  State it as MUST / MUST NOT, or write it down as a guideline instead.",
+			verb)}
+	}
+
+	if len(addManualText) > sidecar.HardCapProse {
+		return &exitCodeError{code: 1, msg: fmt.Sprintf("error: --text is %d chars, max %d",
+			len(addManualText), sidecar.HardCapProse)}
 	}
 
 	// ── Validate and resolve --path ──────────────────────────────────
@@ -164,7 +189,7 @@ func runAddManualDirective(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("error: marshal: %v", err)}
 	}
 
-	if err := atomicWriteNoFollow(sidecarPath, out, 0o644); err != nil {
+	if err := migrate.AtomicWriteNoFollow(sidecarPath, out, 0o644); err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("error: write: %v", err)}
 	}
 
@@ -298,4 +323,31 @@ func runSidecarDiff(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{code: 1, msg: ""}
 	}
 	return nil
+}
+
+// softModalVerb reports whether text states its obligation with a hedge rather
+// than binding RFC-2119 force, returning the offending word.
+//
+// A directive carrying real modal force is NOT flagged for containing a hedge
+// elsewhere in the sentence — "MUST NOT retry unless the operator should be
+// notified" is binding, and refusing it would push authors toward weaker
+// phrasings to satisfy the checker. Mirrors test/lib/authored-modality-scan.py;
+// the two are pinned together by test/check-authored-directive-modality.sh.
+func softModalVerb(text string) (string, bool) {
+	lower := strings.ToLower(text)
+	for _, binding := range []string{"must not", "must", "shall not", "shall", "required", "may not"} {
+		if strings.Contains(lower, binding) {
+			return "", false
+		}
+	}
+	for _, soft := range []string{
+		"ideally", "preferably", "where possible", "wherever possible", "try to",
+		"aim to", "it is recommended", "we recommend", "should", "may want to",
+		"if practical", "as appropriate",
+	} {
+		if strings.Contains(lower, soft) {
+			return soft, true
+		}
+	}
+	return "", false
 }

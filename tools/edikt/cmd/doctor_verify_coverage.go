@@ -1,144 +1,199 @@
 package cmd
 
-// doctor_verify_coverage.go — Phase 4 of PLAN-v060-completion-evidence.
+// doctor_verify_coverage.go — Phase 4 of PLAN-v060-completion-evidence,
+// reshaped under D38 defect 2 (2026-09-02).
 //
-// Adds a "Sidecar Verify Coverage" group to `edikt doctor`. Walks every
-// gov / prd / spec sidecar in the project and reports two soft signals:
+// Adds a "Sidecar Verify Coverage" group to `edikt doctor`. It READS the
+// per-sidecar reports `edikt verify all` persists under
+// .edikt/state/verify/gov-<id>-all-<stamp>.json and reports:
 //
-//   - coverage: how many items declare a verify: command vs how many don't
-//   - health:   how many sidecars currently have at least one failing verify
+//   - health:   sidecars whose LAST persisted run had a failing verify
+//   - coverage: how many sidecars have ever been measured, and how old the
+//               newest measurement is
 //
-// Both are warnings, never errors — the doctor stays informative. The
-// completion-evidence gate that actually blocks completion claims lives
-// in `bin/edikt gov compile`'s post-merge step (see cmd/gov/compile.go),
-// not here.
+// It never executes a verify. It used to — runVerifyAll ran every sidecar's
+// verify: shell command inside a read-only diagnostic — and on this corpus
+// that was 137 s of the 168 s doctor took, with nothing printed while it
+// ran. A diagnostic that takes longer than the tool timeout it is run under
+// is indistinguishable from a hang, and a doctor that hangs is a can't-fail
+// control in the PRD-009 sense: nobody waits for it, so nobody reads it.
+// Measurement is `edikt verify all`'s job, invoked deliberately; doctor's is
+// to say what was measured, when, and — never silently — what was not
+// (INV-013).  // edikt-guard:allow
+//
+// Both signals are warnings, never errors — the doctor stays informative.
+// The completion-evidence gate that blocks completion claims lives in
+// `bin/edikt gov compile`'s post-merge step, not here.
 
 import (
+	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
-	"github.com/diktahq/edikt/tools/edikt/internal/trust"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"github.com/diktahq/edikt/tools/edikt/internal/verify"
 )
 
-// runVerifyCoverageCheck walks every sidecar and surfaces verify coverage
-// + health as warnings. Returns (warnings, ran) — ran is false when the
-// project has no sidecars at all (silent in that case so the doctor's
-// output stays clean for non-edikt projects).
-func runVerifyCoverageCheck(projectRoot string, w io.Writer) (warns int, ran bool) {
-	// The coverage check executes every sidecar's verify: shell command via
-	// runVerifyAll. In an unapproved project that would run repo-controlled
-	// shell during a read-only diagnostic — refuse (ADR-041). Skip silently so  // edikt-guard:allow
-	// doctor's output stays clean; the actionable --trust hint lives on the
-	// gov compile / verify paths the user invokes deliberately.
-	if !trust.IsTrusted(projectRoot) {
-		return 0, false
-	}
-	report, err := runVerifyAll(projectRoot, false)
+// verifyReportStaleAfter is how old the newest persisted measurement may be
+// before doctor calls it stale. A week: long enough that a weekly cadence
+// never trips it, short enough that "we measured once in June" does.
+const verifyReportStaleAfter = 7 * 24 * time.Hour
+
+// indexVerifyState reads the persisted-report directory ONCE and groups the
+// filenames by artifact id. It returns the index and the number of directory
+// reads it performed, so a test can assert the count rather than infer it
+// from a stopwatch.
+//
+// The per-id Glob it replaces read the whole directory once PER SIDECAR: 88
+// sidecars against 129,170 report files, growing 5–11k a day on the
+// reference repo. Doctor's cost is supposed to be independent of how long
+// the project has been measured.
+func indexVerifyState(stateDir string) (map[string][]string, int) {
+	idx := map[string][]string{}
+	entries, err := os.ReadDir(stateDir)
 	if err != nil {
-		// Surface as a single warning rather than an error — verify all
-		// has its own structured-error reporting under the JSON shape.
-		io.WriteString(w, "  WARN: sidecar verify coverage skipped — "+err.Error()+"\n")
-		return 1, true
+		return idx, 1
 	}
-	if report.Summary.SidecarsTotal == 0 {
-		return 0, false
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() || !strings.HasPrefix(n, "gov-") || !strings.HasSuffix(n, ".json") {
+			continue
+		}
+		rest := strings.TrimPrefix(n, "gov-")
+		i := strings.Index(rest, "-all-")
+		if i <= 0 {
+			continue
+		}
+		id := rest[:i]
+		idx[id] = append(idx[id], filepath.Join(stateDir, n))
 	}
+	for id := range idx {
+		sort.Strings(idx[id])
+	}
+	return idx, 1
+}
+
+// latestVerifyReportFrom returns the newest persisted report for an id, using
+// the index above. The stamp in the filename is UTC "20060102T150405Z", so
+// lexical order is time order.
+func latestVerifyReportFrom(idx map[string][]string, id string) *verify.Report {
+	matches := idx[id]
+	if len(matches) == 0 {
+		return nil
+	}
+	for i := len(matches) - 1; i >= 0; i-- {
+		b, err := os.ReadFile(matches[i])
+		if err != nil {
+			continue
+		}
+		var r verify.Report
+		if err := json.Unmarshal(b, &r); err != nil {
+			continue
+		}
+		return &r
+	}
+	return nil
+}
+
+// runVerifyCoverageCheck reports verify health and coverage from persisted
+// reports. Returns (warnings, ran) — ran is false when the project has no
+// gov sidecars at all (silent, so doctor stays clean for non-edikt projects).
+func runVerifyCoverageChecks(projectRoot string, w io.Writer) (errs, warns int, ran bool) {
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	var ids []string
+	for _, dir := range []string{dirs.Decisions, dirs.Invariants, dirs.Guidelines} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if e.IsDir() || !strings.HasSuffix(name, ".edikt.yaml") {
+				continue
+			}
+			if id, ok := artifactIDFrom(name); ok {
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return 0, 0, false
+	}
+	sort.Strings(ids)
 
 	io.WriteString(w, "  ── Sidecar Verify Coverage ────────────────────\n")
 
-	// Per-sidecar lines for failures, then a coverage summary.
-	for _, s := range report.Sidecars {
-		failing, withVerify, total := 0, 0, len(s.Results)
-		for _, r := range s.Results {
-			switch r.Status {
-			case verify.StatusFailed, verify.StatusTimeout:
-				failing++
-				withVerify++
+	stateDir := filepath.Join(projectRoot, ".edikt", "state", "verify")
+	measured := 0
+	var newest time.Time
+	stateIndex, _ := indexVerifyState(stateDir)
+	passed, failing, skipped := 0, 0, 0
+	for _, id := range ids {
+		r := latestVerifyReportFrom(stateIndex, id)
+		if r == nil {
+			continue
+		}
+		measured++
+		if t, err := time.Parse(time.RFC3339, r.RanAt); err == nil && t.After(newest) {
+			newest = t
+		}
+		fail := 0
+		for _, c := range r.Criteria {
+			switch c.Status {
 			case verify.StatusPassed:
-				withVerify++
+				passed++
+			case verify.StatusFailed, verify.StatusTimeout:
+				fail++
+				failing++
+			default:
+				skipped++
 			}
 		}
-		if failing > 0 {
-			io.WriteString(w, "  WARN: "+s.Kind+"/"+s.ID+" — "+
-				itoa(failing)+" of "+itoa(total)+
-				" verify(s) failing. Run: edikt verify "+s.Kind+" "+s.ID+"\n")
-			warns++
+		if fail > 0 {
+			// RED, not a warning (FR-035): a verify that RAN and FAILED is
+			// the one signal in this output that describes a broken rule,
+			// and it was printed in the same shade as "never measured".
+			io.WriteString(w, "  🔴 ERROR: gov/"+id+" — "+itoa(fail)+" of "+itoa(len(r.Criteria))+
+				" verify(s) failing in its last persisted run ("+r.RanAt+"). Run: edikt verify gov "+id+"\n")
+			errs++
 		}
-		// Coverage = sidecars with at least one item carrying verify:
-		_ = withVerify
 	}
 
-	// sidecars-with-any-verify / total + items-with-verify / total-claim-items
-	// — both axes so the user can see whether coverage is sparse-but-wide
-	// or dense-on-few-artifacts.
-	sidecarsCovered := 0
-	itemsWithVerify := 0
-	totalItems := report.Summary.ItemsTotal
-	// Skip-reason breakdown: "N skipped" alone reads as "N unchecked," which
-	// a high-skip corpus can misreport as weak governance when most of it is
-	// StatusSkippedInformational/Operational — GL-002's own design, not a
-	// gap: verify: is correctly omitted whenever a rule has no mechanical
-	// proxy. Reporting the reason breakdown lets a reader tell "this corpus
-	// is mostly judgment calls, by design" from "this corpus has verify:
-	// commands nobody wrote yet" — the flat count cannot distinguish them.
-	skipOperational, skipInformational, skipSuppressed := 0, 0, 0
-	for _, s := range report.Sidecars {
-		anyHere := false
-		for _, r := range s.Results {
-			switch r.Status {
-			case verify.StatusPassed, verify.StatusFailed, verify.StatusTimeout:
-				itemsWithVerify++
-				anyHere = true
-			case verify.StatusSkippedOperational:
-				skipOperational++
-			case verify.StatusSkippedInformational:
-				skipInformational++
-			case verify.StatusSkippedSuppressed:
-				skipSuppressed++
-			}
-		}
-		if anyHere {
-			sidecarsCovered++
-		}
-	}
-	sidecarPct := 0
-	if report.Summary.SidecarsTotal > 0 {
-		sidecarPct = (sidecarsCovered * 100) / report.Summary.SidecarsTotal
-	}
-	itemPct := 0
-	if totalItems > 0 {
-		itemPct = (itemsWithVerify * 100) / totalItems
+	if measured == 0 {
+		io.WriteString(w, "  WARN: sidecar verify coverage NOT MEASURED — no persisted verify report under "+
+			".edikt/state/verify/ for any of the "+itoa(len(ids))+" sidecar(s). Run: edikt verify all\n")
+		warns++
+		return errs, warns, true
 	}
 
-	// Soft warning thresholds. Sidecar coverage below 25% almost always means
-	// the project has shipped the schema but not authored verifies yet.
 	mark := "[ok]"
-	if sidecarPct < 25 && report.Summary.SidecarsTotal > 0 {
+	unmeasured := len(ids) - measured
+	if unmeasured > 0 {
 		mark = "[!!]"
-		io.WriteString(w, "  WARN: sidecar verify coverage low ("+itoa(sidecarPct)+
-			"% of sidecars carry at least one verify:) — consider adding mechanical "+
-			"checks to high-traffic directives, FRs, or SRs.\n")
+	}
+	age := "unknown age"
+	if !newest.IsZero() {
+		age = "newest " + newest.UTC().Format("2006-01-02T15:04Z")
+		if time.Since(newest) > verifyReportStaleAfter {
+			io.WriteString(w, "  WARN: the newest persisted verify report is older than 7 days ("+
+				newest.UTC().Format("2006-01-02")+") — the numbers below describe that run, not this tree. Run: edikt verify all\n")
+			warns++
+			mark = "[!!]"
+		}
+	}
+	io.WriteString(w, "  "+mark+" Sidecar verify coverage — measured "+itoa(measured)+"/"+itoa(len(ids))+
+		" sidecars from persisted reports ("+age+"); "+itoa(passed)+" passed, "+itoa(failing)+" failing, "+
+		itoa(skipped)+" skipped/unmeasured items")
+	if unmeasured > 0 {
+		io.WriteString(w, "; "+itoa(unmeasured)+" sidecar(s) never measured — run: edikt verify all")
 		warns++
 	}
-
-	io.WriteString(w, "  "+mark+" Sidecar verify coverage — "+
-		itoa(sidecarsCovered)+"/"+itoa(report.Summary.SidecarsTotal)+" sidecars ("+itoa(sidecarPct)+
-		"%); items "+itoa(itemsWithVerify)+"/"+itoa(totalItems)+" ("+itoa(itemPct)+"%); "+
-		itoa(report.Summary.Passed)+" passed, "+
-		itoa(report.Summary.Failed+report.Summary.Timeout)+" failing, "+
-		itoa(report.Summary.Skipped)+" skipped (operational "+itoa(skipOperational)+
-		", informational "+itoa(skipInformational)+", suppressed "+itoa(skipSuppressed)+").\n")
-
-	// A skip rate dominated by suppressed items is a different situation from
-	// one dominated by operational/informational — suppressed means a
-	// directive was excluded from the compiled corpus entirely (dropped, not
-	// judged-unverifiable-by-design), which is worth a distinct callout.
-	if report.Summary.Skipped > 0 && skipSuppressed > 0 {
-		io.WriteString(w, "  ── "+itoa(skipSuppressed)+" skip(s) are suppressed (directive excluded from the compiled "+
-			"corpus, not a judgment-call omission) — review .edikt/state/pending-* and suppressed_directives entries.\n")
-	}
-	return warns, true
+	io.WriteString(w, ".\n")
+	return errs, warns, true
 }
 
 // itoa avoids pulling in strconv just for one integer-to-string call.
@@ -164,9 +219,3 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
-
-// stringsHasPrefix wraps strings.HasPrefix without taking the import
-// hit when no other caller in this file needs strings. Currently unused
-// but reserved for future per-class filtering — kept for symmetry with
-// the verify_all.go helpers.
-var _ = strings.HasPrefix

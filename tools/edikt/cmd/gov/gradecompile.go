@@ -39,7 +39,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/ediktpaths"
 	"github.com/diktahq/edikt/tools/edikt/internal/gradecompile"
+	"github.com/diktahq/edikt/tools/edikt/internal/projectpaths"
 	"github.com/spf13/cobra"
 )
 
@@ -53,22 +55,16 @@ var (
 // stub fixture location, relative to the project root.
 const gradeCompileStubFixture = "test/fixtures/grade-compile/stub-report.json"
 
-// Asset-resolution candidate lists, in precedence order. A project
-// override under .edikt/templates/ wins over the installed payload
-// (ADR-005 template-lookup mechanism).  // edikt-guard:allow
-var (
-	gradeRubricCandidates = []string{
-		".edikt/templates/rubrics/compile-quality.md",
-		"templates/rubrics/compile-quality.md",
-	}
-	gradeSchemaCandidates = []string{
-		".edikt/templates/schemas/compile-quality-report.v1.schema.json",
-		"templates/schemas/compile-quality-report.v1.schema.json",
-	}
-	gradeTemplateCandidates = []string{
-		".edikt/templates/agents/compile-quality-grader.md",
-		"templates/agents/compile-quality-grader.md",
-	}
+// Assets --print-inputs resolves, relative to a templates tree. Each goes
+// through the ADR-005 §1 ladder in internal/ediktpaths: the project override
+// under .edikt/templates/ first, then the installed payload, then (in a
+// checkout of edikt itself) the repo's templates/. Joining these onto the
+// working directory, as this file once did, found them only inside edikt-dev
+// — never on an adopter project, never from a subdirectory.
+const (
+	gradeRubricRel   = "rubrics/compile-quality.md"
+	gradeSchemaRel   = "schemas/compile-quality-report.v1.schema.json"
+	gradeTemplateRel = "agents/compile-quality-grader.md"
 )
 
 // (ref: INV-012 — tier-2 Go binaries must not dispatch an LLM)
@@ -107,8 +103,22 @@ Exit codes:
 func init() {
 	gradeCompileCmd.Flags().StringVar(&gradeCompileDir, "dir", ".claude/rules/governance",
 		"compiled governance directory to grade (relative to project root or absolute)")
-	gradeCompileCmd.Flags().StringVar(&gradeCompileModel, "model", "claude-opus-4-7",
-		"grader model id recorded in the report when the agent omits it")
+	// PROVENANCE, NOT A SELECTOR — and the default has to say so. This value is
+	// written verbatim into report.grader_model, which records WHICH MODEL
+	// GRADED. Nothing here dispatches a grader (ADR-044, INV-012), so a model
+	// name as the default made a report that omitted its model assert it had
+	// been graded by claude-opus-4-7 — a model that may never have run.
+	// Verified against the shipped binary before the change: a report with no
+	// grader_model recorded `"grader_model": "claude-opus-4-7"`.
+	//
+	// `unrecorded` is the reserved provenance-absent literal edikt already
+	// uses (gradecompile.GraderModelUnrecorded; same string as
+	// phasea.ExtractorContractUnrecorded, the contract v0.9.0 AC-7.4 states).
+	// NOT `inherit` — that is the SELECTION literal, and it would make the
+	// report claim a selection was made.
+	gradeCompileCmd.Flags().StringVar(&gradeCompileModel, "model", gradecompile.GraderModelUnrecorded,
+		"provenance recorded in report.grader_model when the grader agent omits its model; "+
+			"leave as \"unrecorded\" unless you know which model actually graded")
 	gradeCompileCmd.Flags().StringVar(&gradeCompileRecord, "record", "",
 		"path to the grader agent's JSON report, or - for stdin")
 	gradeCompileCmd.Flags().BoolVar(&gradeCompilePrint, "print-inputs", false,
@@ -120,13 +130,27 @@ func runGradeCompile(cmd *cobra.Command) error {
 	if gradeCompileDir == "" {
 		return &exitErr{code: 3, msg: "grade-compile: --dir must not be empty"}
 	}
+	// An explicitly-emptied --model stays a hard refusal. The schema requires
+	// grader_model minLength 1, so absence needs a NAME, and the name is
+	// "unrecorded" — the empty string would record the absence as an unreadable
+	// blank rather than as a stated one.
 	if gradeCompileModel == "" {
-		return &exitErr{code: 3, msg: "grade-compile: --model must not be empty"}
+		return &exitErr{code: 3, msg: "grade-compile: --model must not be empty.\n" +
+			"It records WHICH MODEL GRADED, not which to use. If you do not know, " +
+			"pass --model " + gradecompile.GraderModelUnrecorded + " (the default)."}
 	}
 
-	projectRoot, err := os.Getwd()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: getwd: %v", err)}
+	}
+	// The project root, not cwd: from a subdirectory the governance dir, the
+	// state dir and the .edikt/templates/ override all live at the root.
+	// FindRoot returns "" outside any project, and then cwd is the only
+	// answer there is.
+	projectRoot := projectpaths.FindRoot(cwd)
+	if projectRoot == "" {
+		projectRoot = cwd
 	}
 	stateDir := filepath.Join(projectRoot, ".edikt", "state")
 
@@ -211,6 +235,10 @@ func runGradeCompileRecord(cmd *cobra.Command, projectRoot, stateDir string) err
 	if report.GradedAt == "" {
 		report.GradedAt = time.Now().UTC().Format(time.RFC3339)
 	}
+	// Provenance the agent omitted becomes the stated-absent literal, never a
+	// model name — see the --model flag registration. This branch IS reachable:
+	// ValidateRaw does not enforce the schema's required list, so a report with
+	// no grader_model records fine and lands here.
 	if report.GraderModel == "" {
 		report.GraderModel = gradeCompileModel
 	}
@@ -232,8 +260,9 @@ func truncateForError(s string) string {
 
 // runGradeCompilePrintInputs resolves the four paths the tier-1 dispatch
 // needs and prints them. This is the deterministic half ADR-044 §2 keeps in
-// tier-2: path resolution honours the .edikt/templates/ project override
-// (ADR-005) that a markdown command would otherwise have to reimplement.
+// tier-2: path resolution follows the ADR-005 §1 template ladder — the
+// .edikt/templates/ project override, then the installed payload — that a
+// markdown command would otherwise have to reimplement.
 //
 // Per ADR-029 Rule 2 the caller gates on the EXIT CODE, not this text: a
 // missing asset exits non-zero and names what is missing, so tier-1 refuses
@@ -247,17 +276,17 @@ func runGradeCompilePrintInputs(cmd *cobra.Command, projectRoot string) error {
 		return &exitErr{code: 1, msg: fmt.Sprintf(
 			"grade-compile: governance dir %q not found (run 'gov compile' first?)", govDir)}
 	}
-	rubricPath, err := resolveAsset(projectRoot, gradeRubricCandidates)
+	rubricPath, err := ediktpaths.ResolveTemplate(projectRoot, gradeRubricRel)
 	if err != nil {
-		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: %v", err)}
+		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: rubric: %v", err)}
 	}
-	schemaPath, err := resolveAsset(projectRoot, gradeSchemaCandidates)
+	schemaPath, err := ediktpaths.ResolveTemplate(projectRoot, gradeSchemaRel)
 	if err != nil {
-		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: %v", err)}
+		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: report schema: %v", err)}
 	}
-	templatePath, err := resolveAsset(projectRoot, gradeTemplateCandidates)
+	templatePath, err := ediktpaths.ResolveTemplate(projectRoot, gradeTemplateRel)
 	if err != nil {
-		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: %v", err)}
+		return &exitErr{code: 1, msg: fmt.Sprintf("grade-compile: agent template: %v", err)}
 	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "governance_dir: %s\n", govDir)
@@ -304,16 +333,4 @@ func writeAndSummarize(cmd *cobra.Command, stateDir string, report *gradecompile
 		report.Scores.TierAssignment, report.Scores.NoDoubleLoading)
 	fmt.Fprintf(out, "  %d finding(s); report: %s\n", len(report.Findings), path)
 	return nil
-}
-
-// resolveAsset returns the first candidate (joined against projectRoot)
-// that exists on disk, or an error naming all candidates tried.
-func resolveAsset(projectRoot string, candidates []string) (string, error) {
-	for _, c := range candidates {
-		p := filepath.Join(projectRoot, c)
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-	return "", fmt.Errorf("none of the expected asset paths exist: %v", candidates)
 }

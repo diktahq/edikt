@@ -122,6 +122,17 @@ func reextractReportStatus(root string) error {
 	}
 	fmt.Fprintf(os.Stdout, "batch %s: %d/%d regenerated, %d remaining, %d failed\n",
 		st.PromptVersion, st.Done, st.Eligible, st.Remaining, st.Failed)
+	// Say it BEFORE the per-artifact list. A reader who sees "87 remaining" and
+	// stops reading has been told the opposite of the truth: none of them can be
+	// dispatched. This is the same record the dispatcher refuses on, not a second
+	// copy of the rule (ContractValidated is one function, two callers).
+	if !st.ContractValidated {
+		fmt.Fprintf(os.Stdout,
+			"\n  DISPATCH BLOCKED — none of the %d remaining can be re-extracted by this build.\n"+
+				"  %s\n"+
+				"  The eligible count above is the corpus, not work you can start.\n\n",
+			st.Remaining, st.DispatchBlockedReason)
+	}
 	for _, id := range st.RemainingIDs {
 		fmt.Fprintf(os.Stdout, "  pending  %s\n", id)
 	}

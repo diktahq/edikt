@@ -70,7 +70,7 @@ Use `python3` rather than `ls -t` for the mtime sort: in interactive shells `ls`
 # look identical to progress rows, and counting them made finished plans read
 # as active. `plan active` preserves that bound, and prints NOTHING when every
 # plan is complete — an empty answer, not a failure.
-ACTIVE_PLAN=$(bin/edikt plan active --dir "{plans_dir}")
+ACTIVE_PLAN=$(EDIKT_INVOKER=/edikt:status edikt plan active --dir "{plans_dir}")
 ```
 
 CRITICAL — use the detector's output verbatim. If `ACTIVE_PLAN` is empty, the dashboard MUST show "no active plan" — do NOT pick a fallback file from elsewhere, do NOT substitute the latest completed plan, do NOT use your own judgment about which plan looks "more relevant." If `ACTIVE_PLAN` is non-empty, the dashboard MUST report exactly that file as the active plan, regardless of how many phases it has done.
@@ -195,7 +195,7 @@ HOOK ACTIVITY (this session)
 
 {If signal events exist:}
 SIGNALS DETECTED
-  💡 {ADR candidate signals}
+  💡 {ADR candidate signals — Stop-hook suggestions, relevant only for a product architecture choice; never required}
   📄 {Doc gap signals}
   🔒 {Security signals}
   {If no signals:}
@@ -213,6 +213,8 @@ WARNINGS
 
   Next: Run /edikt:plan to continue active work, or /edikt:doctor for a deeper check.
 ```
+
+An ADR candidate never appears under WHAT'S NEXT or WARNINGS. It is a lexical Stop-hook suggestion, shown only under SIGNALS DETECTED: it cannot tell a product architecture choice (a new boundary, a contract, a data store, a cross-context dependency, an external provider in the product's call path) from implementation, build tooling, local setup or an experiment, and a missing ADR is never a task or a warning.
 
 ### 5. Write STATUS.md
 

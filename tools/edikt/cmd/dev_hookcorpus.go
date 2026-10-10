@@ -35,6 +35,9 @@ var (
 	hookCorpusCorpusRoot string
 	hookCorpusBaseTree   string
 	hookCorpusKeep       bool
+	hookCorpusOracle     string
+	hookCorpusContract   string
+	hookCorpusContractAt string
 	hookCorpusJSON       bool
 )
 
@@ -91,6 +94,10 @@ func newHookCorpusRecordCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&hookCorpusScenario, "scenario", "", "record only this scenario id")
+	cmd.Flags().StringVar(&hookCorpusOracle, "oracle", "auto",
+		"auto (from the registry row) or host-contract: record the current Go handler under a named host contract, for a hook whose bash oracle encoded a reply the host does not read")
+	cmd.Flags().StringVar(&hookCorpusContract, "contract", "", "host-contract only: the contract the recording pins (required)")
+	cmd.Flags().StringVar(&hookCorpusContractAt, "contract-recorded-at", "", "host-contract only: the date the contract was read from the host (required)")
 	cmd.Flags().BoolVar(&hookCorpusKeep, "keep-content", false,
 		"also write the bytes of added/modified sandbox files beside the tree manifests")
 	return cmd
@@ -194,12 +201,15 @@ func newCorpusRecorder(stderr io.Writer) (*hookcorpus.Recorder, string, error) {
 		return nil, "", err
 	}
 	rec, err := hookcorpus.NewRecorder(hookcorpus.Options{
-		RepoRoot:    root,
-		CorpusRoot:  hookCorpusCorpusRoot,
-		BaseTree:    hookCorpusBaseTree,
-		Binary:      hookCorpusBin,
-		KeepContent: hookCorpusKeep,
-		Stderr:      stderr,
+		RepoRoot:           root,
+		CorpusRoot:         hookCorpusCorpusRoot,
+		BaseTree:           hookCorpusBaseTree,
+		Binary:             hookCorpusBin,
+		KeepContent:        hookCorpusKeep,
+		Oracle:             hookCorpusOracle,
+		Contract:           hookCorpusContract,
+		ContractRecordedAt: hookCorpusContractAt,
+		Stderr:             stderr,
 	})
 	if err != nil {
 		return nil, "", err

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/versioncmp"
 )
 
 // A dev-linked install must be detected from the FILESYSTEM, not from a
@@ -54,15 +56,29 @@ func TestIsDevLinked(t *testing.T) {
 	})
 }
 
-// The version string a dev install records is exactly why the model-based
-// check fails: it compares LESS than every release, so "is an upgrade
-// available?" answers yes for a tree that must not be touched.
-func TestDevVersionComparesLessThanEveryRelease(t *testing.T) {
+// THE FLIP RECORDED IN docs/internal/plans/verdicts/SPEC-024-flip-list.md,
+// ENTRY (a). This test used to assert the OPPOSITE — that every release
+// compares GREATER than `dev` — and it was green because that is what the
+// truncating parser answered: semverParts("dev") found no leading digits and
+// returned [0,0,0], so a developer's own checkout sorted below everything ever
+// published. The test was a faithful record of the defect, not a mistake, and
+// its expected value was written down before this change so meeting it red
+// could not be resolved by deleting it.
+//
+// EXPECTED VALUE NOW: incomparable. A channel name has no position in a
+// release ordering; `dev` is neither ahead of nor behind 0.4.5, and any total
+// order placed on it is a fabrication.
+//
+// THE SUBJECT DID NOT CHANGE: the same three release strings against the same
+// `dev`, so this is a change of ANSWER and not a change of question.
+func TestDevVersionIsIncomparableWithEveryRelease(t *testing.T) {
 	devV := normalizeTag("dev")
 	for _, rel := range []string{"0.4.5", "0.6.0", "1.0.0"} {
-		if !semverGreater(rel, devV) {
-			t.Errorf("semverGreater(%q, dev=%q) = false; expected true — "+
-				"this is the comparison that made the downgrade possible", rel, devV)
+		got := versioncmp.Compare(rel, devV)
+		if got != versioncmp.Incomparable {
+			t.Errorf("versioncmp.Compare(%q, dev=%q) = %q; expected incomparable — "+
+				"an ordering between a release and a channel name is the fabrication "+
+				"that made the downgrade possible", rel, devV, got)
 		}
 	}
 }

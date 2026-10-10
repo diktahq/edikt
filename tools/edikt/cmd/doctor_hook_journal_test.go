@@ -13,6 +13,13 @@ import (
 func plantJournal(t *testing.T, lines ...string) {
 	t.Helper()
 	home := t.TempDir()
+	// The journal resolves $EDIKT_ROOT, then $EDIKT_HOME, then $HOME/.edikt
+	// (hookmatch/journal.go). test/run.sh exports EDIKT_HOME=$HOME/.edikt, so
+	// redirecting HOME alone left this test reading the LIVE journal under the
+	// suite — found 2026-09-02 when that journal carried suppressed entries
+	// and "absent journal" rendered four real invocations.
+	t.Setenv("EDIKT_ROOT", "")
+	t.Setenv("EDIKT_HOME", "")
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, ".edikt", "state")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -35,6 +42,8 @@ func plantJournal(t *testing.T, lines ...string) {
 // conflate: an ABSENT journal is UNKNOWN, not clean.
 func TestDoctorSurfacesHookJournal(t *testing.T) {
 	t.Run("absent journal renders as unknown and warns", func(t *testing.T) {
+		t.Setenv("EDIKT_ROOT", "")
+		t.Setenv("EDIKT_HOME", "")
 		t.Setenv("HOME", t.TempDir())
 		var out bytes.Buffer
 		warn := runHookJournalCheck(&out)
@@ -116,7 +125,12 @@ func TestDoctorCallsTheHookJournalCheck(t *testing.T) {
 		if strings.HasPrefix(trimmed, "//") {
 			continue
 		}
-		if strings.Contains(trimmed, "runHookJournalCheck(") {
+		// Either entry point counts: the check proper takes the journal
+		// Summary as an argument now, so doctor reads the append-only
+		// journal once and shares it. What this guard is about is that the
+		// REPORT HAS A CALLER — it once had none — not which overload.
+		if strings.Contains(trimmed, "runHookJournalCheck(") ||
+			strings.Contains(trimmed, "runHookJournalCheckWith(") {
 			found = true
 		}
 	}

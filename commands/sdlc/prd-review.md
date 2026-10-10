@@ -90,12 +90,14 @@ Record per-item pass/fail for the Gaps section of the report.
 
 Compute SHA-256 of the `.md` file:
 ```bash
-CURRENT_MD_HASH=$(bin/edikt util hash "$PRD_MD")
+CURRENT_MD_HASH=$(edikt util hash "$PRD_MD")
 ```
 
 Read `_sync.md_hash` from the sidecar. If mismatch (and `_sync.md_hash` is non-empty):
 - Record drift. Note the `_sync.synced_at` timestamp.
 - This is informational — not an error.
+
+Also run `edikt util schema-validate --require-schema-header "$PRD_YAML" .edikt/schemas/prd-sidecar.v1.schema.json`. A missing or empty `# yaml-language-server: $schema=` header on line 1 is a finding (the sidecar was rewritten by something that dropped it) — report it under Gaps as `sidecar header missing — restore line 1 from the template`; it is not a pass.
 
 #### Check 3 — Broken Refs
 
@@ -170,7 +172,15 @@ Append to the PRD sidecar `revision_history:` (v2 only):
   note: "Rubric score: {score}/{total} ({PASS | fail}); {gap_count} gaps; {ref_count} broken refs"
 ```
 
-Recompute `_sync` hashes (SHA-256 via python3 argv — compliant).
+Write it through the sidecar writer — never by hand and never through a plain-data YAML dump, which drops the `# yaml-language-server` header the sidecar opens with:
+
+```bash
+edikt util yaml record "$SIDECAR_YAML" --action review \
+  --note "Rubric score: {score}/{total} ({PASS | fail}); {gap_count} gaps; {ref_count} broken refs" \
+  --author "$(git config user.name)" --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+Then recompute `_sync` hashes with `edikt util hash <file>` (if a shell guard refuses the word "hash", `shasum -a 256 <file> | cut -d' ' -f1` is the same value) and Edit the `_sync:` block.
 
 ## Design Notes
 

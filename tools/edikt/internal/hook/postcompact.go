@@ -28,11 +28,34 @@ import (
 
 func init() {
 	Register("post-compact", postCompact)
+	Register("session-compact", sessionCompact)
 }
 
-const postCompactNoPython3Message = "edikt: python3 is missing on this host — the active plan phase and invariants could not be re-injected after context compaction. Run /edikt:context to recover manually."
+// postCompact is deliberately QUIET.
+//
+// PostCompact is not a hookSpecificOutput event (adapter/hookevents.go): the
+// host's reply union — read from the 2.1.257 binary on 2026-09-02 — does not
+// include it, so the additionalContext this handler used to emit was a
+// visible hook error since 2.1.248 and a silent discard before. It never
+// reached the model. The context now travels on SessionStart, which the host
+// fires with source "compact" after every compaction and which IS a member;
+// see sessionCompact. This handler stays registered so the event's firing is
+// journaled like every other, and replies with nothing — a top-level
+// systemMessage is the MOST it may ever carry, and it has nothing operator-
+// facing to say.
+func postCompact(*Invocation) Result {
+	return Result{}
+}
 
-func postCompact(inv *Invocation) Result {
+// sessionCompact re-injects the active plan phase and invariants after a
+// context compaction. It fires on SessionStart (settings.json.tmpl registers
+// it under matcher "compact") and reads `source` from the payload rather
+// than trusting the matcher alone: a settings file edited to drop the
+// matcher would otherwise re-inject on every startup, resume and clear.
+func sessionCompact(inv *Invocation) Result {
+	if inv.Payload.Source != "compact" {
+		return Result{}
+	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return Result{}
@@ -41,12 +64,6 @@ func postCompact(inv *Invocation) Result {
 	configBytes, err := os.ReadFile(configPath) //nolint:gosec // project-local config
 	if err != nil {
 		return Result{}
-	}
-
-	if !commandAvailable("python3") {
-		fmt.Fprintln(inv.Stderr, "edikt: post-compact — python3 not found; plan phase and invariants were not re-injected after compaction")
-		banner := adapter.NoPython3HookSpecificBanner("PostCompact", postCompactNoPython3Message)
-		return Result{Response: adapter.Response{Text: banner}}
 	}
 
 	base := configBase(configBytes)

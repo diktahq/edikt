@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/hookmatch"
 )
 
 var (
@@ -72,6 +75,13 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 		if doctorQuick {
 			return nil
 		}
+
+		// ONE read of the append-only hook journal per run, shared by the
+		// dual-registration cost and the hook-chain report. Two independent
+		// reads doubled doctor's cost on the machines with the largest
+		// journals — the ones this diagnostic matters most on.
+		var journalSummary hookmatch.Summary
+		var journalReadErr error
 
 		errN := 0
 		warnN := 0
@@ -208,7 +218,17 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			errN++
 		} else {
 			fmt.Printf("  commands:    %s (ok)\n", ediktCmds)
+			// The bodies themselves: an installed command that still names
+			// the dev-only binary path is a stale install, and the failure
+			// it produces (no such file) sends the agent looking for the
+			// binary rather than back here.
+			warnN += scanCommandLauncherPaths(ediktCmds, os.Stdout)
 		}
+
+		// Install boundary: do `current` and `commands/edikt` resolve inside
+		// $EDIKT_ROOT? Advisory — doctor_install_boundary.go says why a link
+		// resolving outside loads today and may not tomorrow.
+		warnN += runInstallBoundaryCheck(ediktRoot, claudeRoot, os.Stdout)
 
 		// Sidecar Health (Phase 7 of PLAN-sidecar-architecture).
 		// Walks the project (cwd) for orphan / missing / path-mismatch /
@@ -220,10 +240,42 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			// zero-file extractor dispatches (cached at session start).
 			warnN += runAgentDriftCheck(ediktRoot, claudeRoot, cwd, os.Stdout)
 
+			// Extractor contract drift (D57(2), AC-7.6): information only,
+			// never counted against warnN — a sidecar extracted under an
+			// earlier agent definition is expected, not unhealthy.
+			runExtractorContractDriftCheck(cwd, os.Stdout)
+
+			// Extractor model drift (D57, AC-7.5): information only, same
+			// reasoning as contract drift above.
+			runExtractorModelDriftCheck(cwd, os.Stdout)
+
+			// A host-rejected explicit extractor.model pin, or any other
+			// failed-terminal item on an unconsumed plan, is a real RED —
+			// unlike drift, this is a stuck state needing a human decision.
+			errN += runFailedTerminalCheck(cwd, os.Stdout)
+
+			// Which binary answers this repo's hooks (SPEC-017 SR-001/2/3,
+			// PRD-009 FR-029). A worktree of the same repository can resolve a
+			// different rung than its parent and enforce different governance,
+			// with nothing surfacing it. Cheap: three stats and one JSON read.
+			warnN += runBinaryRungCheck(cwd, ediktRoot, false, os.Stdout)
+
+			// Repository state — every checkout and its branch, every branch
+			// with no upstream, and the unpushed count per branch, all derived
+			// here so no handoff document has to transcribe them. Read-only,
+			// no fetch. Informational: it moves no exit code, because the
+			// failure it prevents is a confidently wrong document, not a
+			// broken install. See doctor_repo_state.go.
+			runRepoStateCheck(cwd, os.Stdout)
+
 			// Dual-scope hook registration (ADR-050): detect + OFFER the
 			// user-scope removal interactively; never edit silently.
-			warnN += runDualRegistrationCheck(claudeRoot, cwd, os.Stdin,
-				term.IsTerminal(int(os.Stdin.Fd())), os.Stdout)
+			journal, jErr := hookmatch.ReadSummary()
+			journalSummary, journalReadErr = journal, jErr
+			drErr, drWarn := runDualRegistrationCheckWithCost(claudeRoot, cwd, os.Stdin,
+				term.IsTerminal(int(os.Stdin.Fd())), journal, os.Stdout)
+			errN += drErr
+			warnN += drWarn
 
 			scErr, scWarn, ran := runSidecarChecks(cwd, os.Stdout)
 			if ran {
@@ -274,7 +326,20 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			// lossless gate, which cannot currently run — see
 			// doctor_lost_migration.go for why a check that depends on it
 			// would report silence and read as an all-clear.
-			lmWarn, lmRan := runLostMigrationCheck(cwd, os.Stdout)
+			// Unstripped legacy blocks (ADR-082 S7): the scanner compile
+			// refuses on, as a standing report.
+			{
+				ad := migrate.ResolveArtifactDirs(cwd)
+				lbErr, lbWarn := runLegacyBlockCheck(cwd, []string{relOrSame(cwd, ad.Decisions), relOrSame(cwd, ad.Invariants), relOrSame(cwd, ad.Guidelines)}, os.Stdout)
+				errN += lbErr
+				warnN += lbWarn
+			}
+
+			lmWarn, lmRan := func() (int, bool) {
+				ad := migrate.ResolveArtifactDirs(cwd)
+				// Discover takes project-relative dirs; the resolver returns absolute.
+				return migrate.RunLostMigrationCheck(cwd, []string{relOrSame(cwd, ad.Decisions), relOrSame(cwd, ad.Invariants), relOrSame(cwd, ad.Guidelines)}, os.Stdout)
+			}()
 			if lmRan {
 				warnN += lmWarn
 			}
@@ -288,13 +353,62 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 				warnN += diWarn
 			}
 
+			// Four ways a compile succeeds while delivering less than it
+			// appears to: an empty ambient core or unrouted index, a standing
+			// proposal queue no later compile mentions, an accepted artifact
+			// with no sidecar, and an invariant dropped for its status word.
+			// All four are STATES, and all four were live in this repo or its
+			// fixtures on 2026-08-29 with nothing reporting them.
+			dgErr, dgWarn, dgRan := runDeliveryGapsCheck(cwd, os.Stdout)
+			if dgRan {
+				errN += dgErr
+				warnN += dgWarn
+			}
+
+			// Shared surfaces no per-field cap can guard: the assembled
+			// always-loaded core against its advisory target, and sidecar
+			// fields between soft and hard cap. Eleven individually-legal
+			// topic descriptions can take the core past its budget, so the
+			// budget has to be measured on the assembly. Advisory: this
+			// reports, it never fails a build.
+			sbWarn, sbRan := runSurfaceBudgetCheck(cwd, os.Stdout)
+			if sbRan {
+				warnN += sbWarn
+			}
+
+			// Read from the COMPILED OUTPUT, not the approval queue. The
+			// queue-based checks above answer "is there approval work
+			// outstanding"; these answer "is a shipped surface degraded",
+			// and the two coincide only while compile keeps the queue
+			// seeded — a compile-time behaviour, not an invariant.
+			ogWarn, ogRan := runOutputGapsCheck(cwd, os.Stdout)
+			if ogRan {
+				warnN += ogWarn
+			}
+
+			// Upgrade manifest drift. Reports what THIS VERSION declares
+			// against what the project has, in both non-update directions.
+			// Deliberately not routed through upgrade: a check that only runs
+			// during an upgrade cannot report that the previous upgrade was
+			// incomplete.
+			mdWarn, mdRan := runManifestDriftCheck(cwd, filepath.Join(ediktRoot, "templates"), os.Stdout)
+			if mdRan {
+				warnN += mdWarn
+			}
+
 			// Sidecar Verify Coverage (Phase 4 of PLAN-v060-completion-evidence).
 			// Reports per-sidecar verify health + project-wide coverage as
 			// soft warnings. Gov compile owns the hard gate; doctor's role
 			// here is informational pressure on low-coverage sidecars and
 			// silently-failing verifies.
-			vcWarn, vcRan := runVerifyCoverageCheck(cwd, os.Stdout)
+			// Two measurements, not findings: how much of the corpus carries
+			// any check, and how many claimed checks have never produced a
+			// result. Both were invisible, and invisible reads as healthy.
+			runEnforcementCoverageCheck(cwd, os.Stdout)
+
+			vcErr, vcWarn, vcRan := runVerifyCoverageChecks(cwd, os.Stdout)
 			if vcRan {
+				errN += vcErr
 				warnN += vcWarn
 			}
 
@@ -306,14 +420,6 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			vkWarn, vkRan := runVerifyKindCoverageCheck(cwd, os.Stdout)
 			if vkRan {
 				warnN += vkWarn
-			}
-
-			// Verify Gate posture (SPEC-009 Plan B Phase 5, ADR-038).  // edikt-guard:allow
-			// Reports ENABLED / BYPASSED and tail-counts recent bypass
-			// events from .edikt/state/verify-gate.jsonl. Informational.
-			vgWarn, vgRan := runVerifyGateCheck(cwd, os.Stdout)
-			if vgRan {
-				warnN += vgWarn
 			}
 
 			// Cheat-rate benchmarks (Phase 10 of SPEC-009 Plan A).  // edikt-guard:allow
@@ -338,6 +444,12 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			// manually edited edikt_version or an upgrade interrupted after
 			// the version write.
 			warnN += runSchemaPinCheck(cwd, os.Stdout)
+
+			// Pin drift: the project's edikt_version against the active
+			// version. The per-command pin warning is silent on Incomparable
+			// pins and inside hooks (pinwarn.go); this is where that drift is
+			// still reported, every case included (#11, item 8).
+			warnN += runPinDriftCheck(cwd, ediktRoot, os.Stdout)
 
 			// Orphaned governance surfaces — a .md file under
 			// .claude/rules/governance/ that gov compile's manifest-diff
@@ -403,16 +515,29 @@ a fresh baseline; --fail-on-drift makes drift exit 1.`,
 			warnN += hpWarn
 		}
 
+		// Git hooks path (FR-033). Asserts the OUTCOME the setting produces:
+		// a path that does not resolve disables every hook silently, and a
+		// message check in a hook that does not receive $1 cannot fail the
+		// commit being made.
+		if cwd, cerr := os.Getwd(); cerr == nil {
+			ghErr, ghWarn := runGitHooksPathCheck(cwd, os.Stdout)
+			errN += ghErr
+			warnN += ghWarn
+		}
+
 		// Hook-chain journal (ADR-060:d10, SPEC-014 FR-006). Report() was
 		// written for doctor and doctor never called it, so every recorded
 		// suppression reached exactly one surface nobody runs unprompted.
 		// Runs unconditionally — outside the cwd-scoped block above — because
 		// the journal is per-user, not per-project, and its ABSENCE is the
 		// finding that matters most.
-		warnN += runHookJournalCheck(os.Stdout)
+		warnN += runHookJournalCheckWith(journalSummary, journalReadErr, os.Stdout)
 
 		// Post-flight Scope (post-flight review pipeline).  // edikt-guard:allow
 		reportPostFlightScope()
+
+		// Front Door (SR-009) — its own group, see doctor_frontdoor.go.
+		reportFrontDoor(ediktRoot)
 
 		// Summary.
 		if errN > 0 {
@@ -467,4 +592,13 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorCreateSnapshot, "create-snapshot", false,
 		"with --check-snapshot, write a fresh baseline from the current compiled governance tree")
 	rootCmd.AddCommand(doctorCmd)
+}
+
+// relOrSame returns p relative to root when it lies under it, else p
+// unchanged — the scanner joins root and dir itself.
+func relOrSame(root, p string) string {
+	if rel, err := filepath.Rel(root, p); err == nil && !strings.HasPrefix(rel, "..") {
+		return rel
+	}
+	return p
 }

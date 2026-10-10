@@ -107,7 +107,6 @@ All default to `true`. The governance core (rules, compile, drift) is always on.
 | `features.signal-detection` | `true` | Stop hook — detect uncaptured ADR/invariant candidates |
 | `features.plan-injection` | `true` | UserPromptSubmit hook — inject active plan phase into every prompt |
 | `features.quality-gates` | `true` | SubagentStop hook — block on critical findings from gate agents |
-| `features.evidence-gate` | `warn` | PreToolUse verify-gate hook — completion-claim gate posture. Valid values: `block`, `warn`, `educate`, `disabled` |
 
 ### `evaluator.*` — Evaluator configuration
 
@@ -201,7 +200,6 @@ Override for projects with custom or component-coded artifact-ID schemes.
 | Key | Default | Valid values | Description |
 |-----|---------|-------------|-------------|
 | `hooks.pre-push-security` | `true` | `true`, `false` | Pre-push secret scanning. Disable with `false` or one-time skip with `EDIKT_SECURITY_SKIP=1`. |
-| `hooks.injection.bounce_budget` | `8` | integer ≥ 1 (a value below 1 is refused — 0 would mean enforcement never blocks) | Caps how many times one directive set may bounce (deny) a write within a session. Once spent, a write that would otherwise be denied proceeds instead, delivered as advisory `additionalContext` naming the still-applicable directives rather than a deny — MUST-grade enforcement is not unconditional past this budget for the rest of the session. |
 
 ### `headless.*` — CI/headless mode
 

@@ -42,6 +42,11 @@ import (
 type scanScope struct {
 	// Roots are the checkout roots scanned, main tree first.
 	Roots []string
+	// Branch maps a checkout root to the branch checked out there, absent for
+	// a detached HEAD. next-id does not need it; doctor's repository-state
+	// check does, and reading it here is what keeps "every checkout" a single
+	// definition with two readers rather than two scanners that can drift.
+	Branch map[string]string
 	// Degraded is true when the worktree enumeration could not run.
 	Degraded bool
 	// Reason explains a degraded scan in one clause, for the user-facing line.
@@ -54,7 +59,7 @@ type scanScope struct {
 // allocator that refused to run without git would be worse than one that runs
 // and says what it could see. What it must never do is stay quiet.
 func worktreeRoots(projectRoot string) scanScope {
-	sc := scanScope{Roots: []string{projectRoot}}
+	sc := scanScope{Roots: []string{projectRoot}, Branch: map[string]string{}}
 
 	if _, err := exec.LookPath("git"); err != nil {
 		sc.Degraded = true
@@ -71,17 +76,30 @@ func worktreeRoots(projectRoot string) scanScope {
 		return sc
 	}
 
+	// The porcelain form is one record per checkout: a `worktree <path>` line
+	// followed by `HEAD <sha>` and then either `branch <ref>` or `detached`.
+	// `cur` carries the path across those lines so the branch lands on the
+	// checkout it belongs to — including the main tree, whose path is already
+	// in Roots and is therefore skipped for root collection below.
 	seen := map[string]bool{filepath.Clean(projectRoot): true}
+	cur := ""
 	for _, line := range strings.Split(string(out), "\n") {
-		if !strings.HasPrefix(line, "worktree ") {
-			continue
+		line = strings.TrimRight(line, "\r")
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			p := filepath.Clean(strings.TrimSpace(strings.TrimPrefix(line, "worktree ")))
+			cur = p
+			if p == "" || seen[p] {
+				continue
+			}
+			seen[p] = true
+			sc.Roots = append(sc.Roots, p)
+		case strings.HasPrefix(line, "branch "):
+			if cur != "" {
+				sc.Branch[cur] = strings.TrimPrefix(
+					strings.TrimSpace(strings.TrimPrefix(line, "branch ")), "refs/heads/")
+			}
 		}
-		p := filepath.Clean(strings.TrimSpace(strings.TrimPrefix(line, "worktree ")))
-		if p == "" || seen[p] {
-			continue
-		}
-		seen[p] = true
-		sc.Roots = append(sc.Roots, p)
 	}
 	// Deterministic order after the main tree, so two runs read the same.
 	if len(sc.Roots) > 1 {

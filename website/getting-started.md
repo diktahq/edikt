@@ -24,6 +24,29 @@ curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.8.0/install.sh 
 
 Installs the v0.8.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
 
+The installer asks whether to install globally or into the current project only. Pass `--global` or `--project` to skip the question.
+
+### Or with Homebrew
+
+```bash
+brew install diktahq/tap/edikt
+edikt install v0.8.0
+edikt use v0.8.0
+```
+
+Three commands rather than one, because a Homebrew formula installs a **binary** — the launcher — and nothing else. The payload it runs (commands, agents, hooks, rule packs) is a separate download, so `brew install` on its own leaves you with a working `edikt` binary and no `/edikt:*` commands in Claude Code.
+
+`edikt use` is what links those commands into your active Claude profile, which is why it is not optional.
+
+**Upgrading later is two commands for the same reason:**
+
+```bash
+brew upgrade edikt   # the launcher
+edikt upgrade        # the payload
+```
+
+Neither updates the other — `edikt upgrade` downloads `edikt-payload-<tag>.tar.gz`, which ships no binary, and the formula installs only `bin/edikt`. See [Keeping edikt Up to Date](guides/upgrading.md).
+
 **Switching versions after install:**
 
 ```bash
@@ -242,7 +265,7 @@ your-project/
 | Session refresh | Surfaces what changed since last session |
 | Governance check | Validates setup before the model writes code |
 | Auto-format | Formats code after every edit |
-| Decision detection | Suggests ADR capture when decisions are made |
+| Decision detection | Suggests (never requires) an ADR for product architecture choices |
 | Plan injection | Injects active plan phase on every prompt |
 | Context recovery | Recovers plan + invariants after compaction |
 | Agent logging | Logs agent activity, enforces quality gates |

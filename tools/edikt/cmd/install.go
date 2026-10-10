@@ -37,6 +37,31 @@ var installCmd = &cobra.Command{
 
 		targetDir := filepath.Join(ediktRoot, "versions", tag)
 		if _, err := os.Stat(targetDir); err == nil {
+			// Refusal is unchanged (exit 3, same message — the documented
+			// exit-code contract): the payload on disk is never touched here.
+			// But a caller who set EDIKT_INSTALL_SOURCE for the CURRENTLY
+			// ACTIVE tag is deliberately re-asserting where that payload came
+			// from, not attempting a no-op — recordInstalledSource's own
+			// doc comment names exactly this ("re-installing the currently
+			// active tag... from a different source"). Without this, that
+			// assertion had no code path that ever reached it: the only
+			// other route into the active-tag branch requires the operator
+			// to remove versions/<tag> first, and no test exercised it. A
+			// stale or corrupted record (e.g. from a manual lock.yaml edit,
+			// or a migration) would otherwise stay wrong until the payload
+			// is physically deleted and reinstalled (D397, AC-3.5). Scoped
+			// to the ALREADY-ACTIVE tag only — an inactive already-installed
+			// tag gets no such correction, since nothing here re-asserts
+			// anything about it.
+			if src := os.Getenv("EDIKT_INSTALL_SOURCE"); src != "" {
+				if _, statErr := os.Stat(src); statErr == nil {
+					if lf, lockErr := readLock(ediktRoot); lockErr == nil && normalizeTag(lf.Active) == tag {
+						if err := recordInstalledSource(ediktRoot, tag, lockSourceLocal); err != nil {
+							fmt.Fprintf(os.Stderr, "warn: recording install provenance failed: %v\n", err)
+						}
+					}
+				}
+			}
 			return installExitError(exitAlready, "version %s is already installed", tag)
 		}
 
@@ -49,6 +74,16 @@ var installCmd = &cobra.Command{
 			stampPayloadVersion(targetDir, tag)
 			snapshotLauncherBinary(targetDir, tag)
 			writeManifest(targetDir, tag, "")
+			// D382: without this, a version `install` stages carries no
+			// provenance at all, so a later `use` reads it as unknown ->
+			// published (SSP-004) — which happens to be correct here, since
+			// this branch really did fetch a published release, but only by
+			// accident of the default. Recording it explicitly means a
+			// future change to that default cannot silently mis-attribute
+			// this branch's payloads.
+			if err := recordInstalledSource(ediktRoot, tag, lockSourcePublished); err != nil {
+				fmt.Fprintf(os.Stderr, "warn: recording install provenance failed: %v\n", err)
+			}
 			emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": tag})
 			reportInstallNotActivated(ediktRoot, tag)
 			return nil
@@ -107,6 +142,17 @@ var installCmd = &cobra.Command{
 		stampPayloadVersion(targetDir, tag)
 		snapshotLauncherBinary(targetDir, tag)
 		writeManifest(targetDir, tag, computedSHA)
+		// D382: this is the LOCAL-source installer -- it puts a locally
+		// built payload on disk and writes only manifest.yaml, so a version
+		// staged here had NO lock.yaml entry at all. `use` later resolves
+		// this version's provenance via lockSourceFor, which finds nothing
+		// and reads unknown as published (SSP-004), so a subsequent
+		// `upgrade` silently replaces the exact payload this spec exists to
+		// protect. Recording it here, at the one place that knows the
+		// payload did not come from a fetch, closes that gap.
+		if err := recordInstalledSource(ediktRoot, tag, lockSourceLocal); err != nil {
+			fmt.Fprintf(os.Stderr, "warn: recording install provenance failed: %v\n", err)
+		}
 		emitEvent(ediktRoot, "version_installed", map[string]interface{}{"version": tag})
 		reportInstallNotActivated(ediktRoot, tag)
 		return nil

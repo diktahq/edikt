@@ -3,11 +3,14 @@ package gov
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"github.com/diktahq/edikt/tools/edikt/internal/phaseb"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/diktahq/edikt/tools/edikt/internal/trust"
@@ -21,7 +24,6 @@ var (
 	jsonFlag       bool
 	noWaitFlag     bool
 	onLossFlag     string
-	legacyFlag     bool
 	skipVerifyFlag bool
 	trustFlag      bool
 )
@@ -50,16 +52,17 @@ and are handled differently:
                      so they report the artifacts and exit non-zero.
 
 Flags:
-  --check     validate only; in two-phase mode refuses on stale sidecars.
+  --check     validate only; never writes. Refuses (exit 1) on any stale
+              sidecar, including anchor drift autorepair could fix, which
+              is reported as stale and listed in phase_a.repairable_ids.
   --dry-run   alias for --check; aligned with migrate sidecars / verify
               flag conventions.
+  --trust     record this project in the user trust store; refused with
+              --check / --dry-run (exit 2), which never write.
   --json      structured JSON output. In two-phase mode emits a single
               JSON object with phase_a / phase_b summaries; in legacy
               mode emits the existing legacy report shape.
-  --no-wait   fail fast instead of waiting on a held compile.lock.
-  --legacy    DEPRECATED — force legacy in-body compile even when sidecars
-              exist. Slated for removal in v0.7.0; preserved for the
-              v0.5.x→v0.6.0 transition window only.`,
+  --no-wait   fail fast instead of waiting on a held compile.lock.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		projectRoot := "."
@@ -69,29 +72,48 @@ Flags:
 
 		// --dry-run is an alias for --check. Either flag enables check-only
 		// mode; passing both is a no-op (both set the same internal state).
+		checkSpelling := "--check"
 		if dryRunFlag {
+			if !checkFlag {
+				checkSpelling = "--dry-run"
+			}
 			checkFlag = true
 		}
 
-		clk := model.RealClock{}
-
-		// Forced legacy path: only when --legacy is explicit. v0.6.0+ never
-		// falls back to in-body sentinel parsing — the only path to legacy
-		// is opt-in.
-		if legacyFlag {
-			if err := govrun.Run(projectRoot, checkFlag, jsonFlag, clk); err != nil {
-				if !jsonFlag {
-					fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				}
-				os.Exit(1)
-			}
-			return nil
+		// D-L (#9, c4-e): --trust RECORDS this project in the user-global
+		// trust store, and --check / --dry-run promise to write nothing. The
+		// combination cannot honour both, so it is refused before anything
+		// is read or recorded — a usage error (2), not a compile result.
+		if trustFlag && checkFlag {
+			fmt.Fprintf(os.Stderr, "error: --trust cannot be combined with %s — %s never writes, and --trust records this project in the user trust store.\n", checkSpelling, checkSpelling)
+			fmt.Fprintln(os.Stderr, "  Run the check without --trust, or record trust with a full `edikt gov compile --trust`.")
+			os.Exit(2)
 		}
+
+		clk := model.RealClock{}
 
 		// Resolve paths from .edikt/config.yaml — NEVER hardcode defaults
 		// at this call site. Hardcoding silently no-ops projects with
 		// customized paths.* (regression that shipped in v0.6.0-rc≤7).
 		dirs := govrun.GovernanceDirs(projectRoot)
+
+		// ADR-082 (a)/(b): migration state is per artifact, and a steady-state
+		// path refuses on a stale corpus with a named remedy — never a
+		// fallback. The scanner is fence-aware and reports files; a block on
+		// a skip-listed artifact (superseded, deprecated) is doctor's line,
+		// not this refusal's, because its directives would not compile anyway.
+		staleFindings, scanErr := migrate.Scan(projectRoot, dirs)
+		if scanErr != nil {
+			fmt.Fprintf(os.Stderr, "edikt gov compile: scanning for legacy blocks: %v\n", scanErr)
+			os.Exit(1)
+		}
+		staleFindings = includedFindings(projectRoot, staleFindings)
+		if len(staleFindings) > 0 && (sidecar.HasAnySidecar(projectRoot, dirs) || !sidecar.HasAnyGovernanceMarkdown(projectRoot, dirs)) {
+			// Sidecars exist beside at least one artifact that still carries
+			// its block: a half-migrated corpus. Refuse per artifact.
+			fmt.Fprint(os.Stderr, staleCorpusRefusal(staleFindings))
+			os.Exit(1)
+		}
 		hasSidecars := sidecar.HasAnySidecar(projectRoot, dirs)
 		hasMarkdown := sidecar.HasAnyGovernanceMarkdown(projectRoot, dirs)
 
@@ -117,8 +139,9 @@ Flags:
 			// Removed in bc5bbd6 while sidecar.HasAnyLegacySentinel was
 			// uncommitted; restored now that discover.go has landed, which
 			// was the trigger that commit named.
-			if sidecar.HasAnyLegacySentinel(projectRoot, dirs) {
+			if len(staleFindings) > 0 {
 				fmt.Fprintln(os.Stderr, preMigrationError())
+				fmt.Fprint(os.Stderr, staleCorpusRefusal(staleFindings))
 				os.Exit(1)
 			}
 
@@ -203,54 +226,28 @@ Flags:
 		// would corrupt the structured payload — JSON consumers can call
 		// `edikt verify all --json` themselves).
 		if !checkFlag && !jsonFlag && !skipVerifyFlag {
-			if rc := runPostCompileVerify(projectRoot); rc != 0 {
-				os.Exit(rc)
-			}
-		}
-		// INV-018 injection-budget report: same skip conditions as the
-		// verify gate above (no Phase B ran under --check; --json's
-		// contract is the structured payload only) but INDEPENDENT of
-		// --skip-verify — that flag opts out of the fail-CLOSED INV-009
-		// gate specifically, not this report-only, fail-OPEN check
-		// (ADR-060's philosophy: never let a regression detector change
-		// gov compile's own exit code).
-		if !checkFlag && !jsonFlag {
-			runInjectionBudgetReport(projectRoot)
+			// REPORTED, not enforced. A directive's verify: is an LLM-guessed
+			// shell command run without judgement on an already-lossy
+			// extraction; it was never a fit gate for whether a compile is
+			// good. The phase-end verifier is the one verification surface —
+			// this run's report stays on the console for a reader, and the
+			// compile's own exit code answers only "did the render succeed".
+			reportPostCompileVerify(projectRoot, os.Stderr)
 		}
 		return nil
 	},
 }
 
-// runInjectionBudgetReport is INV-018's non-blocking regression report: it
-// NEVER changes compile's exit code, even when it detects a per-glob
-// regression against the pinned baseline — that is the entire point of
-// "report-only", matching ADR-060's fail-open philosophy for this surface.
-//
-// The detector itself (test/test-injection-budget.sh,
-// test/lib/injection-enumerate.py) is edikt-dev's own private dev-loop
-// tooling under test/ — INV-017's default clause keeps test/ private, so it
-// is not shipped to installed user projects. This silently no-ops when the
-// script is absent rather than erroring: a project compiled with the
-// installed edikt binary has no reason to carry edikt-dev's own test suite,
-// and absence here is not a defect to report, unlike runPostCompileVerify's
-// missing-binary case (INV-011) — there is no completion claim being made
-// that absence would falsify.
-func runInjectionBudgetReport(projectRoot string) {
-	script := filepath.Join(projectRoot, "test", "test-injection-budget.sh")
-	if _, err := os.Stat(script); err != nil {
-		return
+// reportPostCompileVerify runs the directive verify and REPORTS its result.
+// It never fails the compile: the returned value is always 0 and exists so
+// the call site reads as what it is. A non-zero verify is written to w with
+// the reason it does not fail the run, so a reader on the console still sees
+// it — the phase-end verifier is the surface that decides anything.
+func reportPostCompileVerify(projectRoot string, w io.Writer) int {
+	if rc := runPostCompileVerify(projectRoot); rc != 0 {
+		fmt.Fprintf(w, "note: post-compile directive verify exited %d — reported only; the compile is not failed by it. Phase-end review verifies.\n", rc)
 	}
-	cmd := exec.Command("bash", script)
-	cmd.Dir = projectRoot
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	// Deliberately ignore the error. Run standalone, the script DOES vary
-	// its exit code (0 pass / 1 regression / 2 unmeasured) — that variance
-	// is what makes it useful as its own CI gate. Here it is wired only as
-	// a report: propagating any of those codes into compile's own exit
-	// status is exactly what "non-blocking" means, so the result is never
-	// read, by design, not because the script happens to always exit 0.
-	_ = cmd.Run()
+	return 0
 }
 
 // runPostCompileVerify execs `bin/edikt verify all --gov-only` in a subprocess against
@@ -290,9 +287,9 @@ func runPostCompileVerify(projectRoot string) int {
 		if ee, ok := err.(*exec.ExitError); ok {
 			if ee.ExitCode() == 1 {
 				fmt.Fprintln(os.Stderr,
-					"\nerror: gov compile produced output, but the verify gate found failing sidecar(s).")
+					"\nreport: the post-compile directive verify found failing sidecar(s) — listed above.")
 				fmt.Fprintln(os.Stderr,
-					"Re-run gov compile after fixing the failing directives or removing their verify commands.")
+					"This is a report, not a gate: the compile's output stands. Fix or re-point a failing directive's verify at its leisure; phase-end review is what verifies.")
 			}
 			return ee.ExitCode()
 		}
@@ -328,8 +325,15 @@ func emitTwoPhaseJSON(res *govrun.TwoPhaseResult, runErr error) {
 		// compile of a project adopting edikt on pre-existing docs — very
 		// different cost from a routine resync, so consumers get to tell
 		// the two apart.
-		Bootstrap int                     `json:"bootstrap"`
-		Errors    []govrun.PhaseAErrorRec `json:"errors"`
+		Bootstrap int `json:"bootstrap"`
+		// Repairable / RepairableIDs are the subset of the stale sidecars
+		// whose anchor drift `edikt gov compile` repairs mechanically, with
+		// no extraction. Reported under --check, where the repair is
+		// measured on a copy and never written. RepairableIDs is always an
+		// array: [] is a measured "none", never an absent key.
+		Repairable    int                     `json:"repairable"`
+		RepairableIDs []string                `json:"repairable_ids"`
+		Errors        []govrun.PhaseAErrorRec `json:"errors"`
 	}
 	type phaseBOut struct {
 		Ran             bool     `json:"ran"`
@@ -361,6 +365,7 @@ func emitTwoPhaseJSON(res *govrun.TwoPhaseResult, runErr error) {
 		Error          string                   `json:"error,omitempty"`
 	}{
 		Status: "ok",
+		PhaseA: phaseAOut{RepairableIDs: []string{}},
 		PhaseB: phaseBOut{
 			TopicsRendered:  []string{},
 			TopicsUnchanged: []string{},
@@ -375,6 +380,10 @@ func emitTwoPhaseJSON(res *govrun.TwoPhaseResult, runErr error) {
 			out.PhaseA.StaleIDs = []string{}
 		}
 		out.PhaseA.Bootstrap = len(res.BootstrapSidecars)
+		out.PhaseA.Repairable = len(res.RepairableSidecars)
+		if res.RepairableSidecars != nil {
+			out.PhaseA.RepairableIDs = res.RepairableSidecars
+		}
 		if res.PhaseADone {
 			out.PhaseA.Dispatched = len(res.StaleSidecars)
 		}
@@ -466,7 +475,6 @@ func init() {
 	compileCmd.Flags().BoolVar(&dryRunFlag, "dry-run", false, "alias for --check (aligned with migrate sidecars / verify flag conventions)")
 	compileCmd.Flags().BoolVar(&jsonFlag, "json", false, "output structured JSON (phase_a / phase_b summary in two-phase mode)")
 	compileCmd.Flags().BoolVar(&noWaitFlag, "no-wait", false, "fail fast on a held compile.lock instead of blocking")
-	compileCmd.Flags().BoolVar(&legacyFlag, "legacy", false, "force legacy in-body sentinel compile even when sidecars exist")
 	compileCmd.Flags().BoolVar(&skipVerifyFlag, "skip-verify", false,
 		"skip the post-compile verify gate (use sparingly — disabling the gate "+
 			"defeats the completion-evidence discipline)")
@@ -479,4 +487,34 @@ func init() {
 "accept" — warn and continue (explicit opt-in to silent loss)
 "auto"   — abort if stdin is not a TTY, accept otherwise (default)`)
 	Cmd.AddCommand(compileCmd)
+}
+
+// includedFindings drops findings on skip-listed artifacts (superseded,
+// deprecated, migration:skip). Their block is a doctor line, not a compile
+// refusal: nothing on them would compile even after a lift.
+func includedFindings(projectRoot string, in []migrate.Finding) []migrate.Finding {
+	var out []migrate.Finding
+	for _, f := range in {
+		if skip, _ := sidecar.IsSkipListed(filepath.Join(projectRoot, f.Path)); skip {
+			continue
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// staleCorpusRefusal names every artifact carrying an unstripped legacy block
+// and the one remedy. It never lists a version: the state is per artifact,
+// and the file is what the user acts on (ADR-082).
+func staleCorpusRefusal(findings []migrate.Finding) string {
+	var b strings.Builder
+	files := migrate.Files(findings)
+	fmt.Fprintf(&b, "error: %d artifact(s) carry an unstripped legacy [edikt:directives:start] block — compile refuses on a stale corpus:\n", len(files))
+	for _, f := range findings {
+		fmt.Fprintf(&b, "  %s:%d\n", f.Path, f.Line)
+	}
+	b.WriteString("\n  In Claude Code:  /edikt:migrate        (lift each block into a sidecar, verify, recompile)\n")
+	b.WriteString("  Headless:        edikt migrate lift --dry-run, then --apply after the review window\n")
+	b.WriteString("\nNothing was compiled. A legacy block is never read as prose and never compiled through a fallback path.\n")
+	return b.String()
 }

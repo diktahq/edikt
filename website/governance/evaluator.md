@@ -55,11 +55,11 @@ claude -p "Evaluate this code against these criteria..." \
   --disallowedTools "Write,Edit" \
   --max-budget-usd 0.50 \
   --output-format json \
-  --bare
+  --safe-mode
 ```
 
 Key flags:
-- `--bare` — skips hooks, memory, CLAUDE.md. Clean evaluation with no governance bias.
+- `--safe-mode` — skips hooks, CLAUDE.md, skills, plugins and MCP servers. Clean evaluation with no governance bias, and it still authenticates with whatever login the profile uses. Not `--bare`: that reads auth only from `ANTHROPIC_API_KEY` or `apiKeyHelper`, so it never authenticates under an OAuth login.
 - `--disallowedTools "Write,Edit"` — read-only. The evaluator can inspect code but never modify it.
 - `--max-budget-usd` — cost cap per evaluation. Prevents runaway evaluator sessions.
 - `--output-format json` — structured output for machine parsing.

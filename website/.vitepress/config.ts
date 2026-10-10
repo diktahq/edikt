@@ -70,6 +70,7 @@ export default withMermaid(defineConfig({
       {
         text: 'How It Works',
         items: [
+          { text: 'The Two Pillars', link: '/governance/pillars' },
           { text: 'Governance Chain', link: '/governance/chain' },
           { text: 'How Governance Compiles', link: '/governance/compile' },
           { text: 'Sidecar Architecture', link: '/governance/sidecar' },
@@ -114,6 +115,7 @@ export default withMermaid(defineConfig({
           { text: 'Security', link: '/guides/security' },
           { text: 'CI/CD Governance', link: '/guides/ci' },
           { text: 'Keeping Up to Date', link: '/guides/upgrading' },
+          { text: 'Upgrading to v0.9.0', link: '/guides/v0.9.0-upgrade' },
           { text: 'Upgrading to v0.8.0', link: '/guides/v0.8.0-upgrade' },
           { text: 'Upgrading to v0.7.0', link: '/guides/v0.7.0-upgrade' },
           { text: 'Sidecar Migration', link: '/guides/sidecar-migration' },

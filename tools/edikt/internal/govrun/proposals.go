@@ -52,8 +52,24 @@ type ProposalRoutingReport struct {
 	// their description. Reported rather than silent: a topic that renders
 	// with no description is a visible gap, and the reader needs to know it
 	// is a decision rather than an oversight.
-	TopicsRejected   []string `json:"topics_rejected,omitempty"`
-	SidecarsStripped int      `json:"sidecars_stripped"`
+	TopicsRejected []string `json:"topics_rejected,omitempty"`
+	// ProposalsRouted counts artifacts with at least one proposal routed to
+	// the pending store this run. The sidecars themselves are untouched.
+	ProposalsRouted int `json:"proposals_routed"`
+
+	// BehavioralWithoutVerify names entries that declared verify_kind
+	// behavioral with no verify command at all — nothing to propose, so
+	// the marker is dropped and the entry renders as observation-only.
+	// Reported, never silent (D47).
+	BehavioralWithoutVerify []string `json:"behavioral_without_verify,omitempty"`
+
+	// SidecarsUnchanged names every artifact whose proposal was routed, with
+	// why — "ADR-061 — behavioral verify routed to pending". The name states
+	// the property that matters: compile READ the sidecar and wrote nothing
+	// to it. A consumer's compile rewriting two committed sidecars, and its
+	// own pre-commit gate refusing the result, is what ended the write
+	// (D51 (a) recorded it; D81 (d) removed it).
+	SidecarsUnchanged []string `json:"sidecars_unchanged,omitempty"`
 }
 
 // Empty reports whether the routing step had nothing to do. A no-subject run
@@ -62,7 +78,7 @@ type ProposalRoutingReport struct {
 func (r ProposalRoutingReport) Empty() bool {
 	return len(r.PathsQueued) == 0 && len(r.VerifiesQueued) == 0 &&
 		len(r.TopicDescriptionQueued) == 0 && len(r.TopicSlotsOpened) == 0 &&
-		len(r.TopicsRejected) == 0
+		len(r.TopicsRejected) == 0 && len(r.BehavioralWithoutVerify) == 0 && len(r.SidecarsUnchanged) == 0
 }
 
 // Report renders the one-line summary compile prints.
@@ -72,7 +88,13 @@ func (r ProposalRoutingReport) Report() string {
 		parts = append(parts, fmt.Sprintf("%d paths proposal(s) queued (%s)", n, strings.Join(r.PathsQueued, ", ")))
 	}
 	if n := len(r.VerifiesQueued); n > 0 {
-		parts = append(parts, fmt.Sprintf("%d behavioral verify proposal(s) queued (%s)", n, strings.Join(r.VerifiesQueued, ", ")))
+		parts = append(parts, fmt.Sprintf("%d behavioral verify proposal(s) queued, pending approval — run /edikt:sidecar:approve (%s)", n, strings.Join(r.VerifiesQueued, ", ")))
+	}
+	if n := len(r.SidecarsUnchanged); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d proposal(s) routed to pending; the sidecar(s) are UNCHANGED on disk: %s", n, strings.Join(r.SidecarsUnchanged, "; ")))
+	}
+	if n := len(r.BehavioralWithoutVerify); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d entr(y/ies) declared verify_kind behavioral with no verify command — marker dropped, rendered as observation only (%s)", n, strings.Join(r.BehavioralWithoutVerify, ", ")))
 	}
 	if n := len(r.TopicDescriptionQueued); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d extracted topic description(s) queued (%s)", n, strings.Join(r.TopicDescriptionQueued, ", ")))
@@ -84,7 +106,7 @@ func (r ProposalRoutingReport) Report() string {
 		parts = append(parts, fmt.Sprintf("%d topic(s) rendering with no description because it was rejected (%s)", n, strings.Join(r.TopicsRejected, ", ")))
 	}
 	return "Proposals — " + strings.Join(parts, "; ") +
-		". Review with `bin/edikt sidecar approve --kind <verify|paths|topic-description> --list`."
+		". Review with `edikt sidecar approve --kind <verify|paths|topic-description> --list`."
 }
 
 // pendingPathsOut / pendingTopicOut mirror the shapes cmd/sidecar_approve_kinds.go
@@ -105,6 +127,7 @@ type pendingVerifyOut struct {
 	ID                    string `yaml:"id"`
 	SidecarPath           string `yaml:"sidecar_path"`
 	DirectiveIndex        int    `yaml:"directive_index"`
+	EntryKind             string `yaml:"entry_kind,omitempty"` // "" | "directive" → directives[i]; "prohibition" → prohibitions[i] (D47)
 	ProposedVerify        string `yaml:"proposed_verify"`
 	Intent                string `yaml:"intent,omitempty"`
 	FalsifyingObservation string `yaml:"falsifying_observation,omitempty"`
@@ -161,6 +184,8 @@ func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregi
 		}
 
 		dirty := false
+		var removals []sidecar.KeyRemoval // the in-place edits this pass owes the file
+		var reasons []string
 
 		if len(sc.ProposedPaths) > 0 {
 			if err := os.MkdirAll(pathsDir, 0o755); err != nil {
@@ -181,6 +206,8 @@ func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregi
 			}
 			rep.PathsQueued = append(rep.PathsQueued, p.ArtifactID)
 			sc.ProposedPaths = nil
+			removals = append(removals, sidecar.KeyRemoval{Keys: []string{"proposed_paths"}})
+			reasons = append(reasons, "proposed paths queued")
 			dirty = true
 		}
 
@@ -203,41 +230,82 @@ func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregi
 		// re-approve their own decision on every compile, and stripping it
 		// would destroy the pinned state AC-4.4 requires to survive
 		// regeneration byte-intact.
-		for i := range sc.Directives {
-			d := &sc.Directives[i]
-			if d.Verify == "" || d.VerifyKind != "behavioral" {
-				continue
+		// Behavioral verifies without a fixture pair are proposals, not
+		// assertions — for directives AND prohibitions (the merge checks both;
+		// this loop used to walk only directives, which is how a consumer's
+		// ADR-061 prohibition reached Phase B and refused the corpus, D47).
+		routeBehavioral := func(list string, i int, v *verifyFields) error {
+			if v.VerifyKind != "behavioral" {
+				return nil
 			}
-			if d.HumanApprovedAt != "" || d.PositiveFixturePath != "" {
-				continue
+			if v.HumanApprovedAt != "" || (v.PositiveFixturePath != "" && v.NegativeFixturePath != "") {
+				return nil
+			}
+			pfx := "d"
+			if list == "prohibition" {
+				pfx = "p"
+			}
+			pid := fmt.Sprintf("%s-%s%02d", p.ArtifactID, pfx, i)
+			if v.Verify == "" {
+				// Nothing to propose: a kind with no command. Drop the
+				// marker and say so; the entry keeps its observation.
+				rep.BehavioralWithoutVerify = append(rep.BehavioralWithoutVerify, pid)
+				v.VerifyKind = ""
+				v.PositiveFixturePath, v.NegativeFixturePath = "", ""
+				removals = append(removals, sidecar.KeyRemoval{List: list + "s", Index: i, Keys: []string{"verify_kind", "positive_fixture_path", "negative_fixture_path"}})
+				reasons = append(reasons, fmt.Sprintf("%s[%d] behavioral marker without a verify dropped", list+"s", i))
+				dirty = true
+				return nil
 			}
 			if err := os.MkdirAll(verifiesDir, 0o755); err != nil {
-				return rep, fmt.Errorf("mkdir %s: %w", verifiesDir, err)
+				return fmt.Errorf("mkdir %s: %w", verifiesDir, err)
 			}
 			rel := sc.SourcePath
 			if r, relErr := filepath.Rel(projectRoot, sc.SourcePath); relErr == nil && !strings.HasPrefix(r, "..") {
 				rel = filepath.ToSlash(r)
 			}
-			pid := fmt.Sprintf("%s-d%02d", p.ArtifactID, i)
 			dest := filepath.Join(verifiesDir, pid+".yaml")
 			if _, statErr := os.Stat(dest); os.IsNotExist(statErr) {
 				out := pendingVerifyOut{
 					ID:                    pid,
 					SidecarPath:           rel,
 					DirectiveIndex:        i,
-					ProposedVerify:        d.Verify,
-					Intent:                d.Intent,
-					FalsifyingObservation: d.FalsifyingObservation,
+					EntryKind:             list,
+					ProposedVerify:        v.Verify,
+					Intent:                v.Intent,
+					FalsifyingObservation: v.FalsifyingObservation,
 					ProposedAt:            stamp,
 				}
 				if err := writeYAML(dest, out); err != nil {
-					return rep, err
+					return err
 				}
 				rep.VerifiesQueued = append(rep.VerifiesQueued, pid)
 			}
-			d.Verify = ""
-			d.VerifyKind = ""
+			// Render without the verify until a human approves the pair;
+			// a half-declared behavioral must not reach Phase B's pair check.
+			v.Verify = ""
+			v.VerifyKind = ""
+			v.PositiveFixturePath, v.NegativeFixturePath = "", ""
+			removals = append(removals, sidecar.KeyRemoval{List: list + "s", Index: i, Keys: []string{"verify", "verify_kind", "positive_fixture_path", "negative_fixture_path"}})
+			reasons = append(reasons, fmt.Sprintf("%s[%d] behavioral verify routed to pending (%s)", list+"s", i, pid))
 			dirty = true
+			return nil
+		}
+		for i := range sc.Directives {
+			d := &sc.Directives[i]
+			vf := verifyFieldsOfDirective(d)
+			if err := routeBehavioral("directive", i, &vf); err != nil {
+				return rep, err
+			}
+			vf.applyToDirective(d)
+		}
+		for i := range sc.Prohibitions {
+			pr := &sc.Prohibitions[i]
+			vf := verifyFieldsOfProhibition(pr)
+			if err := routeBehavioral("prohibition", i, &vf); err != nil {
+				return rep, err
+			}
+			vf.applyToProhibition(pr)
 		}
 
 		if d := strings.TrimSpace(sc.ProposedTopicDescription); d != "" && sc.Topic != "" {
@@ -266,21 +334,32 @@ func RouteProposals(projectRoot string, pairs []sidecar.Pair, registry topicregi
 				}
 			}
 			sc.ProposedTopicDescription = ""
+			removals = append(removals, sidecar.KeyRemoval{Keys: []string{"proposed_topic_description"}})
+			reasons = append(reasons, "topic description queued")
 			dirty = true
 		} else if sc.ProposedTopicDescription != "" {
 			sc.ProposedTopicDescription = ""
+			removals = append(removals, sidecar.KeyRemoval{Keys: []string{"proposed_topic_description"}})
+			reasons = append(reasons, "rejected topic description dropped")
 			dirty = true
 		}
 
 		if dirty {
-			body, err := sidecar.Marshal(sc)
-			if err != nil {
-				return rep, fmt.Errorf("marshal %s: %w", p.ArtifactID, err)
-			}
-			if err := os.WriteFile(sc.SourcePath, body, 0o644); err != nil {
-				return rep, fmt.Errorf("write %s: %w", sc.SourcePath, err)
-			}
-			rep.SidecarsStripped++
+			// COMPILE DOES NOT WRITE TO A SOURCE ARTIFACT (D81 (d)).
+			//
+			// The in-memory sidecar above is stripped so the RENDER omits an
+			// unapproved proposal; the file on disk is left exactly as the
+			// author committed it. Writing back was how a consumer's compile
+			// rewrote two committed sidecars and its own pre-commit gate
+			// refused the result as "compiled surfaces staged by a non-compile
+			// commit" — correctly, because a read step had produced a diff.
+			//
+			// `edikt sidecar approve` is the only writer of a sidecar: it
+			// carries a human's decision, which is the thing that earns a
+			// write. RemoveKeysInPlace stays for approve's reject path.
+			_ = removals
+			rep.ProposalsRouted++
+			rep.SidecarsUnchanged = append(rep.SidecarsUnchanged, fmt.Sprintf("%s — %s", p.ArtifactID, strings.Join(reasons, ", ")))
 		}
 	}
 
@@ -393,4 +472,27 @@ func countLoaded(pairs []sidecar.Pair) int {
 		}
 	}
 	return n
+}
+
+// verifyFields is the verify-bearing subset shared by Directive and
+// Prohibition, so one routing rule serves both lists.
+type verifyFields struct {
+	Verify, VerifyKind, Intent, FalsifyingObservation, HumanApprovedAt string
+	PositiveFixturePath, NegativeFixturePath                           string
+}
+
+func verifyFieldsOfDirective(d *sidecar.Directive) verifyFields {
+	return verifyFields{d.Verify, d.VerifyKind, d.Intent, d.FalsifyingObservation, d.HumanApprovedAt, d.PositiveFixturePath, d.NegativeFixturePath}
+}
+
+func (v verifyFields) applyToDirective(d *sidecar.Directive) {
+	d.Verify, d.VerifyKind, d.PositiveFixturePath, d.NegativeFixturePath = v.Verify, v.VerifyKind, v.PositiveFixturePath, v.NegativeFixturePath
+}
+
+func verifyFieldsOfProhibition(pr *sidecar.Prohibition) verifyFields {
+	return verifyFields{pr.Verify, pr.VerifyKind, pr.Intent, pr.FalsifyingObservation, pr.HumanApprovedAt, pr.PositiveFixturePath, pr.NegativeFixturePath}
+}
+
+func (v verifyFields) applyToProhibition(pr *sidecar.Prohibition) {
+	pr.Verify, pr.VerifyKind, pr.PositiveFixturePath, pr.NegativeFixturePath = v.Verify, v.VerifyKind, v.PositiveFixturePath, v.NegativeFixturePath
 }

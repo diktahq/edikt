@@ -26,6 +26,7 @@ layout: home
       <code id="install-brew" role="tabpanel" hidden><span class="prompt">$</span> brew install diktahq/tap/edikt</code>
     </div>
   </div>
+  <p class="harness-note">Homebrew installs the launcher only — follow with <code>edikt install v0.8.0</code> and <code>edikt use v0.8.0</code> to fetch the payload. Already running edikt? <a href="/guides/upgrading">Upgrading</a>.</p>
   <p class="harness-note"><span class="now">Claude Code</span> today — Codex and other harnesses next.</p>
 </section>
 
@@ -45,7 +46,7 @@ layout: home
       </li>
       <li>
         <span class="beat-num">3</span>
-        <div><strong>Someone tries to change it — the write gets blocked.</strong><span class="beat-text">Three weeks later, a different engineer edits the database config toward Mongo. edikt denies the write before it lands, citing <span class="adr-ref">ADR-014</span> by name.</span></div>
+        <div><strong>Someone tries to change it — the decision is already in the room.</strong><span class="beat-text">Three weeks later, a different engineer points the database config at Mongo. The directive is in context before the edit is attempted, citing <span class="adr-ref">ADR-014</span> by name — and the phase-end review reads the finished diff against every decision you have made.</span></div>
       </li>
     </ol>
     <div class="term-col">
@@ -115,7 +116,7 @@ layout: home
 </section>
 
 <section class="proof reveal">
-  <span class="chip"><b>v0.8.0</b> · Cosign-signed releases</span>
+  <span class="chip"><b>v0.9.0</b> · Cosign-signed releases</span>
   <span class="chip"><b>Elastic-2.0</b> · Open source</span>
   <span class="chip"><b>No build step</b> · No npm, no compiler</span>
   <span class="chip"><b>Plain markdown</b> · You own every file</span>
@@ -650,7 +651,8 @@ if (typeof document !== 'undefined') {
     { t: 'claude', html: 'Saved as <span class="adr-ref">ADR-014</span>. Compiling governance… done.\nEvery session in this repo reads it from here on.' },
     { t: 'divider', text: '———  3 weeks later · a different engineer  ———' },
     { t: 'you', text: 'edit config/database.yml — switch the orders table to MongoDB' },
-    { t: 'block', html: 'This write touches <span class="path">config/database.yml</span>, governed by 1 MUST-grade directive:\n— Postgres for the orders table, pooling at the app layer. (<span class="adr-ref">ADR-014</span>)\nNon-negotiable. Revise the write to comply, then proceed.' }
+    { t: 'block', html: '<span class="path">config/database.yml</span> is governed by 1 MUST-grade directive, loaded before the edit is attempted:\n— Postgres for the orders table, pooling at the app layer. (<span class="adr-ref">ADR-014</span>)\nNon-negotiable.' },
+    { t: 'claude', html: 'That contradicts <span class="adr-ref">ADR-014</span>, so I have not made the change. Overturn the ADR and I will follow the new one.' }
   ];
 
   var body = document.getElementById('termBody');
@@ -674,7 +676,7 @@ if (typeof document !== 'undefined') {
     }
     if (line.t === 'block') {
       div.className += ' block';
-      div.innerHTML = '<span class="block-label">edikt — write denied</span><span class="block-body"></span>';
+      div.innerHTML = '<span class="block-label">edikt — governed path</span><span class="block-body"></span>';
       var body_ = div.querySelector('.block-body');
       if (line.html) { body_.innerHTML = line.html; } else { body_.textContent = line.text; }
       return div;

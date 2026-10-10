@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/release"
+	"github.com/diktahq/edikt/tools/edikt/internal/versioncmp"
 	"github.com/spf13/cobra"
 )
 
@@ -85,10 +87,9 @@ If already up-to-date, reports so and exits 0.`,
 		//
 		// The version string is a MODEL of what is installed. The symlink is
 		// the fact (INV-014). Read the fact.
-		if devLinked, target := isDevLinked(ediktRoot); devLinked {
-			return fmt.Errorf("this install is dev-linked (current -> %s).\n"+
-				"Refusing to upgrade: fetching a release would replace your working tree link.\n"+
-				"To leave dev mode first: edikt use <tag>", target)
+		devLinked, devTarget := isDevLinked(ediktRoot)
+		if reason, msg := upgradeDevLinkGate(devLinked, devTarget); reason != refusalNone {
+			return errors.New(msg)
 		}
 
 		lf, _ := readLock(ediktRoot)
@@ -110,44 +111,16 @@ If already up-to-date, reports so and exits 0.`,
 		}
 		latestV := normalizeTag(latestTag)
 
-		// Already up to date?
-		if !semverGreater(latestV, currentV) {
-			fmt.Fprintf(os.Stderr, "upgrade: already up to date (v%s)\n", currentV)
-			return nil
-		}
-
-		// Reject cross-major upgrades.
-		curMajor := semverMajor(currentV)
-		latMajor := semverMajor(latestV)
-		if latMajor != curMajor {
-			return fmt.Errorf("major upgrade detected (current v%s, latest v%s) — run: curl -fsSL %s/v%s/install.sh | bash",
-				currentV, latestV, releaseBase(), latestV)
-		}
-
-		// Reject upgrades that skip a minor line (SPEC-015 SP-006). The
-		// cross-major check above never fires pre-1.0 — major is always 0 —
-		// so this is the gate that actually enforces "adjacent minor line
-		// only" until 1.0. Scoped to THIS command's own "resolve latest,
-		// then activate" path only: install.sh's do_legacy_v04/do_current_v05
-		// install whatever tag was explicitly requested (--ref, or the
-		// v0.4.x-forward migration path ADR-042 already governs) with no
-		// semver-distance check, and this gate does not touch that.
-		//
-		// WHY versionLineFloor (version_gate.go) matters more than this gate:
-		// this check ships INSIDE the v0.8.0 binary, so it only ever runs
-		// when a v0.8.0+ binary is doing the resolving. A user still running
-		// v0.7.x's own binary executes v0.7.x's OWN same-major check and
-		// never reaches this code at all — this gate cannot catch that user.
-		// versionLineFloor catches them from the OTHER direction instead: a
-		// NEW binary refusing an OLD project, which is reachable regardless
-		// of which binary the user happens to still have installed.
-		curMinor := semverParts(currentV)[1]
-		latMinor := semverParts(latestV)[1]
-		if latMinor-curMinor > 1 {
-			return fmt.Errorf("direct upgrade from v%s to v%s skips a minor line — "+
-				"edikt only supports direct upgrade from the immediately prior line.\n"+
-				"Step through the intermediate release first, or run:\n"+
-				"  curl -fsSL %s/v%s/install.sh | bash", currentV, latestV, releaseBase(), latestV)
+		// The version-derived refusals — already up to date, cross-major,
+		// the minor-line skip and "not comparable" — plus the PROVENANCE
+		// refusal that sits behind them, decided in ONE place, each NAMING
+		// the mechanism that produced it. See upgradeProvenanceGate.
+		if reason, msg := upgradeProvenanceGate(currentV, latestV, lf.Source); reason != refusalNone {
+			if reason == refusalUpToDate {
+				fmt.Fprintln(os.Stderr, msg)
+				return nil
+			}
+			return errors.New(msg)
 		}
 
 		fmt.Printf("upgrade: v%s → v%s\n", currentV, latestV)
@@ -158,7 +131,13 @@ If already up-to-date, reports so and exits 0.`,
 		}
 
 		// Check if already installed.
+		//
+		// payloadSource is the provenance RECORDED for what this run
+		// activates, and it is decided where the payload is obtained rather
+		// than inferred afterwards: the two branches below are the only two
+		// places a payload can come from.
 		targetDir := filepath.Join(ediktRoot, "versions", latestV)
+		payloadSource := lockSourceFor(lf, latestV)
 		if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "upgrade: installing %s ...\n", latestTag)
 			// EDIKT_INSTALL_SOURCE: bypass network fetch with local source.
@@ -167,8 +146,11 @@ If already up-to-date, reports so and exits 0.`,
 				if err := localInstallFromSource(ediktRoot, targetDir, src, isTarball); err != nil {
 					return fmt.Errorf("install failed: %w", err)
 				}
+				payloadSource = lockSourceLocal
 			} else if err := downloadAndInstall(ediktRoot, latestTag, latestV); err != nil {
 				return fmt.Errorf("install failed: %w", err)
+			} else {
+				payloadSource = lockSourcePublished
 			}
 			stampPayloadVersion(targetDir, latestV)
 			snapshotLauncherBinary(targetDir, latestV)
@@ -203,7 +185,7 @@ If already up-to-date, reports so and exits 0.`,
 			return fmt.Errorf("flipping current: %w", err)
 		}
 
-		if err := writeLock(ediktRoot, latestV, "launcher"); err != nil {
+		if err := writeLock(ediktRoot, latestV, "launcher", payloadSource); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: activated but lock.yaml update failed: %v\n", err)
 		}
 
@@ -213,48 +195,163 @@ If already up-to-date, reports so and exits 0.`,
 	},
 }
 
-// semverGreater returns true if a > b (simple semver comparison, no pre-release).
-func semverGreater(a, b string) bool {
-	aParts := semverParts(a)
-	bParts := semverParts(b)
-	for i := 0; i < 3; i++ {
-		if aParts[i] > bParts[i] {
-			return true
-		}
-		if aParts[i] < bParts[i] {
-			return false
-		}
+// ── EVERY REFUSAL NAMES ITS MECHANISM ───────────────────────────────────────
+//
+// FOUR independent mechanisms refuse an `edikt upgrade`, and a test asserting
+// only a non-zero exit cannot tell them apart. That matters concretely: delete
+// isDevLinked — the one that reads the SYMLINK rather than a version string,
+// and the only INV-014-correct guard among them — and a dev install is still  edikt-guard:allow
+// refused, by the incomparable-version path, with a non-zero exit and a
+// plausible message. Exit status alone would call that green.
+//
+// So each refusal carries a NAME. Tests assert the name; the message is built
+// beside it and never has to be pattern-matched to work out which guard fired.
+type upgradeRefusal string
+
+const (
+	// refusalNone — nothing refused; the upgrade may proceed.
+	refusalNone upgradeRefusal = ""
+	// refusalDevLinked reads $EDIKT_ROOT/current from the filesystem. It is
+	// the FACT; every other refusal here reads a MODEL of what is installed.
+	refusalDevLinked upgradeRefusal = "dev-linked"
+	// refusalNotComparable is the mechanism this change ADDS. Before it, a
+	// channel name parsed as 0.0.0 and every release compared newer, so the
+	// question "is there an upgrade?" was answered instead of refused.
+	refusalNotComparable upgradeRefusal = "not-comparable"
+	// refusalUpToDate — the latest release is not newer than what is active.
+	refusalUpToDate upgradeRefusal = "already-up-to-date"
+	// refusalCrossMajor — upgrade.go's cross-major rejection.
+	refusalCrossMajor upgradeRefusal = "cross-major"
+	// refusalMinorSkip — the adjacent-minor-line gate (SPEC-015 SP-006).
+	refusalMinorSkip upgradeRefusal = "minor-line-skip"
+	// refusalLocalPayload reads the lock manifest's PROVENANCE. Every other
+	// refusal here asks whether an upgrade is available; this one asks
+	// whether performing it would destroy something that cannot be fetched
+	// again (SR-002, ruling SSP-004).
+	refusalLocalPayload upgradeRefusal = "local-payload"
+)
+
+// upgradeDevLinkGate refuses when `current` resolves into versions/dev.
+//
+// ASSERT what is installed; do not infer it from a version string. A dev-linked
+// install has current -> versions/dev, a symlink into a working tree. Its
+// "version" is a channel name, so ordering it against a release answers
+// nothing, and this gate does not ask: it takes the filesystem fact from
+// isDevLinked and refuses on that alone.
+func upgradeDevLinkGate(devLinked bool, target string) (upgradeRefusal, string) {
+	if !devLinked {
+		return refusalNone, ""
 	}
-	return false
+	return refusalDevLinked, fmt.Sprintf("this install is dev-linked (current -> %s).\n"+
+		"Refusing to upgrade: fetching a release would replace your working tree link.\n"+
+		"To leave dev mode first: edikt use <tag>", target)
 }
 
-func semverMajor(v string) int {
-	parts := semverParts(v)
-	return parts[0]
+// upgradeVersionGate is the whole version-derived decision: may an install at
+// currentV advance to latestV, and if not, WHICH mechanism refused?
+//
+// The first branch is the one that changed. It used to read
+// `!semverGreater(latestV, currentV)` — a bool with no room for "these two
+// cannot be ordered" — so `semverGreater("0.9.0", "dev")` was TRUE, this gate
+// let a dev install through, and the minor-line gate below was what actually
+// stopped it, via 9 - 0 > 1. A guard firing for the wrong reason is a guard
+// that stops firing the moment the wrong reason changes.
+func upgradeVersionGate(currentV, latestV string) (upgradeRefusal, string) {
+	switch versioncmp.Compare(latestV, currentV) {
+	case versioncmp.Incomparable:
+		return refusalNotComparable, fmt.Sprintf(
+			"the active version (%s) and the latest release (%s) are not comparable — "+
+				"one of them is a channel name rather than a release, and a channel has no position "+
+				"in a release ordering, so \"is a newer version available?\" has no answer here.\n"+
+				"Refusing rather than inventing one. To leave a channel install: edikt use <tag>",
+			currentV, latestV)
+	case versioncmp.Equal, versioncmp.RightNewer:
+		return refusalUpToDate, fmt.Sprintf("upgrade: already up to date (v%s)", currentV)
+	}
+
+	// Past this point both sides parsed as releases and latest is strictly
+	// newer, so the two lookups below cannot fail. They are still checked:
+	// a gate that proceeds on an unreadable subject is reporting on nothing
+	// (INV-013).                                                              edikt-guard:allow
+	cur, curOK := versioncmp.Parse(currentV)
+	lat, latOK := versioncmp.Parse(latestV)
+	if !curOK || !latOK {
+		return refusalNotComparable, fmt.Sprintf(
+			"refusing to upgrade: %q or %q stopped parsing as a release version between "+
+				"the ordering and the version gate", currentV, latestV)
+	}
+
+	// Reject cross-major upgrades.
+	if lat.Major != cur.Major {
+		return refusalCrossMajor, fmt.Sprintf(
+			"major upgrade detected (current v%s, latest v%s) — run: curl -fsSL %s/v%s/install.sh | bash",
+			currentV, latestV, releaseBase(), latestV)
+	}
+
+	// Reject upgrades that skip a minor line (SPEC-015 SP-006). The
+	// cross-major check above never fires pre-1.0 — major is always 0 —
+	// so this is the gate that actually enforces "adjacent minor line
+	// only" until 1.0. Scoped to THIS command's own "resolve latest,
+	// then activate" path only: install.sh's do_legacy_v04/do_current_v05
+	// install whatever tag was explicitly requested (--ref, or the
+	// v0.4.x-forward migration path ADR-042 already governs) with no
+	// semver-distance check, and this gate does not touch that.
+	//
+	// WHY versionLineFloor (version_gate.go) matters more than this gate:
+	// this check ships INSIDE the v0.8.0 binary, so it only ever runs
+	// when a v0.8.0+ binary is doing the resolving. A user still running
+	// v0.7.x's own binary executes v0.7.x's OWN same-major check and
+	// never reaches this code at all — this gate cannot catch that user.
+	// versionLineFloor catches them from the OTHER direction instead: a
+	// NEW binary refusing an OLD project, which is reachable regardless
+	// of which binary the user happens to still have installed.
+	if lat.Minor-cur.Minor > 1 {
+		return refusalMinorSkip, fmt.Sprintf(
+			"direct upgrade from v%s to v%s skips a minor line — "+
+				"edikt only supports direct upgrade from the immediately prior line.\n"+
+				"Step through the intermediate release first, or run:\n"+
+				"  curl -fsSL %s/v%s/install.sh | bash", currentV, latestV, releaseBase(), latestV)
+	}
+
+	return refusalNone, ""
 }
 
-func semverParts(v string) [3]int {
-	v = strings.TrimPrefix(v, "v")
-	parts := strings.SplitN(v, ".", 3)
-	var result [3]int
-	for i, p := range parts {
-		if i >= 3 {
-			break
-		}
-		// Parse numeric prefix only.
-		for j, c := range p {
-			if c < '0' || c > '9' {
-				p = p[:j]
-				break
-			}
-		}
-		n := 0
-		for _, c := range p {
-			n = n*10 + int(c-'0')
-		}
-		result[i] = n
+// upgradeProvenanceGate is the whole decision `edikt upgrade` makes before it
+// replaces a payload: given the active version, the latest release and the
+// provenance recorded for the ACTIVE payload, may this install advance?
+//
+// The version question is asked FIRST and its answer wins. That ordering is
+// not arbitrary: "already up to date" and "not comparable" describe upgrades
+// that were never going to happen, and answering them with "your payload is
+// local" would name a mechanism that did not decide anything. Provenance only
+// speaks where an advance would otherwise occur — which is the only place a
+// payload can be destroyed.
+//
+// The table, as ruled in SSP-004 and recorded in the fixture row PC-04:
+//
+//	source          outcome
+//	published       advance
+//	local           refuse, saying why
+//	absent          advance (an install written before this field existed)
+//
+// The two failures are asymmetric. Being stranded on a pre-release is annoying
+// and visible; losing a locally built payload is silent, and no amount of
+// re-running the command brings it back. Only this distinction treats them
+// differently.
+func upgradeProvenanceGate(currentV, latestV, lockSource string) (upgradeRefusal, string) {
+	if reason, msg := upgradeVersionGate(currentV, latestV); reason != refusalNone {
+		return reason, msg
 	}
-	return result
+	if effectiveLockSource(lockSource) != lockSourceLocal {
+		return refusalNone, ""
+	}
+	return refusalLocalPayload, fmt.Sprintf(
+		"the active version (%s) was installed from a LOCAL source, and advancing to v%s "+
+			"would replace that payload with a published release.\n"+
+			"A published payload can be fetched again; a locally built one cannot, so this "+
+			"refuses rather than doing it silently.\n"+
+			"To advance anyway, re-install deliberately: edikt install v%s && edikt use %s",
+		currentV, latestV, latestV, latestV)
 }
 
 // checkTarGzSafety scans all tar headers for path traversal without extracting.

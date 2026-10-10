@@ -90,12 +90,15 @@ func TestRouteProposals_UnapprovedBehavioralVerifyIsQueued(t *testing.T) {
 		}
 	}
 
-	// STRIPPED FROM THE SIDECAR, or Phase B still refuses and the routing
-	// achieved nothing.
-	after := reload(t, p.SidecarPath)
-	if after.Directives[0].Verify != "" || after.Directives[0].VerifyKind != "" {
-		t.Fatalf("verify survived in the sidecar: verify=%q kind=%q",
-			after.Directives[0].Verify, after.Directives[0].VerifyKind)
+	// STRIPPED FROM WHAT PHASE B RENDERS, or Phase B still refuses and the
+	// routing achieved nothing — but NOT from the file, which compile does
+	// not write (D81 (d)). The pair carries the sidecar Phase B merges.
+	if p.Sidecar.Directives[0].Verify != "" || p.Sidecar.Directives[0].VerifyKind != "" {
+		t.Fatalf("the routed entry must render verify-less: verify=%q kind=%q",
+			p.Sidecar.Directives[0].Verify, p.Sidecar.Directives[0].VerifyKind)
+	}
+	if onDisk := reload(t, p.SidecarPath); onDisk.Directives[0].Verify == "" {
+		t.Fatal("compile wrote to the sidecar: the author's verify was removed from the file on disk")
 	}
 	if !strings.Contains(rep.Report(), "behavioral verify proposal") {
 		t.Errorf("report does not mention the queued verify: %s", rep.Report())
@@ -158,6 +161,33 @@ func TestRouteProposals_StructuralVerifyIsNotQueued(t *testing.T) {
 // TestRouteProposals_BehavioralWithFixtureIsNotQueued — a behavioral verify
 // that already carries its positive fixture satisfies Phase B's gate and has
 // nothing left for a human to supply.
+// D47: a behavioral verify is a fixture PAIR. Positive alone is incomplete
+// — Phase B would refuse it on the missing negative — so it is routed like
+// any other pairless behavioral, not passed through.
+func TestRouteProposals_BehavioralWithPositiveOnlyIsQueued(t *testing.T) {
+	root := t.TempDir()
+	p := scratchSidecar(t, root, "ADR-904", []sidecar.Directive{{
+		Text:                  "Layer 2 tests MUST gate on authentication. (ref: ADR-904)",
+		Verify:                "bash test/fixtures/behavioral/ADR-904/positive.sh",
+		VerifyKind:            "behavioral",
+		PositiveFixturePath:   "test/fixtures/behavioral/ADR-904/positive.sh",
+		FalsifyingObservation: "collection succeeds with no credentials present",
+	}})
+	rep, err := RouteProposals(root, []sidecar.Pair{p}, topicregistry.Registry{}, time.Unix(1700000000, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.VerifiesQueued) != 1 {
+		t.Fatalf("a positive-only behavioral must be queued as a proposal; got %v", rep.VerifiesQueued)
+	}
+	if got := p.Sidecar.Directives[0]; got.Verify != "" || got.VerifyKind != "" {
+		t.Fatalf("routed entry must render verify-less: %+v", got)
+	}
+	if onDisk := reload(t, p.SidecarPath); onDisk.Directives[0].Verify == "" {
+		t.Fatal("compile wrote to the sidecar: the author's verify was removed from the file on disk")
+	}
+}
+
 func TestRouteProposals_BehavioralWithFixtureIsNotQueued(t *testing.T) {
 	root := t.TempDir()
 	p := scratchSidecar(t, root, "ADR-903", []sidecar.Directive{{
@@ -165,6 +195,7 @@ func TestRouteProposals_BehavioralWithFixtureIsNotQueued(t *testing.T) {
 		Verify:              "bash test/fixtures/behavioral/ADR-903/positive.sh",
 		VerifyKind:          "behavioral",
 		PositiveFixturePath: "test/fixtures/behavioral/ADR-903/positive.sh",
+		NegativeFixturePath: "test/fixtures/behavioral/ADR-903/negative.sh",
 	}})
 
 	rep, err := RouteProposals(root, []sidecar.Pair{p}, topicregistry.Registry{}, time.Unix(1700000000, 0))

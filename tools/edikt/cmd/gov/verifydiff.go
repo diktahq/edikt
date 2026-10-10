@@ -28,6 +28,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/globmatch"
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/spf13/cobra"
@@ -262,41 +263,16 @@ func vdSidecarInScope(sc *sidecar.Sidecar, changedFiles []string) bool {
 
 // vdGlobMatch matches a path against a glob pattern that may contain **.
 // ** matches zero or more path segments; * matches within a single segment.
+//
+// It is a one-line delegation to internal/globmatch ON PURPOSE. This file
+// carried its own copy of the algorithm — the copy globmatch's package doc
+// says it replaced — and the two drifted in the way that package exists to
+// prevent: approval time (internal/pathsproposal) refuses a zero-match glob
+// loudly, while diff time silently scopes nothing. Both now resolve a
+// (pattern, path) pair through the same function, and cmd/gov's
+// TestConsumersAgree asserts they return the same verdict.
 func vdGlobMatch(pattern, path string) bool {
-	if !strings.Contains(pattern, "**") {
-		ok, _ := filepath.Match(pattern, path)
-		return ok
-	}
-	// Split on the first ** and match prefix / suffix.
-	idx := strings.Index(pattern, "**")
-	prefix := pattern[:idx]
-	rest := pattern[idx+2:]
-	rest = strings.TrimPrefix(rest, "/")
-
-	candidate := path
-	if prefix != "" {
-		if !strings.HasPrefix(candidate, prefix) {
-			return false
-		}
-		candidate = candidate[len(prefix):]
-	}
-
-	if rest == "" {
-		return true
-	}
-	// Try matching the suffix at every sub-path of candidate.
-	for {
-		ok, _ := filepath.Match(rest, candidate)
-		if ok {
-			return true
-		}
-		slash := strings.Index(candidate, "/")
-		if slash < 0 {
-			break
-		}
-		candidate = candidate[slash+1:]
-	}
-	return false
+	return globmatch.Match(pattern, path)
 }
 
 // vdBuildDispatch applies the ADR-037 shape-selection rule to each directive.  // edikt-guard:allow

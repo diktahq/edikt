@@ -2,10 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://edikt.dev/schemas/plan-criteria/v1.json",
   "title": "edikt plan criteria sidecar",
-  "description": "Spec-only criteria sidecar (PLAN-<slug>-criteria.yaml) consumed by `bin/edikt verify`. Mirrors tools/edikt/internal/verify/schema.go, which strict-decodes (KnownFields) — any field not listed here makes verify exit 2. Evaluation state (status, fail_count, fail_reason, …) does NOT belong in this file; it lives in .edikt/state/plan-eval/PLAN-<slug>-eval.json (see plan-eval-state.v1.schema.json). Two constraints live only in the Go validator, which remains authoritative: phase ids must be unique across the file, and criterion ids must be unique within a phase. Ids and created accept unquoted YAML scalars (numbers, dates) because Go's yaml.v3 coerces scalars into string fields; quoting them is still the recommended style.",
+  "description": "Spec-only criteria sidecar (PLAN-<slug>-criteria.yaml) consumed by `edikt verify`. Mirrors tools/edikt/internal/verify/schema.go, which strict-decodes (KnownFields) \u2014 any field not listed here makes verify exit 2. Evaluation state (status, fail_count, fail_reason, \u2026) does NOT belong in this file; it lives in .edikt/state/plan-eval/PLAN-<slug>-eval.json (see plan-eval-state.v1.schema.json). Two constraints live only in the Go validator, which remains authoritative: phase ids must be unique across the file, and criterion ids must be unique within a phase. Ids and created accept unquoted YAML scalars (numbers, dates) because Go's yaml.v3 coerces scalars into string fields; quoting them is still the recommended style.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "plan", "phases"],
+  "required": [
+    "schema_version",
+    "plan",
+    "phases"
+  ],
   "properties": {
     "schema_version": {
       "type": "integer",
@@ -29,10 +33,17 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "classification", "criteria"],
+        "required": [
+          "id",
+          "classification",
+          "criteria"
+        ],
         "properties": {
           "id": {
-            "type": ["string", "number"],
+            "type": [
+              "string",
+              "number"
+            ],
             "description": "Phase identifier, unique across the file. Unquoted numeric ids are accepted (yaml.v3 coerces them to string); quoting (id: \"1\") is the recommended style."
           },
           "name": {
@@ -40,7 +51,12 @@
           },
           "classification": {
             "type": "string",
-            "enum": ["testable", "operational", "informational", "owner"],
+            "enum": [
+              "testable",
+              "operational",
+              "informational",
+              "owner"
+            ],
             "description": "testable = every criterion carries an executable verify command; operational = observable but not machine-checkable; informational = context only; owner = completion is a human decision (a ruling, a sign-off, a go/no-go) and the criteria are never executed. owner is deliberately distinct from informational: informational means there is nothing to check, owner means a person must act and may not have, and a report scanned for outstanding human work must be able to tell them apart."
           },
           "completion_promise": {
@@ -48,7 +64,7 @@
           },
           "phase_metadata": {
             "type": "object",
-            "description": "Freeform, runner-ignored. Nothing in `edikt verify` reads this. It exists because this schema is validated with additionalProperties:false and the loader decodes with KnownFields(true), so before it existed a plan carrying any concept the schema had not anticipated could not be loaded at all — leaving the author to delete their own text or mislabel the phase. Put the unanticipated thing here instead; it survives in the file where its author put it."
+            "description": "Freeform, runner-ignored. Nothing in `edikt verify` reads this. It exists because this schema is validated with additionalProperties:false and the loader decodes with KnownFields(true), so before it existed a plan carrying any concept the schema had not anticipated could not be loaded at all \u2014 leaving the author to delete their own text or mislabel the phase. Put the unanticipated thing here instead; it survives in the file where its author put it."
           },
           "criteria": {
             "type": "array",
@@ -56,10 +72,16 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["id", "statement"],
+              "required": [
+                "id",
+                "statement"
+              ],
               "properties": {
                 "id": {
-                  "type": ["string", "number"],
+                  "type": [
+                    "string",
+                    "number"
+                  ],
                   "description": "Criterion identifier, unique within the phase, e.g. AC-2.1. Unquoted numeric ids (id: 1.1) are accepted; quoting is the recommended style."
                 },
                 "statement": {
@@ -69,6 +91,15 @@
                 "verify": {
                   "type": "string",
                   "description": "Shell command exiting 0 when the criterion holds. Required when the phase is testable; omit the key entirely (never verify: null) otherwise."
+                },
+                "requirements": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": "OPTIONAL list of the spec ids this criterion claims to satisfy — requirement ids (SR-*) or protection ids (SSP-*) drawn from the spec sidecar of the spec the plan implements. OPTIONAL here and REQUIRED by the coverage gate, never the reverse: this file is consumed under strict decoding, so a required field would stop every existing criteria file in every downstream project from loading on upgrade, turning a coverage improvement into a breaking change. An empty list is the explicit \"this criterion satisfies no requirement\" declaration, which is not the same as omitting the key. A declaration records that a requirement is CLAIMED, NOT that the criterion asserts the property: the coverage gate closes the absence case only, and whether a claim holds is a reading rather than a check. Ids absent from the plan's spec are rejected by the Go loader, which names them."
                 },
                 "verify_kind": {
                   "type": "string",
@@ -85,6 +116,11 @@
                 },
                 "negative_fixture_path": {
                   "type": "string"
+                },
+                "timeout_s": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Optional per-criterion timeout in seconds, overriding the runner's 30 s default for a criterion that legitimately runs longer (a release gate, an install-and-upgrade path). Absent means the default. Added 2026-09-02 (PLAN-v090-release Phase 0): without it the runner recorded such criteria as timeout and a release plan could never flip its own gate."
                 }
               }
             }
@@ -92,15 +128,23 @@
         },
         "if": {
           "properties": {
-            "classification": { "const": "testable" }
+            "classification": {
+              "const": "testable"
+            }
           },
-          "required": ["classification"]
+          "required": [
+            "classification"
+          ]
         },
         "then": {
           "properties": {
             "criteria": {
               "items": {
-                "required": ["id", "statement", "verify"]
+                "required": [
+                  "id",
+                  "statement",
+                  "verify"
+                ]
               }
             }
           }
@@ -116,7 +160,9 @@
         "properties": {
           "blocks": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           }
         }
       }
@@ -127,9 +173,15 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string" },
-          "severity": { "type": "string" },
-          "mitigation_phase": { "type": "string" }
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "mitigation_phase": {
+            "type": "string"
+          }
         }
       }
     }

@@ -153,7 +153,7 @@ All 4 phrasings produced tests (12/12 vs 0/3 baseline). Test-before-code orderin
 
 **What this means for edikt:** The core mechanism works. `.claude/rules/` files are reliable enforcement for content conventions. The governance checkpoint is retained in rule packs for auditability (Claude cites rules explicitly when the checkpoint is present) but is not the compliance driver. Process ordering is out of scope for static rules — it's a hook-layer problem.
 
-**What we built from this:** the `verify-gate` PreToolUse hook and the evidence-gate posture dial (ADR-062) are that hook layer — process ordering (evidence read before a completion claim lands) enforced by inspecting tool-call sequence, exactly as this experiment predicted static rule text couldn't do on its own. See [Falsifiable Verification](/guides/falsifiable-verification).
+**What we built from this:** the `verify-gate` PreToolUse hook and its `evidence-gate` posture dial (ADR-062) were that hook layer — process ordering (evidence read before a completion claim lands) enforced by inspecting tool-call sequence, exactly as this experiment predicted static rule text couldn't do on its own. Both were retired in v0.9.0 (ADR-083), which moved verification off the moment of the edit and onto the finished diff at phase end. The prediction this experiment made about static rule text stands; what answers it now is `bin/edikt verify` and `/edikt:gov:verify-diff` rather than a hook that refuses an edit. See [Falsifiable Verification](/guides/falsifiable-verification).
 
 ## Threats to validity
 

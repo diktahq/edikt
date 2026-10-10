@@ -8,6 +8,7 @@ import (
 
 	"github.com/diktahq/edikt/tools/edikt/internal/installsettings"
 	"github.com/diktahq/edikt/tools/edikt/internal/installsurface"
+	"github.com/diktahq/edikt/tools/edikt/internal/projectpaths"
 	"github.com/spf13/cobra"
 )
 
@@ -81,10 +82,31 @@ installSettingsExitToShellEx):
   2  permission error writing settings.json, the sidecar, or their
      parent directories
   4  invalid EDIKT_HOOK_DIR, invalid JSON after substitution, or the
-     managed sidecar could not be written (fatal)`,
+     managed sidecar could not be written (fatal)
+
+This verb REPLACES settings.json in full. If the file on disk carries hook
+entries this template does not produce — your own hooks, or another tool's —
+the write is refused and nothing is touched; --repair fixes the two
+mechanical defects in place, and --force overwrites regardless.
+
+--repair acts on the user-scope settings.json the claude root resolves.
+--repair --project acts on the project's own .claude/settings.json instead
+(the project is the nearest ancestor carrying .edikt/, never $HOME) and
+leaves the user file and its managed sidecar untouched; outside a project
+it refuses with the bad-input exit.`,
 	SilenceUsage: true,
 	Args:         cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if installSettingsRepair {
+			return runInstallSettingsRepair(installSettingsProject)
+		}
+		if installSettingsProject {
+			// The full write REPLACES a settings file and records the
+			// managed sidecar for it; neither has a project-scope design
+			// yet. Refuse rather than guess (D-P b covers the repair only).
+			return &exitCodeError{code: installSettingsExitToShellEx(installSettingsExitBadInput),
+				msg: "--project is supported with --repair only: edikt install settings --repair --project"}
+		}
 		ediktRoot, err := resolveEdiktRoot()
 		if err != nil {
 			return &exitCodeError{code: installSettingsExitToShellEx(installSettingsExitBadInput), msg: err.Error()}
@@ -105,6 +127,7 @@ installSettingsExitToShellEx):
 			SettingsPath: settingsPath,
 			SidecarPath:  sidecarPath,
 			HookDir:      os.Getenv("EDIKT_HOOK_DIR"),
+			Force:        installSettingsForce,
 		}
 
 		skipped, werr := installsettings.Write(opts)
@@ -128,6 +151,12 @@ func classifySettingsError(err error) int {
 	if errors.As(err, &verr) {
 		return installSettingsExitBadInput
 	}
+	var nerr *installsettings.NonTemplateEntriesError
+	if errors.As(err, &nerr) {
+		// A refusal, not a failure of the write: nothing was touched, and
+		// the message names both remedies.
+		return installSettingsExitBadInput
+	}
 	var ferr *installsettings.FatalSidecarError
 	if errors.As(err, &ferr) {
 		return installSettingsExitFatal
@@ -138,7 +167,94 @@ func classifySettingsError(err error) int {
 	return installSettingsExitFatal
 }
 
+// installSettingsRepair backs --repair: fix the two mechanical defects a
+// shipped settings.json can carry (an unsubstituted ${EDIKT_HOOK_DIR}, a
+// statusLine without type) in place, touching nothing else. /edikt:upgrade's
+// pre-flights call this; doctor names it as the remedy and stays read-only.
+var installSettingsRepair bool
+
+// installSettingsForce backs --force: overwrite a settings.json that carries
+// hook entries the template does not produce. Without it the write refuses
+// (D83 a) — `install settings` replaces the whole file, so the natural
+// recovery from a broken settings file would delete every user-added hook.
+var installSettingsForce bool
+
+// installSettingsProject backs --project: act on the project's own
+// .claude/settings.json instead of the user-scope file the claude root
+// resolves. doctor checks the project file and named `--repair` as its
+// remedy, which repaired the USER file and left the finding standing (#11,
+// item 7). Without the flag, behaviour is unchanged.
+var installSettingsProject bool
+
+// resolveSettingsProjectRoot finds the project whose settings --project
+// targets: the nearest ancestor of cwd carrying .edikt/ (projectpaths.FindRoot,
+// the walk every project-scoped verb uses), never $HOME. $HOME/.edikt is the
+// GLOBAL edikt home, so a walk that stopped there would hand back
+// $HOME/.claude/settings.json — the user file — as the project's.
+func resolveSettingsProjectRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	root := projectpaths.FindRoot(cwd)
+	if home := os.Getenv("HOME"); root != "" && home != "" && samePath(root, home) {
+		root = ""
+	}
+	if root == "" {
+		return "", fmt.Errorf("--project: no edikt project found at or above %s (looked for .edikt/); run it from inside the project whose .claude/settings.json you mean to repair", cwd)
+	}
+	return root, nil
+}
+
+func runInstallSettingsRepair(project bool) error {
+	roots := installsurface.ResolveGlobalRoots()
+	if project {
+		root, err := resolveSettingsProjectRoot()
+		if err != nil {
+			return &exitCodeError{code: installSettingsExitToShellEx(installSettingsExitBadInput), msg: err.Error()}
+		}
+		roots.ClaudeRoot = filepath.Join(root, ".claude")
+	}
+	settingsPath, err := installsurface.Resolve(installsurface.HarnessClaudeCode, installsurface.KindSettingsFile, roots)
+	if err != nil {
+		return &exitCodeError{code: installSettingsExitToShellEx(installSettingsExitBadInput), msg: err.Error()}
+	}
+	// D-P (b): the managed-region integrity sidecar records the integrity of the
+	// USER-scope file edikt manages from outside any repository. A project's
+	// settings file is versioned with the project and reviewed there, so a
+	// project-scope repair leaves the sidecar alone rather than overwriting
+	// the user file's record with a hash of a different file.
+	sidecarPath := ""
+	if !project {
+		sidecarPath, err = installsurface.Resolve(installsurface.HarnessClaudeCode, installsurface.KindManagedSidecar, roots)
+		if err != nil {
+			return &exitCodeError{code: installSettingsExitToShellEx(installSettingsExitBadInput), msg: err.Error()}
+		}
+	}
+	rep, rerr := installsettings.Repair(installsettings.Options{
+		SettingsPath: settingsPath,
+		SidecarPath:  sidecarPath,
+		HookDir:      os.Getenv("EDIKT_HOOK_DIR"),
+	})
+	if rerr != nil {
+		return &exitCodeError{code: installSettingsExitToShellEx(classifySettingsError(rerr)), msg: rerr.Error()}
+	}
+	if rep.Substituted > 0 {
+		fmt.Fprintf(os.Stderr, "repaired %s: substituted %d occurrence(s) of ${EDIKT_HOOK_DIR}\n", settingsPath, rep.Substituted)
+	}
+	if rep.AddedType {
+		fmt.Fprintf(os.Stderr, "repaired %s: added statusLine.type\n", settingsPath)
+	}
+	if rep.Empty() {
+		fmt.Fprintf(os.Stderr, "%s: nothing to repair\n", settingsPath)
+	}
+	return nil
+}
+
 func init() {
+	installSettingsCmd.Flags().BoolVar(&installSettingsForce, "force", false, "overwrite settings.json even when it carries hook entries this template does not produce (they are lost)")
+	installSettingsCmd.Flags().BoolVar(&installSettingsProject, "project", false, "with --repair: repair the project's .claude/settings.json (found by walking up to .edikt/) instead of the user-scope file; the user file and its managed sidecar are left untouched")
+	installSettingsCmd.Flags().BoolVar(&installSettingsRepair, "repair", false, "repair an existing settings.json in place (unsubstituted ${EDIKT_HOOK_DIR}, missing statusLine.type) instead of writing it from the template")
 	installCmd.AddCommand(installSettingsCmd)
 	mutatingCommands["settings"] = true
 }

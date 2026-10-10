@@ -8,6 +8,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -29,8 +30,8 @@ var manualRefRe = regexp.MustCompile(`\(ref:\s*([A-Za-z0-9_-]+)`)
 // ADR file under paths.decisions. Returns (warns, ran). ran is false when
 // the artifact dirs are absent (non-edikt project).
 func runOrphanManualRefCheck(projectRoot string, w io.Writer) (warns int, ran bool) {
-	dirs := resolveArtifactDirs(projectRoot)
-	if dirs.decisions == "" && dirs.invariants == "" && dirs.guidelines == "" {
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	if dirs.Decisions == "" && dirs.Invariants == "" && dirs.Guidelines == "" {
 		return 0, false
 	}
 
@@ -40,7 +41,7 @@ func runOrphanManualRefCheck(projectRoot string, w io.Writer) (warns int, ran bo
 		sc   *sidecar.Sidecar
 	}
 	var sidecars []sidecarRef
-	for _, d := range []string{dirs.decisions, dirs.invariants, dirs.guidelines} {
+	for _, d := range []string{dirs.Decisions, dirs.Invariants, dirs.Guidelines} {
 		if d == "" {
 			continue
 		}
@@ -66,8 +67,8 @@ func runOrphanManualRefCheck(projectRoot string, w io.Writer) (warns int, ran bo
 	// Index ADR file basenames present on disk so we can detect orphans
 	// without filesystem-walking on every reference.
 	adrFiles := map[string]bool{}
-	if dirs.decisions != "" {
-		entries, _ := os.ReadDir(dirs.decisions)
+	if dirs.Decisions != "" {
+		entries, _ := os.ReadDir(dirs.Decisions)
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
@@ -112,7 +113,7 @@ func runOrphanManualRefCheck(projectRoot string, w io.Writer) (warns int, ran bo
 			if !strings.HasPrefix(id, "ADR-") {
 				// Phase 8 scope is ADR refs only — INV/guideline IDs in
 				// manual_directives may legitimately appear without a
-				// matching .md file in dirs.decisions.
+				// matching .md file in dirs.Decisions.
 				continue
 			}
 			if adrFiles[id] {

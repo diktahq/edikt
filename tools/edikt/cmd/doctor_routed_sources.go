@@ -12,6 +12,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -47,12 +48,24 @@ func runRoutedSourcesCheck(projectRoot string, w io.Writer) (errs, warns int, ra
 	// there would turn an ordinary pre-manifest project into a doctor failure.
 	man, manErr := surfaces.Load(projectRoot)
 	var routingFiles []string
+	// Surfaces the manifest names but that are not on disk. PathsOfKind now
+	// reports them instead of returning the path anyway, so this check no
+	// longer needs os.ReadFile to discover the same fact one loop later — and,
+	// more to the point, no longer lists a nonexistent file in its own
+	// "surfaces (from the render manifest)" line as though it had read it.
+	var unreadable []string
 	if manErr == nil && man.Present {
 		if core, err := man.Resolve(surfaces.KindAmbientCore, ""); err == nil {
 			routingFiles = append(routingFiles, core)
 		}
-		routingFiles = append(routingFiles, man.PathsOfKind(surfaces.KindTopicFile)...)
-		routingFiles = append(routingFiles, man.PathsOfKind(surfaces.KindSkillPackage)...)
+		for _, kind := range []string{surfaces.KindTopicFile, surfaces.KindSkillPackage} {
+			paths, err := man.PathsOfKind(kind)
+			if err != nil {
+				unreadable = append(unreadable, strings.Split(err.Error(), "\n")...)
+				continue
+			}
+			routingFiles = append(routingFiles, paths...)
+		}
 	} else {
 		indexFile := filepath.Join(rulesDir, "governance.md")
 		if _, err := os.Stat(indexFile); err == nil {
@@ -68,12 +81,15 @@ func runRoutedSourcesCheck(projectRoot string, w io.Writer) (errs, warns int, ra
 			}
 		}
 	}
-	if len(routingFiles) == 0 {
+	// A broken manifest must not exit through the "nothing to check" door. If
+	// every listed surface is missing, routingFiles is empty and the old early
+	// return reported ran=false — the check saying it did not apply, on the one
+	// project where it applies most.
+	if len(routingFiles) == 0 && len(unreadable) == 0 {
 		return 0, 0, false
 	}
 
 	cited := map[string]struct{}{}
-	var unreadable []string
 	for _, f := range routingFiles {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -91,7 +107,7 @@ func runRoutedSourcesCheck(projectRoot string, w io.Writer) (errs, warns int, ra
 		}
 	}
 
-	dirs := resolveArtifactDirs(projectRoot)
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
 
 	var ids []string
 	for id := range cited {
@@ -106,9 +122,9 @@ func runRoutedSourcesCheck(projectRoot string, w io.Writer) (errs, warns int, ra
 	var miss []missing
 	resolved := 0
 	for _, id := range ids {
-		searchDir := dirs.decisions
+		searchDir := dirs.Decisions
 		if strings.HasPrefix(id, "INV") {
-			searchDir = dirs.invariants
+			searchDir = dirs.Invariants
 		}
 		if searchDir == "" {
 			miss = append(miss, missing{id, fmt.Sprintf("%s-*.md", id)})
@@ -165,8 +181,14 @@ func runRoutedSourcesCheck(projectRoot string, w io.Writer) (errs, warns int, ra
 	}
 
 	if len(miss) == 0 {
-		fmt.Fprintf(w, "  [ok] Routed sources — %d of %d resolve\n", resolved, len(ids))
-		return 0, 0, true
+		// `return 0, 0` here discarded the unreadable-surface errors counted
+		// above: doctor printed "[error] ... could not be read" and then exited
+		// with nothing wrong. The count is the only part of this the exit code
+		// sees, so dropping it made a broken manifest a cosmetic message.
+		if errs == 0 {
+			fmt.Fprintf(w, "  [ok] Routed sources — %d of %d resolve\n", resolved, len(ids))
+		}
+		return errs, warns, true
 	}
 	for _, m := range miss {
 		fmt.Fprintf(w, "  [FAIL] Missing source for routed directive: %s expected at %s\n", m.id, m.expected)

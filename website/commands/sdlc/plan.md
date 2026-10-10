@@ -197,7 +197,7 @@ An Artifact Flow Table shows which phases produce files consumed by other phases
 └─────────────────┴───────────────────────────────┴────────────────────┘
 ```
 
-After context compaction, the PostCompact hook re-injects the active phase, attempt count, last failing criteria, and context file list — so you never lose track of where you are or what to read.
+After context compaction, the SessionStart hook (which Claude Code fires again with `source: compact`) re-injects the active phase, attempt count, last failing criteria, and context file list — so you never lose track of where you are or what to read.
 
 ## Criteria sidecar
 

@@ -39,7 +39,11 @@ import (
 // from a sentinel-discovery pass; an attacker controlling the source
 // document headers cannot break out of the regex without first
 // corrupting the YAML frontmatter (caught upstream).
-var orphanIDPattern = regexp.MustCompile(`^(ADR|INV|GUIDE)-\d+$`)
+// SR-005 (SPEC-018): the sixth site. The commissioned list named five; this
+// one also encodes PREFIX-NNN, so leaving it would have relocated the
+// collision here — which is the exact failure mode SR-005 is written to
+// prevent, reproduced by an incomplete fix of itself.
+var orphanIDPattern = regexp.MustCompile(`^(ADR|INV|GUIDE)(?:-[A-Z0-9]+)*-\d{3,}$`)
 
 var (
 	chOrphans      string
@@ -86,6 +90,7 @@ func init() {
 	compileHistoryCmd.Flags().BoolVar(&chQuiet, "quiet", false,
 		"suppress prose output; emit nothing on success")
 	Cmd.AddCommand(compileHistoryCmd)
+	Cmd.AddCommand(newScopeCmd())
 }
 
 func runCompileHistory(cmd *cobra.Command, args []string) error {

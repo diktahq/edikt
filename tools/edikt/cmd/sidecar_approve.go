@@ -17,13 +17,15 @@ package cmd
 //       1 — validation or IO error
 //       2 — pending-id not found in .edikt/state/pending-verifies/
 //       3 — invalid args (missing --decision, bad enum value, malformed
-//           --edited-content path)
+//           --edited-content path, or --edited-content combined with a
+//           --kind that has no single value for it to replace)
 //   - Per ADR-030, this file MUST stay LLM-agnostic — covered by the  // edikt-guard:allow
 //     no-llm-in-tier-2 grep gate in .github/workflows/sidecar-checks.yml.
 
 import (
 	"bufio"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -50,7 +52,8 @@ var (
 	approveKind string
 	// approveList switches to read-only batch review: emit every pending
 	// proposal of the selected kind as JSON and mutate nothing.
-	approveList bool
+	approveList    bool
+	approveRemoval bool
 )
 
 // pendingVerify is the on-disk shape of a single pending-verify proposal
@@ -59,6 +62,7 @@ type pendingVerify struct {
 	ID                    string `yaml:"id"`
 	SidecarPath           string `yaml:"sidecar_path"`
 	DirectiveIndex        int    `yaml:"directive_index"`
+	EntryKind             string `yaml:"entry_kind,omitempty"` // "" | "directive" | "prohibition" (D47)
 	ProposedVerify        string `yaml:"proposed_verify"`
 	Intent                string `yaml:"intent,omitempty"`
 	FalsifyingObservation string `yaml:"falsifying_observation,omitempty"`
@@ -92,12 +96,21 @@ On --decision=approve the sidecar's directives[<directive_index>] entry gets:
   - human_approved_at := <ISO8601 UTC now>
 and the pending file is removed.
 
+--edited-content is honoured by --kind=verify (it replaces the verify command)
+and by --kind=topic-description (it replaces the description). It is REFUSED
+with exit 3 for --kind=paths: that kind proposes a list — proposed_paths plus
+proposed_removals — with no single value for a file's contents to replace. The
+refusal is deliberate; accepting and ignoring the flag discarded a correction
+the human had made while still reporting success. To correct a paths proposal,
+edit .edikt/state/pending-paths/<pending-id>.yaml directly and then approve it.
+
 Exit codes:
   0 — success (or intentional no-op for --decision=defer)
   1 — validation or IO error
   2 — pending-id not found in .edikt/state/pending-verifies/
   3 — invalid args (missing --decision, bad enum value, malformed
-      --edited-content path)`,
+      --edited-content path, or --edited-content on a kind that
+      cannot honour it)`,
 	// MaximumNArgs, not ExactArgs: --list is a whole-directory read and takes
 	// no pending-id. The zero-arg case without --list is still rejected below
 	// with exit 3, so the contract for a decision invocation is unchanged.
@@ -108,14 +121,23 @@ Exit codes:
 func init() {
 	approveCmd.Flags().StringVar(&approveDecision, "decision", "",
 		"decision: approve | reject | defer (required)")
+	// The kind restriction belongs in the flag's own description, not only in
+	// the Long text: a reader who greps the flag list is the reader most
+	// likely to reach for it on the kind that refuses it.
 	approveCmd.Flags().StringVar(&approveEditedContent, "edited-content", "",
-		"path to a file whose contents replace proposed_verify (only with --decision=approve)")
+		"path to a file whose contents replace the proposed value (only with --decision=approve, "+
+			"and only for --kind=verify or --kind=topic-description; unsupported for --kind=paths, "+
+			"which proposes a list rather than a single value — that combination exits 3)")
 	approveCmd.Flags().StringVar(&approvePositiveFixture, "positive-fixture", "",
 		"path to the positive bidirectional fixture (default: test/fixtures/behavioral/<artifact-id>/positive.sh)")
 	approveCmd.Flags().StringVar(&approveNegativeFixture, "negative-fixture", "",
 		"path to the negative bidirectional fixture (default: test/fixtures/behavioral/<artifact-id>/negative.sh)")
 	approveCmd.Flags().StringVar(&approveKind, "kind", kindVerify,
 		"what is being approved: verify | paths | topic-description")
+	approveCmd.Flags().BoolVar(&approveRemoval, "removal", false,
+		"with --kind=topic-description --decision=reject: remove the topic's APPROVED registry entry "+
+			"(for an orphan whose topic no longer exists in the corpus). Never automatic — a topic absent "+
+			"from one compile may be a source artifact mid-rename")
 	approveCmd.Flags().BoolVar(&approveList, "list", false,
 		"batch review: emit every pending proposal of --kind as JSON and exit; mutates nothing")
 	// Don't use MarkFlagRequired — cobra's default error path exits with code 1
@@ -175,8 +197,51 @@ func runSidecarApprove(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{code: 3, msg: fmt.Sprintf("pending-id %q: invalid (no path separators or traversal)", pendingID)}
 	}
 
+	// --edited-content is a replace-ONE-STRING mechanism, and only two of the
+	// three kinds have a single string for it to replace: verify replaces the
+	// verify command, topic-description replaces the description. A paths
+	// proposal carries a LIST — proposed_paths plus proposed_removals — so
+	// there is no scalar for a file's contents to become.
+	//
+	// Until this guard the flag was accepted, ignored, and the approval still
+	// reported success: state mutated, pending file removed, and the human's
+	// correction gone with no signal. That is absence of effect reported as
+	// success, which INV-011 names a failure state and never a silent  // edikt-guard:allow
+	// success. The check runs BEFORE dispatch, so a refused invocation leaves
+	// the sidecar and the pending file exactly as it found them.
+	//
+	// Refusing honestly is not the same as solving. What the correction
+	// ceremony for a disputed paths proposal should be is a separate, unruled
+	// question; the interim answer this message gives — edit the pending file
+	// — is safe because the glob validation re-runs against the live tree at
+	// approval time and never trusts the proposal's own matched_example.
+	if approveEditedContent != "" && approveKind == kindPaths {
+		return &exitCodeError{code: 3, msg: fmt.Sprintf(
+			"--edited-content is not supported for --kind=%s: a paths proposal carries a list "+
+				"(proposed_paths + proposed_removals), not one value for a file's contents to replace. "+
+				"Refusing rather than discarding your edit. To correct a paths proposal, edit "+
+				".edikt/state/pending-paths/%s.yaml directly and then approve it — the glob validation "+
+				"re-runs against the live tree at approval time, so an edited proposal is still checked. "+
+				"--edited-content is honoured by --kind=%s and --kind=%s.",
+			kindPaths, pendingID, kindVerify, kindTopicDescription)}
+	}
+
 	// ── Dispatch the non-verify kinds. Everything below this point is the
 	// ADR-039 verify ceremony, unchanged. ────────────────────────────────────  // edikt-guard:allow
+	// Removal of an APPROVED registry entry, on the same gate as approving
+	// one. It takes no pending file: an orphan has none — the compile stopped
+	// producing the topic, which is why the entry is orphaned.
+	if approveRemoval {
+		if approveKind != kindTopicDescription || approveDecision != "reject" {
+			return &exitCodeError{code: 3, msg: "--removal applies only to --kind=topic-description --decision=reject"}
+		}
+		root, rootErr := os.Getwd()
+		if rootErr != nil {
+			return &exitCodeError{code: 1, msg: fmt.Sprintf("resolve project root: %v", rootErr)}
+		}
+		return removeRegistryEntry(root, pendingID)
+	}
+
 	switch approveKind {
 	case kindPaths:
 		return runApprovePaths(pendingID, approveDecision)
@@ -331,29 +396,40 @@ func runSidecarApprove(cmd *cobra.Command, args []string) error {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("load sidecar: %v", err)}
 	}
 
-	if pv.DirectiveIndex >= len(sc.Directives) {
-		return &exitCodeError{code: 1, msg: fmt.Sprintf(
-			"directive_index %d out of range (sidecar has %d directives)",
-			pv.DirectiveIndex, len(sc.Directives))}
-	}
-
-	sc.Directives[pv.DirectiveIndex].Verify = verifyCmd
-	sc.Directives[pv.DirectiveIndex].VerifyKind = "behavioral"
-	sc.Directives[pv.DirectiveIndex].HumanApprovedAt = time.Now().UTC().Format(time.RFC3339)
-	sc.Directives[pv.DirectiveIndex].PositiveFixturePath = posFixture
-	sc.Directives[pv.DirectiveIndex].NegativeFixturePath = negFixture
-
-	// Carry forward falsifying_observation / intent from the pending
-	// proposal if the sidecar's directive doesn't already have them set —
-	// ADR-036 §2 requires falsifying_observation to be non-empty when  // edikt-guard:allow
-	// verify_kind == "behavioral". Phase B compile enforces this; we
-	// pre-populate from the pending proposal to keep approve safe to run
-	// even before Phase B.
-	if sc.Directives[pv.DirectiveIndex].FalsifyingObservation == "" && pv.FalsifyingObservation != "" {
-		sc.Directives[pv.DirectiveIndex].FalsifyingObservation = pv.FalsifyingObservation
-	}
-	if sc.Directives[pv.DirectiveIndex].Intent == "" && pv.Intent != "" {
-		sc.Directives[pv.DirectiveIndex].Intent = pv.Intent
+	approvedAt := time.Now().UTC().Format(time.RFC3339)
+	switch pv.EntryKind {
+	case "prohibition":
+		if pv.DirectiveIndex >= len(sc.Prohibitions) {
+			return &exitCodeError{code: 1, msg: fmt.Sprintf(
+				"directive_index %d out of range (sidecar has %d prohibitions)",
+				pv.DirectiveIndex, len(sc.Prohibitions))}
+		}
+		pr := &sc.Prohibitions[pv.DirectiveIndex]
+		pr.Verify, pr.VerifyKind, pr.HumanApprovedAt = verifyCmd, "behavioral", approvedAt
+		pr.PositiveFixturePath, pr.NegativeFixturePath = posFixture, negFixture
+		if pr.FalsifyingObservation == "" && pv.FalsifyingObservation != "" {
+			pr.FalsifyingObservation = pv.FalsifyingObservation
+		}
+		if pr.Intent == "" && pv.Intent != "" {
+			pr.Intent = pv.Intent
+		}
+	case "", "directive":
+		if pv.DirectiveIndex >= len(sc.Directives) {
+			return &exitCodeError{code: 1, msg: fmt.Sprintf(
+				"directive_index %d out of range (sidecar has %d directives)",
+				pv.DirectiveIndex, len(sc.Directives))}
+		}
+		d := &sc.Directives[pv.DirectiveIndex]
+		d.Verify, d.VerifyKind, d.HumanApprovedAt = verifyCmd, "behavioral", approvedAt
+		d.PositiveFixturePath, d.NegativeFixturePath = posFixture, negFixture
+		if d.FalsifyingObservation == "" && pv.FalsifyingObservation != "" {
+			d.FalsifyingObservation = pv.FalsifyingObservation
+		}
+		if d.Intent == "" && pv.Intent != "" {
+			d.Intent = pv.Intent
+		}
+	default:
+		return &exitCodeError{code: 1, msg: fmt.Sprintf("pending file entry_kind %q: must be directive or prohibition", pv.EntryKind)}
 	}
 
 	if err := sc.Validate(); err != nil {
@@ -366,7 +442,7 @@ func runSidecarApprove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("marshal sidecar: %v", err)}
 	}
-	if err := atomicWriteNoFollow(sidecarPath, out, 0o644); err != nil {
+	if err := migrate.AtomicWriteNoFollow(sidecarPath, out, 0o644); err != nil {
 		return &exitCodeError{code: 1, msg: fmt.Sprintf("write sidecar: %v", err)}
 	}
 
@@ -404,7 +480,10 @@ func runSidecarApprove(cmd *cobra.Command, args []string) error {
 // approveArtifactIDRe extracts an artifact id from a sidecar filename or
 // pending-id. Mirrors govIDRe's shape (verify_gov.go) without the anchors,
 // since this is a FindString over a larger string, not a full-string match.
-var approveArtifactIDRe = regexp.MustCompile(`(?:ADR|INV)-\d{3,}|GL-\d{3,}-[a-z][a-z0-9-]*`)
+// SR-005 (SPEC-018): id segments are uppercase-or-digit, not digits only.
+// `ADR-GOLD-001` is a valid id; the old `\d{3,}` form rejected or truncated it,
+// and fixing only discover.go would relocate the collision to this consumer.
+var approveArtifactIDRe = regexp.MustCompile(`(?:ADR|INV)(?:-[A-Z0-9]+)*-\d{3,}|GL-\d{3,}-[a-z][a-z0-9-]*`)
 
 // resolveBidirectionalFixtures computes the positive/negative fixture paths
 // for a directive being approved and REFUSES (non-nil err) if either is

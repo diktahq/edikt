@@ -114,18 +114,29 @@ func TestPinRestore(t *testing.T) {
 		}
 	})
 
-	t.Run("verify alone reports the missing pin without restoring it", func(t *testing.T) {
-		// The D6 seam from the other side: skipping `phasea restore` must not
-		// be indistinguishable from running it. A verify that silently
-		// reinstated the pin would make the restore verb optional and the
-		// gate meaningless.
-		f := newStaleFixture(t, anchoredAtStaleQuote(directive))
+	t.Run("verify alone REFUSES rather than restoring", func(t *testing.T) {
+		// The seam from the other side: skipping `phasea restore` must not be
+		// indistinguishable from running it. A verify that silently
+		// reinstated the pin would make the restore verb optional.
+		//
+		// Strengthened 2026-09-03: verify used to GRADE the item as
+		// pins-unrestorable, which distinguished the two but still produced a
+		// per-item report describing a corpus missing everything a human
+		// pinned. It now refuses outright, because nothing else enforced the
+		// contract's order and a documented guarantee ("preserved across
+		// regenerations") cannot rest on a step a caller may skip.
+		// The receipt the shared fixture plants is removed here: its ABSENCE
+		// is the state under test.
+		f := withoutReceipt(t, newStaleFixture(t, anchoredAtStaleQuote(directive)))
 		pinnedSnapshot(t, f, directive, approvedAt)
 		f.extractGood(t, anchoredAtGateQuote(directive))
 
 		v := f.verify(t)
-		if it := onlyItem(t, v); it.Status != StatusPinsUnrestorable {
-			t.Fatalf("verify without a restore graded %+v — the gate must report, not repair", it)
+		if v.ExitCode != ExitVerifyRestoreMissing {
+			t.Fatalf("verify without a restore must refuse, got exit %d: %s", v.ExitCode, v.Message)
+		}
+		if !strings.Contains(v.Message, "phasea restore") {
+			t.Errorf("the refusal must name the step that writes the receipt:\n%s", v.Message)
 		}
 		sc, err := sidecar.Load(f.scPath)
 		if err != nil {
@@ -237,18 +248,24 @@ func TestFailedGateQuarantinesBytes(t *testing.T) {
 		t.Errorf("restore report %q does not say why the sidecar was quarantined", out.Message)
 	}
 
-	// Verify then reports the truth about the corpus as it now stands:
-	// output-missing, which is retryable. It must NOT grade ok — restoring
-	// the stale pre-dispatch bytes into place would have made it do exactly
-	// that for a stale-migration-preserved item, turning a failed extraction
-	// into a green compile.
+	// Verify then judges the quarantined write from its quarantine copy
+	// (#7, c3-c): classified, retryable, never ok. It used to read the empty
+	// expected path as output-missing, which carries no axis and no
+	// correction prompt, so the retry was unseeded. It must NOT grade ok —
+	// restoring the stale pre-dispatch bytes into place would have made it do
+	// exactly that for a stale-migration-preserved item, turning a failed
+	// extraction into a green compile.
 	v := f.verify(t)
 	it := onlyItem(t, v)
 	if it.Status == StatusOK {
 		t.Fatal("verify graded a quarantined item ok")
 	}
-	if it.Status != StatusOutputMissing {
-		t.Fatalf("item status %q, want %q: %s", it.Status, StatusOutputMissing, v.Message)
+	if it.Status != StatusSchemaInvalid || it.DefectAxis != DefectAxisParse {
+		t.Fatalf("item status/axis %q/%q, want %q/%q (classified from the quarantine copy): %s",
+			it.Status, it.DefectAxis, StatusSchemaInvalid, DefectAxisParse, v.Message)
+	}
+	if !strings.Contains(it.Diagnostic, "quarantined by restore at") {
+		t.Errorf("the diagnostic must name the quarantine copy it was judged from:\n%s", it.Diagnostic)
 	}
 	if v.ExitCode != ExitVerifyIncomplete {
 		t.Fatalf("got exit %d, want %d — a quarantined item is re-dispatchable", v.ExitCode, ExitVerifyIncomplete)

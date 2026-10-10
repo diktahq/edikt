@@ -30,7 +30,7 @@ signals: []
 # Re-extracted on every /edikt:<artifact>:compile run.
 #
 # Each directive MAY carry a `verify:` shell command run by
-# `bin/edikt verify gov <id>`. Exit 0 = the directive holds. Omit when no
+# `edikt verify gov <id>`. Exit 0 = the directive holds. Omit when no
 # mechanical check is possible — never fabricate. Example shape:
 #   - text: "MUST use json.dumps to construct JSON in hook scripts"
 #     source_excerpt: {line_start: 12, line_end: 14, quote: "..."}
@@ -87,6 +87,6 @@ reminders: []
 #   - "[ ] bare-string checklist item (ref: ADR-NNN)"        # legacy form
 #   - text: "[ ] structured form (ref: ADR-NNN)"             # preferred for new entries
 #     verify: "<shell command, exit 0 = checklist item holds>"
-# The structured form lets `bin/edikt verify gov <id>` run the checklist
+# The structured form lets `edikt verify gov <id>` run the checklist
 # mechanically. Omit verify when no programmatic check exists.
 verification: []

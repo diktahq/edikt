@@ -11,11 +11,30 @@
 // that must agree are unified; things that must check each other are kept
 // apart. These must agree.
 //
-// Semantics (unchanged from the vdGlobMatch behaviour this replaces):
+// Semantics:
 //   - `*`  matches within a single path segment (filepath.Match semantics)
 //   - `**` matches zero or more path segments
 //
 // Paths are compared as repo-relative slash-separated strings.
+//
+// # Why this is segment-based and not prefix-based
+//
+// The first implementation split the pattern at the FIRST `**` and required
+// the text before it to be a LITERAL prefix of the path (strings.HasPrefix).
+// That comparison cannot be satisfied by a pattern whose prefix itself holds a
+// wildcard, so EVERY glob with a `*` before a `**` matched nothing, in every
+// repository — `internal/*/migrations/**/*.sql` never matched
+// `internal/billing/migrations/001_init.sql`. The package doc above already
+// claimed `*` and `**` compose; the code only honoured the composition when
+// the `**` came first. Nothing crashed and nothing was reported: at diff time
+// such a glob silently scopes nothing, which is verbatim the failure this
+// package exists to prevent — an approval that reads as coverage and grants
+// none.
+//
+// Matching therefore walks pattern segments against path segments, so a
+// wildcard is evaluated wherever it appears rather than only after the first
+// `**`. `*` is still handed to filepath.Match one segment at a time, which is
+// what keeps it from crossing a separator.
 package globmatch
 
 import (
@@ -25,9 +44,12 @@ import (
 
 // Match reports whether path matches pattern.
 //
-// A pattern with no `**` delegates to filepath.Match. A pattern with `**` is
-// split at the FIRST `**`: the literal prefix must prefix the path, and the
-// remainder must match at some sub-path of what is left.
+// A pattern with no `**` delegates to filepath.Match, so a single `*` never
+// crosses a path separator. A pattern containing `**` is matched segment by
+// segment: a segment that is exactly `**` absorbs zero or more whole path
+// segments; every other segment must match its path segment under
+// filepath.Match. A malformed pattern (filepath.ErrBadPattern) matches
+// nothing, as before.
 func Match(pattern, path string) bool {
 	if pattern == "" {
 		return false
@@ -36,35 +58,33 @@ func Match(pattern, path string) bool {
 		ok, _ := filepath.Match(pattern, path)
 		return ok
 	}
+	return matchSegments(strings.Split(pattern, "/"), strings.Split(path, "/"))
+}
 
-	idx := strings.Index(pattern, "**")
-	prefix := pattern[:idx]
-	rest := strings.TrimPrefix(pattern[idx+2:], "/")
-
-	candidate := path
-	if prefix != "" {
-		if !strings.HasPrefix(candidate, prefix) {
+// matchSegments matches slash-split pattern segments against slash-split path
+// segments. `**` is the only segment that may consume more (or fewer) than one
+// path segment.
+func matchSegments(pat, path []string) bool {
+	for len(pat) > 0 {
+		if pat[0] == "**" {
+			// Zero or more segments: try every split point, shortest first.
+			for i := 0; i <= len(path); i++ {
+				if matchSegments(pat[1:], path[i:]) {
+					return true
+				}
+			}
 			return false
 		}
-		candidate = candidate[len(prefix):]
-	}
-
-	if rest == "" {
-		return true
-	}
-
-	// `**` absorbs zero or more segments, so try the suffix pattern at every
-	// sub-path of the remaining candidate.
-	for {
-		if ok, _ := filepath.Match(rest, candidate); ok {
-			return true
-		}
-		slash := strings.Index(candidate, "/")
-		if slash < 0 {
+		if len(path) == 0 {
 			return false
 		}
-		candidate = candidate[slash+1:]
+		ok, err := filepath.Match(pat[0], path[0])
+		if err != nil || !ok {
+			return false
+		}
+		pat, path = pat[1:], path[1:]
 	}
+	return len(path) == 0
 }
 
 // LiteralPrefix returns the leading portion of pattern before the first

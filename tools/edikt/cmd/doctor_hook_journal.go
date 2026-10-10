@@ -48,6 +48,14 @@ import (
 // say so.
 func runHookJournalCheck(out io.Writer) (warnCount int) {
 	s, err := hookmatch.ReadSummary()
+	return runHookJournalCheckWith(s, err, out)
+}
+
+// runHookJournalCheckWith is the check proper, taking the Summary as an
+// argument so ONE read of an append-only journal serves every check that
+// needs it. The journal grows without bound, and two independent reads
+// doubled doctor's cost on exactly the machines where it was largest.
+func runHookJournalCheckWith(s hookmatch.Summary, err error, out io.Writer) (warnCount int) {
 	if err != nil {
 		// Unreadable is its own answer and must not collapse into silence: an
 		// unreadable journal is indistinguishable from a clean one at every

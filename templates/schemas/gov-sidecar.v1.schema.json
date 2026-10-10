@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://edikt.dev/schemas/gov-sidecar/v1.json",
   "title": "edikt governance sidecar",
-  "description": "The <artifact>.edikt.yaml sidecar file co-located next to a governance artifact — ADR, invariant, or guideline. As of v0.6.0 it replaces the in-body [edikt:directives:start]/[edikt:directives:end] sentinel block; compile reads sidecars verbatim and never mutates the parent .md. The PRD and SPEC sidecars (prd-sidecar.v1.schema.json, spec-sidecar.v1.schema.json) cover their own artifact classes.",
+  "description": "The <artifact>.edikt.yaml sidecar file co-located next to a governance artifact \u2014 ADR, invariant, or guideline. As of v0.6.0 it replaces the in-body [edikt:directives:start]/[edikt:directives:end] sentinel block; compile reads sidecars verbatim and never mutates the parent .md. The PRD and SPEC sidecars (prd-sidecar.v1.schema.json, spec-sidecar.v1.schema.json) cover their own artifact classes.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,27 +12,27 @@
     "signals",
     "directives"
   ],
-  "$comment": "v1.1 (additive) — paths, scope, prohibitions are optional. KnownFields(true) in the Go decoder makes the v1.1 fields forward-only: a v1.0 reader cannot parse a sidecar that uses them. edikt distributes as a single binary; upgrade as a unit. The schema version stays at 1 because the on-disk shape only widens.",
+  "$comment": "v1.1 (additive) \u2014 paths, scope, prohibitions are optional. KnownFields(true) in the Go decoder makes the v1.1 fields forward-only: a v1.0 reader cannot parse a sidecar that uses them. edikt distributes as a single binary; upgrade as a unit. The schema version stays at 1 because the on-disk shape only widens.",
   "properties": {
     "schema_version": {
       "type": "integer",
       "const": 1,
-      "description": "Sidecar schema version. The governance sidecar uses a discrete integer (1) because its on-disk shape is a v1-or-v2 contract, not a semver-versioned one — bump only when the on-disk shape changes in a way that older readers cannot interpret. PRD/SPEC sidecars (prd-sidecar.v1.schema.json, spec-sidecar.v1.schema.json) deliberately use a string semver (\"1.0\") for additive evolution within v1.x; the asymmetry is intentional. v0.6.0 ships with version 1."
+      "description": "Sidecar schema version. The governance sidecar uses a discrete integer (1) because its on-disk shape is a v1-or-v2 contract, not a semver-versioned one \u2014 bump only when the on-disk shape changes in a way that older readers cannot interpret. PRD/SPEC sidecars (prd-sidecar.v1.schema.json, spec-sidecar.v1.schema.json) deliberately use a string semver (\"1.0\") for additive evolution within v1.x; the asymmetry is intentional. v0.6.0 ships with version 1."
     },
     "topic": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9-]{0,39}$",
-      "description": "Kebab-case topic identifier used to group directives across artifacts during compile. 1–40 characters, must start with a lowercase letter, may contain lowercase letters, digits, and hyphens."
+      "description": "Kebab-case topic identifier used to group directives across artifacts during compile. 1\u201340 characters, must start with a lowercase letter, may contain lowercase letters, digits, and hyphens."
     },
     "path": {
       "type": "string",
       "minLength": 1,
-      "description": "Relative path (from the project root) to the parent .md artifact this sidecar describes. Validated by /edikt:doctor — a sidecar whose path doesn't resolve is reported as orphaned."
+      "description": "Relative path (from the project root) to the parent .md artifact this sidecar describes. Validated by /edikt:doctor \u2014 a sidecar whose path doesn't resolve is reported as orphaned."
     },
     "body_digest": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
-      "description": "Hex SHA-256 of the parent .md body after whitespace normalization, recorded at extraction time (ADR-053). Powers the BODY DRIFT signal: when this differs from the recomputed digest, prose changed that extraction never saw, so the sidecar may be INCOMPLETE — distinct from ANCHOR DRIFT, where a recorded quote no longer matches and the sidecar is WRONG. This is NOT the source_hash that ADR-027 forbids: that field was a fast-path substitute for checking, where a divergence between recorded and computed values was the DEFECT. Here divergence is the PRODUCT — the field exists precisely to be compared and to disagree. source_hash, agent_prompt_version and directives_hash remain forbidden. Optional: sidecars written before ADR-053 have no baseline and MUST be reported as UNMEASURED, never as unchanged."
+      "description": "Hex SHA-256 of the parent .md body after whitespace normalization, recorded at extraction time (ADR-053). Powers the BODY DRIFT signal: when this differs from the recomputed digest, prose changed that extraction never saw, so the sidecar may be INCOMPLETE \u2014 distinct from ANCHOR DRIFT, where a recorded quote no longer matches and the sidecar is WRONG. This is NOT the source_hash that ADR-027 forbids: that field was a fast-path substitute for checking, where a divergence between recorded and computed values was the DEFECT. Here divergence is the PRODUCT \u2014 the field exists precisely to be compared and to disagree. source_hash, agent_prompt_version and directives_hash remain forbidden. Optional: sidecars written before ADR-053 have no baseline and MUST be reported as UNMEASURED, never as unchanged."
     },
     "signals": {
       "type": "array",
@@ -80,8 +80,8 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 500,
-            "description": "MUST NOT directive synthesised from a rejected option. Same shape as directives[].text."
+            "maxLength": 2000,
+            "description": "MUST NOT directive synthesised from a rejected option. Same shape as directives[].text. HARD cap (schema refusal). The SOFT target is 500 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 500 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "source_excerpt": {
             "type": "object",
@@ -108,12 +108,12 @@
           },
           "derived_from": {
             "type": "string",
-            "description": "Provenance hint for the prohibition (e.g., 'rejected_option_b'). Optional; auditability only — not used by compile."
+            "description": "Provenance hint for the prohibition (e.g., 'rejected_option_b'). Optional; auditability only \u2014 not used by compile."
           },
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that returns exit 0 when the prohibition is honored, non-zero when it is violated. Run via `bin/edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible — the field stays absent, not empty."
+            "description": "Optional shell command that returns exit 0 when the prohibition is honored, non-zero when it is violated. Run via `edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
           },
           "verify_kind": {
             "type": "string",
@@ -122,19 +122,19 @@
               "tooling",
               "structural"
             ],
-            "description": "v1.2 (optional). The enforcement medium of the verify command. behavioral = runs code and asserts a property; tooling = invokes a stable external tool with a fixed rule ID; structural = grep/file-presence over content (only valid when the prohibition's property is itself structural). Layer-independent — applies to every verify: command regardless of which sidecar carries it."
+            "description": "v1.2 (optional). The enforcement medium of the verify command. behavioral = runs code and asserts a property; tooling = invokes a stable external tool with a fixed rule ID; structural = grep/file-presence over content (only valid when the prohibition's property is itself structural). Layer-independent \u2014 applies to every verify: command regardless of which sidecar carries it."
           },
           "intent": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line semantic claim of the prohibition, generator-neutral. Consumed by the L2 governance-verifier instead of the raw text. Must read as the assertion without referencing implementation symbols the generator controls."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line semantic claim of the prohibition, generator-neutral. Consumed by the L2 governance-verifier instead of the raw text. Must read as the assertion without referencing implementation symbols the generator controls. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "falsifying_observation": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "human_approved_at": {
             "type": [
@@ -142,7 +142,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral per ADR-036 §2, but NOT enforced at compile — the check is deferred to SPEC-009 Plan B (AC-4.3), so an unapproved behavioral verify compiles today. Set by `bin/edikt sidecar approve`."
+            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral per ADR-036 \u00a72, but NOT enforced at compile \u2014 the check is deferred to SPEC-009 Plan B (AC-4.3), so an unapproved behavioral verify compiles today. Set by `edikt sidecar approve`."
           },
           "positive_fixture_path": {
             "type": "string",
@@ -178,7 +178,7 @@
         "type": "string",
         "minLength": 1
       },
-      "description": "Pre-action reminders aggregated into governance.md ## Reminders. Format: 'Before {action} → {check} (ref: ID)'. Extracted from ## Confirmation (ADRs) and ## Enforcement (INVs)."
+      "description": "Pre-action reminders aggregated into governance.md ## Reminders. Format: 'Before {action} \u2192 {check} (ref: ID)'. Extracted from ## Confirmation (ADRs) and ## Enforcement (INVs)."
     },
     "verification": {
       "type": "array",
@@ -187,7 +187,7 @@
           {
             "type": "string",
             "minLength": 1,
-            "description": "Legacy bare-string form. Verification checklist item in '[ ] {what to check} (ref: ID)' format. Aggregated into governance.md ## Verification Checklist. Human-readable only — no programmatic check."
+            "description": "Legacy bare-string form. Verification checklist item in '[ ] {what to check} (ref: ID)' format. Aggregated into governance.md ## Verification Checklist. Human-readable only \u2014 no programmatic check."
           },
           {
             "type": "object",
@@ -199,18 +199,18 @@
               "text": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Verification checklist item — same content as the bare-string form."
+                "description": "Verification checklist item \u2014 same content as the bare-string form."
               },
               "verify": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Optional shell command that runs the checklist item mechanically. Exit 0 = pass. Used by `bin/edikt verify gov <ID>` to enforce the completion-evidence discipline."
+                "description": "Optional shell command that runs the checklist item mechanically. Exit 0 = pass. Used by `edikt verify gov <ID>` to enforce the completion-evidence discipline."
               }
             }
           }
         ]
       },
-      "description": "Verification checklist items aggregated into governance.md ## Verification Checklist. Two forms accepted (oneOf): bare string (legacy), or {text, verify?} object (preferred for new entries — carries the executable check that proves the item)."
+      "description": "Verification checklist items aggregated into governance.md ## Verification Checklist. Two forms accepted (oneOf): bare string (legacy), or {text, verify?} object (preferred for new entries \u2014 carries the executable check that proves the item)."
     },
     "migration_preserved": {
       "type": "object",
@@ -298,8 +298,8 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 500,
-            "description": "The directive sentence as it will appear in compiled governance, ≤ 500 characters. Includes its own ref tail (e.g., '(ref: ADR-NNN)'). 500 chars is deliberate headroom — natural-language rules with multiple clauses routinely run 200–280 chars; rules that would exceed it should be split."
+            "maxLength": 2000,
+            "description": "The directive sentence as it will appear in compiled governance, \u2264 500 characters. Includes its own ref tail (e.g., '(ref: ADR-NNN)'). 500 chars is deliberate headroom \u2014 natural-language rules with multiple clauses routinely run 200\u2013280 chars; rules that would exceed it should be split. HARD cap (schema refusal). The SOFT target is 500 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 500 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "source_excerpt": {
             "type": "object",
@@ -318,7 +318,7 @@
               "line_end": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "1-indexed line number where the source text ends. Must be ≥ line_start. /edikt:doctor verifies this is within the parent file's line count."
+                "description": "1-indexed line number where the source text ends. Must be \u2265 line_start. /edikt:doctor verifies this is within the parent file's line count."
               },
               "quote": {
                 "type": "string",
@@ -330,7 +330,7 @@
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that returns exit 0 when the directive holds, non-zero when it is violated. Run via `bin/edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible — the field stays absent, not empty."
+            "description": "Optional shell command that returns exit 0 when the directive holds, non-zero when it is violated. Run via `edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
           },
           "verify_kind": {
             "type": "string",
@@ -344,14 +344,14 @@
           "intent": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line semantic claim of the directive, generator-neutral. Consumed by the L2 governance-verifier instead of the raw `text`. Must read as the directive's assertion without referencing implementation symbols the generator controls."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line semantic claim of the directive, generator-neutral. Consumed by the L2 governance-verifier instead of the raw `text`. Must read as the directive's assertion without referencing implementation symbols the generator controls. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "falsifying_observation": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "human_approved_at": {
             "type": [
@@ -359,7 +359,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral per ADR-036 §2, but NOT enforced at compile — the check is deferred to SPEC-009 Plan B (AC-4.3), so an unapproved behavioral verify compiles today. Set by `bin/edikt sidecar approve`; the tier-1 wrapper captures the user's decision via Claude Code's AskUserQuestion before dispatching the tier-2 binary."
+            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral per ADR-036 \u00a72, but NOT enforced at compile \u2014 the check is deferred to SPEC-009 Plan B (AC-4.3), so an unapproved behavioral verify compiles today. Set by `edikt sidecar approve`; the tier-1 wrapper captures the user's decision via Claude Code's AskUserQuestion before dispatching the tier-2 binary."
           },
           "positive_fixture_path": {
             "type": "string",
@@ -371,7 +371,7 @@
           }
         }
       },
-      "description": "Directive list extracted from the parent .md. May be empty (an artifact with no enforceable directives is reported by /edikt:doctor as a warning, not an error). Note: line_end ≥ line_start and line_end ≤ parent_file_line_count are enforced by /edikt:doctor and the compile resync pass — JSON Schema 2020-12 has no standard cross-property comparator. v1.2 conditional-required constraints are declared here but enforced at Phase B compile time rather than at schema-validation time, because JSON Schema 2020-12 cannot express conditional-required across siblings cleanly. Two of the three are enforced today: verify_kind when verify is set, and falsifying_observation when verify_kind == behavioral. The third — human_approved_at when verify_kind == behavioral — is required by contract but NOT checked, its enforcement deliberately deferred to SPEC-009 Plan B (AC-4.3)."
+      "description": "Directive list extracted from the parent .md. May be empty (an artifact with no enforceable directives is reported by /edikt:doctor as a warning, not an error). Note: line_end \u2265 line_start and line_end \u2264 parent_file_line_count are enforced by /edikt:doctor and the compile resync pass \u2014 JSON Schema 2020-12 has no standard cross-property comparator. v1.2 conditional-required constraints are declared here but enforced at Phase B compile time rather than at schema-validation time, because JSON Schema 2020-12 cannot express conditional-required across siblings cleanly. Two of the three are enforced today: verify_kind when verify is set, and falsifying_observation when verify_kind == behavioral. The third \u2014 human_approved_at when verify_kind == behavioral \u2014 is required by contract but NOT checked, its enforcement deliberately deferred to SPEC-009 Plan B (AC-4.3)."
     }
   }
 }

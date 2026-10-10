@@ -10,6 +10,48 @@ allowed-tools:
   - Grep
   - Bash
   - AskUserQuestion
+stops:
+  - id: managed-block-no-provenance
+    class: risk
+    default: skip
+    on_silence: safe-side
+    prompt: "The managed block in CLAUDE.md has no recorded provenance — apply the current template, keep it as-is, or skip?"
+  - id: managed-block-template-moved
+    class: risk
+    default: skip
+    on_silence: safe-side
+    prompt: "The managed block's template moved and its content diverged — apply, keep, merge, or skip?"
+  - id: agent-template-conflict
+    class: risk
+    default: skip
+    on_silence: safe-side
+    prompt: "This agent's template moved and you have local edits — apply, keep, merge, or skip?"
+  - id: agent-user-divergence
+    class: risk
+    default: skip
+    on_silence: safe-side
+    prompt: "This agent has content not in the template — apply the template, keep yours, or skip?"
+  - id: apply-upgrades
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Apply these upgrades?"
+  - id: repair-user-scope-settings
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "The user-scope settings file has an unsubstituted hook dir or a statusLine without type — repair it in place?"
+  - id: remove-user-scope-duplicates
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Remove the duplicate user-scope hook registrations from the user's settings file?"
+  - id: offer-reextract
+    class: selection
+    default: "no"
+    options: ["yes", "no", "remind-me-later"]
+    on_silence: take-default
+    prompt: "Artifacts are on an earlier extraction contract — run the re-extraction now?"
 ---
 
 # edikt:upgrade
@@ -62,18 +104,10 @@ if [ -x ".edikt/bin/edikt" ]; then
                                                  # installer ever creates it,
                                                  # so it is safe to check
                                                  # first for every consumer.
-elif [ -x "bin/edikt" ]; then
-  EDIKT_BIN="bin/edikt"                         # edikt-dev's own dogfooding
-                                                 # convention — an ordinary,
-                                                 # ambiguous relative path.
-                                                 # Checked SECOND, never
-                                                 # first: a downstream Go
-                                                 # project that happens to
-                                                 # build its own unrelated
-                                                 # binary into bin/ named
-                                                 # `edikt` would have that
-                                                 # binary shadow its real
-                                                 # install if this rung won.
+# There is deliberately no relative-path rung here. A project has no local
+# bin/ holding the launcher — install and upgrade put it on PATH — and a
+# relative rung would also let an unrelated binary of the same name in a
+# downstream project's build directory shadow the real install.
 elif command -v edikt >/dev/null 2>&1; then
   EDIKT_BIN="edikt"                             # global install on PATH
 fi
@@ -113,12 +147,10 @@ fi
 #### 0a. Read the installed version
 
 ```bash
-# Prefer the resolved launcher's VERSION output; fall back to project-mode .edikt/VERSION
+# The resolved launcher's VERSION output, falling back to the active payload's VERSION file
 INSTALLED_VERSION=$(
   "${EDIKT_BIN:-edikt}" version 2>/dev/null \
   || cat "$HOME/.edikt/current/VERSION" 2>/dev/null \
-  || cat .edikt/VERSION 2>/dev/null \
-  || cat ~/.edikt/VERSION 2>/dev/null \
   | tr -d '[:space:]'
 )
 ```
@@ -127,7 +159,10 @@ Strip any leading `v` from INSTALLED_VERSION for comparisons.
 
 #### 0b. Fetch the latest stable release
 
-The launcher subcommand (`edikt upgrade`) uses the GitHub releases API, but for the slash command we also support a direct VERSION check:
+The launcher subcommand (`edikt upgrade`) and this slash command both discover the
+newest release through the GitHub releases API. Discovery returns a **tag name**;
+every URL that then downloads or executes anything is built from that pinned tag,
+never from a branch ref.
 
 ```bash
 # Primary: GitHub releases API (used by launcher)
@@ -135,9 +170,6 @@ LATEST_TAG=$(curl -fsSL --max-time 15 \
   "https://api.github.com/repos/diktahq/edikt/releases/latest" 2>/dev/null \
   | grep '"tag_name"' | head -1 | awk -F'"' '{print $4}')
 LATEST_VERSION=$(echo "$LATEST_TAG" | sed 's/^v//')
-
-# Fallback: raw VERSION file (used by legacy upgrade path)
-# curl -fsSL --max-time 5 "https://raw.githubusercontent.com/diktahq/edikt/main/VERSION" 2>/dev/null
 ```
 
 **Fetch failed** (no network, timeout, empty response):
@@ -156,16 +188,56 @@ LAUNCHER_OK=0
 [ -n "$EDIKT_BIN" ] && "$EDIKT_BIN" version >/dev/null 2>&1 && LAUNCHER_OK=1
 ```
 
-#### 0d. Major-version detection
+#### 0d. Self-upgrade decision — channel guard first, then major-version detection
 
-Parse the major component of both versions (X in X.Y.Z, stripping leading `v`):
+An installed version is either a release (`X.Y.Z`, optional leading `v`) or a
+channel name such as `dev` (a dev-linked checkout, D36). Only a release is
+comparable to the latest release. Before this guard existed, `dev` went through
+`awk -F. '{print $1+0}'`, became major 0, and every 0.x release then took the
+self-upgrade branch below — `edikt upgrade --yes` would have replaced the
+operator's dev install with a release build (D41 (a); bok escaped it only by
+running `--offline`).
 
 ```bash
-INSTALLED_MAJOR=$(echo "$INSTALLED_VERSION" | awk -F. '{print $1+0}')
-LATEST_MAJOR=$(echo "$LATEST_VERSION" | awk -F. '{print $1+0}')
+# edikt-test-block: version-channel-guard
+# Inputs: INSTALLED_VERSION, LATEST_VERSION, LAUNCHER_OK. Output: SELF_UPGRADE.
+SELF_UPGRADE=none   # none | skip | major | minor
+if ! printf '%s' "$INSTALLED_VERSION" | grep -qE '^v?[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "installed version is a channel (${INSTALLED_VERSION}); self-upgrade skipped"
+  SELF_UPGRADE=skip
+elif [ -z "$LATEST_VERSION" ]; then
+  echo "self-upgrade check skipped: latest version unknown (the release fetch in 0b failed or was skipped)" >&2
+  SELF_UPGRADE=none
+else
+  INSTALLED_REL="${INSTALLED_VERSION#v}"; LATEST_REL="${LATEST_VERSION#v}"
+  INSTALLED_MAJOR=$(printf '%s' "$INSTALLED_REL" | awk -F. '{print $1+0}')
+  LATEST_MAJOR=$(printf '%s' "$LATEST_REL" | awk -F. '{print $1+0}')
+  if [ "${LAUNCHER_OK:-0}" != 1 ] || [ "$LATEST_MAJOR" -gt "$INSTALLED_MAJOR" ]; then
+    SELF_UPGRADE=major
+  elif [ "$LATEST_MAJOR" -eq "$INSTALLED_MAJOR" ]; then
+    # Same major: compare ORDER, not inequality — a downgrade (LATEST < INSTALLED,
+    # e.g. a local snapshot ahead of the last published release) must never
+    # read as "differs, therefore upgrade". Anchored above to X.Y.Z, so both
+    # sides are plain release triples here; a pre-release never reaches this
+    # branch (PC-05: it took the channel arm instead — ordering a pre-release
+    # against a release is not reimplemented here in tier-1 shell).
+    INSTALLED_MINOR=$(printf '%s' "$INSTALLED_REL" | awk -F. '{print $2+0}')
+    INSTALLED_PATCH=$(printf '%s' "$INSTALLED_REL" | awk -F. '{print $3+0}')
+    LATEST_MINOR=$(printf '%s' "$LATEST_REL" | awk -F. '{print $2+0}')
+    LATEST_PATCH=$(printf '%s' "$LATEST_REL" | awk -F. '{print $3+0}')
+    if [ "$LATEST_MINOR" -gt "$INSTALLED_MINOR" ] || { [ "$LATEST_MINOR" -eq "$INSTALLED_MINOR" ] && [ "$LATEST_PATCH" -gt "$INSTALLED_PATCH" ]; }; then
+      SELF_UPGRADE=minor
+    fi
+  fi
+fi
 ```
 
-**If launcher is missing OR `$LATEST_MAJOR > $INSTALLED_MAJOR`:**
+**`SELF_UPGRADE=skip`:** print nothing more here and continue with the rest of
+the upgrade (Step 1 onward) — the project's hooks, agents, rules and config are
+still reconciled against the dev checkout's templates; only the launcher
+self-upgrade is skipped, and the line above says so.
+
+**`SELF_UPGRADE=major`** (launcher missing, or `$LATEST_MAJOR > $INSTALLED_MAJOR`):
 
 This is a major upgrade. The launcher cannot self-upgrade across major versions — the installer must re-bootstrap the binary.
 
@@ -173,7 +245,7 @@ This is a major upgrade. The launcher cannot self-upgrade across major versions 
 This is a major upgrade (v{INSTALLED_VERSION} → v{LATEST_VERSION}).
 Run the installer to complete the upgrade:
 
-  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
 
 Then re-run /edikt:upgrade to apply project changes.
 ```
@@ -182,13 +254,15 @@ Stop here — do not proceed to Step 1. Do not mutate any files.
 
 #### 0e. Minor-version bump: delegate to launcher
 
-If `$LATEST_MAJOR == $INSTALLED_MAJOR` AND `$LATEST_VERSION` differs from `$INSTALLED_VERSION`:
+**`SELF_UPGRADE=minor`** (same major, `$LATEST_VERSION` differs from `$INSTALLED_VERSION`):
 
 ```bash
-"$EDIKT_BIN" upgrade --yes
+EDIKT_INVOKER=/edikt:upgrade "$EDIKT_BIN" upgrade --yes
 ```
 
 If the launcher upgrade fails (non-zero exit), report the error and stop. Do not proceed to Step 1 until the launcher upgrade succeeds.
+
+**`SELF_UPGRADE=none`:** the launcher is current; proceed to Step 1.
 
 #### 0f. Post-launcher-upgrade summary
 
@@ -197,14 +271,6 @@ After a successful `edikt upgrade --yes`, print:
 ```
 Launcher upgrade complete: v{INSTALLED_VERSION} → v{LATEST_VERSION}
 ```
-
-Note any migrations that were applied by reading recent entries from `~/.edikt/events.jsonl`:
-
-```bash
-tail -20 ~/.edikt/events.jsonl 2>/dev/null | grep '"event":"layout_migrated"' | head -3
-```
-
-For each migration event found, print: `  Migration applied: {event details}`
 
 Suggest verification: `Run edikt doctor to verify the installation.`
 
@@ -222,12 +288,12 @@ No edikt config found. Run /edikt:init to set up this project.
 Check that `$EDIKT_TEMPLATES` (resolved in §0y-bis) is non-empty and the directory it points to exists. If not:
 ```
 edikt templates not found. Re-install edikt:
-  curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
 ```
 
 Use the Bash tool to read both versions — do NOT infer or guess them:
 ```bash
-cat ~/.edikt/VERSION 2>/dev/null | tr -d '[:space:]'
+"${EDIKT_BIN:-edikt}" version 2>/dev/null | tr -d '[:space:]'
 grep '^edikt_version:' .edikt/config.yaml | awk '{print $2}' | tr -d '"'
 ```
 
@@ -239,7 +305,7 @@ Installed edikt: {INSTALLED_VERSION}
 Project edikt:   {PROJECT_VERSION}
 ```
 
-If INSTALLED_VERSION == PROJECT_VERSION AND there are no changes detected in step 2 AND `edikt_version` is already set in `.edikt/config.yaml`, show:
+If INSTALLED_VERSION == PROJECT_VERSION AND there are no changes detected in step 2, show:
 ```
 ✅ Already up to date (edikt {INSTALLED_VERSION}) — nothing to upgrade.
 ```
@@ -247,235 +313,44 @@ and stop.
 
 If INSTALLED_VERSION != PROJECT_VERSION, always proceed with the upgrade — the version difference alone is reason enough.
 
-If `edikt_version` is missing from `.edikt/config.yaml` (project predates versioning), always proceed — adding the version is itself an upgrade.
+### 1.5. Sidecar Migration Check — detect and hand off
 
-### 1.5. Sidecar Migration Check (v0.6.0+ + two-phase model)
+An artifact needs migrating when its `.md` still carries an in-body `[edikt:directives:start]: # … [edikt:directives:end]: #` block, or when the sidecar beside it is still `schema_version: 1`. That is a fact about the file, never about a version pair, so this check runs on every `/edikt:upgrade`, whatever the source version. It runs BEFORE Step 2 so the rest of the upgrade operates on a current-shaped project.
 
-v0.6.0 replaces the in-body `[edikt:directives:start]: # ... [edikt:directives:end]: #` sentinel block with a co-located `<artifact>.edikt.yaml` sidecar. Projects upgrading from any earlier version must migrate their sentinel blocks before any other v0.6.0 command will work — `/edikt:gov:compile` refuses to run while legacy in-body sentinels remain.
+This command does not migrate. It runs the scanner and, when the plan lists anything, prints one screen and hands off to `/edikt:migrate`, which carries the whole lift → verify → recompile procedure, the recovery path, the dry-run gate and the exit-code contract. A clean upgrade never opens that command.
 
-**Two-phase migration model (v0.6.0+):** the migration is a CLEANUP step, not an extraction step. Phase A is itself two deterministic sub-steps — run in order, both required.
+#### 1.5a. The scanner — and its exit code is the control
 
-  Phase A, step 1 — `edikt migrate sidecars --apply` (pure Go, no LLM):
-    Strips every sentinel block from the parent `.md` and writes a
-    skeleton sidecar with `topic: needs-extraction`. The legacy
-    sentinel's content (directives + manual_directives +
-    suppressed_directives + reminders + verification + topic/signals
-    hints) is preserved verbatim into a transient `migration_preserved:`
-    field on the skeleton. Fast, deterministic, handles all sentinel
-    shapes (v0.4.3 / v0.5.x / pre-v0.4 / hand-edited) identically.
-
-    **This step alone leaves the project with ZERO enforceable
-    directives.** The skeleton it writes has `directives: []` —
-    verified directly, not assumed: run `--apply` on a fixture and read
-    the resulting `.edikt.yaml`, and `directives:` is an empty list
-    every time, with the old content sitting only in
-    `migration_preserved`, which nothing compiles or enforces. A
-    project that stops here — script exits early, a later step fails
-    and the run isn't resumed — has silently disabled its own
-    governance. This is the single most dangerous gap in this whole
-    flow precisely because it produces no error: `migrate sidecars
-    --apply` exits 0, prints a success line, and leaves the corpus
-    inert. Phase A, step 2 and Phase B are not optional follow-ups;
-    treat this command as incomplete until both have run.
-
-  Phase A, step 2 — `edikt migrate to-v2` (pure Go, no LLM):
-    Upgrades every skeleton `migrate sidecars --apply` just wrote from
-    the retired single-anchor `gov-sidecar.v1` shape to the current
-    `gov-sidecar.v2` shape (`source_excerpts[]`, multi-anchor). This
-    step is required, not optional: `gov compile`'s Phase B dispatch
-    gate refuses outright to run the extractor while any v1-shaped
-    sidecar exists in the corpus — confirmed directly, not assumed —
-    printing "Run `bin/edikt migrate to-v2` first" and exiting non-zero.
-    Skipping this step does not silently degrade anything the way
-    skipping step 1's follow-up does; it hard-blocks Phase B with a
-    clear message. It is documented here anyway because a user reading
-    only "run gov compile next" has no way to know this step exists
-    until they hit that refusal.
-
-  Phase B — `/edikt:gov:compile` (dispatches sidecar-extractor):
-    The extractor agent runs against every `migration_preserved`-bearing
-    sidecar, uses the preserved lists as the canonical baseline (per
-    `templates/agents/sidecar-extractor.md` "On migration-preserved
-    baselines" rules), and produces the final canonical sidecar.
-    A post-extraction `lossless-check` gate (`--on-loss=auto`) verifies
-    the extractor didn't drop any preserved directive. `migration_preserved`
-    is stripped from the canonical sidecar afterwards — steady-state
-    sidecars never carry the transient field.
-
-    **Phase B needs a live model to actually extract anything.** Run as
-    `/edikt:gov:compile` inside a Claude Code session (the normal,
-    documented path — including a headless `claude -p "/edikt:upgrade"`
-    invocation, which still carries a live model turn), the session
-    itself dispatches the extractor agent and this just works. Run as
-    the raw `bin/edikt gov compile` from a shell or CI job with **no**
-    Claude Code session wrapping it at all — a legitimate, separately
-    documented headless path (see `edikt migrate sidecars --apply` "for
-    headless flows" below) — Phase B needs a `claude` CLI on `PATH`
-    for its own extraction dispatch. Confirmed directly, both ways: with
-    it absent, compile refuses cleanly (`error: phase A: extractor
-    unavailable`, non-zero exit) rather than fabricating content or
-    hanging, and the migration_preserved data is left untouched and
-    recoverable. With no live model reachable at all — no session, no
-    CLI — there is currently no way to complete Phase B; that is a real
-    limitation of today's flow, not a bug in this documentation.
-
-After Phase A, this slash command runs Phase B (`/edikt:gov:compile`) as the mandatory next step. The migration is not complete until all three steps have run.
-
-**Not in 0.7.0.** A design exists for retiring the version-specific parts of this flow
-entirely in favor of state-based detection (does a sentinel exist? does a sidecar exist?
-— no version lookup at all). It is a proposal only
-(`docs/internal/plans/PROPOSAL-state-based-sidecar-migration.md`), not implemented, and this
-section describes the flow as it actually ships in 0.7.0, not the proposal.
-
-This step runs the migration BEFORE Step 2 (detection) so the rest of the upgrade flow operates on a v0.6.0-shaped project.
-
-**Unconditional scan (Phase 11 — release engineering).** This dry-run fires on every `/edikt:upgrade` invocation regardless of the source version, even when the launcher just bootstrapped a clean install. The scan is harmless on fresh projects (no legacy sentinels → exit 0 with `0 sidecars to create` and one acknowledgement line). Cross-major upgrades (v0.5.x or earlier → v0.6.0+) take this path after the user re-runs `/edikt:upgrade` post-`install.sh`, and the scan guarantees the user is offered migration before any compile runs.
-
-#### 1.5a. Scan for legacy in-body sentinels
-
-Detect any artifact `.md` file under `paths.decisions`, `paths.invariants`, and `paths.guidelines` (resolved from `.edikt/config.yaml`) that still contains an in-body sentinel marker. Use the `edikt` binary's migration tool — it already handles fence detection and the documentation skip-list (blocks inside fenced regions):
+`migrate lift --dry-run` plans both halves of a migration in one pass: artifacts that still carry an in-body block and need a sidecar, and sidecars still at schema_version 1 that need converting. The control here is whether that check RAN, and only the exit code says so (exit code is the only contract; output is shown, never parsed). Before this shape, `SCHEMA_STALE` was grepped out of the dry-run's text with `|| echo 0` — on a binary that predates `migrate lift` the grep matched nothing, the check "computed" 0 and printed "Schema is current" without having run: a can't-fail control (D41 (b)).
 
 ```bash
-"$EDIKT_BIN" migrate sidecars --dry-run > /tmp/edikt-sidecar-plan.out 2>&1
-DRY_EXIT=$?
+# edikt-test-block: schema-currency-check
+# Input: EDIKT_BIN. Output: SCHEMA_CHECKED (1 = the dry-run ran; 0 = it did not, RED).
+SCHEMA_CHECKED=0
+SCHEMA_PLAN="$(mktemp)"
+EDIKT_INVOKER=/edikt:upgrade "$EDIKT_BIN" migrate lift --dry-run > "$SCHEMA_PLAN" 2>&1
+SCHEMA_RC=$?
+cat "$SCHEMA_PLAN"
+if [ "$SCHEMA_RC" -eq 0 ]; then
+  SCHEMA_CHECKED=1
+else
+  echo "🔴 schema currency was not checked: '$EDIKT_BIN migrate lift --dry-run' exited $SCHEMA_RC — rebuild or upgrade the binary (a binary without 'migrate lift' predates the sidecar lifter)"
+fi
 ```
 
-Three outcomes:
+Read the outcome from `SCHEMA_CHECKED`, never from the plan's wording:
 
-- **Exit 0 AND output reports `0 sidecars to create`** — no legacy sentinels found. Continue to the schema-currency check below.
-- **Exit 0 AND output reports `N sidecars to create`** with `N > 0` — legacy sentinels found, prompt the user (Step 1.5b).
-- **Non-zero exit** — print the captured output to the user and stop. Do NOT proceed to Step 2 until the dry-run is healthy.
-
-Print the dry-run plan verbatim before the prompt so the user can see exactly which artifacts will change.
-
-**Schema currency is a separate question from sentinel-lifting — ask it directly.** A sidecar with no legacy in-body sentinel to lift can still be schema_version 1. "0 sidecars to create" above answers "does anything need a NEW sidecar," never "is every EXISTING sidecar's schema shape current." Check the second question explicitly:
-
-```bash
-"$EDIKT_BIN" migrate to-v2 --dry-run 2>&1 | tee /tmp/edikt-schema-plan.out
-SCHEMA_STALE=$(grep -oE 'would convert [0-9]+' /tmp/edikt-schema-plan.out | grep -oE '[0-9]+' || echo 0)
-```
-
-- **`SCHEMA_STALE` is `0`** — every existing sidecar is already v2-shaped.
-- **`SCHEMA_STALE` is `> 0`** — `SCHEMA_STALE` sidecar(s) are still schema_version 1. Include this in the Step 1.5b prompt (or, if no legacy sentinels were found but schema is stale, prompt for the schema upgrade alone: `"$EDIKT_BIN" migrate to-v2`).
-
-Track whether this upgrade run leaves the project fully migrated — set `MIGRATION_COMPLETE=true` only when, by the end of Step 1.5, both the legacy-sentinel count and `SCHEMA_STALE` are `0`. Step 6 reads this flag before writing `edikt_version`.
-
-If both checks report zero, print one line and continue to Step 2:
-```
-✅ Sidecar migration: nothing to migrate. Schema is current.
-```
-
-**The 24-hour dry-run gate.** `edikt migrate sidecars --dry-run` writes a gate file to `.edikt/state/migration-dry-run.json` recording the plan's timestamp and the artifacts inspected. `edikt migrate sidecars --apply` reads that file and **refuses to run if the timestamp is older than 24 hours**, returning:
-
-```text
-migrate sidecars: --dry-run required first (or pass --force).
-Run: edikt migrate sidecars --dry-run
-```
-
-The window exists because sidecar generation is destructive on the prose body (the in-body sentinel block is removed atomically with the sidecar write). The recommended workflow is: run `--dry-run`, review the plan, run `--apply` in the same session. If a CI flow has already validated the plan upstream and you cannot re-run the dry-run, pass `--force`.
-
-`/edikt:upgrade` always runs `--dry-run` immediately before prompting, so the gate is fresh when this command applies the migration. Direct `edikt migrate sidecars --apply` invocations outside the upgrade flow must respect the window.
-
-#### 1.5b. Prompt for migration
-
-Show the plan, then ask:
-
-```
-v0.6.0 requires migrating in-body sentinel blocks to co-located *.edikt.yaml
-sidecars. The dry-run above shows what will change.
-
-Apply the migration now? [y/N]
-```
-
-- **On `y` / `yes`** — run the apply, then the schema upgrade, then complete the resync via the host agent's subagent dispatch:
-
-  ```bash
-  "$EDIKT_BIN" migrate sidecars --apply
-  "$EDIKT_BIN" migrate to-v2
+- **`SCHEMA_CHECKED=1`** — the dry-run ran and its plan is printed above, verbatim. If the plan lists anything to lift or to convert, print the hand-off screen and continue with Step 2; the migration is the user's next command, not this one's next step:
   ```
+  ⬆  Migration — {n} artifact(s) carry a legacy in-body block or a v1 sidecar
 
-   the tier-2 binary is LLM-agnostic. Under the two-phase model (Phase A: structural strip + preserve verbatim into `migration_preserved`, then schema-shape upgrade; Phase B: extractor runs during `/edikt:gov:compile`), apply writes a skeleton sidecar with `topic: needs-extraction` for EVERY artifact regardless of sentinel schema. Schema branching is gone — v0.5.x-full / v0.5.x-partial / v0.4.3-legacy / unknown / hand-edited all take the same path.
+     This upgrade does not migrate them. Nothing was changed.
+     Next: /edikt:migrate   (the plan above; lift → verify → recompile, with the dry-run gate)
 
-  After apply completes:
-
-  1. **Post-migration sentinel verification** runs automatically. The migrate tool's last step scans every migrated `.md` and fails the run with a per-file list if any column-0 `[edikt:directives:start]: #` survived the strip. If you see this error: recovery is from version control — `migrate sidecars` writes NO backup of the user's `.md` files. Do NOT proceed past this gate.
-
-  2. **Run `edikt migrate to-v2`.** `--apply` writes v1-shaped (single-anchor) skeletons; `gov compile`'s Phase A dispatch gate refuses to run at all while any v1-shaped sidecar exists in the corpus. This step upgrades every skeleton to the current v2 (multi-anchor `source_excerpts[]`) shape. Confirmed directly: running Phase B before this step fails fast with "Run `bin/edikt migrate to-v2` first" and a non-zero exit — not a partial or silent failure, but also not a step to skip.
-
-  3. **Dispatch Phase B by running `/edikt:gov:compile`**. The compile's Phase A picks up every `migration_preserved`-bearing sidecar (`IsStale` returns true unconditionally when the transient field is present), dispatches the `sidecar-extractor` agent per artifact, and the extractor:
-     - Reads `migration_preserved.directives` as a canonical baseline → outputs each entry verbatim in `directives[]`, anchored to prose with a real `source_excerpt`
-     - Reads `migration_preserved.manual_directives` → outputs in `manual_directives[]` verbatim
-     - Same pattern for `suppressed_directives`, `reminders`, `verification`
-     - Uses `migration_preserved.topic` and `.signals` as hints; synthesizes from prose if needed
-     - MUST NOT include `migration_preserved` in its output sidecar
-     The full preservation rules are in `templates/agents/sidecar-extractor.md` § "On migration-preserved baselines". **This step needs a live model** — inside a Claude Code session (including headless `claude -p`), the session dispatches the extractor and this just works; run as the raw `bin/edikt gov compile` with no session at all, it needs a `claude` CLI on `PATH` or it refuses cleanly rather than fabricating content (see the Phase B note above).
-
-  4. **The post-extractor `lossless-check` gate** (`--on-loss=auto`, defaults to `abort` in CI / `accept` in TTY) verifies the extractor's output covers every directive in `migration_preserved.directives`. If anything was dropped (modality/ref-id/noun-phrase mismatch), compile aborts non-zero with a per-sidecar report. Surface to the user; recovery options:
-     - Re-run with `edikt gov compile --on-loss=accept` to keep the extractor's output (loss is documented)
-     - Edit affected sidecars by hand to restore dropped entries
-     - File an extractor regression bug if loss is unexpected
-
-  5. **After compile completes successfully**, `migration_preserved` is stripped from every sidecar. Steady-state sidecars never carry the transient field; subsequent compiles are deterministic Phase B merges unless prose actually drifted.
-
-  - On exit 0 from `migrate sidecars --apply` and `migrate to-v2`: set `MIGRATION_COMPLETE=true` and print:
-    ```
-    ✅ Sidecar migration applied (Phase A: structural strip + preserve + schema upgrade). Run /edikt:gov:compile to dispatch sidecar-extractor and produce canonical sidecars (Phase B). Until it runs, this project has ZERO enforceable directives.
-    ```
-    Then run `/edikt:gov:compile`.
-
-    **Then run `/edikt:gov:grade-compile` and surface the result — do not skip this.** Phase B just re-extracted every artifact's sidecar; `gov compile`'s regression check only asks whether the migration destroyed anything (`lost`/`degraded`/`factual` counts), never whether the resulting extraction is any *good*. A grade has never been run yet on a freshly migrated project — `doctor` reports "No compile-quality grade yet" unconditionally until someone runs it, so leaving this step out means an upgraded project ships with a grading tool installed, working, and silently never invoked. Print the summary:
-    ```
-    📊 Compile-quality grade: {overall}/100 ({dimension}: {score}, ...)
-    ```
-    This is advisory only — a low grade does not block the upgrade or require action — but it must be visible, not merely available. Continue to Step 2 regardless of the grade.
-  - On non-zero exit from `migrate sidecars --apply` or `migrate to-v2` (including the post-migration sentinel verification failure): leave `MIGRATION_COMPLETE=false`, print the migration tool's output verbatim, and stop. Recovery is from version control — `migrate sidecars` writes NO backup of the user's `.md` files. Do NOT proceed to Step 2.
-- **On `N` / `no` / empty** — leave `MIGRATION_COMPLETE=false` and print:
+     Until then, /edikt:gov:compile refuses per artifact on the blocks it finds, and doctor reports them.
   ```
-  Migration deferred. Run /edikt:gov:compile to apply when ready.
-  Compile will refuse until migration is applied.
-  Note: edikt_version will NOT be bumped to the full target version until migration completes — re-run /edikt:upgrade once you're ready.
-  ```
-  Then continue to Step 2 — the rest of the upgrade still operates safely on the unmigrated project. The user can re-run `/edikt:upgrade` later or invoke `edikt migrate sidecars --dry-run` followed by `edikt migrate sidecars --apply` directly.
-
-**Headless mode.** If `EDIKT_HEADLESS=1` or `--yes` was passed to `/edikt:upgrade` (no future flag exists today, but reserve the convention) AND the dry-run reports a non-empty plan, fall through to deferred — never auto-apply without an interactive confirmation. Migration is destructive on the prose body (sentinel blocks are removed) and must not happen silently.
-
-### 1.6. Post-install sidecar regression check (v0.6.0+)
-
-After migration is applied (or deferred), run a sidecar regression check to surface any quality regressions in the existing sidecars. This step fires on every upgrade to catch regressions introduced between rc versions.
-
-**Requires the launcher resolved in 0y.** If `$EDIKT_BIN` is empty, skip this step with:
-```
-⚠ Sidecar regression check skipped: no edikt launcher found (checked bin/edikt, .edikt/bin/edikt, PATH).
-  Install with: edikt install edikt
-```
-
-When the binary is present, run:
-
-```bash
-"$EDIKT_BIN" migrate sidecars --dry-run --report-json /tmp/edikt-upgrade-report.json
-```
-
-Wait for exit.  Rule 2, display output verbatim; do not parse it.
-
-Then read `/tmp/edikt-upgrade-report.json` and extract the `summary` block's `lost`, `degraded`, and `factual` fields. Print:
-
-```
-Sidecar regression summary: {lost} lost, {degraded} degraded, {factual} factual.
-```
-
-If any count is non-zero, print:
-
-```
-Run: claude /edikt:sidecar:regenerate to fix detected regressions.
-```
-
-If all counts are zero, print:
-
-```
-Sidecars already current.
-```
-
-**MUST NOT auto-run `/edikt:sidecar:regenerate`.** Sidecar regeneration dispatches LLM subagents and must remain a user-initiated action. The check is advisory only.
+  If the plan lists nothing, say so in the summary (`sidecar migration: nothing to migrate — the dry-run ran`) and continue.
+- **`SCHEMA_CHECKED=0`** — the check did not run. This is RED: report it as printed, carry it into the Step 6 summary as an unmeasured control, and do not print "Schema is current" or "nothing to migrate" — nothing was measured. Continue with the rest of the upgrade; the remedy is the binary, not this project.
 
 ### 2. Detect What Needs Upgrading
 
@@ -487,18 +362,61 @@ Read `.claude/settings.json`. Read `$EDIKT_TEMPLATES/settings.json.tmpl`.
 
 For each hook type, check two things: (1) is the content correct, and (2) is it using the modern `.sh` script reference format?
 
-**Pre-flight: unsubstituted `${EDIKT_HOOK_DIR}` placeholder.** If any hook `command` string in `.claude/settings.json` contains the literal substring `${EDIKT_HOOK_DIR}`, the file shipped with the template placeholder un-resolved and every hook fires the error `/bin/sh: /<hook>.sh: No such file or directory` (the shell expands the unset variable to empty). Auto-repair before continuing — substitute `${EDIKT_HOOK_DIR}` with the absolute path resolution rule from §`commands/init.md` (global mode → `$HOME/.edikt/hooks`; project mode → `<project_root>/.edikt/hooks`). Re-validate JSON after substitution. Log: `repaired settings.json: substituted N occurrences of ${EDIKT_HOOK_DIR}`. Do NOT prompt — this is a strictly mechanical fix and silent error in the user's session.
+**Pre-flight: the two mechanical repairs — the project's file unprompted, the user's only on consent.** An unsubstituted `${EDIKT_HOOK_DIR}` in a hook command (the host's shell expands it to the empty string, so every hook fails with `No such file or directory`) and a `statusLine` object without `type` (Claude Code refuses to load the whole file) are repaired in place, without touching anything else, by the tier-2 verb — not by prose.
 
-**Pre-flight: missing `statusLine.type` field.** If `.claude/settings.json` has a `statusLine` object that lacks a `type` key, Claude Code refuses to load the entire settings file with the error `statusLine › type: Invalid value. Expected one of: "command"`. Settings written before Claude Code 2.x added the requirement (or shipped from a stale template) hit this. Auto-repair: insert `"type": "command"` as the first key inside the `statusLine` object. Re-validate JSON. Log: `repaired settings.json: added statusLine.type`. Do NOT prompt — same rationale as the placeholder repair above.
+Two settings files can carry them, and the verb acts on exactly one per call: `--repair --project` on this project's `.claude/settings.json` (the file this section reads and `edikt doctor` checks), plain `--repair` on the user-scope file. Running plain `--repair` here — as this step once did — repaired, or refused on, a file other than the one the finding was about, and edited user-scope settings without asking.
 
-**Migration check — inline bash vs. script references:**
-If any `type: command` hook has its logic inline (a long bash string) rather than referencing `$HOME/.edikt/hooks/*.sh`, it is outdated regardless of content. Note: "using inline bash — migrate to script reference".
+First resolve the user-scope settings file. It is commonly a symlink into a dotfiles checkout, so it is resolved through the link; its root is the ACTIVE profile — `CLAUDE_HOME`, then `CLAUDE_CONFIG_DIR` (Claude Code's own profile selector), then `$HOME/.claude` — and the expression is byte-identical to `install.sh`'s:
+
+```bash
+# edikt-test-block: user-settings-path
+CLAUDE_ROOT="${CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}"
+USER_SETTINGS="$(readlink -f "$CLAUDE_ROOT/settings.json" 2>/dev/null || echo "$CLAUDE_ROOT/settings.json")"
+```
+
+Then define the hook dir and run the project repair. `HOOK_DIR` is the PORTABLE form: `.claude/settings.json` is committed, so it never carries one machine's home or checkout path — the host's shell expands the token at hook-fire time (`edikt install settings` accepts exactly these anchors besides an absolute path):
+
+```bash
+# edikt-test-block: settings-preflight-repair
+# Input: EDIKT_BIN (§0y), USER_SETTINGS. Output: HOOK_DIR, USER_SCOPE_DEFECT (1 = the user-scope file has a defect the repair would fix).
+if [ -d .edikt/hooks ]; then
+  HOOK_DIR='"$CLAUDE_PROJECT_DIR"/.edikt/hooks'   # project-mode install: the hooks ship inside the project
+else
+  HOOK_DIR='$HOME/.edikt/hooks'                    # global install: the hooks live in the user's edikt home
+fi
+# 1. This project's own settings file. Unprompted: a mechanical fix of a silent error in a file the project owns.
+if [ -f .claude/settings.json ]; then
+  EDIKT_HOOK_DIR="$HOOK_DIR" "$EDIKT_BIN" install settings --repair --project
+fi
+# 2. The user-scope file: DETECT only. The verb is the detector, run on a copy, so "has a defect"
+#    means exactly "the repair would change it" — nothing here re-derives what a defect is.
+USER_SCOPE_DEFECT=0
+if [ -f "$USER_SETTINGS" ]; then
+  PROBE="$(mktemp -d)"
+  cp "$USER_SETTINGS" "$PROBE/settings.json"
+  CLAUDE_HOME="$PROBE" EDIKT_HOME="$PROBE" EDIKT_HOOK_DIR='$HOME/.edikt/hooks' "$EDIKT_BIN" install settings --repair >/dev/null 2>&1
+  cmp -s "$USER_SETTINGS" "$PROBE/settings.json" || USER_SCOPE_DEFECT=1
+  rm -rf "$PROBE"
+fi
+```
+
+The project repair prints `repaired <path>: substituted N occurrence(s) of ${EDIKT_HOOK_DIR}` and/or `repaired <path>: added statusLine.type`, or `<path>: nothing to repair`. Do NOT prompt for it. Keep `HOOK_DIR` for §5: the hook merge runs with it in its environment.
+
+On `USER_SCOPE_DEFECT=1` the user-scope file is broken too, but it is the user's, outside this repository, and shared by every project on the machine — ASK before touching it; upgrade never edits user-scope settings silently:
+
+<!-- stop: repair-user-scope-settings -->
+```
+Your user-scope settings file {USER_SETTINGS} carries an unsubstituted ${EDIKT_HOOK_DIR} or a statusLine without type — Claude Code fails the affected hooks, or refuses to load the file.
+Repair it in place (only those two defects; nothing else in the file changes)? [y/N]:
+```
+
+On `y`, run `EDIKT_HOOK_DIR='$HOME/.edikt/hooks' "$EDIKT_BIN" install settings --repair` and report its line. On anything else — including no human to answer, which takes the safe side — print `user-scope settings left as-is — edikt doctor reports the defect` and continue; never repair the user's file silently. `edikt doctor` detects the same two defects in either file and names the verb for the file it flagged (`--repair --project` or `--repair`); doctor itself stays read-only.
 
 **Content checks — per hook TYPE, whether it exists at all:**
-- `SessionStart`: command should reference `$HOME/.edikt/hooks/session-start.sh` — if not → outdated
+- `SessionStart`: command should reference `session-start.sh` in edikt's hook dir — `$HOME/.edikt/hooks/`, `"$CLAUDE_PROJECT_DIR"/.edikt/hooks/`, the unquoted or `"$HOME"`-quoted token, or the expanded absolute path all count as the same dir — if not → outdated
 - `PreToolUse`: must be present with `Write|Edit` matcher — if missing → missing
 - `PostToolUse`: must be present with `Write|Edit` matcher — if missing → missing
-- `Stop`: must be type:command referencing `$HOME/.edikt/hooks/stop-hook.sh` — if type:prompt or inline → outdated
+- `Stop`: must be type:command referencing `stop-hook.sh` in edikt's hook dir (any of the spellings above) — if type:prompt or inline → outdated
 - `UserPromptSubmit`: must be present — if missing → missing (v4: injects active plan phase)
 - `PostCompact`: must be present — if missing → missing (v4: re-injects context after compaction)
 - `SubagentStop`: must be present — if missing → missing (v4: logs agent activity + quality gates)
@@ -507,28 +425,49 @@ If any `type: command` hook has its logic inline (a long bash string) rather tha
 **Content checks — per hook script BASENAME, even when the type already exists.** Type presence alone does not mean the type is current: a project's `PreToolUse`/`PostToolUse` typically predate a release that added a new script *within* an already-present type, and a type-level check alone reports nothing to do while the new script never installs — this is exactly what happened on a real downstream 0.7.1 upgrade: `verify-gate.sh` and both `inject-directives-{pre,post}.sh` never installed because `PreToolUse`/`PostToolUse` already existed, and `doctor` then pointed back at this same upgrade command as the (non-working) remedy. For every hook type present in `$EDIKT_TEMPLATES/settings.json.tmpl`, collect the set of command basenames the template registers for that type (across every matcher/`if` group within it) and the set actually present in `.claude/settings.json` for that type (same). Any template basename absent from the installed set → outdated (missing entry), even though the type itself is present.
 
 For each outdated or missing hook, note what changed in plain English:
-- "SessionStart: inline bash → migrate to `$HOME/.edikt/hooks/session-start.sh`"
 - "PostToolUse: missing (auto-formats files after edits)"
-- "PreToolUse: missing entry `verify-gate.sh` (write-time completion gate) — type already present, this script was never added"
-- "PostToolUse: missing entry `inject-directives-post.sh` (write-time directive delivery) — type already present, this script was never added"
+- "PreToolUse: missing entry `pre-tool-use.sh` (managed-region guard) — type already present, this script was never added"
+- "PostToolUse: missing entry `post-tool-use.sh` (post-write governance processing) — type already present, this script was never added"
 - "UserPromptSubmit: missing (v4 — injects active plan phase into every prompt)"
 - "PostCompact: missing (v4 — re-injects plan + invariants after compaction)"
 - "SubagentStop: missing (v4 — logs agent activity, quality gates)"
 - "InstructionsLoaded: missing (v4 — logs which rule packs load)"
-- "Stop: outdated format (may cause JSON validation error) → migrate to `$HOME/.edikt/hooks/stop-hook.sh`"
 
 #### 2b. CLAUDE.md — content-currency check, provenance-first (ADR-067)  edikt-guard:allow
 
-Read `CLAUDE.md`. Detect sentinel format:
+**Resolve which file to examine first (SR-004).** The managed block is not
+always at the repository root — a project bootstrapped a different way keeps
+it at `.claude/CLAUDE.md` instead, and this repository is exactly such a
+project. Check each candidate in order and use the first one that actually
+carries an edikt sentinel (either syntax); reading the repo-root path
+unconditionally reports `SENTINEL=none` for a project whose block lives
+elsewhere, which this step's own next line used to call a *"benign skip"* —
+true for a project that has no block, false for one whose block is just not
+at the path this step assumed:
 
 ```bash
-grep -qF '[edikt:start]' CLAUDE.md 2>/dev/null && echo "new"
-grep -qF '<!-- edikt:start' CLAUDE.md 2>/dev/null && echo "old"
+# edikt-test-block: managed-block-resolution
+# Input: none (reads the working tree). Output: CLAUDE_MD_PATH, SENTINEL.
+CLAUDE_MD_PATH=""
+SENTINEL="none"
+for cand in "CLAUDE.md" ".claude/CLAUDE.md"; do
+  if [ -f "$cand" ]; then
+    if grep -qF '[edikt:start]' "$cand" 2>/dev/null; then
+      CLAUDE_MD_PATH="$cand"; SENTINEL="new"; break
+    elif grep -qF '<!-- edikt:start' "$cand" 2>/dev/null; then
+      CLAUDE_MD_PATH="$cand"; SENTINEL="old"; break
+    fi
+  fi
+done
 ```
 
-- No edikt block found (`SENTINEL=none`) → skip. `/edikt:init` installs the block; upgrade never creates one from nothing.
-- Old HTML comment sentinels found (`SENTINEL=old`) → run **Sentinel Syntax Migration** below first, then continue into the content-currency check on the now-migrated file. A syntax migration says nothing about whether the *content* underneath was ever current — it falls through to the Bootstrap Reconciliation branch below exactly like any other syntax-current, provenance-absent block.
-- New visible sentinels found (`SENTINEL=new`) → continue directly into the content-currency check below.
+From here on, every read and every `Edit` in this step targets
+`$CLAUDE_MD_PATH`, never the literal `CLAUDE.md` — the rest of this section
+says "CLAUDE.md" as the name of the artifact, not as a hardcoded path.
+
+- No edikt block found in any candidate (`SENTINEL=none`) → skip. `/edikt:init` installs the block; upgrade never creates one from nothing. This is the genuine negative — a project with no block anywhere — not a project whose block this step failed to look for.
+- Old HTML comment sentinels found (`SENTINEL=old`) → run **Sentinel Syntax Migration** below first, on `$CLAUDE_MD_PATH`, then continue into the content-currency check on the now-migrated file. A syntax migration says nothing about whether the *content* underneath was ever current — it falls through to the Bootstrap Reconciliation branch below exactly like any other syntax-current, provenance-absent block.
+- New visible sentinels found (`SENTINEL=new`) → continue directly into the content-currency check below, on `$CLAUDE_MD_PATH`.
 
 **Why this replaces a syntax-only check.** The prior version of this step tested only which sentinel *syntax* was present — a project migrated to the new syntax at some point in the past reported up to date forever, with no comparison against `$EDIKT_TEMPLATES/CLAUDE.md.tmpl`'s actual content. Confirmed live: this repo's own `CLAUDE.md` carried new syntax with its Intent → Command table 17 rows behind the shipping template, undetected by every upgrade run before this one (ADR-067).  edikt-guard:allow
 
@@ -564,7 +503,7 @@ A `{{var}}` slot appearing in the template but not in either list is a gap in th
 
 **`render(template, opaque_values)` → text.** Substitute each config-derived var from the CURRENT `.edikt/config.yaml` — never from `opaque_values`, even if a value happens to be present there. Substitute each opaque var from `opaque_values[var]` if present (from either `detemplate` or `detemplate_lenient`, depending on caller), else leave the raw `{{var}}` token in place.
 
-**The migration bypass, and why it's a file, not an env var.** INV-005's guard blocks any Edit/Write whose byte range overlaps CLAUDE.md's managed region unless an allowlisted bypass is present. `EDIKT_MIGRATION_IN_PROGRESS=1` is `bin/edikt upgrade`'s own bypass, set inside its own Go process for its own direct `os.WriteFile` calls — writes that never cross `PreToolUse` at all. This command's writes go through Claude Code's own `Edit` tool instead, a different path: each `Bash` tool call is a fresh subshell, so an `export` in one call is invisible to the separate hook subprocess spawned for a later `Edit` call — an env var set that way is never actually reachable. Bracket every Edit into the managed region with the file-based signal instead, which survives across tool calls because it's real filesystem state:  edikt-guard:allow
+**The migration bypass, and why it's a file, not an env var.** INV-005's guard blocks any Edit/Write whose byte range overlaps CLAUDE.md's managed region unless an allowlisted bypass is present. `EDIKT_MIGRATION_IN_PROGRESS=1` is `edikt upgrade`'s own bypass, set inside its own Go process for its own direct `os.WriteFile` calls — writes that never cross `PreToolUse` at all. This command's writes go through Claude Code's own `Edit` tool instead, a different path: each `Bash` tool call is a fresh subshell, so an `export` in one call is invisible to the separate hook subprocess spawned for a later `Edit` call — an env var set that way is never actually reachable. Bracket every Edit into the managed region with the file-based signal instead, which survives across tool calls because it's real filesystem state:  edikt-guard:allow
 
 ```bash
 mkdir -p .edikt/state && touch .edikt/state/.migration-in-progress
@@ -615,8 +554,8 @@ if opaque_values is FAIL:
 
 # Step 6 — safe replace: structural content was never hand-edited
 new_block = render(current_template, opaque_values)
-Edit CLAUDE.md, replacing only the byte range between [edikt:start] and [edikt:end]
-  inclusive, with EDIKT_MIGRATION_IN_PROGRESS=1 set (the INV-005 bypass bin/edikt upgrade already uses).  edikt-guard:allow
+Edit $CLAUDE_MD_PATH, replacing only the byte range between [edikt:start] and [edikt:end]
+  inclusive, with EDIKT_MIGRATION_IN_PROGRESS=1 set (the INV-005 bypass edikt upgrade already uses).  edikt-guard:allow
 write_record(project_root, template_hash=current_template_hash,
              template_version=CURRENT_EDIKT_VERSION, managed_hash=sha256(new_block))
 emit_event "upgrade_claude_md_path" { path: "resynth_safe_replace" }
@@ -638,7 +577,10 @@ if opaque_values is not FAIL AND render(current_template, opaque_values) == inst
   return
 ```
 
-Otherwise, ask via `AskUserQuestion`, showing installed vs. `render(current_template, detemplate_lenient(installed_block, current_template))` — the lenient extractor, not the strict `opaque_values` computed above (which may be `FAIL`):
+<!-- stop: managed-block-no-provenance -->
+Otherwise, ask via `AskUserQuestion`, showing installed vs. `render(current_template, detemplate_lenient(installed_block, current_template))` — the lenient extractor, not the strict `opaque_values` computed above (which may be `FAIL`). With no human to answer, take the safe side — `s` (skip): no file
+change, no record written, and the question is recorded as answered by default
+rather than given. Nothing overwrites a block whose provenance is unproven:
 
 ```
 CLAUDE.md's managed block has no recorded provenance (first run under this check, or
@@ -656,8 +598,8 @@ Choice [a/k/s]:
 
 | Choice | Action |
 | ------ | ------ |
-| `a` | Edit CLAUDE.md's block to `render(current_template, detemplate_lenient(installed_block, current_template))`, under `EDIKT_MIGRATION_IN_PROGRESS=1`. Write the record. |
-| `k` | Do not modify CLAUDE.md. Write the record as a deliberate acceptance of the installed content as the new baseline (`template_hash = current_template_hash`, `managed_hash = sha256(installed_block)`) — a future upgrade compares against this baseline going forward, not against a re-derived "should have matched" value. |
+| `a` | Edit `$CLAUDE_MD_PATH`'s block to `render(current_template, detemplate_lenient(installed_block, current_template))`, under `EDIKT_MIGRATION_IN_PROGRESS=1`. Write the record. |
+| `k` | Do not modify `$CLAUDE_MD_PATH`. Write the record as a deliberate acceptance of the installed content as the new baseline (`template_hash = current_template_hash`, `managed_hash = sha256(installed_block)`) — a future upgrade compares against this baseline going forward, not against a re-derived "should have matched" value. |
 | `s` | No file change, no record written. Re-asks next upgrade. |
 
 Emit `upgrade_claude_md_bootstrap_resolved { resolution: "a" | "k" | "s" }`.
@@ -681,6 +623,11 @@ rm -f "$STORED" "$RESYNTH" "$INSTALLED"
 
 (`$stored_render` / `$current_render` are best-effort: `render` with whatever `detemplate_lenient` extracted against the stored/current template respectively — this prompt is a diff for a human to read, not a value that gets written.)
 
+With no human to answer, take the safe side — `s` (skip): no file change, no
+record write, and the question recorded as answered by default rather than
+given.
+
+<!-- stop: managed-block-template-moved -->
 ```
 CLAUDE.md's managed block — template moved AND its structural content doesn't match
 what the stored template would have produced (an Intent → Command table row edited,
@@ -697,9 +644,9 @@ Choice [a/k/m/s]:
 
 | Choice | Action | `template_hash` written |
 | ------ | ------ | ------------------------ |
-| `a` | Edit CLAUDE.md's block to `render(current_template, detemplate_lenient(installed_block, current_template))`, under `EDIKT_MIGRATION_IN_PROGRESS=1`. | `current_template_hash` |
+| `a` | Edit `$CLAUDE_MD_PATH`'s block to `render(current_template, detemplate_lenient(installed_block, current_template))`, under `EDIKT_MIGRATION_IN_PROGRESS=1`. | `current_template_hash` |
 | `k` | Do not modify. | left at the OLD stored value — explicitly not advanced, so a future upgrade asks again rather than treating "kept edits" as "now current" |
-| `m` | Write `CLAUDE.md.merge` with `diff3 -m` conflict markers over just the block. Do not touch `CLAUDE.md` or the record until the merge completes and the user re-runs `/edikt:upgrade`. | unchanged |
+| `m` | Write `${CLAUDE_MD_PATH}.merge` with `diff3 -m` conflict markers over just the block. Do not touch `$CLAUDE_MD_PATH` or the record until the merge completes and the user re-runs `/edikt:upgrade`. | unchanged |
 | `s` | No file change. | unchanged, no record write |
 
 Emit `upgrade_claude_md_conflict_resolved { resolution: "a" | "k" | "m" | "s" }`.
@@ -823,8 +770,12 @@ fi
 rm -f "$STORED" "$RESYNTH" "$INSTALLED"
 ```
 
-Then prompt:
+Then prompt. With no human to answer, take the safe side — `s` (skip this
+agent): the installed file is left exactly as it is, no template is applied
+over local edits, and the question is recorded as answered by default rather
+than given.
 
+<!-- stop: agent-template-conflict -->
 ```
 {slug}.md — template moved AND you have local edits.
 
@@ -902,6 +853,35 @@ New agents are classified as **core** or **optional**:
 - **Core agents** are installed automatically — they're required for edikt's governance mechanisms to work. The evaluator agents (`evaluator.md`, `evaluator-headless.md`) are core: the plan harness and quality gates depend on them. Note the two are not equivalent artifacts: `evaluator.md` carries frontmatter and is Task-dispatched via `subagent_type: evaluator` (registered in `templates/agents/_registry.yaml`'s `always:` list); `evaluator-headless.md` has no frontmatter and is never Task-dispatched — it is a raw prompt body that hook scripts pipe into `claude -p` directly, so it is correctly absent from `_registry.yaml`. "Core" here means "installed unconditionally," not "registered as a subagent."
 - **Optional agents** (all other specialist agents) are offered to the user with a description of what they do. The user chooses which to install.
 
+**The subject set is the REGISTRY, never the project's contents.** `$EDIKT_TEMPLATES/agents/_registry.yaml`
+declares an `always:` list — the agents every project gets, because a tier-1
+command dispatches them by `subagent_type` and a dispatch to an agent that is
+not installed does not fail loudly: the host reports the type as unknown and
+the work falls to a general-purpose agent adopting the prompt, so a specialist
+review reads as a specialist's without one having run.
+
+Walking what the project HAS can only ever find what is already there, so an
+agent the registry declares and the project lacks is unreachable from that
+loop and its absence reads as nothing to do. Install every missing one:
+
+```bash
+ALWAYS="$(awk '/^always:/{f=1;next} /^[a-z_]+:/{f=0} f && /^  - /{print $2}' "$EDIKT_TEMPLATES/agents/_registry.yaml")"
+for slug in $ALWAYS; do
+  src="$EDIKT_TEMPLATES/agents/$slug.md"
+  dst=".claude/agents/$slug.md"
+  [ -f "$src" ] || { echo "  ⚠ Agent            $slug declared in the registry but absent from the payload — reinstall edikt"; continue; }
+  if [ ! -f "$dst" ]; then
+    mkdir -p .claude/agents && cp "$src" "$dst"
+    echo "  ✓ Agent            installed $slug (declared always-installed; it was missing)"
+  fi
+done
+```
+
+An agent already present is left to the provenance flow below — this step adds
+what the registry declares and the project lacks, and nothing else. `edikt
+doctor` reports the same gap as a 🔴 with the count, so a project that skips
+this step still sees it.
+
 ```
 New agents in v{version}:
 
@@ -922,62 +902,21 @@ If the user declines an optional agent, add it to `agents.custom` in config so f
 
 After installing or updating any agent, output: `Note: Agents register at session start — restart Claude Code to dispatch them natively. Until then, commands fall back automatically.`
 
-#### 2d. Config check
+#### 2c.1 Skills reconciliation (.claude/skills/)
 
-Read `.edikt/config.yaml`. Check for missing keys that were added in newer versions:
+List directories under `$EDIKT_TEMPLATES/skills/`. For each, check whether `.claude/skills/{name}/SKILL.md` exists in the project.
 
-- `artifacts:` block missing → outdated (added in v0.1.1)
-- `artifacts.database.default_type` missing → outdated
-- `artifacts.fixtures.format` missing → outdated
+Unlike agents, these are edikt's own on-demand methodology packages (deciding what qualifies as an ADR vs. invariant vs. guideline, and similar always-true-for-edikt content) — not project-specific and not meant to be hand-edited. There is no core/optional split and no diff/merge step: any skill the current version's templates declare that the project lacks is installed unconditionally, byte-identical, the same way it is on fresh init (§4, "Skills").
 
-Note each missing key with a description:
-- "`artifacts:` block missing — enables database-type-aware spec-artifacts"
-
-Do NOT flag keys that exist but have unexpected values — those may be intentional user customizations.
-
-#### 2e-bis. Project templates check (v0.3.0+)
-
-Check whether the project has the three per-artifact project templates that v0.3.0 requires for new artifact creation via the lookup chain (see commands/<artifact>/new.md Section 1a for the lookup contract).
-
-```bash
-HAS_ADR_TEMPLATE=$([ -f .edikt/templates/adr.md ] && echo "yes" || echo "no")
-HAS_INVARIANT_TEMPLATE=$([ -f .edikt/templates/invariant.md ] && echo "yes" || echo "no")
-HAS_GUIDELINE_TEMPLATE=$([ -f .edikt/templates/guideline.md ] && echo "yes" || echo "no")
+```
+  ✓ Skills          1 new package → .claude/skills/edikt-governance-authoring/
 ```
 
-**Classify the project:**
+If a project has hand-edited a skill file, leave it alone — do not overwrite a file whose content already differs from `$EDIKT_TEMPLATES/skills/{name}/SKILL.md`; only install what's missing.
 
-- **All three present** → mark project templates as "up to date, skip". Report nothing in the upgrade summary.
-- **At least one missing AND `edikt_version >= 0.3.0`** → mark as "templates partially configured — /edikt:init will complete setup". Note in the summary:
-  ```
-  ⬆  Project templates — {n}/3 missing
-     Missing: {list of missing templates}
-     Fix: run /edikt:init --reset-templates to complete setup
-  ```
-- **All three missing AND `edikt_version < 0.3.0`** (v0.2.x legacy upgrading to v0.3.0) → this is the **grandfather flow**. Note in the summary:
-  ```
-  ⬆  Project templates — v0.3.0 introduces per-artifact project templates
-     This project is on v{old_version} — templates have never been configured.
-     v0.3.0+ requires explicit templates for /edikt:adr:new, /edikt:invariant:new,
-     and /edikt:guideline:new. edikt doesn't ship a default — your project owns it.
+#### 2e-bis. Project templates check — delegated to doctor
 
-     After upgrade: run /edikt:init to set up project templates interactively.
-     You'll pick Adapt (generate from existing artifacts), Start fresh (pick a
-     reference template), or Write my own for each artifact type.
-  ```
-- **All three missing AND `edikt_version >= 0.3.0`** (broken state — v0.3.0+ project with no templates) → note:
-  ```
-  ⬆  Project templates — broken state detected
-     Project is on v{version} but no templates are configured.
-     Fix: run /edikt:init --reset-templates immediately.
-     Until then, /edikt:<artifact>:new commands will refuse.
-  ```
-
-**Never overwrite existing templates.** If `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` already exist, `/edikt:upgrade` must NOT touch them. They are user-owned content committed to the project's git. The only way to regenerate them is `/edikt:init --reset-templates`, which the user invokes explicitly.
-
-**Never auto-run init.** Even when templates are missing, `/edikt:upgrade` does NOT invoke `/edikt:init` on the user's behalf. It reports the state in the summary and leaves the user in control. Init is interactive; upgrade should not drag the user through another interactive flow without consent.
-
-**Legacy in-body sentinels** (v0.6.0+): the dedicated sidecar-migration step at §1.5 already detects v0.2.x / v0.4.3 / v0.5.x in-body sentinel blocks across all governance directories. There is no separate three-list-schema migration in v0.6.0 — all legacy shapes flow through the single Phase A structural strip + Phase B canonical extraction defined. Skip any additional schema classification here.
+The three per-artifact project templates (`.edikt/templates/adr.md`, `invariant.md`, `guideline.md`) are user-owned, team-shared and committed to git. `/edikt:upgrade` never writes, verifies or classifies them: `edikt doctor` reports each one as present or missing with the remedy (`/edikt:init --reset-templates`), and it is the one place that diagnosis lives. Upgrade only carries the contract: **Never overwrite project templates** — an existing template MUST NOT be touched. **Never auto-run init.** Even when doctor reports a template missing, `/edikt:upgrade` does NOT invoke `/edikt:init` on the user's behalf.
 
 #### 2e. Rule packs check
 
@@ -988,7 +927,29 @@ Otherwise, same logic as `/edikt:rules-update`:
 - Only flag as outdated if installed version < template version
 - Skip files without `<!-- edikt:generated -->` marker (manually edited)
 - Skip files not in the registry (custom rules)
-- **Hash comparison:** For files with `edikt:generated` marker, compute content hash and compare against the template. If hashes differ (content was edited but marker kept), flag as modified:
+- **Hash comparison, normalised (SR-005):** For files with `edikt:generated` marker, compare against the template using normalised content, not raw bytes. Comparing raw bytes flags a line-ending conversion or trailing-whitespace stripping — the shapes a checkout under `core.autocrlf` or an editor's save-on-format applies to any tracked file — as a user edit, on a file the user never touched. (This is NOT the same class of problem §2c's stack-filter step solves, and it does not transfer here: no rule-pack template under `templates/rules/` carries an `<!-- edikt:stack:... -->` block, so §2c applies no filter §2e would need to match, and `edikt`'s own `PostToolUse` hook has no `.md` case — it never touches a rule pack. The reachable producers of a byte-level, non-content difference on this path are a line-ending/whitespace-normalising checkout or editor, nothing edikt itself runs.) Normalise both sides before hashing, never after — a real edit still changes the normalised content and is still caught. The block **emits its decision** rather than only assigning it — a value assigned to a shell variable dies with its subshell, and only a printed line is something a caller (or a test) can observe:
+
+```bash
+# edikt-test-block: rule-pack-drift-normalisation
+# Input: $1 = a file path. Output: stdout = its drift-comparison form.
+normalize_for_drift() {
+  sed -e 's/\r$//' -e 's/[[:space:]]*$//' "$1" | awk '
+    NR>1 { print prev }
+    { prev=$0 }
+    END { if (NR>0) print prev }
+  '
+}
+INSTALLED_NORM=$(normalize_for_drift ".claude/rules/${name}.md")
+TEMPLATE_NORM=$(normalize_for_drift "$EDIKT_TEMPLATES/rules/${tier}/${name}.md")
+if [ "$INSTALLED_NORM" != "$TEMPLATE_NORM" ]; then
+  RULE_DRIFT=modified
+else
+  RULE_DRIFT=clean
+fi
+printf 'RULE_DRIFT=%s\n' "$RULE_DRIFT"
+```
+
+  `RULE_DRIFT=modified` is what flags a pack as edited below — never a raw hash. If hashes (now: normalised forms) differ, flag as modified:
   ```
   ⚠ .claude/rules/go.md has edikt:generated marker but content differs from template.
 
@@ -1011,13 +972,11 @@ EDIKT UPGRADE
 Hooks (.claude/settings.json)
   ⬆  SessionStart   — inline bash → script reference
   ⬆  PostToolUse    — missing, will add auto-format hook
-  ⬆  Stop           — fix "Prompt hook condition was not met" error (ok:false → ok:true always)
-  ⬆  PreToolUse     — missing entry verify-gate.sh (type already present, script was never added)
+  ⬆  PreToolUse     — missing entry pre-tool-use.sh (type already present, script was never added)
 
 Agents (.claude/agents/)
   ⬆  dba.md   — template added 12 lines (pure expansion, safe to apply)
   ⚠  security.md  — installed file has 8 lines not in template (USER DIVERGENCE — preview diff before accepting)
-  +  evaluator-headless.md — new in v0.4.0
   ✓  architect.md  — up to date
 
 Rule packs (.claude/rules/)
@@ -1051,8 +1010,13 @@ If everything is already up to date:
 
 ### 4. Confirm
 
-**If any agent has USER DIVERGENCE**, prompt for each diverged agent individually BEFORE the main confirmation:
+**If any agent has USER DIVERGENCE**, prompt for each diverged agent
+individually BEFORE the main confirmation. With no human to answer, take the
+safe side — `[3] Skip`: the diverged agent is excluded from the upgrade list,
+no customization is replaced, and the question is recorded as answered by
+default rather than given.
 
+<!-- stop: agent-user-divergence -->
 ```
 ⚠  security.md has content not in the template.
    Showing diff (installed vs template):
@@ -1075,6 +1039,8 @@ If user picks [2], add the `<!-- edikt:custom -->` marker at the top of the file
 If user picks [3], exclude it from the agent upgrade list.
 
 Then ask the main confirmation:
+
+<!-- stop: apply-upgrades -->
 ```
 Apply these upgrades? (y/n/select)
   y      — apply all
@@ -1085,6 +1051,11 @@ Apply these upgrades? (y/n/select)
 **Agents classified as PURE EXPANSION** can be auto-applied with `y` without individual confirmation — they're provably safe (no deletions).
 
 Wait for response. If `select`, ask separately for each section.
+
+With no human to answer, take the safe side — `n`: print the upgrade plan,
+apply nothing, record the answer as taken by default rather than given, and
+exit non-zero so a pipeline cannot read "nothing applied" as "already current".
+The approval stays outstanding; the plan above is what a human resumes from.
 
 If cancelled:
 ```
@@ -1097,7 +1068,7 @@ Upgrade cancelled — no changes made.
 
 **Do this merge via the `Bash` tool (e.g. a `python3` read-modify-write), not the `Edit` or `Write` tool.** `.claude/settings.json` is JSON-hosted, and INV-005's JSON-region verification variant is not yet implemented — the `PreToolUse` guard (`templates/hooks/pre-tool-use.sh`) unconditionally denies any `Edit`/`Write` to it, since it cannot yet distinguish a safe edit from one that empties the `deny` list or drops a hook registration. That deny only intercepts the `Edit`/`Write` tools — it has no visibility into a write issued through `Bash` — so performing the merge below as a `Bash`-invoked script is the sanctioned path, not a workaround around a bug. See the guard's own comment (`pre-tool-use.sh`, the `settings.json` branch) for the full reasoning.  edikt-guard:allow
 
-Read the current `.claude/settings.json`. Read the template.
+Read the current `.claude/settings.json`. Read the template. Run the merge from the project root with `HOOK_DIR` from §2a in its environment (`HOOK_DIR="$HOOK_DIR" python3 …`), so the hooks it adds carry the same portable form the pre-flight wrote.
 
 Merge at the individual command-BASENAME level, never by replacing a whole hook type's array — a whole-array replace silently discards user-added entries under that type, and a type-level "already present, skip" check silently leaves out any template basename the installed array doesn't yet have (§2a above). Two passes: add what §2a found missing, then remove what a release retired (never a user's own addition):
 
@@ -1109,14 +1080,33 @@ settings = read_json('.claude/settings.json')
 template_text = read_file('$EDIKT_TEMPLATES/settings.json.tmpl')
 
 # CRITICAL: substitute ${EDIKT_HOOK_DIR} BEFORE parsing as JSON.
-# Claude Code does not expand env vars in `command:` strings — unsubstituted
-# placeholders cause /bin/sh: /<hook>.sh: No such file or directory.
-hook_dir = f"{HOME}/.edikt/hooks"   # global mode (or {project}/.edikt/hooks for project mode)
-template_text = template_text.replace("${EDIKT_HOOK_DIR}", hook_dir)
+# The host runs `command:` strings through a shell, but nothing sets
+# EDIKT_HOOK_DIR in a hook's environment — an unsubstituted placeholder
+# expands to "" and fails with /bin/sh: /<hook>.sh: No such file or directory.
+# hook_dir is HOOK_DIR from §2a, passed in the environment: the PORTABLE form
+# this committed file carries ("$CLAUDE_PROJECT_DIR"/.edikt/hooks for a
+# project-mode install, $HOME/.edikt/hooks otherwise). It contains '"' in the
+# project case, so it is JSON-escaped for the raw-text substitution.
+PROJECT_ROOT = os.getcwd()   # the merge runs from the project root
+hook_dir = os.environ.get("HOOK_DIR") or "$HOME/.edikt/hooks"
+template_text = template_text.replace("${EDIKT_HOOK_DIR}", json.dumps(hook_dir)[1:-1])
 template_hooks = json.loads(template_text)['hooks']
 
 def basename(command):
     return os.path.basename(command)
+
+# One hook dir has three spellings in the wild, and every comparison below
+# treats them as the same directory: the token form ($HOME/... or
+# $CLAUDE_PROJECT_DIR/...), the quoted token form ("$HOME"/... or
+# "$CLAUDE_PROJECT_DIR"/...), and the expanded absolute path an older install
+# wrote. Comparing the raw strings would read an edikt hook written in one
+# spelling as a user's own hook in another — and never retire it.
+def expand(command):
+    for token, value in (('"$CLAUDE_PROJECT_DIR"', PROJECT_ROOT), ('$CLAUDE_PROJECT_DIR', PROJECT_ROOT),
+                         ('"$HOME"', HOME), ('$HOME', HOME)):
+        if command.startswith(token + '/'):
+            return value + command[len(token):]
+    return command
 
 # ── Pass 1: add every template basename missing from the installed set,
 # for EVERY hook type the template declares — not a hardcoded subset, so a
@@ -1148,10 +1138,15 @@ for hook_type, template_groups in template_hooks.items():
 
 # ── Pass 2: remove a RETIRED edikt hook — one this release's template no
 # longer ships anywhere under its type AND whose script file no longer
-# exists on disk. Ownership is decided by directory, not by "was it in the
-# template last time": a command whose directory resolves under hook_dir is
-# edikt's own; anything else (a real user-added hook, wherever it points)
-# is NEVER touched by this pass, template membership or not.
+# exists on disk. In 0.9.0 that is verify-gate.sh and inject-directives-pre.sh:
+# edikt no longer injects rule text into a write in progress, so neither
+# hook has a job left to do; a 0.8.x settings.json
+# registers both, and this pass prints `removed verify-gate.sh` and
+# `removed inject-directives-pre.sh` for them. Ownership is decided by directory, not by "was it in the
+# template last time": a command whose directory resolves — after expand(),
+# in any of its three spellings — to edikt's hook dir is edikt's own; anything
+# else (a real user-added hook, wherever it points) is NEVER touched by this
+# pass, template membership or not.
 template_basenames_by_type = {
     hook_type: {basename(h['command']) for g in groups for h in g.get('hooks', [])}
     for hook_type, groups in template_hooks.items()
@@ -1161,9 +1156,9 @@ for hook_type, groups in list(settings.get('hooks', {}).items()):
         kept = []
         for h in group.get('hooks', []):
             cmd = h['command']
-            owned_by_edikt = os.path.dirname(cmd) == hook_dir
+            owned_by_edikt = os.path.dirname(expand(cmd)) == expand(hook_dir)
             still_shipped = basename(cmd) in template_basenames_by_type.get(hook_type, set())
-            file_exists = os.path.exists(cmd)
+            file_exists = os.path.exists(expand(cmd))
             if owned_by_edikt and not still_shipped and not file_exists:
                 report(f"{hook_type}: removed {basename(cmd)} (retired from the template, file no longer exists)")
                 continue
@@ -1177,6 +1172,39 @@ assert "${EDIKT_HOOK_DIR}" not in serialized, "settings.json still contains unsu
 write_json('.claude/settings.json', settings)
 ```
 
+**Pass 3 — the other scope, on consent only.** Hooks belong at exactly one scope, and this pass writes the project's
+`.claude/settings.json`.
+A hook ALSO registered in the user-scope settings fires twice per event: 13
+hooks did so for weeks on the reference machine, each event doing its work
+twice while a warning nobody acted on scrolled past.
+
+Read the user-scope settings file `USER_SETTINGS`, resolved in §2a (block
+`user-settings-path`) through the active profile — `CLAUDE_HOME`, then
+`CLAUDE_CONFIG_DIR`, then `$HOME/.claude` — and through any symlink. Skipping
+the middle rung inspects a file the running profile does not read, reports no
+duplicates, and leaves the doubled hooks firing.
+
+For every hook basename registered in BOTH that file and the project's, print
+the pair and ASK before touching anything:
+
+<!-- stop: remove-user-scope-duplicates -->
+```
+N hook(s) are registered at both user and project scope and fire twice per event:
+  SessionStart/session-start.sh
+Remove the user-scope duplicates from {USER_SETTINGS} (a .bak is written beside it)? [y/N]:
+```
+
+On `y`, remove only those entries from the resolved file and report each one.
+On anything else — including no human to answer, which takes the safe side and
+is recorded as answered by default rather than given — print `left as-is — the
+duplicate-invocation guard covers the interim` and continue; never edit the user's file silently, and never
+remove an entry whose command does not resolve under `hook_dir` (it is theirs,
+not edikt's). "Resolves" means after `expand()` above: the user file commonly
+carries the expanded absolute path or `$HOME/.edikt/hooks` while the project
+carries `"$CLAUDE_PROJECT_DIR"/.edikt/hooks` — the same hook in different
+spellings is still a duplicate, matched by basename and owned by directory. `edikt doctor` reports the same doubling as a 🔴 with the
+measured cost from the hook journal, so a declined removal is still visible.
+
 **Never remove** a hook command whose directory does not resolve under `hook_dir` (the user may have added their own, wherever it points) — Pass 2 above is the one narrow, ownership-checked exception: an edikt-owned command (`hook_dir`-resolved) whose basename this release no longer ships anywhere, and whose file no longer exists, is retired, not user-added, and gets removed with the removal reported. This upgrade never overwrites user-added hooks — everything else it only updates or adds.
 
 #### Agents
@@ -1185,12 +1213,15 @@ For each outdated agent:
 1. Read the installed file
 2. Read the template
 3. Replace the installed file with the template content
+4. Print, once per run in which any agent was replaced: `agents replaced — the host caches agent definitions at session start; restart the session before the next extraction, or the old definition runs and the fix appears not to have landed.` (This is the documented field failure: an extractor re-run in the same session reproduced an over-claim the new template forbids, D58.)
 
-For each new **core** agent (evaluator, evaluator-headless):
+For each new **core** agent (evaluator):
 1. Copy the template to `.claude/agents/{slug}.md`
-2. Report: `✓ Installed evaluator-headless.md — core (required by plan harness)`
+2. Report: `✓ Installed evaluator.md — core (required by plan harness)`
 
-`evaluator-headless.md` is copied as a plain file, not registered as a Task subagent — it has no frontmatter and is dispatched only by hook scripts piping it into `claude -p`. Its absence from `templates/agents/_registry.yaml`'s `always:` list is correct, not a gap.
+**`evaluator-headless.md` is NOT copied here, and must not be.** It has no frontmatter, is never Task-dispatched, and every caller resolves it from the install root — `${EDIKT_ROOT:-${EDIKT_HOME:-$HOME/.edikt}}/current/templates/agents/evaluator-headless.md`, or the project-mode `.edikt/current/templates/agents/...` (see `commands/sdlc/plan.md`'s headless branch). Nothing reads `.claude/agents/evaluator-headless.md`.
+
+Copying it there wrote a file no code path opens and reported it as installed — work with no effect, announced as work done. Its absence from `templates/agents/_registry.yaml`'s `always:` list is correct, not a gap, and so is its absence from `.claude/agents/`.
 
 For each new **optional** agent the user accepted:
 1. Copy the template to `.claude/agents/{slug}.md`
@@ -1210,34 +1241,64 @@ detection, and the resulting write (fast-preserve / resynth-safe-replace / boots
 reconciliation / three-way prompt) all run inline during detection, the same way §2c's
 agent provenance flow does. Nothing further happens here.
 
-#### Config
-
-For each missing config key, append the block to `.edikt/config.yaml`. Preserve all existing content — only add what's missing.
-
-If `artifacts:` block is missing, append:
-
-```yaml
-
-artifacts:
-  database:
-    # Default database type for artifact generation.
-    # spec-artifacts checks spec frontmatter first, then this value, then keyword-scans the spec.
-    # Set by edikt:init from code signals. Change only if detection was wrong.
-    # Values: sql | document | key-value | mixed | auto
-    # auto = detect from spec each time (greenfield or genuinely undecided)
-    default_type: auto
-
-  fixtures:
-    # Fixture format. yaml is portable — transform to your stack at implementation time.
-    # Values: yaml | json | sql
-    format: yaml
-```
-
-Note: the `sql.migrations.tool` sub-key is only written by `/edikt:init` when a SQL database is detected. Do not add it during upgrade — `auto` is the correct default for unknown stacks.
-
 #### Rule packs
 
 Same as `/edikt:rules-update` logic — replace outdated packs, skip manually edited and custom ones.
+
+#### Compiled governance — remove what this version retired
+
+`gov compile` writes the compiled tree and never deletes from it: a file a
+release stops producing simply stays, and the model keeps loading it. The
+write-time channel's `directive-index.yaml` is the live case: edikt no
+longer injects rule text into a write in progress, so the file is dead
+weight, still on disk in every project that compiled before the upgrade,
+and removed by nothing. A rule the corpus no longer states, enforced anyway,
+is the same class as a stale hook registration.
+
+Two mechanisms, because a payload cannot enumerate what it no longer
+produces:
+
+1. **A retired-name list**, reviewed per release. This is the only way a file
+   the current compiler never emits can be named at all, so it is explicit
+   data in this procedure rather than something derived.
+2. **A leftover REPORT** against the compile's own manifest. Every rendered
+   surface is listed with its SHA in `.claude/rules/governance/manifest.yaml`;
+   a file in that directory the manifest does not list was produced by
+   something else. It is reported, never removed — ownership is not provable
+   for a file nobody's manifest claims, and the hooks pass's rule holds here
+   too.
+
+```bash
+if [ -d .claude/rules/governance ]; then
+  # 1. Retired by name, with the release that retired each.
+  for retired in directive-index.yaml; do
+    if [ -e ".claude/rules/governance/$retired" ]; then
+      rm -f ".claude/rules/governance/$retired"
+      echo "  ✓ Governance       removed $retired (retired with the write-time channel)"
+    fi
+  done
+
+  # 2. Anything else the manifest does not claim: REPORTED, not removed.
+  # A missing manifest means the project has not compiled since the surface
+  # existed — say that, rather than treating every file as unclaimed.
+  if [ -f .claude/rules/governance/manifest.yaml ]; then
+    for f in .claude/rules/governance/*; do
+      [ -e "$f" ] || continue
+      base="$(basename "$f")"
+      [ "$base" = "manifest.yaml" ] && continue
+      if ! grep -qF -- "$base" .claude/rules/governance/manifest.yaml; then
+        echo "  ⚠ Governance       $base is not listed in manifest.yaml — not produced by this compiler; review and delete by hand"
+      fi
+    done
+  else
+    echo "  · Governance       manifest.yaml absent — leftover surfaces UNMEASURED (run /edikt:gov:compile)"
+  fi
+fi
+```
+
+Report each removal on its own line, the way the hooks pass does. Remove
+nothing whose ownership is not provable: a file under `.claude/rules/` that
+edikt's compiler never produced is the user's, and this pass leaves it.
 
 #### Compile schema check
 
@@ -1246,7 +1307,6 @@ Check if the project's generated governance is stale vs the current compile sche
 1. Read the constant `COMPILE_SCHEMA_VERSION` from `$EDIKT_TEMPLATES/commands/gov/compile.md` (or `commands/gov/compile.md` in the installed templates).
 2. Read `.claude/rules/governance.md` (if it exists) and extract `compile_schema_version` from its YAML frontmatter.
 3. Compare:
-   - **Missing field** (legacy v0.1.x output): note `governance.md uses legacy version stamp — run /edikt:gov:compile to regenerate with schema v{N}`
    - **Lower than current**: note `governance.md compiled with schema v{old} (current: v{new}) — run /edikt:gov:compile to regenerate`
    - **Equal**: no note
    - **Higher than current**: note `governance.md compiled with schema v{n}, but this edikt only supports v{current}. Upgrade edikt globally first.`
@@ -1257,188 +1317,50 @@ Do NOT auto-run `/edikt:gov:compile`. Surface the recommendation in the upgrade 
 
 #### Project templates (v0.6.0+)
 
-**Never overwrite project templates under `.edikt/templates/`.** This is a hard contract:
+**Never overwrite project templates under `.edikt/templates/`.** Existing `.edikt/templates/adr.md`, `.edikt/templates/invariant.md` and `.edikt/templates/guideline.md` MUST NOT be touched by `/edikt:upgrade` — they are user-owned. A missing one is `edikt doctor`'s finding (Broken state when all three are missing, Partially configured when some are), not this command's; nothing here prints it twice. **Bump `edikt_version` in config** after the upgrade completes successfully.
 
-- Existing `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` MUST NOT be touched by `/edikt:upgrade`. They are user-owned, team-shared, committed to git. The only way to modify them is direct user edit or `/edikt:init --reset-templates` (which the user invokes explicitly).
-- If any of the three exists, skip it in this step. Do NOT even verify its contents — trust the user.
+#### Schemas — install-if-absent, refresh-on-drift
 
-**When templates are missing**, the behavior depends on the grandfather state detected in Step 2e-bis:
+The JSON schemas commands and the extractor resolve project-locally (`.edikt/schemas/*.schema.json`) are copies of the version's payload, not user content. Reconcile them against the payload's set — every `templates/schemas/*.schema.json` the installed version ships, which is the manifest for this surface — never against what the project happens to have:
 
-- **Grandfather flow** (`edikt_version < 0.3.0` → upgrading to v0.3.0+): print a clear migration notice:
-  ```
-  📋 v0.3.0 introduces per-artifact project templates
-
-  v0.3.0+ requires .edikt/templates/adr.md, .edikt/templates/invariant.md,
-  and .edikt/templates/guideline.md for /edikt:<artifact>:new to work.
-  Your project is being upgraded from v{old} and doesn't have them yet.
-
-  This upgrade does NOT create templates automatically. Templates are a
-  choice your team makes: adapt from existing artifacts, pick a reference,
-  or write your own.
-
-  Next step after upgrade:
-    /edikt:init    (interactive — pick Adapt / Start fresh / Write my own
-                    for each artifact type)
-
-  Until you run init, /edikt:<artifact>:new will continue to use the
-  legacy inline fallback template with a one-time warning per invocation
-  (v0.2.x behavior preserved). You can migrate at your own pace.
-  ```
-
-- **Broken state** (`edikt_version >= 0.3.0` but templates missing — shouldn't happen in normal workflows but may occur if the user deleted `.edikt/templates/*`): print an error-grade notice:
-  ```
-  ⚠ Project templates are missing but project is on v{version}
-
-  edikt v0.3.0+ requires project templates for new artifact creation.
-  This is a broken state — until you fix it, /edikt:<artifact>:new
-  commands will HARD REFUSE with an error message.
-
-  Fix: run /edikt:init --reset-templates immediately.
-  ```
-
-- **Partially configured** (`edikt_version >= 0.3.0`, some templates present, some missing): print:
-  ```
-  ⚠ Some project templates are missing
-
-  Missing: {list of missing templates}
-  Fix: run /edikt:init --reset-templates to complete the setup.
-
-  The existing templates ({list of existing}) are preserved — init
-  only regenerates the missing ones.
-  ```
-
-**Bump `edikt_version` in config** after the upgrade completes successfully, so subsequent `<artifact>:new` invocations can distinguish "recently upgraded, templates not yet set up" from "legacy project on v0.2.x". Do this as the final step of the upgrade, not before — if the upgrade fails midway, the version stays at the old value so the user can retry.
-
-**Do not run `/edikt:init` automatically.** Always leave the user in control. Upgrade reports the state; init is the next action the user takes when they're ready.
-
-#### Config key migration: `paths.soul` → `paths.project-context` (v0.4.0)
-
-Check if `.edikt/config.yaml` contains `soul:` under `paths:`. If found, rename the key to `project-context:` — the value stays the same.
-
-```
-ℹ Config migration: paths.soul → paths.project-context
-
-The config key `paths.soul` has been renamed to `paths.project-context`
-in v0.4.0. Your config has been updated automatically.
-
-Old: soul: {value}
-New: project-context: {value}
+```bash
+mkdir -p .edikt/schemas
+for src in "$EDIKT_TEMPLATES"/schemas/*.schema.json; do
+  [ -f "$src" ] || continue
+  dst=".edikt/schemas/$(basename "$src")"
+  if [ ! -f "$dst" ]; then
+    cp "$src" "$dst" && echo "  ✓ Schema           installed $(basename "$src")"
+  elif ! cmp -s "$src" "$dst"; then
+    cp "$src" "$dst" && echo "  ✓ Schema           refreshed $(basename "$src") (project copy had drifted from the payload)"
+  fi
+done
 ```
 
-This is a safe auto-migration — the key name changes, the value and behavior are identical. Commands that read this config check for both `project-context` and `soul` (fallback) so older configs continue to work even without the migration.
+A project copy that differs from the payload is refreshed, not kept: the old lazy `test -f || cp` bootstraps in the artifact commands never refreshed, so a stale copy outranked the payload for the extractor and doctor. Those bootstraps are gone; this step and `/edikt:init` are the only writers of `.edikt/schemas/`.
 
-#### Directive sentinel schema migration (removed in v0.6.0)
+#### Stale phasea plans
 
-The v0.2.x → v0.3.0 three-list schema migration block previously lived here. Under v0.6.0+, all legacy sentinel shapes — v0.2.x / v0.3.x / v0.4.3 / v0.5.x — are handled by the single two-phase migration orchestrated in Step 1.5 above (`edikt migrate sidecars --apply` + `/edikt:gov:compile`). No separate per-schema migration runs in this section. If the project still carries in-body sentinels at this point, Step 1.5 either applied or deferred them; this step is a no-op.
+An unconsumed plan in `.edikt/state/phasea/` written by an older schema can never be verified or consumed once the binary that wrote it is gone — `phasea verify` refuses it by name, and nothing else ever removes it. Run:
 
-#### Command reference migration (v0.1.x → v0.2.x)
-
-v0.2.0 renamed 15 flat commands into namespaces. Projects initialized with v0.1.x have hardcoded references to the old flat names in `CLAUDE.md` (the intent table inside the edikt-managed block) and in compiled rule packs. These references still resolve today via deprecated stubs, but they'll break in v0.4.0 when the stubs are removed.
-
-Apply this migration table to the following targets:
-
-| Old (v0.1.x)           | New (v0.2.x)             |
-|------------------------|--------------------------|
-| `/edikt:adr`           | `/edikt:adr:new`         |
-| `/edikt:invariant`     | `/edikt:invariant:new`   |
-| `/edikt:compile`       | `/edikt:gov:compile`     |
-| `/edikt:review-governance` | `/edikt:gov:review`  |
-| `/edikt:rules-update`  | `/edikt:gov:rules-update`|
-| `/edikt:sync`          | `/edikt:gov:sync`        |
-| `/edikt:prd`           | `/edikt:sdlc:prd`        |
-| `/edikt:spec`          | `/edikt:sdlc:spec`       |
-| `/edikt:spec-artifacts`| `/edikt:sdlc:artifacts`  |
-| `/edikt:plan`          | `/edikt:sdlc:plan`       |
-| `/edikt:review`        | `/edikt:sdlc:code-review`     |
-| `/edikt:drift`         | `/edikt:sdlc:drift`      |
-| `/edikt:audit`         | `/edikt:sdlc:audit`      |
-| `/edikt:docs`          | `/edikt:docs:review`     |
-| `/edikt:intake`        | `/edikt:docs:intake`     |
-
-**Targets** (only files edikt owns — never touch user content):
-
-1. **CLAUDE.md managed block** — the content strictly between `[edikt:start]: #` and `[edikt:end]: #` sentinels (or the old HTML sentinels if they weren't migrated yet). Leave everything outside the sentinels untouched.
-2. **Generated rule packs** — any file under `.claude/rules/` or `.claude/rules/governance/` that contains the `edikt:generated` or `edikt:compiled` marker. Skip files without the marker (those are user-written).
-
-**Safety rules:**
-
-- **Idempotency is critical.** Do NOT replace `/edikt:adr` if it's already followed by `:` (e.g. `/edikt:adr:new` or `/edikt:adr:compile`). Use string contexts that make the match unambiguous: backtick-wrapped (`` `/edikt:adr` ``), end of line (`/edikt:adr\n`), or punctuation-delimited (`/edikt:adr,`, `/edikt:adr.`, `/edikt:adr)`).
-- **Longest first is WRONG here.** The old commands have no overlap with each other, but they DO have overlap with the new names (`/edikt:adr` is a prefix of `/edikt:adr:new`). Always match the old pattern with a non-`:` terminator.
-- **Use Edit with literal strings**, not Write. Preserve line endings, trailing whitespace, and all other content. For each replacement, include enough context (at least the backtick/paren/whitespace around the token) to avoid ambiguity.
-- **Skip if already migrated.** Before making any edit, grep the file for any of the NEW command names in the table. If even one new name is present (e.g. `/edikt:adr:new` exists in the file), the file was already migrated on a previous upgrade — still run the full mapping pass to catch any stragglers, but don't report it as "migrated" unless actual changes were made.
-
-**Process for each target file:**
-
-1. Read the file.
-2. Determine the edit scope (for CLAUDE.md: the managed block only; for rule packs: the whole file if it has the `edikt:generated` marker).
-3. For each row in the mapping table, search the edit scope for old-name occurrences that are NOT followed by `:`. Track the count.
-4. If any matches were found, apply them via Edit with full surrounding context for disambiguation.
-5. Record: filename + count of replacements.
-
-Report the results as part of the upgrade summary:
-
-```
-Command references:
-  CLAUDE.md:                               7 replacements
-  .claude/rules/governance.md:             3 replacements
-  .claude/rules/governance/api-design.md:  0 (already current)
+```bash
+EDIKT_INVOKER=/edikt:upgrade edikt phasea prune-stale
 ```
 
-If a project has no v0.1.x references anywhere, report `Command references: ✓ up to date` instead of the per-file breakdown.
+Report each removed plan as printed (`removed stale plan <id> (schema v<old>, this binary writes v<new>)`), or `no stale plans found` when there is nothing to do. A consumed plan and a plan at the current schema are both left untouched by design — never report those as removed.
 
 ### 6. Post-Upgrade
 
 After applying:
 
-1. Update `edikt_version` in `.edikt/config.yaml` to the installed version — even if no other changes were applied — **but only when `MIGRATION_COMPLETE` (set in Step 1.5) is `true`**:
+1. Update `edikt_version` in `.edikt/config.yaml` to the installed version — even if no other changes were applied
    - If a `edikt_version:` line exists, replace it
-   - If it doesn't exist (project predates versioning), add it as the first non-comment line after any leading `#` comment block at the top of the file
-
-   **If `MIGRATION_COMPLETE` is `false`** — sidecars still carry legacy in-body sentinels, are still schema_version 1, or the migration commands failed — do NOT write the new version. Writing it here is exactly the defect this gate exists to prevent: `edikt_version` is the only signal a future `/edikt:upgrade` uses to decide whether migration is still needed, so bumping it prematurely permanently hides the pending work — the next run reports "current" and never re-offers migration, and per the v0.7.0 changelog a schema_version 1 sidecar sitting beside any v2 sidecar makes the compile pipeline refuse to dispatch at all. Instead, leave `edikt_version` at its prior value and print:
-   ```
-   ⚠ edikt_version NOT updated to v{LATEST_VERSION} — sidecar migration is incomplete.
-     Config still reads v{INSTALLED_VERSION}. Re-run /edikt:upgrade once migration
-     is applied, or run it directly: edikt migrate sidecars --apply && edikt migrate to-v2
-   ```
-   `edikt doctor` MUST report a config/corpus schema disagreement (`edikt_version` implies a schema line the corpus doesn't have) as a loud warning — this is the state this gate is designed to make unreachable, but `doctor` still checks for it as a backstop against manual edits or an interrupted upgrade run.
-
-2. **Drop stale project-level `.edikt/VERSION`** (v0.3-era artefact). Older projects (initialised under v0.2/v0.3) carry a `.edikt/VERSION` file in the project root. Step 0a's `INSTALLED_VERSION` resolution falls back to this file when the launcher VERSION isn't readable, which means a stale value left after upgrade silently anchors subsequent runs. v0.6.0+ canonical version sources are the launcher's `~/.edikt/current/VERSION` plus `.edikt/config.yaml`'s `edikt_version:` (just bumped in step 1). Remove the legacy file:
-
-   ```bash
-   if [ -f .edikt/VERSION ]; then
-     rm -f .edikt/VERSION
-     echo "Removed stale .edikt/VERSION (v0.3-era; superseded by .edikt/config.yaml edikt_version)"
-   fi
-   ```
-
-   This is state-only-safe — `.edikt/VERSION` is a state file, not an ADR or invariant artefact. Idempotent: re-running upgrade after the cleanup is a no-op.
-
-3. Check if linter configs exist and linter rules are outdated (template mtime > linter rule mtime):
+   - If it doesn't exist (the project never pinned one), add it as the first non-comment line after any leading `#` comment block at the top of the file
+2. Check if linter configs exist and linter rules are outdated (template mtime > linter rule mtime):
    ```
    Linter configs found. Run /edikt:sync to regenerate linter rules.
    ```
 
-4. **Check project templates (v0.6.0+)**: if any of `.edikt/templates/adr.md`, `.edikt/templates/invariant.md`, or `.edikt/templates/guideline.md` is missing, surface a prominent next-step prompt in the post-upgrade output:
-   ```
-   📋 Project templates — /edikt:init required
-
-   v0.3.0+ requires per-artifact project templates. This project
-   doesn't have all three yet:
-     Missing: {list of missing templates}
-
-   Next step: /edikt:init (interactive setup)
-     You'll pick Adapt, Start fresh, or Write my own for each
-     artifact type. Existing artifacts are not touched.
-
-   Until templates are set up, /edikt:<artifact>:new will:
-     - Use the legacy inline fallback + warning (for v0.2.x-era projects
-       whose edikt_version is still < 0.3.0)
-     - HARD REFUSE with an error pointing at /edikt:init (for projects
-       whose edikt_version is now >= 0.3.0 after this upgrade)
-   ```
-   This notice fires AFTER the `edikt_version` bump in step 1, so the user sees it with the correct version context.
-
-   **This is advisory only.** Do not auto-run `/edikt:init`. Leave the user in control.
+4. **Project templates:** not reported here — `edikt doctor` names any missing template and its remedy. Leave the user in control: never auto-run `/edikt:init`.
 
 5. **Report linked worktrees, do not touch them.** A linked git worktree (`.claude/worktrees/<name>/` or any other `git worktree` checkout of this repo) carries its own independent `.edikt/` state — its own sidecars, its own compiled governance, its own `edikt_version`. This upgrade only ever touches the current working tree. Detect worktrees and report what's found, without traversing into them:
 
@@ -1528,14 +1450,32 @@ Run after Step 6's completion output, only if the upgrade itself succeeded
 (don't offer a follow-on when the run above failed or is incomplete):
 
 ```bash
-bin/edikt gov reextract --status --json
+EDIKT_INVOKER=/edikt:upgrade edikt gov reextract --status --json
 ```
 
 If the binary is absent, or the status check fails, or `eligible` is `0`,
 say nothing further — this is a silent skip, not a warning; an empty offer
 would be noise on every project that's already current.
 
-If `eligible > 0`, print, using `--status`'s real numbers (not a guess):
+**If `contract_validated` is `false`, DO NOT OFFER. Report the block instead.**
+The same field the dispatcher refuses on rides in this JSON, so the offer and
+the dispatch cannot disagree — they did, and a user found it: `--status`
+reported `eligible 87` while every dispatch of those 87 refused outright, and
+this step offered the work with no hint it would be. Print this and go no
+further; there is no question to ask, because there is no answer that would
+start anything:
+
+```
+⚠ N artifact(s) are on an earlier extraction contract, and re-extraction is
+  BLOCKED on this build — the shipped extraction contract has not been proven
+  on the frozen fixture set.
+  <dispatch_blocked_reason, verbatim>
+  Nothing to do here: this needs a build whose extractor contract is recorded
+  as validated. Do not pass --skip-fixture-proof to get past it.
+```
+
+If `eligible > 0` **and** `contract_validated` is `true`, print, using
+`--status`'s real numbers (not a guess):
 
 ```
 📋 N artifact(s) on an earlier extraction contract than what's installed.
@@ -1546,9 +1486,13 @@ If `eligible > 0`, print, using `--status`'s real numbers (not a guess):
    artifact.
 ```
 
+<!-- stop: offer-reextract -->
 Ask via `AskUserQuestion`: "Run /edikt:gov:reextract now?" (yes / no /
 remind me later — all three are terminal for this step, none block
-completion of the upgrade already reported above).
+completion of the upgrade already reported above). With no human to answer,
+take the declared default (`no`): the upgrade already reported above stands,
+nothing is dispatched, and the answer is recorded as taken by default rather
+than given.
 
 - **yes** — invoke `/edikt:gov:reextract` with no arguments (full corpus).
   That command owns its own dispatch-and-review flow from here; this step

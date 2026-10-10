@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -136,7 +137,10 @@ Validation:
 			return fmt.Errorf("flipping current: %w", err)
 		}
 
-		if err := writeLock(ediktRoot, "dev", "dev-link"); err != nil {
+		// A dev link points at a working tree. There is no published
+		// payload behind it, and nothing can re-fetch it — this is the
+		// local provenance the upgrade gate exists to protect.
+		if err := writeLock(ediktRoot, "dev", "dev-link", lockSourceLocal); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: dev linked but lock.yaml update failed: %v\n", err)
 		}
 
@@ -156,6 +160,29 @@ Validation:
 		// failed despite a successful dev link because the launcher
 		// was still v0.5.1. Backup the current launcher first so
 		// `dev unlink` can restore it.
+		//
+		// The launcher is BUILT from the linked tree, stamped, and only
+		// swapped in when the stamp is clean: a dirty tree is refused
+		// loudly (the payload links stay; the launcher does not move). A
+		// tree with no tools/edikt module falls back to its bin/edikt.
+		prov, berr := buildDevLauncher(src)
+		switch {
+		case errors.Is(berr, errNoDevModule):
+			// nothing to build — use the tree's bin/edikt as found
+		case berr != nil:
+			emitEvent(ediktRoot, "dev_linked", map[string]interface{}{"source": src, "launcher": "not-built"})
+			fmt.Fprintf(os.Stderr, "dev mode active: %s (launcher NOT swapped)\n", src)
+			return fmt.Errorf("dev link: launcher not built from the tree — %w", berr)
+		case prov.Revision == "":
+			fmt.Fprintf(os.Stderr, "warn: %s/bin/edikt built UNSTAMPED (no VCS in the tree) — its provenance cannot be checked later\n", src)
+		default:
+			fmt.Fprintf(os.Stderr, "built %s/bin/edikt at %s (vcs.modified=%v)\n", src, short(prov.Revision), prov.Modified)
+			if err := devLauncherPolicy(src, prov); err != nil {
+				emitEvent(ediktRoot, "dev_linked", map[string]interface{}{"source": src, "launcher": "refused-dirty", "revision": prov.Revision})
+				fmt.Fprintf(os.Stderr, "dev mode active: %s (launcher NOT swapped)\n", src)
+				return err
+			}
+		}
 		if err := refreshLauncherForDev(ediktRoot, src); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: launcher binary not refreshed (%v) — `edikt` on PATH may still be the previous version\n", err)
 		}
@@ -276,7 +303,7 @@ Idempotent — safe to call when dev mode is not active.`,
 			return fmt.Errorf("flipping current: %w", err)
 		}
 
-		if err := writeLock(ediktRoot, fallbackTag, "launcher"); err != nil {
+		if err := writeLock(ediktRoot, fallbackTag, "launcher", lockSourceFor(lf, fallbackTag)); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: dev unlinked but lock.yaml update failed: %v\n", err)
 		}
 

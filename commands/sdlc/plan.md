@@ -13,8 +13,29 @@ allowed-tools:
   - AskUserQuestion
 tier_2_dependency: edikt verify
 on_absent: skip-with-warning
+stops:
+  - id: verify-fail-mark-done
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "This phase has verification failures — mark it done anyway?"
+  - id: l2-fail-mark-done
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "This phase has governance verifier FAILs — mark it done anyway?"
+  - id: stuck-recovery
+    class: risk
+    default: "stop-and-review"
+    on_silence: safe-side
+    prompt: "This phase is stuck after the maximum attempts — continue trying, skip it, rewrite the criteria, or stop and review?"
+  - id: blocked-recovery
+    class: risk
+    default: "stay-blocked"
+    on_silence: safe-side
+    prompt: "The evaluator could not verify this phase — which recovery should be applied?"
 ---
-!`${HOME}/.edikt/bin/edikt next-id plan`
+!`edikt next-id plan`
 
 # edikt:plan
 
@@ -38,7 +59,7 @@ Required evidence markers (in order):
 [PREFLIGHT:SPECIALIST-REVIEW:STARTED]
 [PREFLIGHT:SPECIALIST-REVIEW:COMPLETED findings=<N critical, M warnings>]
 [PREFLIGHT:CRITERIA-VALIDATION:STARTED]
-[PREFLIGHT:CRITERIA-VALIDATION:COMPLETED classified=<N testable / M vague / K subjective / L blocked>]
+[PREFLIGHT:CRITERIA-VALIDATION:COMPLETED classified=<N testable / M vague / L blocked>]
 [PREFLIGHT:READY-TO-WRITE]
 ```
 
@@ -248,25 +269,32 @@ CRITICAL: NEVER write a plan file without running the pre-flight specialist revi
 9. Run pre-flight criteria validation on every phase's acceptance criteria:
     - If `evaluator.preflight` is false, skip this step entirely. Output: "Pre-flight validation skipped (evaluator.preflight: false in config)." Proceed to step 10.
     - For each phase, invoke the evaluator agent in **pre-flight mode** (see `templates/agents/evaluator.md` Pre-flight Mode section).
-    - The evaluator classifies each acceptance criterion as TESTABLE, VAGUE, SUBJECTIVE, or BLOCKED.
-    - For TESTABLE criteria, the evaluator proposes a verification command.
-    - If any criteria are VAGUE or SUBJECTIVE, surface the evaluator's rewrites inline — ask the user to accept or edit before finalizing the plan.
-    - If the evaluator verdict is ABORT (50%+ criteria untestable), flag: "Phase {N} has untestable acceptance criteria. Rewrite before implementing."
-    - This step prevents wasted iterations on criteria the evaluator cannot judge at phase end.
+    - The evaluator classifies each acceptance criterion as TESTABLE (carries a falsifier and a declared evidence kind — `mechanical`, `observed`, or `judged`; never defined by "has a command"), VAGUE (no falsifier stated), or BLOCKED (depends on something unavailable).
+    - For a `mechanical` TESTABLE criterion, the evaluator proposes a verification command. For `observed`, it proposes the procedure and the expected observation. For `judged`, it proposes who renders the verdict and what evidence they read. None of the three is a lesser outcome — a `judged` criterion with a real falsifier is exactly as ready for phase-end evaluation as a `mechanical` one.
+    - If any criteria are VAGUE, surface the evaluator's rewrites inline — ask the user to accept or edit before finalizing the plan.
+    - If the evaluator verdict is ABORT (50%+ criteria VAGUE — no falsifier stated), flag: "Phase {N} has criteria with no falsifier. Rewrite before implementing." A phase where every criterion is honestly `judged` or `observed` does not ABORT on that account.
+    - This step prevents wasted iterations on criteria that don't state what would prove them wrong — not on criteria a shell command happens not to reach.
 
 10. Write the plan file to `docs/product/plans/PLAN-{slug}.md` (or `docs/plans/` if product dir doesn't exist). Use the Plan File Template in the Reference section. Incorporate any findings from the pre-flight review (step 8) — add a `## Known Risks` section if there are outstanding findings the user chose not to address.
 
-10b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory. The sidecar is **spec-only**: it describes what each phase promises and how to check it, never evaluation state. `bin/edikt verify` strict-parses it (unknown fields → exit 2), so state fields (`status`, `fail_count`, `fail_reason`, `block_reason`, `last_evaluated`, `generated`, `attempt`) must NEVER appear in it — they live in the evaluation state file (see 10c).
+10b. **Emit criteria sidecar** — after writing the plan markdown, write `PLAN-{slug}-criteria.yaml` to the same directory. The sidecar is **spec-only**: it describes what each phase promises and how to check it, never evaluation state. `edikt verify` strict-parses it (unknown fields → exit 2), so state fields (`status`, `fail_count`, `fail_reason`, `block_reason`, `last_evaluated`, `generated`, `attempt`) must NEVER appear in it — they live in the evaluation state file (see 10c).
 
-   Top-level fields: `schema_version: 1` (required), `plan`, `target_release`, `created`, `phases[]`. Each phase: `id` (string), `name`, `classification`, optional `completion_promise`, optional `phase_metadata`, `criteria[]`. Each criterion: `id`, `statement`, and `verify` where one exists.
+   Top-level fields: `schema_version: 1` (required), `plan`, `target_release`, `created`, `phases[]`. Each phase: `id` (string), `name`, `classification`, optional `completion_promise`, optional `phase_metadata`, `criteria[]`. Each criterion: `id`, `statement`, `verify` where one exists, and optional `requirements` (a list of the spec requirement/protection ids — `SR-*`/`SSP-*` — the criterion claims to satisfy).
 
    `phase_metadata` is a freeform object the runner ignores entirely. Use it for anything this schema does not anticipate — a gate condition, a reviewer, a link. It exists so an unanticipated concept never forces the choice between deleting the text and mislabelling the phase.
 
    For each phase:
-   - Extract acceptance criteria from the plan text; each becomes `{id, statement}`
+   - Author each acceptance criterion's `statement` in this order — see **Acceptance Criterion Shape** in the Reference section for the full contract and worked examples:
+     1. **Intent** — what breaks if this is not true. State the consequence, not the mechanism.
+     2. **Procedure** — the steps to reach the observable state. For a UI flow this is literally "go to page X, click Y, fill the form, submit"; for a mechanical check it's usually one command.
+     3. **Expected** — what you should see once the procedure completes.
+     4. **Falsifier** — the negation: what a violation looks like. This is the one part that MUST be present for the criterion to be TESTABLE at all.
+     A verification command is offered LAST, and only when the evidence is genuinely mechanical (see the operational test in the Reference section). A criterion whose honest evidence is `observed` or `judged` does not get a command manufactured for it — an empty `verify` field is not a defect, and forcing one is.
+   - Extract each authored criterion as `{id, statement}` — `statement` is the prose carrying all four parts. (The sidecar schema also carries an optional `requirements` field, populated per the step below when the plan implements a spec — that is the one field this authoring step adds beyond `{id, statement}`.)
    - Assign IDs: `AC-{phase}.{seq}` (e.g., AC-1.1, AC-1.2)
-   - If pre-flight criteria validation ran (step 9), populate `verify` with the proposed commands from the evaluator
-   - **Classify the phase:** `testable` only when EVERY criterion in it has a `verify` command — testable phases hard-require one per criterion. If some criteria have no command, use `operational` (humanly observable but not machine-checkable), `informational` (context only), or `owner` (completion is a human decision — a ruling, a sign-off, a go/no-go). Never emit `verify: null` — omit the key entirely when there is no command.
+   - If pre-flight criteria validation ran (step 9), populate `verify` with the proposed commands from the evaluator FOR MECHANICAL CRITERIA ONLY — never populate it for `observed` or `judged` criteria just to fill the field
+   - If the plan implements a spec (its slug carries a `SPEC-NNN` id with a matching sidecar under the spec's `requirements:`/`protections:`), declare `requirements:` on each criterion — the `SR-*`/`SSP-*` ids it claims to satisfy. Declare only what the criterion's `statement` actually asserts about that requirement, never what it merely shares vocabulary with. Omit the key entirely for a plan implementing no spec, or when a criterion satisfies none — `requirements: []` is a criterion's own explicit "satisfies nothing" and reads differently from the key being absent, so do not write it as a default
+   - **Classify the phase:** `testable` when EVERY criterion in it carries a falsifier and a declared evidence kind — `mechanical`, `observed`, or `judged`, in any mix. A phase is NOT disqualified from `testable` because some (or all) of its criteria lack a `verify` command; it IS disqualified if any criterion lacks a falsifier. Use `operational` only for a phase whose criteria are all `observed` with no automatable proxy at all (rare — most `observed` criteria still belong to a `testable` phase, since `observed` is a first-class evidence kind, not a fallback). Use `informational` (context only, no real criteria) or `owner` (completion is a human decision — a ruling, a sign-off, a go/no-go) for phases with no criteria to test at all. Never emit `verify: null` — omit the key entirely when there is no command.
 
      `owner` is not a synonym for `informational`. Informational means there is nothing to check; owner means a person must act and may not have. Both are skipped by the runner, but they record different states, and a report scanned for outstanding human work can only find owner phases if you label them as such. Put the gate condition itself in `phase_metadata`.
 
@@ -372,11 +400,30 @@ Before implementing any plan phase:
 
 Acceptance criteria are for the evaluator, not the generator. They must be:
 - **Binary** — PASS or FAIL, no "partially met"
-- **Testable** — verifiable by reading code, running a test, or grepping
-- **Specific** — name the file, function, endpoint, or pattern
-- Never subjective — "API is fast enough" fails. "GET /users responds with 200 and valid JSON" passes.
+- **Testable** — carries a falsifier and a declared evidence kind (`mechanical`, `observed`, or `judged`; see **Acceptance Criterion Shape** below). Testable does NOT mean "has a shell command" — a criterion honestly marked `judged`, with a real falsifier, is exactly as testable as one with a grep. A criterion with a command that measures the wrong thing is the actual failure mode, not a criterion without one.
+- **Specific** — name the file, function, endpoint, or pattern for a `mechanical` criterion; name the exact page, action, and observation for `observed`; name the executor and the evidence they read for `judged`
+- Never vague — a criterion with no falsifier fails regardless of evidence kind. "API is fast enough" fails because no violation is stated, not because it lacks a grep. "GET /users responds with 200 and valid JSON" passes as `mechanical`. "The reviewer confirms the migration plan names a rollback step" passes as `judged` — it has a falsifier (no rollback step named) even though no tool checks it.
 
-If the spec has acceptance criteria (AC-NNN), inherit them per phase. If not, generate them from the phase objectives.
+If the spec has acceptance criteria (AC-NNN), inherit them per phase. If not, generate them from the phase objectives, in the order given in **Acceptance Criterion Shape** below.
+
+### Acceptance Criterion Shape
+
+Author every criterion's `statement` in this order. A verification command, when one exists, is offered last — never first, and never invented to fill a gap a falsifier doesn't need filled.
+
+1. **Intent** — what breaks if this is not true. The consequence, not the mechanism: "an ADR that skips a stage is silently under-governed," not "the markers must appear in order."
+2. **Procedure** — the steps to reach the observable state. For a UI flow this is literally *go to page X, click Y, fill the form, submit*. For a mechanical check it's usually one command or file read.
+3. **Expected** — what you should see once the procedure completes.
+4. **Falsifier** — the negation: what a violation looks like. The one part that MUST be present, or the criterion is VAGUE regardless of everything else.
+
+**The operational test for whether a criterion is genuinely `mechanical`**: write the Expected sentence with no tool name, no flag, and no path glob in it. If that sentence alone states what "holds" means, `mechanical` is right, and a command is a legitimate way to check it. If the sentence needs "grep says" or "the test exits 0" to mean anything, the property described is the tool's opinion, not the criterion's — the honest evidence kind is `observed` or `judged`, and forcing a command onto it is how a criterion measures the wrong thing while still looking testable.
+
+Three worked examples, drawn from this project's own real criteria — not authored to illustrate the point:
+
+**Mechanical:** Intent — a multi-step gate that can compile before it has actually verified citations, or accept before it has actually compiled, silently under-governs whatever it was supposed to protect. Procedure — grep the command file for the line numbers of each gate stage's marker text, in the order the gate is supposed to enforce them. Expected — each marker's line number is strictly greater than the one before it. Falsifier — any marker appears before an earlier-required one, or is missing entirely. Evidence kind: `mechanical` — the Expected sentence names no tool, so a grep-based `verify:` command is a legitimate, non-forced way to check it.
+
+**Judged, human executor:** Intent — a reviewer (automated or human) that grades a decision record on whether its Considered Options *section exists*, rather than on what those options actually say, will pass a decision that was never really made — the record looks complete and asserts nothing. Procedure — a reviewer reads each option the draft names under Considered Options. Expected — each option is describable as something that could actually have been built and shipped instead of the chosen path. Falsifier — an option reads as "keep doing what we already do" or "keep relying on the existing tool," the absence of a design rather than a competing one. Evidence kind: `judged` — executor: a named reviewer, human or agent; no command exists that tells "a real alternative" apart from "the shape of one," which is exactly why this is `judged` rather than a lesser category than `mechanical`.
+
+**Observed:** Intent — a session that touched governed files should show what governance actually did before the session ends, not only the next time a separate diagnostic command runs. Procedure — end a turn in which at least one governance signal fires. Expected — the printed message contains a summary line naming what fired this session. Falsifier — a signal fires but no such line appears in the same message. Evidence kind: `observed` — a person reads the rendered output in a live session; the property is real and checkable, but by a person looking at output, not by a command deciding it for them (the underlying rendering logic can carry its own separate `mechanical` unit tests — a different, lower-level claim from "does a user actually see this").
 
 ### Conditional Evaluation
 
@@ -410,7 +457,7 @@ When a phase completes (generator outputs the completion promise):
      ```
      ❌ Evaluator template missing — cannot run evaluation.
         Expected: {path}
-        Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+        Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
         Or disable evaluation: /edikt:config set evaluator.phase-end false
      ```
      Do NOT silently skip evaluation. This is a hard failure.
@@ -424,7 +471,7 @@ When a phase completes (generator outputs the completion promise):
        --disallowedTools "Write,Edit" \
        --model {evaluator.model} \
        --output-format json \
-       --bare
+       --safe-mode
      ```
      The evaluation prompt (user message) must include:
      - The phase's acceptance criteria (from criteria sidecar if available, or from plan markdown)
@@ -481,7 +528,7 @@ When a phase completes (generator outputs the completion promise):
 
         **Step 1.1 — Absence detection.** Check for the binary on PATH before invocation:
         ```bash
-        command -v edikt >/dev/null 2>&1 || command -v bin/edikt >/dev/null 2>&1
+        command -v edikt >/dev/null 2>&1
         ```
         If the check fails, this command's frontmatter declares `on_absent: skip-with-warning`. Emit exactly:
         ```
@@ -497,9 +544,13 @@ When a phase completes (generator outputs the completion promise):
         ```
          Rule 2, this command consumes only the binary's exit code. Output is displayed to the user verbatim; never parsed.
         - **Exit 0** — verifications passed; proceed to step 2.
-        - **Exit 1** — at least one criterion failed or timed out. Print the failed criteria and ask the user explicitly:
+        - **Exit 1** — at least one criterion failed, timed out, or was **unmeasured**. Print the criteria the runner named and ask the user explicitly. An `unmeasured` criterion is one whose `verify:` pointed at a subject that could not be read, so it established nothing about the artifact this phase promised — it is not a failed assertion, and the runner names it under its own `UNMEASURED` heading with the missing subject, but it does not let the row flip. Do not describe it to the user as a failure; say what was not measured.
+          <!-- stop: verify-fail-mark-done -->
           > Phase {N} has K verification failures. Mark as `done` anyway? [y/N]
-          Default `N`. On `y`, write the row but include an override marker in the `Updated` cell of the form `done (overrides: K)` so the doctor check (`edikt doctor` → "Plan Verification" group) can detect overrides on subsequent runs.
+          Default `N`. With no human to answer, take the safe side: the phase
+          row stays not-done, the answer is recorded as taken by default rather
+          than given, and the phases that do not depend on this one carry on.
+          On `y`, write the row but include an override marker in the `Updated` cell of the form `done (overrides: K)` so the doctor check (`edikt doctor` → "Plan Verification" group) can detect overrides on subsequent runs.
         - **Exit 2** — sidecar missing or malformed. Surface the error verbatim and stop. Do not flip the row.
         - **Exit 3** — invalid args (unknown plan-id, malformed phase). Surface the error and stop.
         NEVER silently flip without either (a) the gate passing, (b) explicit user override, or (c) the documented absence-warning above.
@@ -509,14 +560,17 @@ When a phase completes (generator outputs the completion promise):
         ```bash
         LATEST_PF=$(ls -t .edikt/state/post-flight/${PLAN_SLUG}-${PHASE_NUM}-*.json 2>/dev/null | head -1)
         if [ -n "$LATEST_PF" ]; then
-            L2_STATUS=$(bin/edikt util json get "$LATEST_PF" l2_summary.status)
-            L2_FAIL_COUNT=$(bin/edikt util json get "$LATEST_PF" l2_summary.counts.fail --default 0)
+            L2_STATUS=$(edikt util json get "$LATEST_PF" l2_summary.status)
+            L2_FAIL_COUNT=$(edikt util json get "$LATEST_PF" l2_summary.counts.fail --default 0)
         fi
         ```
 
         - **L2 status `failed` OR L2 FAIL count > 0** → REFUSE the row-flip. Surface the failing directive_ids (read from the per-topic `.edikt/state/gov-verify/<topic>-*.json` reports referenced in the composite) and ask the user explicitly:
+          <!-- stop: l2-fail-mark-done -->
           > Phase {N} has K L2 governance verifier FAILs. Mark as `done` anyway? [y/N]
-          Default `N`. On `y`, write the row with `done (overrides: l2-fails=K)` in the `Updated` cell — doctor surfaces this on subsequent runs.
+          Default `N`. With no human to answer, take the safe side: the row
+          stays not-done and the answer is recorded as taken by default rather
+          than given. On `y`, write the row with `done (overrides: l2-fails=K)` in the `Updated` cell — doctor surfaces this on subsequent runs.
 
         - **L2 status `failed` is the ONLY blocking signal from the composite verdict.** L2 `NEEDS_REVIEW` and L3 `critical` findings ANNOTATE the row's `Updated` cell but DO NOT block — they're advisory:
 
@@ -549,6 +603,7 @@ When a phase completes (generator outputs the completion promise):
         ```
 
      iv. **Stuck detection** — if the Attempt value has reached `MAX_ATTEMPTS` (e.g., `5/5`), set the phase status to `stuck` and output:
+        <!-- stop: stuck-recovery -->
         ```
         Phase {n} is stuck after {max} attempts.
         Options:
@@ -557,7 +612,11 @@ When a phase completes (generator outputs the completion promise):
           3. Rewrite failing criteria
           4. Stop and review
         ```
-        Wait for the user's choice before proceeding.
+        Wait for the user's choice before proceeding. With no human to answer,
+        take the safe side — option 4, stop and review: the phase stays
+        `stuck`, nothing is skipped and nothing is rewritten, the answer is
+        recorded as taken by default rather than given, and the phases that do
+        not depend on this one carry on.
 
      v. **Update evaluation state** — after evaluation, update `.edikt/state/plan-eval/PLAN-{slug}-eval.json`:
         - Read the state file (create it per step 10c if it doesn't exist)
@@ -580,6 +639,7 @@ When a phase completes (generator outputs the completion promise):
         ```
 
      iv. **Output the phase-level recovery prompt:**
+        <!-- stop: blocked-recovery -->
         ```
         Phase {N} BLOCKED — evaluator could not verify {n} criteria.
 
@@ -597,7 +657,11 @@ When a phase completes (generator outputs the completion promise):
 
      v. **Update evaluation state** — for blocked criteria in `.edikt/state/plan-eval/PLAN-{slug}-eval.json`: set `status: blocked`, record `block_reason: {reason from evaluator}`, set `last_evaluated: {ISO date}`. Do NOT increment `fail_count`. Do NOT reset `fail_count`. Update phase-level `status: blocked`. Write back. Never write any of this into the criteria sidecar.
 
-     vi. **Do not proceed to context reset guidance.** Stop and wait for the user to apply a fix.
+     vi. **Do not proceed to context reset guidance.** Stop and wait for the
+     user to apply a fix. With no human to answer, take the safe side — the
+     phase stays `blocked`, no configuration is changed on the user's behalf,
+     the answer is recorded as taken by default rather than given, and the
+     phases that do not depend on this one carry on.
 
    Schema note for the state file: phase `status` may be one of `pending | in-progress | pass | fail | blocked | done | stuck | skipped`; criterion `status` is `pending | pass | fail | blocked`, with `block_reason` paralleling `fail_reason`. Full shape: `templates/schemas/plan-eval-state.v1.schema.json`.
 
@@ -636,7 +700,7 @@ state-bearing sidecars.
 
 2. **Read the existing sidecar and state (if any):**
    - Load `PLAN-{slug}-criteria.yaml` if it exists. This is the spec merge base:
-     preserve `id`, `statement`, `verify` (and any cheat-rate metadata fields) per criterion,
+     preserve `id`, `statement`, `verify`, `requirements` (and any cheat-rate metadata fields) per criterion,
      plus phase `id`, `name`, `classification`, `completion_promise`.
    - **Legacy detection:** if the existing sidecar is the pre-v0.6.0 state-bearing
      shape (has `generated:`, `- phase:` headers, or `status:`/`fail_count:` keys),
@@ -654,18 +718,22 @@ state-bearing sidecars.
      bullet points.
    - Assign IDs: `AC-{phase}.{seq}` (1-indexed within each phase).
    - For each criterion:
-     - If a matching `id` exists in the spec merge base: keep its `statement` and
-       `verify`.
+     - If a matching `id` exists in the spec merge base: keep its `statement`,
+       `verify`, and `requirements` (when the base declared one — a re-plan must
+       not silently drop an existing declaration).
      - If it is a new criterion (not in merge base): `statement` from the plan
-       text; no `verify` yet (omit the key — never `verify: null`).
-   - Classify each phase per step 10b's rule: `testable` only when every
-     criterion has a `verify`; otherwise `operational` or `informational`.
+       text; no `verify` yet (omit the key — never `verify: null`); declare
+       `requirements` per step 10b's rule when the plan implements a spec.
+   - Classify each phase per step 10b's rule: `testable` when every criterion
+     carries a falsifier and a declared evidence kind (`mechanical`, `observed`,
+     or `judged`) — not when every criterion has a `verify`; otherwise
+     `operational`, `informational`, or `owner`.
 
 4. **Write the criteria sidecar (spec-only):**
    - Write `PLAN-{slug}-criteria.yaml` to the same directory as the plan.
    - Schema: `templates/schemas/plan-criteria.v1.schema.json` — `schema_version: 1`,
-     `plan`, `phases: [{id, name, classification, criteria: [{id, statement, verify}]}]`.
-   - No state fields, ever — `bin/edikt verify` strict-parses this file.
+     `plan`, `phases: [{id, name, classification, criteria: [{id, statement, verify, requirements}]}]`.
+   - No state fields, ever — `edikt verify` strict-parses this file.
 
 4b. **Write the evaluation state file:**
    - Write `.edikt/state/plan-eval/PLAN-{slug}-eval.json` (schema:
@@ -830,7 +898,7 @@ phases:
 
 **Inserting a phase uses the letter form, not a decimal.** To add work between phases 8 and 9, the new phase is `8a` (then `8b`, `8c`), and every later phase keeps its number. Do NOT renumber — renumbering breaks every reference to later phases in the plan, the criteria sidecar, and any evaluation state already recorded.
 
-**Rule.** `bin/edikt verify --phase` accepts `^[0-9]+[a-z]?$`. Decimals such as `8.5` are rejected.
+**Rule.** `edikt verify --phase` accepts `^[0-9]+[a-z]?$`. Decimals such as `8.5` are rejected.
 
 **Why.** Phase ids are opaque strings end-to-end — nothing in the verify path parses them numerically — so they compare **lexically**. Under lexical comparison `8.10` sorts *before* `8.5`.
 
@@ -873,10 +941,10 @@ A `blocked` status means evaluation couldn't run — see Status Values table. Th
 - `internal/repository/orders.go` — repository created in Phase 2
 - `docs/architecture/decisions/ADR-NNN.md` — error handling decision
 
-**Acceptance Criteria:**
-- [ ] {Binary assertion — e.g., "Cache adapter implements get/set/delete with TTL parameter"}
-- [ ] {Binary assertion — e.g., "Unit tests cover cache miss, hit, and TTL expiration"}
-- [ ] {Binary assertion — e.g., "Integration test hits real Redis instance"}
+**Acceptance Criteria:** (authored per **Acceptance Criterion Shape** in the Reference section — intent, procedure, expected, falsifier, then a command only if the evidence is mechanical)
+- [ ] {Binary assertion carrying a falsifier — e.g., "Cache adapter implements get/set/delete with a TTL parameter; a set without one defaults to the configured ceiling rather than never expiring"}
+- [ ] {Binary assertion — e.g., "Unit tests cover cache miss, hit, and TTL expiration; a removed expiration check leaves the suite green"}
+- [ ] {A criterion whose honest evidence kind is `observed` or `judged` is written the same way, just without a command — e.g., "A reviewer confirms the migration plan names a rollback step; its absence is the failure this checks for"}
 
 **Prompt:**
 ```

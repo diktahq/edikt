@@ -74,7 +74,7 @@ background dispatches and then runs out of its own turn budget waiting on them w
 confused, partial result as if it were final. This is not a hypothetical: it is exactly what
 happened the first time this command ran (2 of 4 judges returned before the orchestrator gave
 up), and it is recorded here so it does not recur. Compose the prompt body via
-`bin/edikt util render`, with the artifact ID and each item's fields passed as
+`edikt util render`, with the artifact ID and each item's fields passed as
 `--field` values — never by shell-string interpolation, matching `verify-diff.md`'s
 argv-safety convention.
 
@@ -82,14 +82,14 @@ argv-safety convention.
 # ITEMS_JSON is a file holding the array; every value crosses as argv, so
 # nothing is shell-concatenated (the reason this was python in the first place).
 ITEMS_TEXT=""
-N=$(bin/edikt util json len "$ITEMS_JSON" .)
+N=$(edikt util json len "$ITEMS_JSON" .)
 i=0
 while [ "$i" -lt "$N" ]; do
-  KIND=$(bin/edikt util json get "$ITEMS_JSON" "$i.kind")
-  TEXT=$(bin/edikt util json get "$ITEMS_JSON" "$i.text")
-  QUOTE=$(bin/edikt util json get "$ITEMS_JSON" "$i.quote")
-  VERIFY=$(bin/edikt util json get "$ITEMS_JSON" "$i.verify" --default "")
-  ITEM=$(bin/edikt util render \
+  KIND=$(edikt util json get "$ITEMS_JSON" "$i.kind")
+  TEXT=$(edikt util json get "$ITEMS_JSON" "$i.text")
+  QUOTE=$(edikt util json get "$ITEMS_JSON" "$i.quote")
+  VERIFY=$(edikt util json get "$ITEMS_JSON" "$i.verify" --default "")
+  ITEM=$(edikt util render \
     --field "id=$ARTIFACT_ID.$KIND[$i]" --field "text=$TEXT" --field "quote=$QUOTE" <<'TMPL'
   - id: {{id}}
     text: {{text}}
@@ -98,7 +98,7 @@ TMPL
 )
   ITEMS_TEXT="$ITEMS_TEXT$ITEM"
   if [ -n "$VERIFY" ]; then
-    ITEMS_TEXT="$ITEMS_TEXT$(bin/edikt util render --field "verify=$VERIFY" <<'TMPL'
+    ITEMS_TEXT="$ITEMS_TEXT$(edikt util render --field "verify=$VERIFY" <<'TMPL'
     verify: {{verify}}
 TMPL
 )"
@@ -106,7 +106,7 @@ TMPL
   i=$((i + 1))
 done
 
-PROMPT_BODY=$(bin/edikt util render --field "artifact_id=$ARTIFACT_ID" --field "items=$ITEMS_TEXT" <<'TMPL'
+PROMPT_BODY=$(edikt util render --field "artifact_id=$ARTIFACT_ID" --field "items=$ITEMS_TEXT" <<'TMPL'
 You are reviewing the ALREADY-COMPILED sidecar for {{artifact_id}}.
 You are given only its extracted directives/prohibitions below — you have NOT been
 shown the live source .md, and you must not assume you know what it currently says.
@@ -196,4 +196,4 @@ Advisory only — nothing was written and gov compile was not invoked.
 Next: To act on a suggestion, run /edikt:adr:compile <id> | /edikt:invariant:compile <id> | /edikt:guideline:compile <id>
 ```
 
-Never write any file. Never shell out to `bin/edikt gov compile` or any compile subcommand.
+Never write any file. Never shell out to `edikt gov compile` or any compile subcommand.

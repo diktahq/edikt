@@ -84,6 +84,12 @@ into automatic enforcement across every AI agent session.`,
 
 // Execute is the entry point called from main.go.
 func Execute() {
+	// Applied HERE, not in init(): every group registers its subcommands from
+	// its own init(), and Go runs those in an order this file cannot depend
+	// on. Applied at init time the walk saw an empty tree, every group kept
+	// cobra's print-help-and-exit-0 behaviour, and the refusal reached only
+	// the root — which is the defect wearing a fix's clothes.
+	applyUnknownVerbHandler(rootCmd)
 	if err := rootCmd.Execute(); err != nil {
 		var ece *exitCodeError
 		if errors.As(err, &ece) {
@@ -106,12 +112,17 @@ func init() {
 	// with the historical CompilerVersion default of "0.1.0" (no "v").
 	govrun.CompilerVersion, _ = compilerVersionStamp(Version)
 
-	// Unknown subcommand: print error and usage.
+	// UNKNOWN VERB: NON-ZERO, ALWAYS.
+	//
+	// `edikt zzz` used to print the error and exit 0, and `edikt gov zzz`
+	// printed the group's help and exited 0 (D83, bench conformance screen).
+	// A caller cannot then tell success from "that verb does not exist": a CI
+	// step calling a misspelled or not-yet-released verb goes green forever,
+	// which is how a stale-schema check false-passed and how a grep for
+	// `migrate lift` read an unknown verb as "nothing to migrate". A control
+	// that cannot report is a control that failed.
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if len(os.Args) > 1 {
-			fmt.Fprintf(os.Stderr, "error: unknown subcommand: %s\n", os.Args[1])
-		}
-		return cmd.Help()
+		return unknownVerb(cmd, args)
 	}
 
 	// Allow arbitrary trailing args so cobra doesn't reject them before RunE.
@@ -166,18 +177,19 @@ func init() {
 			}
 		}
 
+		// Front door (SR-009): steering, not enforcement. A walled verb
+		// invoked from a non-terminal with no EDIKT_INVOKER declared
+		// refuses (exit 4); a real terminal, or a validated invoker,
+		// always proceeds.
+		if err := checkFrontDoor(cmd, ediktRoot); err != nil {
+			return err
+		}
+
 		// Pin warning for non-exempt commands. Walk the parent chain so
 		// subcommands (e.g. `gov compile-history`) inherit the parent's
 		// exemption — the policy is "any command under `gov` is exempt"
 		// not "only the literal `gov` leaf".
-		exempt := false
-		for c := cmd; c != nil; c = c.Parent() {
-			if pinWarnExempt(c.Name()) {
-				exempt = true
-				break
-			}
-		}
-		if !exempt {
+		if !pinWarnExemptChain(cmd) {
 			emitPinWarn(ediktRoot)
 		}
 		return nil

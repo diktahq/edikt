@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,11 @@ func repoRoot(t *testing.T) string {
 	}
 	// internal/pathsproposal -> internal -> edikt -> tools -> repo root
 	root := filepath.Clean(filepath.Join(wd, "..", "..", "..", ".."))
+	// EnumerateFiles refuses a symlinked root, so a checkout reached through a
+	// symlink is measured at its physical path.
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	if _, err := os.Stat(filepath.Join(root, "test", "fixtures", "paths-proposals")); err != nil {
 		t.Fatalf("paths-proposal fixtures not found under %s: %v "+
 			"(this test asserts against on-disk fixtures; a missing tree is UNMEASURED, not a pass)", root, err)
@@ -194,4 +200,34 @@ func keysOf(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// TestEnumerateFilesRefusesASymlinkedRoot: WalkDir does not follow a
+// symlinked root, so enumerating one used to return no files and no error and
+// every proposal read "matches none of the 0 files". It must refuse, naming the
+// root and the resolved path to use instead (SPEC-024 WS-03, SR-011).
+func TestEnumerateFilesRefusesASymlinkedRoot(t *testing.T) {
+	real := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(real, "src"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "src", "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "project")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	files, err := EnumerateFiles(link)
+	if err == nil {
+		t.Fatalf("EnumerateFiles(symlinked root) = %v with no error; want a refusal naming the root", files)
+	}
+	resolved, _ := filepath.EvalSymlinks(real)
+	if !strings.Contains(err.Error(), link) || !strings.Contains(err.Error(), resolved) {
+		t.Fatalf("refusal must name the link and the resolved path: %v", err)
+	}
+	// Positive control: the physical path enumerates normally.
+	if got, err := EnumerateFiles(real); err != nil || len(got) != 1 || got[0] != "src/a.go" {
+		t.Fatalf("EnumerateFiles(real) = %v, %v; want [src/a.go]", got, err)
+	}
 }

@@ -15,11 +15,12 @@
    - `.claude/rules/governance/<topic>.md` — **scoped topic files**. Loaded
      automatically when you touch a file matching that topic's `paths:` globs.
      Each carries the topic's reminders and verification checklist.
-   - `.claude/rules/governance/directive-index.yaml` — **write-time delivery**.
-     Path-scoped directives live here and are matched per directive against the
-     file you are actually editing, then injected by the PreToolUse /
-     PostToolUse hooks. A topic file whose Directives region is empty is not a
-     failed compile: its directives are delivered from this index instead.
+   - `.claude/rules/governance/delivery-map.yaml` — **the routing record**, not
+     a delivery surface. It lists which directive governs which path and which
+     of the two surfaces above delivers it. Nothing is injected at write time:
+     a topic file carries every directive routed to its topic, so an
+     empty Directives region there is a topic with no directives, not a
+     routed-elsewhere one.
    - `.claude/skills/edikt-<topic>/SKILL.md` — **on-demand skill packages**.
      Loaded when the task calls for the topic rather than when a file is
      touched, which is how a topic reaches you before anything has been edited.
@@ -44,6 +45,8 @@
 ### edikt Commands
 
 Match the user's intent, not their exact words. These are representative examples — if the meaning is the same, run the command.
+
+`/edikt:<name>` is invoked by exact name whether or not it is listed here; reading the command body or calling the binary directly is not a substitute.
 
 | Intent | Examples | Run |
 |--------|----------|-----|
@@ -87,12 +90,11 @@ Match the user's intent, not their exact words. These are representative example
 | Generate invariant sentinels | "compile this invariant", "generate sentinels for INV-NNN" | `/edikt:invariant:compile` |
 | Review invariant language | "review this invariant", "check INV-NNN quality" | `/edikt:invariant:review` |
 | Approve a pending verify | "approve this verify", "review the pending behavioral verify", "promote the proposal" | `/edikt:sidecar:approve` |
-| Regenerate sidecars after regression | "regenerate the sidecars", "fix the lost directives", "run the regression manifest" | `/edikt:sidecar:regenerate` |
 | End-of-session sweep | "wrap up this session", "end of session", "session summary" | `/edikt:session` |
 | Upgrade edikt | "upgrade edikt", "update edikt", "check for edikt updates" | `/edikt:upgrade` |
 | Pin config to the active install | "pin the version", "update edikt_version", "sync config to the installed version" | `/edikt:upgrade-pin` |
-| Migrate to sidecars (v0.6.0) | "migrate sidecars", "upgrade my sidecars", "convert legacy ADRs", "run the v0.6.0 migration" | `bin/edikt migrate sidecars --dry-run` then `--apply` |
-| Verify a plan phase | "verify phase N", "run the verify runner", "check phase N criteria", "did phase N actually pass" | `/edikt:verify` (or `bin/edikt verify <plan-id> --phase N`) |
+| Migrate legacy blocks into sidecars | "migrate sidecars", "lift the legacy blocks", "convert legacy ADRs", "run the migration", "resolve a lossy migration" | `/edikt:migrate` |
+| Verify a plan phase | "verify phase N", "run the verify runner", "check phase N criteria", "did phase N actually pass" | `/edikt:verify` (or `edikt verify <plan-id> --phase N`) |
 | Regenerate a golden sidecar fixture *(dev-only)* | "regenerate the golden sidecar", "update the extractor fixture" | `/edikt:test:golden-sidecar` |
 | List or manage agents | "what agents do we have", "list agents", "add the security agent" | `/edikt:agents` |
 | Set up integrations | "setup Linear", "connect Jira", "add MCP server" | `/edikt:mcp` |
@@ -112,7 +114,7 @@ Match the user's intent, not their exact words. These are representative example
 
 ### After Compaction
 
-If context was compacted, the PostCompact hook will re-inject the active plan phase and invariants automatically. If you need full context, run `/edikt:context`.
+After a compaction Claude Code fires `SessionStart` with `source: compact`, and edikt's `session-compact` hook re-injects the active plan phase and invariants there. (`PostCompact` is not a `hookSpecificOutput` event — it cannot carry context to the model, so nothing arrives on it.) If you need full context, run `/edikt:context`.
 
 ### Commit Convention
 

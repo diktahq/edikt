@@ -10,6 +10,17 @@ allowed-tools:
   - Grep
   - Agent
   - AskUserQuestion
+stops:
+  - id: organization-plan
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Proceed with this organization? (it moves documentation files on disk)"
+  - id: delete-original
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Delete this original file after intake?"
 ---
 
 # edikt:docs:intake
@@ -74,6 +85,7 @@ Agent(
 
 Organize found docs into edikt categories:
 
+<!-- stop: organization-plan -->
 ```
 Found {n} documentation files:
 
@@ -97,6 +109,10 @@ Found {n} documentation files:
 
 Proceed with this organization? (y/n/edit)
 ```
+
+With no human to answer, take the safe side: move nothing, leave the plan
+printed, and say the organization was declined by default rather than
+answered.
 
 ### 4. Consolidate Execution Plans
 
@@ -162,15 +178,20 @@ For each confirmed move:
 
 ### 6. Update Project Context
 
-If existing docs reveal project context not captured in `project-context.md`, offer to update it:
+If existing docs reveal project context not captured in `project-context.md`,
+**write it into `project-context.md`** and say so — this command does not ask
+permission to write a file it was invoked to write. The host's permission
+system and the managed-region guard are the write controls; a second yes/no in
+the prose adds no protection and is the first thing to hang when nobody is
+watching.
+
+State what is being written before writing it:
 
 ```
-Found additional context from existing docs:
+Writing to project-context.md — additional context found in existing docs:
 - Stack: {details from README}
 - Architecture: {details from ADRs}
 - Users: {details from product docs}
-
-Update project-context.md with this information? (y/n)
 ```
 
 ### 7. Output Summary
@@ -209,8 +230,11 @@ Options:
 2. Move each original to `{base}/archive/`, preserving relative paths
 
 **If deleting:**
+<!-- stop: delete-original -->
 1. List each file and ask for confirmation: `Delete {path}? (y/n)`
-2. Only delete files the user confirms
+2. Only delete files the user confirms. With no human to answer, take the safe
+   side: delete nothing, list what would have been deleted, and say the
+   deletion was declined by default rather than answered.
 
 **If keeping:** no action needed.
 

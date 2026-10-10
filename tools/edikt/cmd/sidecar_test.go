@@ -195,7 +195,7 @@ func TestAddManual_PostAddValidatePasses(t *testing.T) {
 	_, err := runCmd(t,
 		"sidecar", "add-manual-directive",
 		"--path", sc,
-		"--text", "SHOULD prefer immutable data structures (ref: ADR-005 + manual)",
+		"--text", "Callers MUST prefer immutable data structures (ref: ADR-005 + manual)",
 	)
 	if err != nil {
 		t.Fatalf("append failed: %v", err)
@@ -295,5 +295,44 @@ func TestAddManual_INVSidecar(t *testing.T) {
 	got := loaded.ManualDirectives[0]
 	if !strings.Contains(got, "(ref: INV-002 + manual)") {
 		t.Errorf("expected '(ref: INV-002 + manual)' in %q", got)
+	}
+}
+
+// A SOFT-MODAL DIRECTIVE MUST BE REFUSED AT THE WRITE POINT.
+//
+// This command accepted "Sidecar writes should ideally be atomic where
+// possible" and exited 0, writing it to disk. The invariant forbidding it was
+// enforced only by a later CI scan, so the author was told their soft
+// directive was fine at the moment they wrote it.
+//
+// The fixture in TestAddManual_PostAddValidatePasses used to read "SHOULD
+// prefer immutable data structures" — the test encoded the behaviour the
+// invariant forbids, which is why nothing caught it.
+func TestAddManual_RefusesSoftModalForce(t *testing.T) {
+	for _, tc := range []struct {
+		name, text string
+		wantRefuse bool
+	}{
+		{"ideally", "Sidecar writes should ideally be atomic where possible. (ref: ADR-005 + manual)", true},
+		{"should as operative verb", "Callers should prefer immutable structures. (ref: ADR-005 + manual)", true},
+		{"where possible", "Retries are bounded where possible. (ref: ADR-005 + manual)", true},
+		{"binding must", "Callers MUST prefer immutable structures. (ref: ADR-005 + manual)", false},
+		{"binding must not", "Callers MUST NOT mutate shared state. (ref: ADR-005 + manual)", false},
+		// A directive that carries binding force is NOT refused for containing
+		// a hedge elsewhere. Refusing it would push authors toward weaker
+		// phrasing to satisfy the checker, which inverts the rule's purpose.
+		{"binding plus incidental hedge",
+			"The runner MUST NOT retry unless the operator should be notified. (ref: ADR-005 + manual)", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			verb, got := softModalVerb(tc.text)
+			if got != tc.wantRefuse {
+				t.Errorf("softModalVerb(%q) = (%q, %v), want refuse=%v",
+					tc.text, verb, got, tc.wantRefuse)
+			}
+			if got && verb == "" {
+				t.Error("refused without naming the offending word — the author cannot act on that")
+			}
+		})
 	}
 }

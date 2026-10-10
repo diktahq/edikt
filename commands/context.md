@@ -245,10 +245,10 @@ If anything is missing or stale, note it:
 
 After printing the full context summary, write a compact snapshot to Claude's auto-memory. This persists context across sessions so the SessionStart hook can surface it.
 
-Compute memory path:
+Compute memory path. The root is the ACTIVE Claude profile — `CLAUDE_HOME`, then `CLAUDE_CONFIG_DIR`, then `$HOME/.claude` — the same chain the SessionStart hook reads it through. Writing under `$HOME/.claude` while a profile is selected puts the file where the hook never looks:
 ```bash
 ENCODED=$(echo "$PWD" | sed 's|/|-|g')
-MEMORY_DIR="$HOME/.claude/projects/${ENCODED}/memory"
+MEMORY_DIR="${CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}/projects/${ENCODED}/memory"
 MEMORY_FILE="$MEMORY_DIR/MEMORY.md"
 mkdir -p "$MEMORY_DIR"
 ```
@@ -289,4 +289,4 @@ _Last updated: {YYYY-MM-DD} via /edikt:context_
 - Invariants: docs/invariants/
 ```
 
-After writing, output one line: `  Memory: updated ~/.claude/projects/.../memory/MEMORY.md`
+After writing, output one line naming the file actually written: `  Memory: updated {MEMORY_FILE}`

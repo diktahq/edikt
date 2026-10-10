@@ -62,7 +62,9 @@ Optionally accepts a specific version tag to roll back to.`,
 			return fmt.Errorf("flipping current: %w", err)
 		}
 
-		if err := writeLock(ediktRoot, targetTag, "launcher"); err != nil {
+		// Rolling back activates a payload that is already on disk; its
+		// provenance is whatever was recorded when it was installed.
+		if err := writeLock(ediktRoot, targetTag, "launcher", lockSourceFor(lf, targetTag)); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: rolled back but lock.yaml update failed: %v\n", err)
 		}
 

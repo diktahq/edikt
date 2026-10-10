@@ -102,10 +102,15 @@ func TestAutoRepair_AllAnchorsInOnePass(t *testing.T) {
 	}
 }
 
-func TestExcerptStale_NormalizedFallbackAtRecordedLines(t *testing.T) {
-	// Quote differs from source only in collapsed whitespace, anchored at
-	// the right lines already — must NOT be reported stale (and so must
-	// not trigger an LLM dispatch at all).
+// D46 (b) reversed this test's original expectation. It asserted that a quote
+// differing from the source only in collapsed whitespace, at the right
+// lines, must NOT be stale ("must not trigger an LLM dispatch"). ADR-056
+// says the quote is a byte slice of the file; a whitespace difference means
+// it was reconstructed, and doctor already called that stale while compile
+// called it fresh — two answers to one question, measured on ADR-060/061 in
+// a consumer corpus. One procedure now judges every anchor (verifyOne), so
+// this IS stale, for compile as for doctor.
+func TestExcerptStale_WhitespaceReconstructionIsStale(t *testing.T) {
 	lines := src(
 		"## Decision",
 		"The  rule   MUST hold.", // double spaces in source
@@ -117,8 +122,14 @@ func TestExcerptStale_NormalizedFallbackAtRecordedLines(t *testing.T) {
 			SourceExcerpt: SourceExcerpt{LineStart: 2, LineEnd: 2, Quote: "The rule MUST hold."},
 		}},
 	}
+	if !IsStale(sc, lines) {
+		t.Error("a whitespace-reconstructed quote is stale from the moment it is written (ADR-056, D46 b)")
+	}
+	// The byte-exact quote at the same lines is fresh — the change is the
+	// fallback, not the comparison.
+	sc.Directives[0].SourceExcerpt.Quote = "The  rule   MUST hold."
 	if IsStale(sc, lines) {
-		t.Error("whitespace-only quote drift at the recorded lines must not be stale")
+		t.Error("a byte-exact quote at its recorded lines is fresh")
 	}
 }
 

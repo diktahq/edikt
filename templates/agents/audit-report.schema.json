@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/audit-report/v1.json",
+  "title": "edikt governance-auditor report",
+  "description": "Pre-acceptance report emitted by the governance-auditor agent for one draft ADR, invariant, or guideline. Covers D95's three checks (quote-gated decision prongs, restatement detection, do-nothing-alternative rejection) plus the AC-2.3 prose-quality checks. A sibling of governance-verifier-verdict.schema.json and post-flight-report.schema.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifact", "class", "overall_verdict", "decision_prongs", "prose_checks", "restatements", "meta"],
+  "properties": {
+    "artifact": {
+      "type": "string",
+      "description": "The draft's own id, e.g. 'ADR-900'. A draft with no id yet (not written to disk) uses its working filename.",
+      "minLength": 1
+    },
+    "class": {
+      "type": "object",
+      "description": "D118 (2): a verdict naming a conclusion without ruling out its neighbours is the presence-not-content weakness a second time (bok ran three audits over its own drafts and all three passed them, because each asked 'is this correct?' and none asked 'should this exist?'). 'value' alone was the whole field before this field note; 'ruled_out' is new — see the field note below. FIELD NOTE (this schema's own discipline, not gov-sidecar's D21 — D21 itself excludes this schema: 'FOUR's class: is audit-report output, not a sidecar field, not a frontmatter key' — written anyway per the same standard: kind: auditor-authored (LLM judgement, not derivable — deciding whether an artifact is really the other three kinds requires reading it). reader: a human reviewing the report before accepting the draft; no code currently branches on ruled_out. what breaks without it: exactly D118's bok incident — a class verdict that states a conclusion with no reasoning against the neighbours reads as checklist-complete when it never asked the disqualifying question. falsifying observation: a report naming a class with an incomplete ruled_out list (fewer than the three other kinds, or a duplicate/self-referential kind) fails schema validation — see test/fixtures/audit-report/invalid/class-ruled-out-incomplete.json.",
+      "additionalProperties": false,
+      "required": ["value", "ruled_out"],
+      "properties": {
+        "value": {
+          "type": "string",
+          "description": "What the draft actually is, per GL-001's Q1-Q4 taxonomy: 'invariant' (a property that must always hold), 'adr' (a real decision, competing options genuinely rejected), 'guideline' (a default with a named exception), or 'nothing' (none of the above -- documentation, a rename, a non-decision) when the draft's own content contradicts its filename or claimed kind.",
+          "enum": ["adr", "invariant", "guideline", "nothing"]
+        },
+        "ruled_out": {
+          "type": "array",
+          "description": "One entry for each of the OTHER three kinds in the enum, stating why the artifact is NOT that kind. Required and must cover all three — a class verdict is not a verdict until its neighbours are excluded, not merely unmentioned.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "reason"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["adr", "invariant", "guideline", "nothing"]
+              },
+              "reason": {
+                "type": "string",
+                "description": "Why the artifact is not this kind, in one sentence grounded in what the draft actually says.",
+                "minLength": 1
+              }
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "value": { "const": "adr" } } },
+          "then": {
+            "properties": {
+              "ruled_out": {
+                "allOf": [
+                  { "contains": { "properties": { "kind": { "const": "invariant" } } } },
+                  { "contains": { "properties": { "kind": { "const": "guideline" } } } },
+                  { "contains": { "properties": { "kind": { "const": "nothing" } } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "value": { "const": "invariant" } } },
+          "then": {
+            "properties": {
+              "ruled_out": {
+                "allOf": [
+                  { "contains": { "properties": { "kind": { "const": "adr" } } } },
+                  { "contains": { "properties": { "kind": { "const": "guideline" } } } },
+                  { "contains": { "properties": { "kind": { "const": "nothing" } } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "value": { "const": "guideline" } } },
+          "then": {
+            "properties": {
+              "ruled_out": {
+                "allOf": [
+                  { "contains": { "properties": { "kind": { "const": "adr" } } } },
+                  { "contains": { "properties": { "kind": { "const": "invariant" } } } },
+                  { "contains": { "properties": { "kind": { "const": "nothing" } } } }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "value": { "const": "nothing" } } },
+          "then": {
+            "properties": {
+              "ruled_out": {
+                "allOf": [
+                  { "contains": { "properties": { "kind": { "const": "adr" } } } },
+                  { "contains": { "properties": { "kind": { "const": "invariant" } } } },
+                  { "contains": { "properties": { "kind": { "const": "guideline" } } } }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "overall_verdict": {
+      "type": "string",
+      "description": "The auditor's bottom line. FAIL if any decision prong or prose check fails; NEEDS_REVIEW when the auditor cannot determine a verdict from what it read; PASS otherwise. Never stronger than its evidence — see decision_prongs and prose_checks.",
+      "enum": ["pass", "fail", "needs_review"]
+    },
+    "decision_prongs": {
+      "type": "array",
+      "description": "D95 (1) and (3): one entry per decision-shaped prong the artifact must satisfy (e.g. 'a real rejected alternative existed'). Empty for artifacts with no decision claim (most invariants, most guidelines) — empty is a measurement ('this artifact makes no decision claim'), not an omission.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["prong", "verdict"],
+        "properties": {
+          "prong": {
+            "type": "string",
+            "description": "What was tested, e.g. 'Q2 prong 1 — a real rejected alternative existed'.",
+            "minLength": 1
+          },
+          "subject": {
+            "type": "string",
+            "description": "The thing the prong was tested against — the alternative's name, the section heading."
+          },
+          "quote": {
+            "type": "string",
+            "description": "The sentence from the artifact that satisfies the prong, verbatim. REQUIRED whenever verdict is 'pass' — a pass with no quote is not a pass (D95 (1))."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["pass", "fail", "unmeasured"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why, for fail and unmeasured verdicts. For a do-nothing alternative (D95 (3)), names the do-nothing shape explicitly rather than just saying 'fail'."
+          }
+        },
+        "if": { "properties": { "verdict": { "const": "pass" } } },
+        "then": { "required": ["prong", "verdict", "quote"] }
+      }
+    },
+    "prose_checks": {
+      "type": "array",
+      "description": "AC-2.3: the five prose-quality checks, each graded independently. Never carries a rewrite — the auditor names the defect and quotes it; it does not author the fix.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "grade"],
+        "properties": {
+          "check": {
+            "type": "string",
+            "enum": ["bare-id", "hedge", "slop", "missing-intent-clause", "narrative-history"]
+          },
+          "grade": {
+            "type": "string",
+            "description": "pass: the check found nothing worth flagging. warn: found, but not disqualifying. fail: found and disqualifying.",
+            "enum": ["pass", "warn", "fail"]
+          },
+          "quote": {
+            "type": "string",
+            "description": "The offending text, verbatim, when grade is warn or fail. A warn/fail with no quote is unverifiable — same discipline as decision_prongs."
+          },
+          "note": {
+            "type": "string",
+            "description": "One-line explanation of what's wrong. MUST NOT be a rewrite of the text — describe the defect, not the fix (AC-2.3)."
+          }
+        },
+        "if": { "not": { "properties": { "grade": { "const": "pass" } } } },
+        "then": { "required": ["check", "grade", "quote"] }
+      }
+    },
+    "restatements": {
+      "type": "array",
+      "description": "D95 (2): draft sentences that already say what a corpus record says, found by mechanical comparison (this project's content-derived identity function) BEFORE any acceptance judgment. Empty means none found over the corpus that was actually compared — see meta.corpus_size.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["draft_sentence", "artifact", "existing_text", "verdict", "direction", "similarity", "exact"],
+        "properties": {
+          "draft_sentence": {
+            "type": "string",
+            "description": "The operative sentence from the draft, verbatim.",
+            "minLength": 1
+          },
+          "artifact": {
+            "type": "string",
+            "description": "The corpus record that already says it, e.g. 'INV-900'.",
+            "minLength": 1
+          },
+          "existing_text": {
+            "type": "string",
+            "description": "That record's directive, verbatim.",
+            "minLength": 1
+          },
+          "verdict": {
+            "type": "string",
+            "description": "Always 'overlaps <artifact>' — the observed fact that the draft and the named corpus record carry the same rule, and nothing beyond it. Direction is deliberately NOT asserted: which artifact amends which, and whether amending is even the right remedy, are not observable from comparing two texts, so claiming one would report an unmeasured conclusion as though it had been observed. Routing the overlap is the reader's decision.",
+            "pattern": "^overlaps [A-Z]+-[A-Za-z0-9-]+$"
+          },
+          "direction": {
+            "const": "unmeasured",
+            "description": "Always the literal 'unmeasured'. This auditor compares two texts, which establishes overlap and never establishes order, so it states positively that it did not measure direction rather than omitting the question — an omitted field and a measured 'no problem here' must not look alike. The word is deliberately 'unmeasured' rather than 'unknown': 'unknown' describes the world and invites the reading that direction was sought and not found, whereas this control never looks at all, and the same distinction is already drawn by meta.corpus_size, where 0 means nothing was compared rather than compared-and-clean. A consumer mapping this report onto a citation record whose own direction field is resolvable — it names the later artifact once each artifact's stated date settles the order — maps 'unmeasured' onto that field's unresolved default; the mapping is one-way, and this value must never be read as evidence of an order.",
+            "type": "string"
+          },
+          "similarity": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Token overlap (Jaccard) against the matched corpus rule, so a reader judges the match rather than trusting the threshold."
+          },
+          "exact": {
+            "type": "boolean",
+            "description": "True when the normalised forms are identical (cosmetics aside), false for a near match (e.g. one noun substituted)."
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ran_at", "agent_version", "corpus_size"],
+      "properties": {
+        "ran_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of the audit run."
+        },
+        "agent_version": {
+          "type": "string",
+          "description": "Version stamp of the governance-auditor template that produced this report."
+        },
+        "corpus_size": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many corpus records the restatement check actually compared against. An empty restatements[] over corpus_size:0 is unmeasured, not clean — the auditor must be able to tell the two apart, and so must its report."
+        },
+        "stubbed": {
+          "type": "boolean",
+          "description": "FIELD NOTE (Phase 3, AC-3.2). kind: tooling-populated, never auditor-authored — set by gov:audit's own stub path (EDIKT_AUDIT_STUB=1), never by the LLM. reader: adr:new's acceptance step, which MUST refuse acceptance on stubbed:true — a canned report standing in for real judgement must never silently pass a real artifact. what breaks without it: a stub run and a real run become indistinguishable to the caller, so a hermetic test fixture could accidentally gate a real acceptance. falsifying observation: a report with stubbed:true reaches adr:new's acceptance step and status still flips to accepted. Absent (or false) on every real, non-stub audit run."
+        }
+      }
+    }
+  }
+}

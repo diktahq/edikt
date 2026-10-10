@@ -233,33 +233,8 @@ func Run(opts Options) (*Result, error) {
 	// escape hatch (see --skip-fixture-proof) for the rare case a maintainer
 	// is certain a contract is fine despite the shipped record.
 	if !opts.SkipFixtureProof {
-		// PARSE THE FIELD, do not grep the file. A substring match found "v4"
-		// inside the PROSE of the rejected-v5 entry and let an unrecorded
-		// contract through — a check matching the shape of the answer rather
-		// than the answer, which is this release's signature defect.
-		var proof struct {
-			Validated []struct {
-				PromptVersion string `yaml:"prompt_version"`
-			} `yaml:"validated"`
-		}
-		if yerr := yaml.Unmarshal(fixtureProofYAML, &proof); yerr != nil {
-			return nil, fmt.Errorf("refusing to dispatch: the embedded fixture-validation record could not "+
-				"be parsed (%v) — an unreadable validation record is not a validation", yerr)
-		}
-		found := false
-		for _, v := range proof.Validated {
-			if v.PromptVersion == promptVersion {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return nil, fmt.Errorf(
-				"refusing to dispatch: this build's embedded fixture-validation record has no entry for "+
-					"%s (the installed extraction contract). Either this binary predates that contract's "+
-					"validation, or the contract was never proven on the frozen fixture set by bodies. "+
-					"Pass --skip-fixture-proof if you are certain this contract is already validated",
-				promptVersion)
+		if _, why := ContractValidated(promptVersion); why != "" {
+			return nil, fmt.Errorf("refusing to dispatch: %s", why)
 		}
 	}
 
@@ -414,13 +389,39 @@ func Run(opts Options) (*Result, error) {
 	// here, before anything is handed off, because it is the pre-rewrite
 	// baseline and this is the last moment the on-disk bytes are still what
 	// extraction is about to overwrite.
-	planOut, planErr := phasea.Plan(phasea.PlanOptions{ProjectRoot: opts.ProjectRoot, Force: opts.Force, Only: opts.Only})
+	// PLAN THE CANDIDATES THIS VERB SELECTED, not whatever the stale detector
+	// would have found. Until 2026-09-18 this passed only ProjectRoot/Force/Only,
+	// so Plan ignored `tasks` entirely and re-derived a STALE-ONLY work-list.
+	// After a CONTRACT change nothing is stale — every anchor still matches,
+	// which is the exact reason this verb exists separately — so the plan came
+	// back empty, the run exited 0, and the count below reported dispatches
+	// that never happened (D425).
+	parents := make([]string, 0, len(tasks))
+	for _, t := range tasks {
+		parents = append(parents, t.ParentPath)
+	}
+	planOut, planErr := phasea.Plan(phasea.PlanOptions{
+		ProjectRoot: opts.ProjectRoot,
+		Force:       opts.Force,
+		Artifacts:   parents,
+	})
 
 	// Nothing to plan is a SUCCESS, not a failure. It is the ordinary result
 	// of re-invoking on an already-regenerated corpus — the idempotence
 	// clause — and collapsing it into the error branch would make a
 	// well-behaved second run look like a broken one.
 	if planErr == nil && planOut != nil && planOut.ExitCode == phasea.ExitNothingToPlan {
+		// NOTHING PLANNED MEANS NOTHING DISPATCHED, and the result must say so.
+		// res.Dispatched was set from the candidate list above and is corrected
+		// on the plan-emitted path below; this return used to skip that
+		// correction and carry the candidate count out of a run that dispatched
+		// nothing. That is what made a no-op look like four completed
+		// dispatches for weeks (D425) — INV-013, a control reporting work it  // edikt-guard:allow
+		// did not do.
+		res.Dispatched = 0
+		fmt.Fprintln(opts.Stderr,
+			"re-extraction: nothing planned, so nothing dispatched — the corpus is already "+
+				"regenerated under this contract.")
 		if serr := saveLedger(opts.LedgerPath, ledger); serr != nil {
 			return res, serr
 		}
@@ -444,8 +445,8 @@ func Run(opts Options) (*Result, error) {
 		len(planOut.Plan.Items), planOut.Plan.PlanID,
 		phasea.PlanFilePath(opts.ProjectRoot, planOut.Plan.PlanID))
 	fmt.Fprintln(opts.Stderr, "Run /edikt:gov:reextract from inside Claude Code: it fans out one")
-	fmt.Fprintln(opts.Stderr, "sidecar-extractor per plan item, then runs `bin/edikt phasea restore` and")
-	fmt.Fprintln(opts.Stderr, "`bin/edikt phasea verify`.")
+	fmt.Fprintln(opts.Stderr, "sidecar-extractor per plan item, then runs `edikt phasea restore` and")
+	fmt.Fprintln(opts.Stderr, "`edikt phasea verify`.")
 
 	// Persist the batch header before handing off. It carries started_at and
 	// the prompt_version this batch is bound to, which is what makes a later
@@ -524,6 +525,83 @@ type StatusReport struct {
 	Failed        int      `json:"failed"`
 	RemainingIDs  []string `json:"remaining_ids,omitempty"`
 	FailedIDs     []string `json:"failed_ids,omitempty"`
+
+	// ContractValidated is false when the dispatcher would REFUSE this
+	// contract, and DispatchBlockedReason says why. Eligible/Remaining still
+	// report the corpus honestly — the artifacts are eligible; what is blocked
+	// is the dispatch — but a caller that offers re-extraction must read this
+	// first, or it offers work that cannot run.
+	ContractValidated     bool   `json:"contract_validated"`
+	DispatchBlockedReason string `json:"dispatch_blocked_reason,omitempty"`
+}
+
+// ContractValidated answers whether an extraction contract has been proven on
+// the frozen fixture set, from THIS BUILD's embedded record.
+//
+// ONE implementation, two callers, deliberately. The dispatcher refuses on it
+// and Status reports it, so the two cannot disagree about whether a contract is
+// usable. They did disagree, and a consumer found it: on 0.9.0, `--status`
+// reported `prompt_version v9, eligible 87, done 0` while a dispatch of those
+// same 87 refused outright, and `/edikt:upgrade` §7 offered the re-extraction
+// with no hint it would be refused. A status that counts work the dispatcher
+// will not do is not a status; it is an invitation to a dead end.
+//
+// Returns (validated, why-not). `why` is empty exactly when validated is true,
+// and is written to be quoted verbatim by both callers.
+//
+// PARSE THE FIELD, do not grep the file. A substring match found "v4" inside
+// the PROSE of the rejected-v5 entry and let an unrecorded contract through — a
+// check matching the shape of the answer rather than the answer.
+func ContractValidated(promptVersion string) (bool, string) {
+	state, why := ContractValidationState(promptVersion)
+	return state == ContractStateValidated, why
+}
+
+// The states ContractValidationState distinguishes. Rejected and unrecorded
+// are different facts and a reader needs to know which: one was judged and
+// refused, the other was never put to the question.
+const (
+	ContractStateValidated  = "validated"
+	ContractStateRejected   = "rejected"
+	ContractStateUnrecorded = "unrecorded"
+	ContractStateUnreadable = "unreadable"
+)
+
+// ContractValidationState is ContractValidated's single implementation, with
+// the state named rather than folded into a boolean, for a caller that REPORTS
+// the state instead of refusing on it (`phasea plan`). `why` is empty exactly
+// when the state is validated.
+func ContractValidationState(promptVersion string) (state, why string) {
+	var proof struct {
+		Validated []struct {
+			PromptVersion string `yaml:"prompt_version"`
+		} `yaml:"validated"`
+		Rejected []struct {
+			PromptVersion string `yaml:"prompt_version"`
+			Reason        string `yaml:"reason"`
+		} `yaml:"rejected"`
+	}
+	if yerr := yaml.Unmarshal(fixtureProofYAML, &proof); yerr != nil {
+		return ContractStateUnreadable, fmt.Sprintf("the embedded fixture-validation record could not be parsed (%v) — "+
+			"an unreadable validation record is not a validation", yerr)
+	}
+	for _, v := range proof.Validated {
+		if v.PromptVersion == promptVersion {
+			return ContractStateValidated, ""
+		}
+	}
+	for _, r := range proof.Rejected {
+		if r.PromptVersion == promptVersion {
+			return ContractStateRejected, fmt.Sprintf("%s is RECORDED AS REJECTED on the frozen fixture set. %s "+
+				"Re-extracting the corpus through a contract that was judged and refused is not a "+
+				"gap in the record; it is a decision already taken", promptVersion, strings.TrimSpace(r.Reason))
+		}
+	}
+	return ContractStateUnrecorded, fmt.Sprintf(
+		"this build's embedded fixture-validation record has no entry for %s (the installed "+
+			"extraction contract). Either this binary predates that contract's validation, or the "+
+			"contract was never proven on the frozen fixture set by bodies. Pass --skip-fixture-proof "+
+			"if you are certain this contract is already validated", promptVersion)
 }
 
 // Status reports what a resumed batch would do, without dispatching.
@@ -548,10 +626,13 @@ func Status(root string) (*StatusReport, error) {
 		return nil, err
 	}
 	ledger := loadLedger(filepath.Join(root, LedgerRelPath))
+	validated, why := ContractValidated(promptVersion)
 	st := &StatusReport{
-		PromptVersion: promptVersion,
-		LedgerPrompt:  ledger.PromptVersion,
-		Eligible:      len(pairs),
+		PromptVersion:         promptVersion,
+		LedgerPrompt:          ledger.PromptVersion,
+		Eligible:              len(pairs),
+		ContractValidated:     validated,
+		DispatchBlockedReason: why,
 	}
 	// A ledger written under a different contract carries no completions for
 	// this one. Reporting its counts here would be the unmeasured-as-measured

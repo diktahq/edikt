@@ -17,7 +17,165 @@ validated:
       pre-extraction corpus. 27 dropped bodies were found and restored; the
       corrected gate then reported 0 vanished with anchors re-verified.
     evidence: test/fixtures/reextraction-baseline/baseline.yaml
+    what_the_0_actually_measured: >-
+      READ THIS BEFORE TREATING v4 AS A CLEAN FALLBACK. The `0 vanished` above
+      was measured on a REPAIRED CORPUS, not on v4's raw output. v4 dropped the
+      27 bodies; commit a7e3fe77 put them back by TARGETED REPAIR from the
+      pinned pre-extraction corpus — its own message says so, and says the
+      repair was deliberately NOT done by re-extraction because re-dispatching
+      "would have restored these while dropping others". The gate was then
+      re-run against the patched corpus and reported 0. Nothing here shows v4
+      extracting 27 bodies it had previously lost.
+      The losses also did not stop at 27 or at this entry's date. On 2026-08-14,
+      the day AFTER this entry was written, commit 88051985 restored 7
+      human-approved verify commands the same re-extraction had dropped or
+      weakened across five artifacts — one of them downgraded to a bare
+      `test -f` while the fuller check it replaced sat unused. Three further
+      repairs on 2026-08-13 covered reminders and verification items, a
+      must-grade on a prohibition, and an approval receipt.
+      So this entry is a record of a corpus that was made whole by hand, and it
+      reads as a record of a contract that performed. Under the two-run rule now
+      recorded against v11, v4 would not qualify either: it had one run, that run
+      lost content, and the content was patched rather than re-extracted.
+      WHETHER v4 SHOULD REMAIN IN `validated:` IS AN OPEN RULING, deliberately
+      not taken here. Left classified as found so that correcting the record and
+      changing the gate's behaviour stay two separate, separately-argued acts.
 rejected:
+  - prompt_version: v11
+    rejected_at: "2026-09-18"
+    scope: >-
+      The same five artifacts v9 was judged on — ADR-035, ADR-040, ADR-053,
+      ADR-055, GL-002 — so the two contracts are comparable entry to entry.
+      ADR-040 and GL-002 were kept in scope specifically as a REGRESSION
+      CONTROL: both were clean under v9, so a v11 failure on either could only
+      be a regression. Both failed. Keeping them earned its cost.
+    method: >-
+      Same-corpus, two-contract comparison, identical to the v9 entry: live
+      corpus held constant as the before-side, re-extracted through v11 into a
+      detached worktree, judged by test/lib/extractor-contract-compare.py
+      --before-root, then `edikt phasea restore` and `edikt phasea verify`.
+    reason: >-
+      91 bodies with no counterpart — ADR-040 33, GL-002 38, ADR-053 11,
+      ADR-055 9 — against 28 under v9. 0 obligations weakened, 0 flattened.
+      THREE of five artifacts were quarantined by the content gate, where v9
+      quarantined one. `phasea verify`: 1 ok, 1 pins-unrestorable, 3
+      output-missing; v9 was 3 ok, 1 pins-unrestorable, 1 output-missing.
+      v11 is worse than the contract it replaced, on the same five artifacts.
+
+      THREE DISTINCT DEFECTS, none of them the one v11 set out to fix.
+
+      ADR-055 — INVALID YAML, total loss of a nine-body artifact. v11 emitted
+      2 of 13 `text:` values as bare unquoted scalars. Every directive text
+      ends with the `(ref: ADR-NNN)` tail, and that tail contains a
+      colon-space, so a bare scalar is unparseable BY CONSTRUCTION, not by
+      accident of content. The existing sidecar has 0 of 9 bare.
+      Reproduced independently from the archived output: the parser fails at
+      line 130 column 183, which is the `(ref: ADR-055)` tail. Both bare
+      values are prohibitions and all 9 directives are quoted, but 2 of the 4
+      prohibitions ARE quoted, so this is within-block inconsistency rather
+      than a block the contract describes wrongly — which is itself a reason
+      to distrust a single run. Phase A's content gate caught it and the live
+      corpus was never written, so this is an extraction-quality failure the
+      gate contained, not shipped corruption.
+
+      ADR-040 — REGRESSION on an artifact v9 handled cleanly. Off-by-one
+      anchor: the recorded range is line 98, which is blank; the quoted prose
+      sits at 99. Quarantined. Before quarantine its raw output had already
+      consolidated 33 directives into 22, with 13 of the lost bodies showing
+      containment >= 0.70 in a surviving neighbour — a MERGE failure, where
+      v9's was an OMISSION failure. Merged substance survives, but the merged
+      rule loses its own anchors, its own verify pin, and its own
+      addressability. This is the shape this record's header already warns
+      about: judged on counts it looks like merges.
+
+      GL-002 — REGRESSION, also clean under v9. Quarantined: one anchor's
+      quote does not appear at its recorded lines.
+
+      WHAT IMPROVED, recorded because a rejection that hides the gains is not
+      evidence either. ADR-035 went from 6 of 8 bodies dropped under v9 to 0
+      dropped under v11, and ADR-053 no longer quarantines.
+    unconfirmed_diagnosis: >-
+      THE EMPHASIS FIX WAS NOT EXERCISED, so it remains plausible rather than
+      proven. v11 was expected to preserve the markdown emphasis on ADR-053
+      line 90 that v9 stripped. Measured: v11's extraction produced NO anchor
+      touching that sentence at all, so the corrected rule was never reached.
+      ADR-053's improvement therefore cannot be attributed to the fix.
+    run_variance_is_unmeasured: >-
+      THIS METHOD HAS NO VARIANCE CONTROL AND THE RESULTS NOW SHOW WHY IT
+      NEEDS ONE. Extraction is an LLM dispatch and is not deterministic.
+      Between v9 and v11, ADR-035 moved from 6 dropped to 0 and ADR-040 moved
+      from clean to quarantined — in opposite directions, and neither change
+      is explained by anything in the v10/v11 diff, which touched only
+      quote fidelity. A single run per contract cannot separate contract
+      quality from run-to-run variance. Both verdicts so far are REJECT and
+      the rejections rest on hard failures — unparseable YAML, a blank-line
+      anchor — that no plausible variance would manufacture, so the verdicts
+      stand. But no ADOPTION should be recorded off a single run until the
+      same contract has been run more than once against the same artifacts
+      and shown to agree with itself.
+    evidence: docs/internal/reviews/raw/2026-09-18-v11-extraction/
+    evidence_note: >-
+      The raw pre-restore extraction output for all five artifacts is archived
+      in-repo beside the comparator runs for v9 and v11 and the before-side
+      baseline. Evidence held only in a session scratch directory is not
+      evidence: the previous round's raw output was lost with its worktree,
+      which is why this one is committed. The archived sidecars deliberately do
+      NOT keep the `.edikt.yaml` suffix — a repo-wide glob for it counts the
+      live corpus, and five archived rejects would silently read as 107.
+  - prompt_version: v9
+    rejected_at: "2026-09-18"
+    scope: >-
+      FIVE ARTIFACTS, NOT THE CORPUS: ADR-035, ADR-040, ADR-053, ADR-055,
+      GL-002 — the same frozen set v5 was judged on, chosen because they are
+      the artifacts with known sensitivity to a contract change. A subset can
+      REJECT a contract; it could not have adopted one. Stated here so the
+      record says what was measured rather than implying the corpus.
+    method: >-
+      Same-corpus, two-contract comparison. The live corpus held constant as
+      the before-side and re-extracted through v9 into a detached worktree,
+      per test/lib/extractor-contract-compare.py --before-root. NOT compared
+      against the sha the v4 entry names: the corpus has moved 196 -> 102
+      sidecars since 2026-08-13, and that comparison reports 360 findings that
+      are corpus evolution rather than extraction loss.
+    reason: >-
+      28 bodies with no counterpart across 3 of 5 artifacts (ADR-035 6,
+      ADR-053 17, ADR-055 5). ADR-040 was clean and GL-002 re-extracted
+      byte-identically. 0 obligations weakened (check 2) and 0 flattened
+      (check 3), so this is a LOSS failure, not a wording failure — v9 does
+      not soften rules, it drops them.
+
+      TWO INDEPENDENT INSTRUMENTS AGREE, which is why this is recorded as
+      judged rather than suspected. The comparator reported the dropped
+      bodies; `edikt phasea restore` and `edikt phasea verify` — edikt's own
+      machinery, which knows nothing about the comparator — independently
+      refused the same run. verify: INCOMPLETE, 5 items, 1 output-missing,
+      1 pins-unrestorable, 3 ok.
+
+      ADR-035: 16 human-pinned fields could not be reinstated because the
+      directives they were pinned to have no counterpart after regeneration —
+      2 human_approved_at timestamps, a positive and negative behavioral
+      fixture path, and 6 verify / 6 verify_kind pairs. A human's prior
+      approval left silently. That is the harm the restore contract exists
+      to prevent, and reporting success over it is the absence-as-pass shape.
+
+      ADR-053: quarantined by the content gate. The extractor wrote 1 invalid
+      anchor of 30 across 14 items, and the defect is a clean, reproducible
+      class rather than a one-off — v9 STRIPPED MARKDOWN EMPHASIS from a quote
+      the gate requires to be byte-exact. Source line 90 reads `the work that
+      would earn the change is *defining a durable, clone-visible baseline*`;
+      v9 recorded it without the asterisks. Quarantine then removed the
+      sidecar, so all 17 of its bodies are absent, not merely altered.
+    evidence: >-
+      Comparator output and the phasea restore/verify transcripts, 2026-09-18.
+      Re-runnable: re-extract the five artifacts above into a detached
+      worktree and run test/lib/extractor-contract-compare.py with
+      --before-root at the live corpus and --after-root at that worktree.
+    note: >-
+      ADR-053's 17 bodies are counted here only because the comparator was
+      fixed the same day (8d55f8d8) to treat an absent after-sidecar as
+      dropped bodies rather than a skip. Under the previous comparator this
+      run reported 11 and still rejected — the verdict does not depend on that
+      fix — but the loss would have been understated by one whole artifact.
   - prompt_version: v5
     rejected_at: "2026-08-13"
     reason: >-

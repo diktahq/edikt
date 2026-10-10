@@ -78,7 +78,7 @@ func SaveRejections(path string, r Rejections) error {
 
 	var sb strings.Builder
 	sb.WriteString("# Topic descriptions a human declined.\n")
-	sb.WriteString("# Written by `bin/edikt sidecar approve --kind topic-description --decision=reject`.\n")
+	sb.WriteString("# Written by `edikt sidecar approve --kind topic-description --decision=reject`.\n")
 	sb.WriteString("# A topic listed here is not re-proposed on the next compile.\n")
 	sb.WriteString("# To undo a rejection, delete its entry — the next compile proposes again.\n")
 	for _, k := range keys {

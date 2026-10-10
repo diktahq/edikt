@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CheatRateReport",
-  "description": "Output of bin/edikt gov benchmark cheat-rate. Validated by KnownFields(true) loader.",
+  "description": "Output of edikt gov benchmark cheat-rate. Validated by KnownFields(true) loader.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "sidecar_id", "ran_at", "adversary_model", "verifies", "summary"],

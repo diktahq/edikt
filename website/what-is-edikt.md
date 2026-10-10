@@ -108,12 +108,12 @@ Tell it to compile your governance directives after capturing decisions:
 
 > "Compile governance"
 
-edikt reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on ambient core loaded every session, per-topic files that load when you touch matching code, a machine-readable `directive-index.yaml` the write-time hooks read, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format — see [Compile](/governance/compile) for the full render model.
+edikt reads your accepted ADRs, active invariants, and team guidelines and produces four things under `.claude/rules/`: an always-on ambient core loaded every session, per-topic files that load when you touch matching code, a machine-readable `delivery-map.yaml` recording which directive governs which path and which surface delivers it, and a manifest that proves nothing drifted. The ADRs are the source of truth. The compiled output is the enforcement format — see [Compile](/governance/compile) for the full render model.
 
 ```text
 ADRs (accepted) + Invariants (active) + Guidelines
         ↓ /edikt:gov:compile
-.claude/rules/ — ambient core, topic files, directive-index.yaml, manifest.yaml
+.claude/rules/ — ambient core, topic files, delivery-map.yaml, manifest.yaml
 ```
 
 Update an ADR, recompile. One source of truth, one compile pass.
@@ -171,10 +171,10 @@ They also sit upstream of your linter. The best engineering teams don't fix lint
 | Hook | What it does |
 |------|-------------|
 | SessionStart | Surfaces what changed since last session, relevant agents |
-| PreToolUse | Validates governance setup before the model writes code |
+| PreToolUse | Refuses an edit that would change an edikt-managed region; warns if `docs/project-context.md` is missing |
 | PostToolUse | Auto-formats code after every edit |
-| Stop | Detects uncaptured decisions, suggests ADR capture |
-| PostCompact | Recovers context after compaction |
+| Stop | Detects uncaptured decisions; suggests (never requires) an ADR for product architecture choices |
+| SessionStart (after compaction) | Re-injects the active plan phase and invariants |
 | UserPromptSubmit | Injects active plan phase on every prompt |
 | SubagentStop | Logs agent activity and enforces quality gates |
 | InstructionsLoaded | Logs which rule packs are active this session |

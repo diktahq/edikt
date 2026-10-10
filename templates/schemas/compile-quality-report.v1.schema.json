@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "CompileQualityReport",
-  "description": "Output of the compiled-governance quality grader (bin/edikt gov grade-compile). An LLM-as-judge scores the .claude/rules/governance/ tree on four editorial dimensions, 0-10 each, per compile-quality.md. Validated by KnownFields(true) loader.",
+  "description": "Output of the compiled-governance quality grader (edikt gov grade-compile). An LLM-as-judge scores the .claude/rules/governance/ tree on four editorial dimensions, 0-10 each, per compile-quality.md. Validated by KnownFields(true) loader.",
   "type": "object",
   "additionalProperties": false,
   "required": [

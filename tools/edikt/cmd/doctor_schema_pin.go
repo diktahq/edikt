@@ -1,13 +1,12 @@
 package cmd
 
-// doctor_schema_pin.go — backstop for the upgrade-flow gate in
-// commands/upgrade.md Step 6: that gate withholds the edikt_version bump
-// until sidecar migration (legacy-sentinel strip + schema-shape upgrade)
-// fully completes, specifically so this disagreement never arises in the
-// normal upgrade path. This check exists for the paths that gate cannot
-// cover — a manually edited edikt_version, or an upgrade interrupted after
-// the version write but before this binary can re-verify — where the
-// config claims a schema line the corpus does not actually have.
+// doctor_schema_pin.go — the standing report for a config/corpus schema
+// disagreement: edikt_version claims a schema line the corpus does not
+// actually have. ADR-082 removed the upgrade-flow gate that used to withhold
+// the edikt_version bump until migration completed (a project-level flag
+// the decision rejects — state is per artifact); doctor is now the only
+// place this disagreement is reported, for a manually edited edikt_version,
+// an interrupted upgrade, or a corpus lifted after the version write.
 //
 // Once edikt_version is on the v0.8+ line (versionLineFloor), every
 // governed sidecar is expected to be schema_version 2. A schema_version 1
@@ -78,6 +77,6 @@ func runSchemaPinCheck(projectRoot string, out io.Writer) int {
 	for _, id := range stale {
 		fmt.Fprintf(out, "    stale: %s\n", id)
 	}
-	fmt.Fprintln(out, "  Run: edikt migrate to-v2")
+	fmt.Fprintln(out, "  Run: edikt migrate lift")
 	return 1
 }

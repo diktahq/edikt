@@ -123,7 +123,7 @@ One screen. Say "looks good" when the selection is right. Toggle anything by nam
 | Session refresh | Surfaces what changed since last session |
 | Governance check | Validates setup before the model writes code |
 | Auto-format | Formats code after every edit |
-| Decision detection | Suggests ADR capture when decisions are made |
+| Decision detection | Suggests (never requires) an ADR for product architecture choices |
 | Plan injection | Injects active plan phase on every prompt |
 | Context preservation | Preserves plan state before compaction |
 | Context recovery | Recovers plan + invariants after compaction |

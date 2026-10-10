@@ -103,7 +103,7 @@ func TestRejectedOptions_FlagsBareADR(t *testing.T) {
 	if !strings.Contains(buf.String(), "WARN") {
 		t.Fatalf("expected WARN in output; got:\n%s", buf.String())
 	}
-	if !strings.Contains(buf.String(), "bin/edikt sidecar add-manual-directive") {
+	if !strings.Contains(buf.String(), "edikt sidecar add-manual-directive") {
 		t.Fatalf("expected remediation hint in output; got:\n%s", buf.String())
 	}
 }

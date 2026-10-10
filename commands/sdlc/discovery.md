@@ -10,7 +10,7 @@ allowed-tools:
   - Grep
   - Bash
 ---
-!`${HOME}/.edikt/bin/edikt next-id discovery`
+!`edikt next-id discovery`
 
 # edikt:sdlc:discovery
 

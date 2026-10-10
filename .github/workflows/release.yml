@@ -355,6 +355,24 @@ jobs:
               bin.install "bin/edikt"
             end
 
+            def caveats
+              <<~EOS
+                Homebrew installed the edikt LAUNCHER only. The payload — commands,
+                agents, hooks and rule packs — is a separate download:
+
+                  edikt install v${VERSION}
+                  edikt use v${VERSION}
+
+                Then run /edikt:init from Claude Code inside a project.
+
+                The two halves upgrade independently:
+                  brew upgrade edikt   updates the launcher
+                  edikt upgrade        updates the payload
+
+                Neither updates the other, so run both when moving versions.
+              EOS
+            end
+
             test do
               assert_match version.to_s, shell_output("#{bin}/edikt version")
             end

@@ -198,7 +198,15 @@ If the SPEC has a sidecar YAML (v2), append a review record to `revision_history
   note: "Rubric: {score}/{total}; coverage: {covered}/{total}; AC pass-through: {passed}/{total}"
 ```
 
-Recompute `_sync` hashes (SHA-256 via python3 argv — compliant).
+Write it through the sidecar writer — never by hand and never through a plain-data YAML dump, which drops the `# yaml-language-server` header the sidecar opens with:
+
+```bash
+edikt util yaml record "$SIDECAR_YAML" --action review \
+  --note "Rubric: {score}/{total}; coverage: {covered}/{total}; AC pass-through: {passed}/{total}" \
+  --author "$(git config user.name)" --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+Then recompute `_sync` hashes with `edikt util hash <file>` (if a shell guard refuses the word "hash", `shasum -a 256 <file> | cut -d' ' -f1` is the same value) and Edit the `_sync:` block.
 
 ## Design Notes
 

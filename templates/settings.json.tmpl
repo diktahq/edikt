@@ -53,6 +53,15 @@
             "command": "${EDIKT_HOOK_DIR}/session-start.sh"
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${EDIKT_HOOK_DIR}/session-compact.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -72,14 +81,6 @@
           {
             "type": "command",
             "command": "${EDIKT_HOOK_DIR}/pre-tool-use.sh"
-          },
-          {
-            "type": "command",
-            "command": "${EDIKT_HOOK_DIR}/verify-gate.sh"
-          },
-          {
-            "type": "command",
-            "command": "${EDIKT_HOOK_DIR}/inject-directives-pre.sh"
           }
         ]
       }
@@ -92,15 +93,6 @@
           {
             "type": "command",
             "command": "${EDIKT_HOOK_DIR}/post-tool-use.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${EDIKT_HOOK_DIR}/inject-directives-post.sh"
           }
         ]
       }

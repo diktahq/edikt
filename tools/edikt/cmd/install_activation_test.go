@@ -45,7 +45,7 @@ func TestReportInstallNotActivated_PrintsPointerToUse(t *testing.T) {
 
 func TestReportInstallNotActivated_SilentWhenAlreadyActive(t *testing.T) {
 	root := t.TempDir()
-	if err := writeLock(root, "0.7.2", "launcher"); err != nil {
+	if err := writeLock(root, "0.7.2", "launcher", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,7 +89,7 @@ func TestInstall_LocalSource_ReportsNotActivated(t *testing.T) {
 	if err := os.Symlink(filepath.Join("versions", "0.7.1"), filepath.Join(root, "current")); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.7.1", "launcher"); err != nil {
+	if err := writeLock(root, "0.7.1", "launcher", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 

@@ -24,8 +24,12 @@
 //	4  ExitRefused        — a whole-plan refusal: budget ceiling exceeded,
 //	                        extractor prompt_version UNKNOWN, a corpus load
 //	                        error, an item that failed idvalidate, a
-//	                        pin-set capture failure, or a malformed
-//	                        phasea.* config value. Chosen to match
+//	                        pin-set capture failure (including a pin that
+//	                        already exists with different bytes), a
+//	                        malformed phasea.* config value, a corpus-path
+//	                        plan_id that is already terminal, or an item
+//	                        whose latest plan is unclosed and whose sidecar
+//	                        has moved since (plan_succession.go). Chosen to match
 //	                        SPEC-013's own "4 is the pre-run refusal code"
 //	                        convention (D9) rather than invent a second
 //	                        refusal code space for a sibling command.
@@ -33,8 +37,9 @@
 // JOURNALING: phasea-journal.v1's `refuse` event carries a `cause` enum
 // widened 2026-08-20 (SPEC-013 SR-006, PRD-007 FR-018) from four values to
 // nine, specifically so every ExitRefused path below could journal instead
-// of silently returning a plain Go error. All seven plan-time causes now
-// journal exactly one line before Plan() returns:
+// of silently returning a plain Go error — and widened again 2026-10-04 (#11)
+// with the last three below. Every plan-time cause journals exactly one line
+// before Plan() returns:
 //
 //	invalid-config          — LoadConfig failed (missing/malformed
 //	                           .edikt/config.yaml or a non-positive
@@ -49,18 +54,29 @@
 //	force-ceiling-exceeded  — stale count exceeds phasea.force_ceiling on
 //	                           a --force run.
 //	pin-capture-failed      — D6's mandatory pin-set capture failed.
+//	sidecar-absent-on-request — a requested extraction found no sidecar
+//	                           and no --bootstrap declaration (D414).
+//	plan-id-terminal        — the corpus path derived the id of a consumed
+//	                           or FAILED plan; a requested extraction
+//	                           derives a successor instead.
+//	unclosed-plan           — the latest plan covering an item was never
+//	                           closed and its sidecar has moved since.
 //
-// invalid-config and prompt-version-unknown journal with the
-// PlanIDUnresolved sentinel (plan_types.go): both refuse before a real
-// corpus_hash/config_hash pair can be computed at all. Every other cause
-// journals a real, content-derived plan_id. See plan_types.go's Cause* doc
+// invalid-config, prompt-version-unknown and the --artifact/--artifacts
+// resolution refusals (sidecar-absent-on-request, an unknown path) journal
+// with the PlanIDUnresolved sentinel (plan_types.go): each refuses before a
+// real corpus_hash/config_hash pair can be computed at all. Every other cause
+// journals a real, content-derived plan_id — plan-id-terminal the terminal
+// plan's, unclosed-plan the id the refused plan would have carried. See plan_types.go's Cause* doc
 // for the full reasoning.
 package phasea
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,14 +102,10 @@ type PlanOptions struct {
 	// Force does NOT change which items are planned: computeWorkList's
 	// stale-sidecar detection is the one detector this file has (see the
 	// phase brief's point 1), so a forced run still plans exactly the
-	// missing/stale work-list, just against the higher ceiling. A truly
-	// whole-corpus "replan every artifact regardless of staleness" mode —
-	// the shape `gov reextract --force` will eventually need — has no
-	// representable `reason` in phasea-dispatch-plan.v1's closed three-value
-	// enum (plan_types.go's Reason* doc) and is left to reextract's own
-	// Phase 4 rewire, which owns its own ledger-based candidate list and can
-	// call the lower-level helpers in this file directly rather than
-	// through the stale-only Plan() entry point.
+	// missing/stale work-list, just against the higher ceiling. A caller that
+	// needs "replan these regardless of staleness" — which is what
+	// `gov reextract` needs after a CONTRACT change, when nothing is stale —
+	// passes them in Artifacts and gets reason `requested` per item.
 	Force bool
 
 	// Only restricts the plan to these artifact IDs, when non-empty.
@@ -104,6 +116,53 @@ type PlanOptions struct {
 	// one. Filtering happens before the budget check, so a narrow run is
 	// checked against the count it will actually dispatch.
 	Only []string
+
+	// Artifact plans exactly this one artifact (a path relative to the
+	// project root, or absolute) with reason `requested`, whether or not the
+	// stale detector would have selected it — SPEC-013 SR-011, the path the
+	// per-artifact compile commands take. An unknown path is a refusal.
+	Artifact string
+
+	// Artifacts plans exactly these artifacts, each with reason `requested`,
+	// whether or not the stale detector would have selected them. It is the
+	// plural of Artifact and takes the same path through requestedItem.
+	//
+	// It exists because `gov reextract --force` did nothing for weeks and said
+	// it had. reextract builds its own candidate list, then called Plan with
+	// only ProjectRoot/Force/Only — so Plan ignored that list and re-derived a
+	// STALE-ONLY work-list. After a CONTRACT change nothing is stale, every
+	// anchor still matches, so the plan came back empty and the run reported
+	// the candidate count it never dispatched (D425).
+	//
+	// The comment that used to sit here said a whole-corpus replan "has no
+	// representable reason in phasea-dispatch-plan.v1's closed three-value
+	// enum". That was true when written and is not now: `requested` was added
+	// 2026-09-02 (aa4173d9) and is in the v3 schema's enum. The blocker was
+	// removed a fortnight before anyone noticed the verb was still broken —
+	// which is its own lesson about comments that record an obstacle and
+	// outlive it.
+	Artifacts []string
+
+	// Bootstrap declares that the Artifact genuinely has NO prior sidecar —
+	// that this is a first extraction, not a re-extraction of one that went
+	// missing. It is accepted ONLY with Artifact, and it exists because the
+	// two cases are indistinguishable from disk and the difference is
+	// destructive (D414).
+	//
+	// A sidecar's `manual_directives` and `suppressed_directives` are prose a
+	// human wrote INTO THE SIDECAR; they appear nowhere in the parent .md, so
+	// the extractor cannot regenerate them. pinpreserve carries them forward
+	// from the pre-dispatch pin — and when the sidecar is already gone there
+	// is no pin to take, so a `requested` extraction over an absent sidecar
+	// destroys them and every downstream report still reads clean. bok found
+	// exactly that in the field: four directives gone, including a
+	// SQL-parameterisation rule, with plan, restore and verify all at exit 0.
+	//
+	// So the machine does not guess. It refuses and asks, and this flag is
+	// the human's answer. It does NOT apply to the corpus path, where
+	// ReasonMissing IS the bootstrap case and refusing would break every
+	// legitimate first compile.
+	Bootstrap bool
 }
 
 // PlanOutcome is Plan()'s result. Plan is non-nil only when ExitCode ==
@@ -140,7 +199,7 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 	// itself is unpinned (point 6 / ADR-055 §4 by analogy). An UNKNOWN
 	// prompt_version must never be silently baked into a plan that fans out
 	// real subagent dispatches downstream.
-	promptVersion, pverr := ResolveExtractorPromptVersion(root)
+	promptVersion, promptNote, pverr := ResolveExtractorPromptVersionDetail(root)
 	if pverr != nil || promptVersion == ExtractorPromptVersionUnknown {
 		msg := fmt.Sprintf(
 			"refusing to emit a plan: extractor prompt_version resolved to %s (%v) — "+
@@ -160,6 +219,20 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 		return &PlanOutcome{ExitCode: ExitRefused, Message: msg}, errors.New(msg)
 	}
 
+	// Resolved from the same installed agent file prompt_version was just
+	// read from (candidate order: project-local, then profile), so by the
+	// time prompt_version resolved successfully this should too — the
+	// "unrecorded" fallback exists for a read racing a concurrent edit
+	// between the two resolutions, not as an expected steady-state value on
+	// a freshly-emitted plan. Not a separate whole-run refusal gate: unlike
+	// an unpinned prompt_version, an unrecorded contract digest does not
+	// change what gets dispatched, only what a later drift line can say
+	// about it.
+	contractDigest, cderr := ResolveExtractorContractDigest(root)
+	if cderr != nil {
+		contractDigest = ExtractorContractUnrecorded
+	}
+
 	items, loadErrs, validationErrs, werr := computeWorkList(root, cfg.Dirs())
 	if werr != nil {
 		msg := werr.Error()
@@ -175,6 +248,62 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 		}
 		return &PlanOutcome{ExitCode: ExitRefused, Message: msg}, errors.New(msg)
 	}
+	// --artifact: plan that one artifact regardless of staleness (SR-011).
+	// The stale work-list is replaced, not filtered: a fresh artifact is not
+	// in it, and "the extractor missed a rule" is exactly the fresh case.
+	// Artifacts (plural) is Artifact's own path, once per entry. Any refusal —
+	// an unknown path, an excluded artifact, an absent sidecar without
+	// --bootstrap — refuses the WHOLE plan rather than silently planning the
+	// rest: a batch that quietly drops one subject is the shape D425 is about.
+	if len(opts.Artifacts) > 0 {
+		reqs := make([]workItem, 0, len(opts.Artifacts))
+		for _, a := range opts.Artifacts {
+			// A CORPUS-WIDE replan is the bootstrap case for a sidecar-less
+			// artifact, not the loss case, so this passes Bootstrap rather than
+			// refusing. The D414 refusal guards a TARGETED `--artifact`, where a
+			// human named one artifact and an absent sidecar is as likely lost as
+			// new. Over a whole corpus it is neither knowable nor rare — every
+			// newly-added artifact has no sidecar — and refusing the batch would
+			// block re-extraction on any corpus containing one new ADR.
+			//
+			// The protection is not dropped, it moves to where it can work:
+			// buildItem marks each such item BootstrapNoPin, and restore names
+			// them — "N of M item(s) had NO prior sidecar, so no pin was taken"
+			// — which is D415's ruling that the corpus path REPORTS where it
+			// cannot prevent.
+			req, rerr := requestedItem(root, cfg.Dirs(), a, promptVersion, true)
+			if rerr != nil {
+				msg := fmt.Sprintf("refusing to emit a plan: %s: %v", a, rerr)
+				if jerr := appendJournal(root, JournalRecord{Event: JournalEventRefuse, PlanID: PlanIDUnresolved, Items: 0, Cause: CauseCorpusLoadError}); jerr != nil {
+					msg = msg + fmt.Sprintf(" (additionally, the refusal itself could not be journaled: %v)", jerr)
+				}
+				return &PlanOutcome{ExitCode: ExitRefused, Message: msg}, errors.New(msg)
+			}
+			reqs = append(reqs, req)
+		}
+		items = reqs
+		// loadErrs and validationErrs are NOT cleared here, unlike the single
+		// --artifact path. A corpus-wide replan is still a corpus read: an
+		// unparseable sidecar anywhere is a whole-plan refusal, and discarding
+		// those was "a corpus with an unparseable sidecar was planned anyway",
+		// caught by the test that exists for exactly that swallow.
+	} else if opts.Artifact != "" {
+		req, rerr := requestedItem(root, cfg.Dirs(), opts.Artifact, promptVersion, opts.Bootstrap)
+		if rerr != nil {
+			msg := fmt.Sprintf("refusing to emit a plan: --artifact %s: %v", opts.Artifact, rerr)
+			cause := CauseCorpusLoadError
+			if errors.Is(rerr, errSidecarAbsentOnRequest) {
+				cause = CauseSidecarAbsentOnRequest
+			}
+			if jerr := appendJournal(root, JournalRecord{Event: JournalEventRefuse, PlanID: PlanIDUnresolved, Items: 0, Cause: cause}); jerr != nil {
+				msg = msg + fmt.Sprintf(" (additionally, the refusal itself could not be journaled: %v)", jerr)
+			}
+			return &PlanOutcome{ExitCode: ExitRefused, Message: msg}, errors.New(msg)
+		}
+		items = []workItem{req}
+		loadErrs, validationErrs = nil, nil
+	}
+
 	// Narrow to --only BEFORE the budget check, so a targeted run is checked
 	// against what it will actually dispatch rather than the whole corpus.
 	if len(opts.Only) > 0 {
@@ -215,7 +344,7 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 		if len(loadErrs) > 0 {
 			cause = CauseCorpusLoadError
 		}
-		planID := derivePlanID(corpusHash(items), configHash(cfg, promptVersion))
+		planID := derivePlanID(corpusHash(items), configHash(cfg, promptVersion, contractDigest))
 		if jerr := appendJournal(root, JournalRecord{
 			Event:  JournalEventRefuse,
 			PlanID: planID,
@@ -236,11 +365,28 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 
 	for i := range items {
 		items[i].PromptVersion = promptVersion
+		items[i].ContractDigest = contractDigest
 	}
 
-	cHash := corpusHash(items)
-	kHash := configHash(cfg, promptVersion)
-	planID := derivePlanID(cHash, kHash)
+	kHash := configHash(cfg, promptVersion, contractDigest)
+
+	// A TERMINAL id is never written again (#11, c1-a/c1-c). A requested
+	// extraction — the caller named the artifacts — derives a successor; the
+	// corpus path refuses. `requested` comes from the options the caller
+	// passed, never from an item's reason.
+	requested := opts.Artifact != "" || len(opts.Artifacts) > 0
+	succ, serr := resolveTerminalCollision(root, items, kHash, requested)
+	cHash, planID := succ.CorpusHash, succ.PlanID
+	if serr != nil {
+		return refusePlan(root, planID, len(items), CausePlanIDTerminal, serr)
+	}
+
+	// The latest unclosed plan per item blocks a re-plan once the sidecar has
+	// moved under it (#11, c1-d/c1-f/c1-g). Before pin capture: a refused plan
+	// must not have touched a pin.
+	if gerr := guardUnclosedPlans(root, planID, succ.Supersedes, items); gerr != nil {
+		return refusePlan(root, planID, len(items), CauseUnclosedPlan, gerr)
+	}
 
 	ceiling := cfg.Ceiling
 	configKey := "phasea.ceiling"
@@ -307,6 +453,7 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 			Ceiling:        cfg.Ceiling,
 			ForceCeiling:   cfg.ForceCeiling,
 			AppliedCeiling: applied,
+			MaxConcurrency: cfg.MaxConcurrency,
 		},
 		Items: toPlanItems(items),
 	}
@@ -337,8 +484,23 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 	return &PlanOutcome{
 		ExitCode: ExitPlanEmitted,
 		Plan:     plan,
-		Message:  fmt.Sprintf("plan %s: %d item(s)", planID, len(items)),
+		Message:  planMessage(planID, len(items), promptNote) + supersedesMessage(succ),
 	}, nil
+}
+
+// refusePlan journals one `refuse` line under cause and returns the
+// whole-plan refusal. Nothing else is written.
+func refusePlan(root, planID string, items int, cause string, why error) (*PlanOutcome, error) {
+	msg := "refusing to emit a plan: " + why.Error()
+	if jerr := appendJournal(root, JournalRecord{
+		Event:  JournalEventRefuse,
+		PlanID: planID,
+		Items:  items,
+		Cause:  cause,
+	}); jerr != nil {
+		msg = msg + fmt.Sprintf(" (additionally, the refusal itself could not be journaled: %v)", jerr)
+	}
+	return &PlanOutcome{ExitCode: ExitRefused, Message: msg}, errors.New(msg)
 }
 
 // toPlanItems strips workItem's in-process-only fields (absArtifactPath,
@@ -395,13 +557,15 @@ func writePlanFile(root string, plan *DispatchPlan) error {
 }
 
 // pinSnapshotPath is where an item's pre-dispatch sidecar bytes are
-// captured, keyed by plan_id so a later plan (a different corpus/config
-// state) never collides with an earlier one's snapshots. Not part of any
-// landed schema (phasea-dispatch-plan.v1/phasea-journal.v1 are the only
-// schemas this phase's plan output must validate against) — this is
-// plan.go's own private on-disk format, consumed by restore.go (Phase 3)
-// the same way reextract/snapshot.go's writeSnapshot already is consumed
-// by reextract's own review step.
+// captured, keyed by plan_id. Keying by plan_id does NOT by itself keep two
+// plans apart: until 0.9.0 a re-request of an unchanged artifact re-derived a
+// consumed plan's id and wrote straight over its pins (#11, c1-a). What keeps
+// them apart is the id — corpus_hash covers these very bytes and a terminal id
+// is succeeded, never reused (plan_hash.go, plan_succession.go) — and
+// capturePinSnapshot's write-once rule, which refuses rather than overwrite.
+// Not part of any landed schema — this is plan.go's own private on-disk
+// format, consumed by restore.go the same way reextract/snapshot.go's
+// writeSnapshot is consumed by reextract's own review step.
 func pinSnapshotPath(root, planID, itemID string) string {
 	return filepath.Join(root, ".edikt", "state", "phasea", planID+".pins", itemID+".yaml")
 }
@@ -420,11 +584,26 @@ func PinSnapshotPath(root, planID, itemID string) string {
 // capture, per PreservePinned's own contract ("before == nil" means
 // "nothing to preserve, the ordinary bootstrap case") — it succeeds
 // vacuously rather than writing an empty file.
+//
+// WRITE-ONCE. A pin is the only copy of what a human pinned before the
+// extractor ran. When one already exists for this plan and item, identical
+// bytes are a no-op (an idempotent re-plan of an open plan) and different
+// bytes are an error — the whole plan is refused under pin-capture-failed
+// rather than the pin being replaced with whatever the sidecar holds now.
 func capturePinSnapshot(root, planID string, it workItem) error {
 	if it.beforeSidecar == nil {
 		return nil
 	}
 	dst := pinSnapshotPath(root, planID, it.ItemID)
+	if existing, err := os.ReadFile(dst); err == nil { //nolint:gosec // state path built from a validated id
+		if bytes.Equal(existing, it.beforeSidecar) {
+			return nil
+		}
+		return fmt.Errorf("a pin for %s already exists under plan %s at %s with different bytes — pins are "+
+			"write-once, and replacing it would discard what that plan must restore", it.ItemID, planID, relPath(root, dst))
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("an existing pin at %s could not be read: %w", relPath(root, dst), err)
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
@@ -447,4 +626,76 @@ func capturePinSnapshot(root, planID string, it workItem) error {
 		return err
 	}
 	return nil
+}
+
+// errSidecarAbsentOnRequest marks the D414 refusal so the journal can record
+// its own cause rather than filing it under a corpus load error.
+var errSidecarAbsentOnRequest = errors.New("sidecar absent on a requested extraction")
+
+// errAbsentSidecarOnRequest is the message a human reads when a `requested`
+// extraction finds no sidecar. It states what is at risk and BOTH ways forward,
+// because a refusal that does not tell you how to proceed is an obstacle rather
+// than a control.
+func errAbsentSidecarOnRequest(artifact string) error {
+	return fmt.Errorf("%w: %s has no sidecar on disk.\n"+
+		"  A requested re-extraction rebuilds the sidecar from the parent document — and a sidecar's\n"+
+		"  manual_directives and suppressed_directives are prose a human wrote INTO THE SIDECAR. They\n"+
+		"  appear nowhere in the parent, so the extractor cannot regenerate them. They are normally\n"+
+		"  carried forward from the pre-dispatch pin; with the sidecar already gone there is nothing to\n"+
+		"  pin, and they would be destroyed with every downstream report still reading clean.\n"+
+		"  Two ways forward, and only you can tell which is true:\n"+
+		"    - the sidecar was LOST (deleted, a bad merge, an ignore rule): restore it first, then re-run.\n"+
+		"      `git checkout -- <sidecar>` if it is tracked.\n"+
+		"    - it NEVER existed and this is a first extraction: re-run with --bootstrap.",
+		errSidecarAbsentOnRequest, artifact)
+}
+
+// requestedItem builds the one-item work-list for --artifact: the pair whose
+// artifact path matches, with reason `requested`, its current sidecar bytes
+// (if any) captured as the pre-dispatch baseline so restore/verify treat a
+// re-extraction exactly like a stale one.
+func requestedItem(root string, dirs []string, artifact, promptVersion string, bootstrap bool) (workItem, error) {
+	pairs, err := sidecar.Discover(root, dirs)
+	if err != nil {
+		return workItem{}, err
+	}
+	want := artifact
+	if !filepath.IsAbs(want) {
+		want = filepath.Join(root, filepath.FromSlash(artifact))
+	}
+	want = filepath.Clean(want)
+	for _, p := range pairs {
+		if filepath.Clean(p.ParentPath) != want {
+			continue
+		}
+		var before []byte
+		if p.SidecarPath != "" {
+			if b, rerr := os.ReadFile(p.SidecarPath); rerr == nil {
+				before = b
+			}
+		}
+		// A declared bootstrap of a PROPOSED ADR with no sidecar is admitted
+		// despite the status exclusion: /edikt:adr:new compiles the ADR it
+		// just wrote, and only a clean verify lets it flip to accepted (#14).
+		admitProposed := bootstrap && before == nil && sidecar.IsProposedADR(p.Kind, p.ParentPath)
+		if excluded, why := statusExcluded(p); excluded && !admitProposed {
+			return workItem{}, fmt.Errorf("%s is excluded from the compiled corpus (%s); a requested extraction of an excluded artifact would produce a sidecar nothing reads", artifact, why)
+		}
+		if before == nil && !bootstrap {
+			return workItem{}, errAbsentSidecarOnRequest(artifact)
+		}
+		return buildItem(root, p, ReasonRequested, promptVersion, before)
+	}
+	return workItem{}, fmt.Errorf("no governed artifact at that path under %v", dirs)
+}
+
+// planMessage is the success line, plus the extractor-resolution note when
+// there was more than one definition to choose from (D40): which one the
+// plan's prompt_version came from is part of what the plan asserts.
+func planMessage(planID string, items int, promptNote string) string {
+	msg := fmt.Sprintf("plan %s: %d item(s)", planID, items)
+	if promptNote != "" {
+		msg += "\nextractor: " + promptNote
+	}
+	return msg
 }

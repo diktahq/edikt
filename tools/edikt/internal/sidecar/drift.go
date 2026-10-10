@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // AutoRepairAnchors attempts to repair stale line/column anchors in each
@@ -115,12 +117,109 @@ func repairExcerpt(se *SourceExcerpt, sourceLines []string) bool {
 	if pick.start == pick.end && se.LineEnd > se.LineStart {
 		newEnd = pick.start + (se.LineEnd - se.LineStart)
 	}
-	if newStart == se.LineStart && newEnd == se.LineEnd {
+	if newEnd > len(sourceLines) {
+		newEnd = len(sourceLines)
+	}
+	changed := false
+	if newStart != se.LineStart || newEnd != se.LineEnd {
+		se.LineStart = newStart
+		se.LineEnd = newEnd
+		changed = true
+	}
+	// A repaired anchor is byte-exact, not merely relocated (ADR-056, D46
+	// (b)): when the passage was found only by normalised match — a wrapped
+	// line joined, a bullet stripped, whitespace collapsed — the quote was
+	// reconstructed, and the same mechanical step that fixes the range copies
+	// the file's own bytes into the quote. This is the one place a quote is
+	// rewritten without an extraction, and it only ever writes what the file
+	// says at the lines the anchor now points to.
+	//
+	// It copies the MATCHED SPAN, not the whole lines (#7, c3-b). A matched
+	// line that carries a second sentence used to hand that sentence to the
+	// quote too, so the anchor claimed prose the directive was never grounded
+	// in. The whole passage is the fallback only when the span is not unique
+	// inside the range — then no single span can be named without guessing.
+	passage := strings.Join(sourceLines[se.LineStart-1:se.LineEnd], "\n")
+	if !strings.Contains(passage, se.Quote) {
+		if span, ok := canonicalSliceInRange(passage, quote); ok {
+			se.Quote = span
+		} else {
+			se.Quote = passage
+		}
+		changed = true
+	}
+	return changed
+}
+
+// canonicalSliceInRange returns the raw bytes of passage whose whitespace-
+// normalised form equals the normalised quote, when that occurrence is unique.
+//
+// Normalisation is normalizeWS's: every run of Unicode whitespace (newlines
+// included) collapses to one space, leading and trailing whitespace dropped.
+// The normalised passage is built with a byte-offset map back to the raw
+// passage, so the span's start and end land on the raw offsets of its first
+// and last non-space runes. Both ends are rune boundaries by construction:
+// the start is a rune's first byte and the end is one past a rune's last
+// byte, so a multibyte character on either edge is never split.
+//
+// ok is false when the quote normalises to nothing, does not occur, or occurs
+// more than once (overlapping occurrences count) — the caller then keeps its
+// own fallback rather than picking one of several spans.
+func canonicalSliceInRange(passage, quote string) (string, bool) {
+	nq := normalizeWS(quote)
+	if nq == "" {
+		return "", false
+	}
+	var norm strings.Builder
+	rawAt := make([]int, 0, len(passage)) // rawAt[i] = raw offset of normalised byte i
+	pendingSpace := -1                    // raw offset of the whitespace run awaiting emission
+	for off, r := range passage {
+		if unicode.IsSpace(r) {
+			if pendingSpace < 0 {
+				pendingSpace = off
+			}
+			continue
+		}
+		if pendingSpace >= 0 && norm.Len() > 0 {
+			norm.WriteByte(' ')
+			rawAt = append(rawAt, pendingSpace)
+		}
+		pendingSpace = -1
+		// The width the range loop advanced by, not RuneLen(r): an invalid
+		// byte arrives as utf8.RuneError (RuneLen 3) but occupies one byte.
+		_, w := utf8.DecodeRuneInString(passage[off:])
+		norm.WriteString(passage[off : off+w])
+		for b := 0; b < w; b++ {
+			rawAt = append(rawAt, off+b)
+		}
+	}
+	doc := norm.String()
+	first := strings.Index(doc, nq)
+	if first < 0 {
+		return "", false
+	}
+	if strings.Contains(doc[first+1:], nq) {
+		return "", false
+	}
+	start := rawAt[first]
+	end := rawAt[first+len(nq)-1] + 1
+	return passage[start:end], true
+}
+
+// QuotePresent reports whether quote occurs anywhere in lines, compared in
+// canonicalSliceInRange's normalised frame (normalizeWS on both sides: every
+// run of whitespace, line breaks included, is one space). It answers "is this
+// passage still in the parent?", not "is it at the lines it records?" — that
+// byte-exact question is verifyOne's, and the two must not be confused.
+//
+// A quote that normalises to nothing is never present: an empty anchor
+// carries no passage, and calling it present would let it vouch for any body.
+func QuotePresent(quote string, lines []string) bool {
+	nq := normalizeWS(quote)
+	if nq == "" {
 		return false
 	}
-	se.LineStart = newStart
-	se.LineEnd = newEnd
-	return true
+	return strings.Contains(normalizeWS(strings.Join(lines, "\n")), nq)
 }
 
 // normalizeWS collapses every run of whitespace into a single space and
@@ -215,22 +314,23 @@ func IsStale(sc *Sidecar, sourceLines []string) bool {
 // the fallback, so a quote that differs from the prose only in collapsed
 // whitespace (joined wrapped lines, stripped indentation) does not count
 // as drift — semantic changes to the prose still do.
+// excerptStale is THE anchor judgement for staleness, and it is the same
+// procedure VerifyAnchors runs for doctor and the post-extraction gate:
+// verifyOne, byte-exact at the recorded lines (ADR-056). It used to fall
+// back to a whitespace-normalised match, so compile called a reconstructed
+// quote fresh while doctor called it stale — two answers to one question
+// (D46 (b), bok 2026-09-02: ADR-060/061). A quote that is not a byte slice
+// of the file is stale from the moment it is written; the extractor is told
+// so, and a re-extraction that copies the bytes is the remedy.
+//
+// An empty quote is not drift (it is what the fallback excerpt carries) and
+// is judged by isDefaultFallbackExcerpt, not here.
 func excerptStale(se SourceExcerpt, sourceLines []string) bool {
-	quote := strings.TrimSpace(se.Quote)
-	if quote == "" {
+	if strings.TrimSpace(se.Quote) == "" {
 		return false
 	}
-	if se.LineStart < 1 || se.LineEnd < se.LineStart {
-		return true
-	}
-	if se.LineStart > len(sourceLines) || se.LineEnd > len(sourceLines) {
-		return true
-	}
-	passage := strings.Join(sourceLines[se.LineStart-1:se.LineEnd], "\n")
-	if strings.Contains(passage, quote) {
-		return false
-	}
-	return !strings.Contains(normalizeWS(passage), normalizeWS(quote))
+	_, faulted := verifyOne("", 0, 0, se, sourceLines)
+	return faulted
 }
 
 func absInt(n int) int {

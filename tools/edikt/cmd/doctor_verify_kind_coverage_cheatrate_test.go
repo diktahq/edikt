@@ -81,7 +81,7 @@ func TestRunCheatRateBenchmarkCheck_EmptyEmitsHint(t *testing.T) {
 	if warns != 0 {
 		t.Errorf("expected 0 warns on empty state, got %d", warns)
 	}
-	if !strings.Contains(buf.String(), "bin/edikt gov benchmark cheat-rate") {
+	if !strings.Contains(buf.String(), "edikt gov benchmark cheat-rate") {
 		t.Errorf("expected bootstrap hint mentioning the subcommand; got:\n%s", buf.String())
 	}
 }

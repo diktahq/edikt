@@ -13,13 +13,17 @@ package hook
 // literal bytes rather than on "contains" alone.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/hook/adapter"
+	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
 // stopHookDecisionMessage trips the adr-candidate detector with a subject
@@ -78,6 +82,11 @@ func writeExecutable(t *testing.T, path, body string) {
 
 func TestStopHookNoConfigIsSilent(t *testing.T) {
 	root, _ := stopHookSandbox(t)
+	// SR-004: stopHookDecisionMessage only names a rejected alternative (one
+	// of three Q2 prongs), so the quiet default would not fire it — eager
+	// restores the pre-SR-004 trigger this test exists to exercise.
+	writeTestFile(t, filepath.Join(root, ".edikt", "config.yaml"),
+		"edikt_version: 0.8.0\nsignals:\n  adr_candidate: eager\n")
 
 	// Positive control FIRST, so a later "silent" result cannot be explained
 	// by the detector being broken in this environment.
@@ -102,6 +111,10 @@ func TestStopHookNoConfigIsSilent(t *testing.T) {
 
 func TestStopHookUpgradeInProgressSuppresses(t *testing.T) {
 	root, _ := stopHookSandbox(t)
+	// SR-004: see the identical note in TestStopHookNoConfigIsSilent — this
+	// test exercises the upgrade-marker guard, not the trigger threshold.
+	writeTestFile(t, filepath.Join(root, ".edikt", "config.yaml"),
+		"edikt_version: 0.8.0\nsignals:\n  adr_candidate: eager\n")
 
 	control := stopHook(newStopHookInvocation(stopHookDecisionMessage))
 	if !strings.Contains(control.Response.Message, "adr-candidate") {
@@ -143,7 +156,7 @@ func TestStopHookCompletionClaim(t *testing.T) {
 		if !strings.Contains(got.Response.Message, "completion-claim: 042-demo phase 2") {
 			t.Fatalf("message = %q, want a completion-claim naming plan 042-demo phase 2", got.Response.Message)
 		}
-		if !strings.Contains(got.Response.Message, "bin/edikt verify 042-demo --phase 2") {
+		if !strings.Contains(got.Response.Message, "edikt verify 042-demo --phase 2") {
 			t.Errorf("message = %q, want the remediation command", got.Response.Message)
 		}
 	})
@@ -187,28 +200,69 @@ func TestStopHookCompletionClaim(t *testing.T) {
 // them fails here even if each one still individually "contains" the word a
 // looser assertion would have looked for.
 func TestStopHookStaleSidecars(t *testing.T) {
-	const sidecarBody = "schema_version: 1\ntopic: demo\npath: docs/architecture/decisions/ADR-001-demo.md\n"
+	const adrRelPath = "docs/architecture/decisions/ADR-001-demo.md"
 
-	seedSidecar := func(t *testing.T, root string) {
+	// seedManifest plants .claude/rules/governance/manifest.yaml — AC-4.4's
+	// "compile fingerprint" — and pins its mtime, which is the ONLY thing
+	// stopHookSidecarDriftFast reads from it.
+	seedManifest := func(t *testing.T, root string, at time.Time) {
 		t.Helper()
-		writeTestFile(t, filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-demo.md"),
-			"# ADR-001\n\n## Decision\n\nThe thing MUST happen.\n")
-		writeTestFile(t, filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-demo.edikt.yaml"), sidecarBody)
+		p := filepath.Join(root, ".claude", "rules", "governance", "manifest.yaml")
+		writeTestFile(t, p, "# manifest\n")
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatalf("chtimes manifest: %v", err)
+		}
 	}
-	// A stand-in for `edikt gov compile --check --json`. Rung 2 of the ladder
-	// (<root>/bin/edikt) is the easiest to plant and the same code path a real
-	// project-local install takes.
-	plantBinary := func(t *testing.T, root, stdout string) {
+
+	// seedSidecarPair writes a parent ADR and a real, loadable sidecar whose
+	// one directive's source_excerpt quotes `quote` — verbatim in the prose
+	// when inSync, a different sentence otherwise (real drift, not a
+	// malformed fixture). Both files' mtimes are set to at.
+	seedSidecarPair := func(t *testing.T, root string, at time.Time, inSync bool) {
 		t.Helper()
-		writeExecutable(t, filepath.Join(root, "bin", "edikt"),
-			"#!/bin/sh\nprintf '%s' '"+stdout+"'\n")
+		prose := "The thing MUST happen."
+		sidecarQuote := prose
+		if !inSync {
+			sidecarQuote = "A sentence that no longer appears anywhere in the prose."
+		}
+		parentBody := "# ADR-001\n\n## Decision\n\n" + prose + "\n"
+		parentPath := filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-demo.md")
+		writeTestFile(t, parentPath, parentBody)
+
+		sc := &sidecar.Sidecar{
+			SchemaVersion: 1,
+			Topic:         "demo",
+			Path:          adrRelPath,
+			Directives: []sidecar.Directive{{
+				Text: "The thing MUST happen. (ref: ADR-001)",
+				SourceExcerpt: sidecar.SourceExcerpt{
+					LineStart: 5,
+					LineEnd:   5,
+					Quote:     sidecarQuote,
+				},
+			}},
+		}
+		body, err := sidecar.Marshal(sc)
+		if err != nil {
+			t.Fatalf("marshal sidecar: %v", err)
+		}
+		sidecarPath := filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-demo.edikt.yaml")
+		writeTestFile(t, sidecarPath, string(body))
+
+		for _, p := range []string{parentPath, sidecarPath} {
+			if err := os.Chtimes(p, at, at); err != nil {
+				t.Fatalf("chtimes %s: %v", p, err)
+			}
+		}
 	}
 
 	var unchecked, named, clean string
+	past := time.Now().Add(-time.Hour)
+	present := time.Now()
 
-	t.Run("binary unresolvable with a sidecar present -> UNCHECKED", func(t *testing.T) {
+	t.Run("no compiled manifest exists -> UNCHECKED", func(t *testing.T) {
 		root, _ := stopHookSandbox(t)
-		seedSidecar(t, root)
+		seedSidecarPair(t, root, present, true) // in sync — irrelevant, no manifest to compare against
 
 		got := stopHook(newStopHookInvocation("Updated the README wording."))
 		unchecked = got.Response.Message
@@ -217,7 +271,7 @@ func TestStopHookStaleSidecars(t *testing.T) {
 			t.Fatalf("message = %q, want the sidecar-stale-unchecked kind", unchecked)
 		}
 		for _, want := range []string{
-			"not checked — the edikt binary is unavailable, so no staleness determination was made",
+			"not checked — no compiled governance manifest exists yet, so no staleness determination was made",
 			"this is not a report that sidecars are current",
 		} {
 			if !strings.Contains(unchecked, want) {
@@ -235,15 +289,15 @@ func TestStopHookStaleSidecars(t *testing.T) {
 		}
 	})
 
-	t.Run("binary reports stale ids -> named finding", func(t *testing.T) {
+	t.Run("changed since the last compile and genuinely stale -> named finding", func(t *testing.T) {
 		root, _ := stopHookSandbox(t)
-		seedSidecar(t, root)
-		plantBinary(t, root, `{"phase_a": {"stale_ids": ["ADR-001-demo"]}, "phase_b": {}}`)
+		seedManifest(t, root, past)
+		seedSidecarPair(t, root, present, false) // out of sync, newer than the manifest
 
 		got := stopHook(newStopHookInvocation("Updated the README wording."))
 		named = got.Response.Message
 
-		if !strings.Contains(named, "⚠ sidecar-stale: ADR-001-demo — sidecar anchors no longer match the prose.") {
+		if !strings.Contains(named, "⚠ sidecar-stale: ADR-001 — sidecar anchors no longer match the prose.") {
 			t.Fatalf("message = %q, want a sidecar-stale finding naming the artifact", named)
 		}
 		if strings.Contains(named, "unchecked") {
@@ -255,10 +309,10 @@ func TestStopHookStaleSidecars(t *testing.T) {
 			t.Fatalf("read staleness log: %v", err)
 		}
 		for _, want := range []string{
-			"# generated by stop-hook.sh from `edikt gov compile --check --json`",
+			"# generated by stop-hook's own fingerprint-based drift check (AC-4.4)",
 			"# generated_at: ",
 			"# corpus_head: ",
-			"ADR-001-demo\n",
+			"ADR-001\n",
 		} {
 			if !strings.Contains(string(logBody), want) {
 				t.Errorf("staleness log = %q, want it to contain %q", logBody, want)
@@ -266,10 +320,10 @@ func TestStopHookStaleSidecars(t *testing.T) {
 		}
 	})
 
-	t.Run("binary reports zero stale -> silence", func(t *testing.T) {
+	t.Run("changed since the last compile but still in sync -> silence", func(t *testing.T) {
 		root, _ := stopHookSandbox(t)
-		seedSidecar(t, root)
-		plantBinary(t, root, `{"phase_a": {"stale_ids": []}, "phase_b": {}}`)
+		seedManifest(t, root, past)
+		seedSidecarPair(t, root, present, true) // newer than the manifest, but not actually stale
 
 		got := stopHook(newStopHookInvocation("Updated the README wording."))
 		clean = got.Response.Message
@@ -279,20 +333,6 @@ func TestStopHookStaleSidecars(t *testing.T) {
 		}
 		if got.Response.Text != adapter.ContinueTrueReply {
 			t.Fatalf("text = %q, want %q", got.Response.Text, adapter.ContinueTrueReply)
-		}
-	})
-
-	t.Run("stale_ids absent from the answer -> UNCHECKED, never zero", func(t *testing.T) {
-		root, _ := stopHookSandbox(t)
-		seedSidecar(t, root)
-		// An older installed binary that predates the field. `.get(k, [])`
-		// here would turn "this binary cannot tell you" into "nothing is
-		// stale" — the exact substitution INV-013 forbids.
-		plantBinary(t, root, `{"phase_a": {}, "phase_b": {}}`)
-
-		got := stopHook(newStopHookInvocation("Updated the README wording."))
-		if !strings.Contains(got.Response.Message, "sidecar-stale-unchecked") {
-			t.Fatalf("message = %q, want UNCHECKED when stale_ids is absent", got.Response.Message)
 		}
 	})
 
@@ -329,6 +369,49 @@ func TestStopHookStaleSidecars(t *testing.T) {
 			t.Fatalf("a subtest above did not run: unchecked=%q named=%q", unchecked, named)
 		}
 	})
+}
+
+// TestStopHookStaleUncheckedDoesNotCollapseButAckSilences carries forward the
+// F-082a properties test_stop_hook_binary_discovery.sh used to pin against
+// the retired binary-discovery ladder (AC-4.4 replaced that ladder with the
+// fingerprint/manifest check; the ladder itself is gone, but sidecar-stale-
+// unchecked's OWN behavior — a null result never collapses on its own, and
+// only an explicit human ack silences it — is unchanged and still needs a
+// witness). No compiled manifest is this test's UNCHECKED trigger, in place
+// of the retired "binary absent" one.
+func TestStopHookStaleUncheckedDoesNotCollapseButAckSilences(t *testing.T) {
+	root, _ := stopHookSandbox(t)
+	writeTestFile(t, filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-demo.md"),
+		"# ADR-001\n\n## Decision\n\nSomething.\n")
+	writeTestFile(t, filepath.Join(root, "docs", "architecture", "decisions", "ADR-001-demo.edikt.yaml"),
+		"schema_version: 1\ntopic: demo\npath: docs/architecture/decisions/ADR-001-demo.md\n")
+	// No manifest.yaml — UNCHECKED, same precondition TestStopHookStaleSidecars
+	// pins for the same kind.
+
+	first := stopHook(newStopHookInvocation("Updated the README wording."))
+	if !strings.Contains(first.Response.Message, "sidecar-stale-unchecked") {
+		t.Fatalf("precondition: expected UNCHECKED; got %q", first.Response.Message)
+	}
+
+	second := stopHook(newStopHookInvocation("Updated the README wording, again."))
+	if strings.Contains(second.Response.Message, "known item held") {
+		t.Fatalf("a null result (UNCHECKED) must never collapse on its own; got %q", second.Response.Message)
+	}
+	if !strings.Contains(second.Response.Message, "run /edikt:gov:compile once to establish a baseline") {
+		t.Fatalf("an unacked repeat UNCHECKED firing must still carry the remediation in full; got %q", second.Response.Message)
+	}
+
+	sum := sha256.Sum256([]byte("sidecar-stale-unchecked|sidecar staleness|not checked — no compiled governance manifest exists yet, so no staleness determination was made"))
+	fp := hex.EncodeToString(sum[:])[:16]
+	writeTestFile(t, filepath.Join(root, ".edikt", "state", "hook-acks.json"),
+		`{"`+fp+`": {"until": "2099-01-01", "why": "deliberately not compiling yet", "at": "test"}}`)
+
+	acked := stopHook(newStopHookInvocation("Updated the README wording, once more."))
+	if !strings.Contains(acked.Response.Message, "held: sidecar-stale-unchecked") ||
+		!strings.Contains(acked.Response.Message, "ack: deliberately not compiling yet") {
+		t.Fatalf("an explicit ack must silence sidecar-stale-unchecked exactly as it does any other kind; got %q",
+			acked.Response.Message)
+	}
 }
 
 // TestStopHookStaleLogIsRemovedWhenUnchecked pairs with the log-writing
@@ -403,8 +486,11 @@ func TestStopHookG0TermLookupIsFixedString(t *testing.T) {
 	run := func(t *testing.T, body string) Result {
 		t.Helper()
 		root, _ := stopHookSandbox(t)
+		// SR-004: the trade-off-only message below names no reversal cost or
+		// re-litigation risk, so eager is what this test exercises the G0
+		// gate against, matching its pre-SR-004 behavior.
 		writeTestFile(t, filepath.Join(root, ".edikt", "config.yaml"),
-			"edikt_version: 0.8.0\nbase: docs\n")
+			"edikt_version: 0.8.0\nbase: docs\nsignals:\n  adr_candidate: eager\n")
 		writeTestFile(t, filepath.Join(root, "docs", "architecture", "decisions", "ADR-900-demo.md"), body)
 		return stopHook(newStopHookInvocation(msg))
 	}

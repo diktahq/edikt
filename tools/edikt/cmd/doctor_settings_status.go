@@ -36,8 +36,11 @@ func runStatusLineTypeCheck(projectRoot string, w io.Writer) (errs, warns int, r
 		return 0, 0, true
 	}
 	if _, ok := sl["type"]; !ok {
+		// This check reads the PROJECT's file, so the remedy is the
+		// project-scope repair; plain --repair acts on the user file.
 		fmt.Fprintf(w,
-			"  ERROR: settings.json statusLine block missing the required type field — Claude Code refuses to load the entire settings file. Run /edikt:upgrade to auto-repair, or add \"type\": \"command\" manually as the first key inside the statusLine object.\n",
+			"  ERROR: settings.json statusLine block missing the required type field — Claude Code refuses to load the entire settings file. %s\n",
+			settingsRepairRemedy(settingsPath, projectRoot, "inserts type: command"),
 		)
 		return 1, 0, true
 	}

@@ -51,9 +51,22 @@ edikt verify <plan-id> [--phase N] [--json] [--allow-failures]
 
 Exit codes:
 - `0` — all executed criteria passed (or only skipped/informational)
-- `1` — at least one criterion failed or timed out
+- `1` — at least one criterion failed, timed out, or was **unmeasured**
 - `2` — sidecar missing or malformed YAML (`PLAN-<id>-criteria.yaml` not found or invalid)
 - `3` — invalid args (unknown plan ID, malformed `--phase`, etc.)
+
+**Unmeasured is not a pass.** A criterion is `unmeasured` when its `verify:`
+names a subject — a file, a directory — that could not be read, so the command
+never reached the rule it checks. That is not a failed assertion, and the runner
+reports it under its own heading with the subject named; but it does not let a
+phase through, because exit 0 here is what `/edikt:sdlc:plan` flips a phase row
+to `done` on, and a phase whose criteria measured nothing is not done.
+
+This applies to the plan-criteria runner only. `edikt verify gov|prd|spec|all`
+still exit on failures alone: their exit code answers "is a live rule violated",
+not "is this phase done", and a governance or spec verify may legitimately name
+an artifact that is deliberately not built yet. They report the unmeasured count
+on every run regardless.
 
 ### 3. Report the result
 
@@ -77,7 +90,7 @@ PLAN-<id>-criteria.yaml not found or invalid.
 Generate it with /edikt:sdlc:plan, or fix the YAML manually under docs/internal/plans/.
 ```
 
-If `bin/edikt` is missing:
+If `edikt` is missing:
 
 ```
 edikt binary not found. Bootstrap via /edikt:upgrade in Claude Code (primary path).

@@ -56,6 +56,15 @@ func newFixture(t *testing.T, configBody string) *verifyFixture {
 	if out.ExitCode != ExitPlanEmitted || len(out.Plan.Items) != 1 {
 		t.Fatalf("fixture did not produce a one-item plan: exit %d, %s", out.ExitCode, out.Message)
 	}
+	// EVERY fixture that drives Verify plants a restore receipt, because
+	// verify now refuses without one — the coupling that makes the contract's
+	// order enforceable rather than conventional. The tests below are about
+	// item verdicts, not about the coupling; the coupling has its own tests in
+	// restore_receipt_test.go, including the refusal.
+	if err := writeRestoreReceipt(root, out.Plan.PlanID, &RestoreOutcome{ExitCode: ExitRestoreOK}); err != nil {
+		t.Fatalf("planting the restore receipt: %v", err)
+	}
+
 	return &verifyFixture{
 		root:   root,
 		planID: out.Plan.PlanID,
@@ -96,6 +105,13 @@ func newStaleFixture(t *testing.T, before sidecar.Directive) *verifyFixture {
 	if _, err := os.Stat(PinSnapshotPath(root, out.Plan.PlanID, out.Plan.Items[0].ItemID)); err != nil {
 		t.Fatalf("fixture did not capture a pin snapshot: %v", err)
 	}
+	// Same reason as in newFixture: verify refuses without a restore receipt,
+	// and these fixtures are about item verdicts. The refusal has its own
+	// tests.
+	if err := writeRestoreReceipt(root, out.Plan.PlanID, &RestoreOutcome{ExitCode: ExitRestoreOK}); err != nil {
+		t.Fatalf("planting the restore receipt: %v", err)
+	}
+
 	return &verifyFixture{
 		root:   root,
 		planID: out.Plan.PlanID,
@@ -611,7 +627,7 @@ func TestConsumedPlanRejected(t *testing.T) {
 // ── the receipt schema is authoritative ──────────────────────────────────
 
 // TestReceiptMatchesSchemaShape holds the emitted receipt to
-// templates/schemas/phasea-receipt.v1.schema.json, which is the authority —
+// templates/schemas/phasea-receipt.v3.schema.json, which is the authority —
 // verify_types.go's structs exist only to produce bytes that validate against
 // it. Every object node in that schema declares `additionalProperties: false`,
 // so a field added to the Go struct without being added to the schema first
@@ -664,14 +680,16 @@ func TestReceiptMatchesSchemaShape(t *testing.T) {
 	for _, s := range []string{
 		StatusOK, StatusOutputMissing, StatusSchemaInvalid, StatusParentHashMismatch,
 		StatusPromptVersionMismatch, StatusFailedTerminal, StatusPinsUnrestorable,
+		StatusLengthExceeded, StatusAnchorInvalid, StatusDiverged, StatusStalled,
+		StatusLosslessLoss, StatusLosslessUnmeasured,
 	} {
 		if !enum[s] {
-			t.Errorf("status %q is not in phasea-receipt.v1's status enum", s)
+			t.Errorf("status %q is not in phasea-receipt.v3's status enum", s)
 		}
 		delete(enum, s)
 	}
 	for s := range enum {
-		t.Errorf("phasea-receipt.v1 declares status %q which this package has no constant for", s)
+		t.Errorf("phasea-receipt.v3 declares status %q which this package has no constant for", s)
 	}
 }
 
@@ -682,7 +700,7 @@ func readReceiptSchema(t *testing.T) map[string]any {
 		t.Fatal(err)
 	}
 	for i := 0; i < 8; i++ {
-		candidate := filepath.Join(dir, "templates", "schemas", "phasea-receipt.v1.schema.json")
+		candidate := filepath.Join(dir, "templates", "schemas", "phasea-receipt.v3.schema.json")
 		if data, rerr := os.ReadFile(candidate); rerr == nil {
 			var doc map[string]any
 			if err := json.Unmarshal(data, &doc); err != nil {
@@ -692,7 +710,7 @@ func readReceiptSchema(t *testing.T) map[string]any {
 		}
 		dir = filepath.Dir(dir)
 	}
-	t.Fatal("could not locate templates/schemas/phasea-receipt.v1.schema.json by walking up from the " +
+	t.Fatal("could not locate templates/schemas/phasea-receipt.v3.schema.json by walking up from the " +
 		"package directory — the comparison cannot run, and a check that could not run must not report a pass")
 	return nil
 }
@@ -727,7 +745,7 @@ func assertSameKeys(t *testing.T, what string, emitted map[string]any, allowed m
 	t.Helper()
 	for k := range emitted {
 		if !allowed[k] {
-			t.Errorf("%s emits %q, which phasea-receipt.v1 does not declare (additionalProperties:false)", what, k)
+			t.Errorf("%s emits %q, which phasea-receipt.v3 does not declare (additionalProperties:false)", what, k)
 		}
 	}
 	for _, r := range required {

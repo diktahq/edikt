@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -17,9 +18,23 @@ const ExcerptCap = 4096
 
 // Status values recorded in the report.
 const (
-	StatusPassed               = "passed"
-	StatusFailed               = "failed"
-	StatusTimeout              = "timeout"
+	StatusPassed  = "passed"
+	StatusFailed  = "failed"
+	StatusTimeout = "timeout"
+
+	// StatusUnmeasured marks a verify whose SUBJECT could not be read, so the
+	// command's exit code says nothing about the rule (SR-005... SPEC-018 SR-004).  edikt-guard:allow
+	//
+	// 42 of 158 verify commands begin with `!`, which flips a non-zero exit into
+	// a pass. `! rg -l 'FORBIDDEN' src/*.go` exits 0 when src/ is missing and 0
+	// when src/ is unreadable — both proven by execution, both previously
+	// recorded as passed. Deleting the tree a rule protects was indistinguishable
+	// from complying with it.
+	//
+	// Unmeasured is NOT failed. The rule may well hold; nothing here established
+	// that it does, and INV-013's line is that a measured zero and a failed  edikt-guard:allow
+	// measurement must not look the same to a reader.
+	StatusUnmeasured           = "unmeasured: subject unreadable"
 	StatusSkippedOperational   = "skipped: operational"
 	StatusSkippedInformational = "skipped: informational"
 	// StatusSkippedSuppressed marks a directive listed in the sidecar's own
@@ -93,6 +108,9 @@ func RunCriterion(phase Phase, c Criterion, opts RunOptions) Result {
 			StderrExcerpt: fmt.Sprintf("unrecognised phase classification %q — refusing to guess whether this criterion should run", phase.Classification),
 		}
 	}
+	if c.TimeoutS > 0 {
+		opts.Timeout = time.Duration(c.TimeoutS) * time.Second
+	}
 	return RunOne(c.ID, c.Statement, c.Verify, opts)
 }
 
@@ -125,6 +143,13 @@ func RunOne(id, statement, verifyCmd string, opts RunOptions) Result {
 		cmd.Dir = opts.Cwd
 	}
 	cmd.Env = append(envWithVerify(), "EDIKT_VERIFY=1", childDepthEnv())
+	// A criterion runs under the verify runner, which is the door for the
+	// walled verbs it may invoke (SPEC-020 SR-009): export the invoker when  edikt-guard:allow
+	// the caller has not, so a criterion is never refused as an undeclared
+	// non-terminal call.
+	if os.Getenv("EDIKT_INVOKER") == "" {
+		cmd.Env = append(cmd.Env, "EDIKT_INVOKER=/edikt:verify")
+	}
 
 	// Run the verify command in its own process group so a timeout can reap
 	// everything it forked. CommandContext's default kill signals the direct
@@ -137,6 +162,15 @@ func RunOne(id, statement, verifyCmd string, opts RunOptions) Result {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+
+	// SUBJECT PRE-FLIGHT (SPEC-018 SR-004). A command whose subject is absent  edikt-guard:allow
+	// cannot report on the rule, whatever it exits with.
+	if missing := unreadableSubjects(opts.Cwd, verifyCmd); missing != "" {
+		res.Status = StatusUnmeasured
+		res.ExitCode = -3
+		res.StderrExcerpt = truncate([]byte("subject not readable: "+missing), ExcerptCap)
+		return res
+	}
 
 	start := time.Now()
 	err := cmd.Run()

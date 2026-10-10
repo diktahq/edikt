@@ -65,8 +65,12 @@ type Result struct {
 	// unchanged would make "unchanged" and "not produced" indistinguishable.
 	Surfaces []Surface `json:"surfaces"`
 
-	// DirectiveIndexWritten reports whether surface (c) changed on this run.
-	DirectiveIndexWritten bool `json:"directive_index_written"`
+	// DeliveryMapWritten reports whether delivery-map.yaml changed this run.
+	DeliveryMapWritten bool
+	// JudgementRoutedDirectives counts directives reachable ONLY through a
+	// skill package — no path match delivers them. Reported so the number is a
+	// declared state rather than an accident nobody measured.
+	JudgementRoutedDirectives int `json:"directive_index_written"`
 
 	// SkillsRendered names the topics that got a surface (d) package.
 	SkillsRendered []string `json:"skills_rendered"`
@@ -116,7 +120,7 @@ type Result struct {
 // Surface is one file the render is responsible for.
 type Surface struct {
 	// Kind is the surface class: "ambient-core" or "topic-file" today.
-	// Stage 1 adds "directive-index" and "skill-package".
+	// Stage 1 adds "skill-package"; the "directive-index" surface it also added is retired (ADR-083).  edikt-guard:allow
 	Kind string `json:"kind"`
 	// Path is repo-relative, slash-separated.
 	Path string `json:"path"`
@@ -126,8 +130,18 @@ type Surface struct {
 
 // Options configures merge output.
 type Options struct {
-	OutDir          string // default .claude/rules/governance
-	IndexPath       string // default .claude/rules/governance.md
+	OutDir    string // default .claude/rules/governance
+	IndexPath string // default .claude/rules/governance.md
+	// ContractBlock is a verbatim block the caller read from a SOURCE
+	// artifact, passed in rather than resolved here.
+	//
+	// It has to be passed: the freshness check renders into a scratch root to
+	// avoid writing over the tree it is comparing, and anything this function
+	// resolves relative to its render root resolves to nothing there. The
+	// shadow render then differs from the real one for a reason that has
+	// nothing to do with the corpus — which is exactly the false drift signal
+	// the freshness check exists to avoid producing.
+	ContractBlock   string
 	CompiledAt      string // ISO 8601; pinned for deterministic test runs
 	CompilerVersion string
 
@@ -195,23 +209,6 @@ type topicGroup struct {
 	Undeclared []string
 	Sources    []string
 	Signals    []string
-	// IndexedDirectives / IndexedProhibitions / IndexedSources record what
-	// this topic's SCOPED sidecars routed to directive-index.yaml INSTEAD of
-	// into the topic file's body (ADR-066).  edikt-guard:allow
-	//
-	// They exist so the rendered surfaces can say where the content went. An
-	// empty Directives region is a legitimate, intended state under ADR-066,  edikt-guard:allow
-	// and an intended state that renders identically to a failed compile is
-	// the empty-result class INV-013 forbids: a reader cannot tell "routed"
-	// from "lost" by looking. These counts are what turns the silence into a
-	// statement.
-	//
-	// Counted through phaseb.IndexEntriesFor — the same function that decides
-	// what the index actually contains — so the note can never claim a number
-	// the index does not hold.
-	IndexedDirectives   int
-	IndexedProhibitions int
-	IndexedSources      []string
 }
 
 // unrestrictedGlob is how a topic file spells "applies everywhere".
@@ -263,68 +260,6 @@ func scopeFor(g *topicGroup) (paths []string, note string) {
 // directiveIndexName is the filename of surface (c) inside the governance
 // output directory. Topic files sit in that same directory, so a bare
 // filename is the correct relative reference from one to the other.
-const directiveIndexName = "directive-index.yaml"
-
-// deliveryNoteFor explains an EMPTY Directives region that is empty on
-// purpose.
-//
-// ADR-066 routes every path-scoped directive to directive-index.yaml and out  edikt-guard:allow
-// of the topic file's body. On a corpus where a topic's contributing sidecars
-// are ALL scoped — the common case once a project declares globs — the result
-// is a topic file whose Directives region renders as two bare anchors and
-// nothing between them.
-//
-// That is correct, and it is indistinguishable from a compile that dropped
-// the topic's content on the floor. INV-013's rule is that a measured zero
-// and a failed measurement must not look the same to a reader, and here they
-// did: the file said nothing, so the reader supplied the worse of the two
-// explanations. Measured on a foreign corpus, this was read as a broken
-// compile.
-//
-// So the zero is said out loud, with the counts and the destination, and only
-// when the claim is true: an empty region with nothing in the index behind it
-// gets no note, because there would be nothing honest to say.
-// deliveryNoteFormat is the note's wording, hoisted to a named constant so it
-// can be HASHED into the topic fingerprint (see noteEmitterFingerprint).
-//
-// It cites NO edikt-internal ADR. This string renders into a USER's compiled
-// governance files, where "(ADR-066)" would name an artifact in edikt's own  edikt-guard:allow
-// corpus that the reader has no access to and whose number, in their repo,
-// belongs to a different decision entirely. test/check-no-internal-refs.sh
-// enforces this, and caught exactly that leak here. The rationale lives in the
-// comments above, which do not ship.
-//
-// It is a constant for the same reason RendererFingerprint hashes the template
-// sources rather than trusting the caller: a cache keyed on a topic's sidecars
-// cannot see that the emitter above it changed, so an edited note would render
-// for new topics and never propagate to the cached ones — "6 unchanged", a
-// true statement about the corpus and a false one about the output. That is
-// precisely the defect RendererFingerprint exists to prevent, and putting this
-// wording in a Go string instead of a template moved it back out of reach.
-// Measured: a one-word grammar fix here propagated to zero of six topic files
-// until this constant was folded into the fingerprint.
-const deliveryNoteFormat = "**No unscoped directives in this topic — the region below is empty by design, " +
-	"not by a failed compile.** All %s and %s in this topic come from %s " +
-	"declaring `paths:`, so they are delivered at write time from `%s` — matched per " +
-	"directive against the file you are actually touching — instead of being " +
-	"duplicated here. The reminders and verification checklist below are " +
-	"this file's own content."
-
-func deliveryNoteFor(g *topicGroup, directiveLines []string) string {
-	if len(directiveLines) > 0 {
-		return ""
-	}
-	total := g.IndexedDirectives + g.IndexedProhibitions
-	if total == 0 {
-		return ""
-	}
-	return blockquote(fmt.Sprintf(
-		deliveryNoteFormat,
-		plural(g.IndexedDirectives, "directive", "directives"),
-		plural(g.IndexedProhibitions, "prohibition", "prohibitions"),
-		plural(len(g.IndexedSources), "source", "sources"),
-		directiveIndexName))
-}
 
 // noteEmitterFingerprint hashes everything about this package that decides the
 // rendered bytes of a topic file WITHOUT being a template.
@@ -338,12 +273,44 @@ func deliveryNoteFor(g *topicGroup, directiveLines []string) string {
 // is a change to the bytes on disk even when not one word differs.
 func noteEmitterFingerprint() string {
 	h := sha256.New()
-	h.Write([]byte("delivery-note-format\x00"))
-	h.Write([]byte(deliveryNoteFormat))
-	h.Write([]byte("\x00directive-index-name\x00"))
-	h.Write([]byte(directiveIndexName))
-	h.Write([]byte("\x00note-wrap-width\x00"))
+	h.Write([]byte("note-wrap-width\x00"))
 	fmt.Fprintf(h, "%d", noteWrapWidth)
+
+	// THE ROUTING TABLES, hashed over their whole input domain.
+	//
+	// Found by SR-003 (SPEC-018). Removing the ADR-prohibition promotion from
+	// gradeFor changed which directives render into a topic body — and nothing
+	// re-rendered. The index was rewritten (238 -> 126 entries) while all seven
+	// topic files reported "unchanged", because their cache key hashes the
+	// contributing SIDECARS and the sidecars had not moved. Only the renderer's
+	// opinion of them had.
+	//
+	// That is exactly the defect this fingerprint exists to prevent, one level
+	// up: it covered the note emitter and not the routing that decides
+	// membership. `gov compile --check` caught the divergence honestly, which is
+	// how it was found, but a compile that reports "0 rendered, 7 unchanged"
+	// while its own --check calls those seven stale is a cache lying about a
+	// decision it is entitled to skip.
+	//
+	// Both tables are pure functions over a small closed domain, so hashing
+	// their outputs is exact rather than a proxy: any edit to either changes
+	// this digest, and no edit elsewhere does.
+	h.Write([]byte("\x00grade-table\x00"))
+	for _, class := range []string{"invariant", "adr", "guideline", "unknown"} {
+		for _, isProh := range []bool{false, true} {
+			for _, enf := range []string{"", "deny", "advisory"} {
+				fmt.Fprintf(h, "%s|%t|%s=%s;", class, isProh, enf, gradeFor(class, isProh, enf))
+			}
+		}
+	}
+	h.Write([]byte("\x00route-table\x00"))
+	for _, grade := range []string{gradeMust, gradeAdvisory} {
+		for _, actorScope := range []bool{false, true} {
+			for _, tier3 := range []bool{false, true} {
+				fmt.Fprintf(h, "%s|%t|%t=%s;", grade, actorScope, tier3, RouteOf(grade, actorScope, tier3))
+			}
+		}
+	}
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -504,7 +471,20 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		// decision): sidecar order follows prose order, and an invariant's
 		// Statement section precedes its Enforcement section, so the first
 		// entry is the statement rather than one of its enforcement clauses.
-		if strings.HasPrefix(p.ArtifactID, "INV-") && len(p.Sidecar.Paths) == 0 {
+		// SR-001 (SPEC-018): the `len(Paths) == 0` gate is REMOVED.
+		//
+		// It made the two tiers exclusive: adding a glob to reach the
+		// write-time channel deleted the rule from the surface loaded on every
+		// edit, in the same act. 18 of 21 invariants were absent from the
+		// ambient core for exactly that reason, and the comment above reasons
+		// only about WHICH directive to promote — the exclusion was a side
+		// effect of a conditional written to answer a different question, not a
+		// decision anyone recorded.
+		//
+		// A scoped invariant still reaches its topic file and the index through
+		// the paths branch below, so this is additive: the tiers become layers
+		// rather than alternatives.
+		if strings.HasPrefix(p.ArtifactID, "INV-") {
 			suppressed := make(map[string]struct{}, len(p.Sidecar.SuppressedDirectives))
 			for _, sd := range p.Sidecar.SuppressedDirectives {
 				suppressed[sd] = struct{}{}
@@ -513,7 +493,7 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 				if _, isSuppressed := suppressed[d.Text]; isSuppressed {
 					continue
 				}
-				invariantRules = append(invariantRules, compile.Rule{Text: d.Text, Source: p.ArtifactID})
+				invariantRules = append(invariantRules, compile.Rule{Text: d.Text, Source: p.ArtifactID, Intent: d.Intent})
 				break // canonical statement only — the rest live in the topic file
 			}
 		}
@@ -593,9 +573,18 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		fp := TopicRenderFingerprint(g.Sidecars, topicDescription)
 		dest := filepath.Join(opts.OutDir, name+".md")
 
-		// Track directive count for the header comment (topic-file directives only;
-		// invariant rules in governance.md are counted separately).
-		res.TotalDirectives += len(g.Directives)
+		// Track directive count for the header comment (invariant rules in
+		// governance.md are counted separately, below).
+		//
+		// g.Manual is included deliberately. ADR-008's formula for what a surface
+		// carries is (directives - suppressed) ∪ manual_directives, and the
+		// renderer emits both — but this counter read only g.Directives, so the
+		// header undercounted by exactly the number of HAND-AUTHORED directives —
+		// the ones a human wrote into a sidecar because the extractor did not
+		// produce them. A count that drops them understates the surface by
+		// precisely the population least likely to be noticed missing, since
+		// nothing else in the pipeline regenerates them.
+		res.TotalDirectives += len(g.Directives) + len(g.Manual)
 
 		// Resolve scope BEFORE the short-circuit below. An unchanged topic
 		// is still a topic whose scope was decided, and dropping it out of
@@ -703,13 +692,14 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 			DirectiveLines:   dirLines,
 			ProhibitionLines: prohLines,
 			ManualLines:      manLines,
-			// Says where the directives went when they did not come here.
-			// Empty string for every topic that renders its own directives,
-			// so the common case is byte-identical to before.
-			DeliveryNote:    deliveryNoteFor(g, dirLines),
-			DirectivesSHA:   regionSHA(dirLines, false),
-			ProhibitionsSHA: regionSHA(prohLines, true),
-			ManualSHA:       regionSHA(manLines, false),
+			// No region anchors are passed: render computes each one from the
+			// bytes IT emits between that region's markers (D357). This used
+			// to hand render three hashes computed here from a
+			// RECONSTRUCTION of the body render was about to produce,
+			// carrying a withProhibitionsHeading flag that restated the
+			// template's own structure. Predicting another component's bytes
+			// is how one fact came to have three copies, one of which had
+			// drifted, with nothing able to see it.
 		})
 		if err != nil {
 			return nil, fmt.Errorf("render topic %s: %w", name, err)
@@ -739,7 +729,7 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		TopicCount:        len(topicNames),
 		InvariantRules:    invariantRules,
 		InvariantRestated: append([]compile.Rule(nil), invariantRules...),
-		TopicIndex:        topicIndexRows(topicNames, opts.TopicDescriptions),
+		TopicIndex:        topicIndexRows(topicNames, opts.TopicDescriptions, res.TopicsRetiredToSkill),
 		Reminders:         allReminders,
 		Verification:      allVerification,
 	})
@@ -757,13 +747,6 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 	// Reminders section; without this write, every reminder on a scoped
 	// artifact would have nowhere to go, which is the silent-loss class this
 	// release exists to close.
-	dirIndexPath := filepath.Join(opts.OutDir, "directive-index.yaml")
-	idxBody := RenderDirectiveIndex(BuildDirectiveIndex(pairs))
-	dirIdxChanged, err := writeAtomicIfChanged(dirIndexPath, idxBody)
-	if err != nil {
-		return nil, fmt.Errorf("write directive index: %w", err)
-	}
-	res.DirectiveIndexWritten = dirIdxChanged
 
 	// Surface (d): skill packages — tier 3. Carries the topic's guidance and,
 	// critically, the reminders of PATHLESS artifacts, which the glob-keyed
@@ -788,6 +771,48 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 	for _, n := range res.TopicsRetiredToSkill {
 		retiredSet[n] = true
 	}
+
+	// Surface (e): delivery-map.yaml — the ROUTING TABLE, not a delivery
+	// surface. Written HERE and not beside the index above, because `surface`
+	// depends on the tier decision and retiredSet is only complete at this
+	// point. Building it earlier would have recorded every advisory directive
+	// as topic-file delivered, including the ones that had just been retired to
+	// a skill — a routing table that is wrong about precisely the case it was
+	// added to make visible.
+	deliveryMapPath := filepath.Join(opts.OutDir, deliveryMapName)
+	deliveryMap := BuildDeliveryMap(pairs, retiredSet)
+
+	// THE CONSEQUENCE OF PATHLESSNESS, counted rather than left to be inferred.
+	//
+	// A sidecar that declares no globs retires its whole TOPIC to tier 3, and
+	// that decision reaches every OTHER sidecar in that topic — including
+	// scoped ones whose own globs are perfectly good. Their advisory stops
+	// being delivered on a path match and becomes reachable only by judgement,
+	// through the skill package.
+	//
+	// That is a legitimate destination for a rule with no file scope: a process
+	// rule or a naming convention has nothing to trigger on, and judgement
+	// routing is correct for it. What was wrong is that a directive routed
+	// there because inference came up EMPTY looked identical to one routed
+	// there deliberately. Counting it is what turns today's number into a
+	// recorded condition — and makes it move visibly when inference improves.
+	seenSkill := map[string]bool{}
+	for _, entries := range deliveryMap {
+		for _, e := range entries {
+			if e.Surface == SurfaceSkill {
+				seenSkill[e.ID] = true
+			}
+		}
+	}
+	res.JudgementRoutedDirectives = len(seenSkill)
+
+	dmBody := RenderDeliveryMap(deliveryMap)
+	dmChanged, err := writeAtomicIfChanged(deliveryMapPath, dmBody)
+	if err != nil {
+		return nil, fmt.Errorf("write delivery map: %w", err)
+	}
+	res.DeliveryMapWritten = dmChanged
+
 	skillsRoot := filepath.Join(projectRoot, ".claude", "skills")
 	for _, name := range skillTopics(groups) {
 		g := groups[name]
@@ -801,9 +826,15 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		reminders := dedupeStrings(append(append([]string(nil), topicReminders[name]...), pathlessReminders[name]...))
 
 		view := SkillView{
-			Topic:        name,
-			Description:  opts.TopicDescriptions[name],
-			Directives:   g.Directives,
+			Topic:       name,
+			Description: opts.TopicDescriptions[name],
+			// Passed in by the caller from the REAL project root: this
+			// function may be rendering into a scratch tree.
+			ContractBlock: contractBlockForTopic(opts.ContractBlock, name),
+			// The UNION of extracted and manual directives, annotated exactly as
+			// the topic file annotates them. A retired topic's skill is its
+			// only home, so g.Directives alone loses every manual entry.
+			Directives:   unionDirectiveRules(g),
 			Prohibitions: g.Prohibitions,
 			Verification: dedupeStrings(topicVerification[name]),
 			Reminders:    reminders,
@@ -811,10 +842,6 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 			// What the index took, so the stub can point honestly. Computed
 			// for every topic, used only by the stub branch — a retired topic
 			// renders its own bodies and has no pointer to qualify.
-			IndexedDirectives:   g.IndexedDirectives,
-			IndexedProhibitions: g.IndexedProhibitions,
-			IndexedSources:      g.IndexedSources,
-			DirectiveIndexPath:  relToRoot(projectRoot, dirIndexPath),
 			// Read from the SAME builder the topic file renders from, not
 			// from len(g.Directives): the topic file's Directives region also
 			// carries manual entries, so a topic with manual-only content has
@@ -862,9 +889,16 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		Kind: "ambient-core",
 		Path: relToRoot(projectRoot, opts.IndexPath),
 	})
+	// The routing table is a GENERATED surface and is enumerated as one, even
+	// though nothing loads it into a model's context. Surfaces feeds both the
+	// manifest (INV-019: the reconciliation's subject set is the manifest, so
+	// an unlisted file is unmanaged and never updated or retired) and the
+	// render-freshness expectation. Omitting it made a fresh render not produce
+	// it, and the freshness check correctly reported the live copy as an orphan
+	// — the check working, on a surface that had been left out of the contract.
 	res.Surfaces = append(res.Surfaces, Surface{
-		Kind: "directive-index",
-		Path: relToRoot(projectRoot, dirIndexPath),
+		Kind: "delivery-map",
+		Path: relToRoot(projectRoot, deliveryMapPath),
 	})
 	retired := map[string]bool{}
 	for _, n := range res.TopicsRetiredToSkill {
@@ -937,6 +971,26 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 		Path: relToRoot(projectRoot, manifestPath),
 	})
 
+	// DELIVERY ASSERTION — runs LAST, after every surface is written.
+	//
+	// Every effective rule (directives minus suppressed, union manual) must
+	// appear on some rendered surface. Twice now a whole class of rule has
+	// reached none: prohibitions and verification items for retired topics
+	// (skillpackage.go:51-55), and manual directives for the same topics. Both
+	// were found by someone counting, not by a gate. This is the gate.
+	//
+	// It fails the compile rather than warning: a rule that reaches no surface
+	// is not delivered, and a compile that reports success while delivering
+	// less than it declares is the failure mode this whole surface exists to
+	// prevent (INV-011).
+	undelivered, derr := AssertDelivery(projectRoot, pairs)
+	if derr != nil {
+		return nil, fmt.Errorf("delivery assertion: %w", derr)
+	}
+	if len(undelivered) > 0 {
+		return nil, fmt.Errorf("delivery assertion failed — %s", FormatUndelivered(undelivered))
+	}
+
 	return res, nil
 }
 
@@ -949,7 +1003,7 @@ func Merge(projectRoot string, pairs []sidecar.Pair, opts Options) (*Result, err
 // denylist that forgot an entry is deleting a file edikt does not own.
 func isRemovableSurface(kind string) bool {
 	switch kind {
-	case "topic-file", "skill-package", "directive-index":
+	case "topic-file", "skill-package":
 		return true
 	}
 	return false
@@ -1066,35 +1120,58 @@ func groupByTopic(pairs []sidecar.Pair) map[string]*topicGroup {
 			// Account for what the index took, so the topic file and the
 			// skill package can say so instead of rendering an unexplained
 			// empty region. Same function the index itself is built from.
-			idxDirs, idxProhs := IndexEntriesFor(p)
-			if len(idxDirs)+len(idxProhs) > 0 {
-				t.IndexedDirectives += len(idxDirs)
-				t.IndexedProhibitions += len(idxProhs)
-				t.IndexedSources = appendUnique(t.IndexedSources, p.ArtifactID)
-			}
 			for _, m := range p.Sidecar.ManualDirectives {
 				t.Manual = append(t.Manual, manualEntry{Text: m, Source: p.ArtifactID})
 			}
-			// ADR-072 (amends ADR-066): an entry narrowed by its OWN paths  edikt-guard:allow
-			// override (ADR-070) renders a compact digest into the topic
-			// file's ambient body too — dual channel, in addition to (not
-			// instead of) full directive-index.yaml delivery above. The
-			// PreToolUse deny still fires AFTER the model composes its
-			// edit; this is what reaches the model BEFORE, for exactly the
-			// now-narrowed subset ADR-072 bounds. An entry relying only on
-			// the sidecar-level paths (no override) is NOT duplicated here
-			// — it stays index-only, unchanged from ADR-066.
+			// ADR-079 (supersedes ADR-072's digest, amends ADR-066):  edikt-guard:allow
+			// ADVISORY renders here in full; MUST stays in the index. The
+			// split is by GRADE, not by whether an entry carries a paths
+			// override, because grade already encodes delivery timing: MUST
+			// is a guardrail that must interrupt a write, advisory is context
+			// that must arrive BEFORE the model chooses. A topic file loads on
+			// a paths: match before any write; PostToolUse arrived after it.
+			//
+			// ADR-072's trigger was the per-directive override, which one
+			// directive of 831 carried — right intent, too narrow to move
+			// anything. Its subset is a subset of advisory, so the general
+			// rule REPLACES it rather than layering on it, and nothing is
+			// dual-channel any more: each grade has exactly one home.
+			//
+			// Actor-scoped entries are NOT filtered here. ADR-065 excludes  edikt-guard:allow
+			// them from the index "and only there" to remove PreToolUse noise,
+			// explicitly leaving topic files untouched — so an advisory
+			// actor-scoped directive renders here, as that ADR intends.
+			//
+			// Destination is RouteOf's verdict, not a local grade test, so this
+			// renderer and delivery-map.yaml cannot disagree about where a
+			// directive went. topicTier3 is false here because this branch only
+			// runs for a topic that HAS a rules file; the tier-3 case renders
+			// through the skill package instead.
+			cls := classFor(p.ArtifactID)
+			// A SCOPED invariant's first surviving directive is its canonical
+			// statement and already lives in the ambient core (the INV- branch
+			// above takes it regardless of paths). Rendering it here as well
+			// put one body on two prose surfaces — AC-2.2's no-double-loading
+			// gate caught INV-010:d01 in both governance.md and the compile
+			// skill on 2026-09-02, the day actor-scoped MUST started routing
+			// here. The index is a different matter (hook input, exempt from
+			// that gate, and layered by design); prose surfaces are not.
+			firstINV := strings.HasPrefix(p.ArtifactID, "INV-")
 			for _, d := range p.Sidecar.Directives {
 				if _, isSuppressed := suppressed[d.Text]; isSuppressed {
 					continue
 				}
-				if len(d.Paths) == 0 {
+				if firstINV {
+					firstINV = false // the canonical statement; it is in the core
+					continue
+				}
+				if RouteOf(gradeFor(cls, false, d.Enforcement), d.ActorScope, false) != SurfaceTopicFile {
 					continue
 				}
 				t.Directives = append(t.Directives, compile.Rule{Text: d.Text, Source: p.ArtifactID})
 			}
 			for _, pr := range p.Sidecar.Prohibitions {
-				if len(pr.Paths) == 0 {
+				if RouteOf(gradeFor(cls, true, pr.Enforcement), pr.ActorScope, false) != SurfaceTopicFile {
 					continue
 				}
 				t.Prohibitions = append(t.Prohibitions, compile.Rule{Text: pr.Text, Source: p.ArtifactID})
@@ -1159,7 +1236,6 @@ func groupByTopic(pairs []sidecar.Pair) map[string]*topicGroup {
 		sort.Strings(t.Scope)
 		sort.Strings(t.Sources)
 		sort.Strings(t.Undeclared)
-		sort.Strings(t.IndexedSources)
 	}
 	return g
 }
@@ -1183,7 +1259,25 @@ func groupByTopic(pairs []sidecar.Pair) map[string]*topicGroup {
 func TopicFingerprint(group []*sidecar.Sidecar) string {
 	tuples := make([]string, 0, len(group))
 	for _, s := range group {
-		data, err := sidecar.Marshal(s)
+		// Fingerprint over a copy with the transient extraction-time
+		// proposal fields cleared. Per their own doc comments on Sidecar,
+		// ProposedPaths/ProposedRemovals/ProposedTopicDescription are read
+		// by nothing downstream — "not merge, not verify-diff, not the
+		// render" — but sidecar.Marshal still serializes them since it is
+		// also the general-purpose disk-persistence encoder (clearing them
+		// there would silently drop a real pending proposal on write). Left
+		// unstripped here, the fingerprint depended on whether the caller
+		// happened to have already cleared them in memory (the compile
+		// path's proposals routing does; a fresh disk load, as the
+		// freshness-check's shadow render performs, does not) — identical
+		// on-disk bytes, two different hashes, a false "stale" report with
+		// no actual content change (found while closing PLAN-v090-release
+		// Phase 6, 2026-09-04).
+		fp := *s
+		fp.ProposedPaths = nil
+		fp.ProposedRemovals = nil
+		fp.ProposedTopicDescription = ""
+		data, err := sidecar.Marshal(&fp)
 		if err != nil {
 			// Fall back to on-disk bytes; preserves Phase 5's looser contract
 			// when canonical marshal fails (should be unreachable in practice).
@@ -1254,12 +1348,22 @@ func mixFingerprint(base, description string) string {
 // rather than omitting the row: a topic silently missing from the index is
 // indistinguishable from a topic that does not exist (INV-013), and the whole
 // point of the migration window is that pending work is visible.
-func topicIndexRows(topicNames []string, descriptions map[string]string) []render.TopicIndexRow {
+func topicIndexRows(topicNames []string, descriptions map[string]string,
+	retiredToSkill []string) []render.TopicIndexRow {
+
+	// A topic retired to a skill package has NO rules file, so the index must
+	// not tell the reader to open one.
+	skillOnly := make(map[string]bool, len(retiredToSkill))
+	for _, n := range retiredToSkill {
+		skillOnly[n] = true
+	}
+
 	rows := make([]render.TopicIndexRow, 0, len(topicNames))
 	for _, name := range topicNames {
 		rows = append(rows, render.TopicIndexRow{
 			Topic:       name,
 			Description: descriptions[name],
+			SkillOnly:   skillOnly[name],
 		})
 	}
 	return rows
@@ -1385,6 +1489,75 @@ func extractRefTag(text string) string {
 // - Prohibitions: text-only bullets sorted by text asc.
 // - Manual: text-only bullets sorted by text asc — a faithful copy that
 // downstream tooling can key on independently of the directives region.
+// unionDirectiveRules returns g.Directives UNION g.Manual, carrying the same
+// ref-tag and *(manual)* annotation and the same ordering buildRegionLines
+// applies to the topic file's Directives region — as []compile.Rule, which is
+// what SkillView.Directives takes.
+//
+// WHY THIS EXISTS. A topic RETIRED to a skill package has that skill as its
+// ONLY home. Until now the skill received g.Directives raw and g.Manual was
+// dropped, so every manual directive on a retired topic reached no compiled
+// surface at all. Measured on a downstream corpus (bok-services, fresh
+// compile): topics that render a topic file delivered 12 of 12 manual
+// directives; topics retired to a skill delivered 2 and lost 61.
+//
+// THIS IS THE SAME DEFECT, ONE FIELD OVER, AS THE ONE ALREADY FIXED.
+// skillpackage.go:51-55 records that rendering only Directives silently
+// dropped Prohibitions and Verification for retired topics — "measured at 65
+// prohibitions and 145 verification items lost across the six retired topics,
+// found by the AC-2.7 coverage baseline rather than by any gate". Those two
+// were fixed; Manual was not. And fourteen lines below the bug,
+// FileCarriesDirectives already calls buildRegionLines(g) with a comment
+// stating that the region "also carries manual entries, so a topic with
+// manual-only content has a non-empty region while g.Directives is empty" —
+// the author knew the union was the real content, used it for the PREDICATE,
+// and passed the un-unioned field for the CONTENT. A defect that recurs one
+// field over, in the same struct literal, after being fixed, is a design
+// signal rather than an oversight: the struct takes a field named Directives
+// and there is no type that means "everything this topic delivers".
+//
+// buildRegionLines is deliberately NOT refactored to share this code — the
+// topic-file bytes must not shift. Drift between the two is prevented by a
+// test asserting this function's Texts equal buildRegionLines' first return
+// exactly, which asserts the resolved outcome rather than restating the logic
+// (INV-014).
+func unionDirectiveRules(g *topicGroup) []compile.Rule {
+	type entry struct {
+		text   string
+		ref    string
+		manual bool
+		src    string
+	}
+	all := make([]entry, 0, len(g.Directives)+len(g.Manual))
+	for _, d := range g.Directives {
+		all = append(all, entry{text: d.Text, ref: extractRefTag(d.Text), manual: false, src: d.Source})
+	}
+	for _, m := range g.Manual {
+		txt := m.Text
+		if extractRefTag(txt) == "" {
+			txt = strings.TrimRight(txt, " ") + " (ref: " + m.Source + " + manual)"
+		}
+		if !strings.Contains(txt, "*(manual)*") {
+			txt = txt + " *(manual)*"
+		}
+		all = append(all, entry{text: txt, ref: m.Source, manual: true, src: m.Source})
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		if all[i].ref != all[j].ref {
+			return all[i].ref < all[j].ref
+		}
+		if all[i].manual != all[j].manual {
+			return !all[i].manual && all[j].manual
+		}
+		return all[i].text < all[j].text
+	})
+	out := make([]compile.Rule, len(all))
+	for i, e := range all {
+		out[i] = compile.Rule{Text: e.text, Source: e.src}
+	}
+	return out
+}
+
 func buildRegionLines(g *topicGroup) (directives, prohibitions, manual []string) {
 	type entry struct {
 		text   string
@@ -1436,22 +1609,13 @@ func buildRegionLines(g *topicGroup) (directives, prohibitions, manual []string)
 	return directives, prohibitions, manual
 }
 
-// regionSHA returns the sha256 of the rendered body of a managed region.
-// The body is the concatenation of each bullet line (`- ` + text + `\n`).
-// withProhibitionsHeading prepends `## Prohibitions\n` so the SHA covers
-// the heading line embedded in the prohibitions region.
-func regionSHA(lines []string, withProhibitionsHeading bool) string {
-	var b strings.Builder
-	if withProhibitionsHeading {
-		b.WriteString("## Prohibitions\n")
-	}
-	for _, l := range lines {
-		b.WriteString("- ")
-		b.WriteString(l)
-		b.WriteByte('\n')
-	}
-	return render.RegionSHA(b.String())
-}
+// regionSHA is GONE (D357). It hashed a reconstruction of the body the
+// renderer was about to emit — each bullet as "- "+text+"\n", with a
+// withProhibitionsHeading flag restating that topic.md.tmpl puts a heading
+// inside one region's markers. render.RenderTopic now anchors each region
+// from the bytes it actually emitted, so this file no longer models the
+// renderer's private layout. Anything here that needs a region's hash must
+// read the rendered output and call render.RegionSHA on it.
 
 // hasAllRegions reports whether the file at path already declares all
 // three Phase 8 managed regions. Missing-region paths force a fresh render

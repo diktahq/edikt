@@ -5,32 +5,19 @@ package cmd
 //
 // WHAT IT ANSWERS: which plan is the one still being worked on. The newest
 // PLAN-*.md whose Progress table still has a row that is not a completion
-// marker.
-//
-// THE SCOPING IS THE WHOLE ALGORITHM. A plan body contains several tables —
-// cost estimates, phase prompts, dependency lists — and rows in those look
-// exactly like progress rows. Counting them made finished plans look active,
-// which is why the search is bounded to the `## Progress` section rather than
-// run over the whole file. That bound is preserved here verbatim, including
-// its failure mode: a plan with no Progress heading contributes nothing rather
-// than being treated as fully complete.
+// marker. The resolution logic itself lives in internal/activeplan (SR-006,
+// gov prune-candidates needed the same answer from a package `cmd` cannot be
+// imported by — GL-002 "one rule, one implementation" rather than a second
+// copy of the scoping rule).
 
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/activeplan"
 	"github.com/spf13/cobra"
-)
-
-var (
-	planCompleteRe = regexp.MustCompile(`(?i)\b(done|pass(ed)?|complete(d)?)\b|✅`)
-	planRowRe      = regexp.MustCompile(`^\| *\d+[a-z]?\s*\|`)
-	planProgressRe = regexp.MustCompile(`(?mi)^##+ +Progress\b`)
-	planNextHeadRe = regexp.MustCompile(`(?m)^##+ +`)
 )
 
 func init() {
@@ -55,74 +42,18 @@ cannot be read, so a caller can tell "nothing to do" from "could not look".`,
 			if dir == "" {
 				return fmt.Errorf("--dir is required")
 			}
-			entries, err := os.ReadDir(dir)
+			path, err := activeplan.Resolve(dir)
 			if err != nil {
 				return err
 			}
-			type cand struct {
-				path string
-				mod  int64
-			}
-			var files []cand
-			for _, e := range entries {
-				if e.IsDir() {
-					continue
-				}
-				name := e.Name()
-				if !strings.HasPrefix(name, "PLAN-") || !strings.HasSuffix(name, ".md") {
-					continue
-				}
-				if strings.Contains(name, ".SUPERSEDED") {
-					continue
-				}
-				info, ierr := e.Info()
-				if ierr != nil {
-					continue
-				}
-				files = append(files, cand{filepath.Join(dir, name), info.ModTime().UnixNano()})
-			}
-			sort.Slice(files, func(i, j int) bool { return files[i].mod > files[j].mod })
-
-			for _, f := range files {
-				body, rerr := os.ReadFile(f.path) //nolint:gosec // path built from ReadDir
-				if rerr != nil {
-					continue
-				}
-				rows := progressRows(string(body))
-				if len(rows) == 0 {
-					continue
-				}
-				for _, r := range rows {
-					if !planCompleteRe.MatchString(r) {
-						fmt.Fprintln(cmd.OutOrStdout(), f.path)
-						return nil
-					}
-				}
+			if path != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), path)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", "", "directory holding PLAN-*.md files (required)")
 	return cmd
-}
-
-// progressRows returns the table rows inside the `## Progress` section only.
-func progressRows(body string) []string {
-	m := planProgressRe.FindStringIndex(body)
-	if m == nil {
-		return nil
-	}
-	rest := body[m[1]:]
-	if nxt := planNextHeadRe.FindStringIndex(rest); nxt != nil {
-		rest = rest[:nxt[0]]
-	}
-	var out []string
-	for _, ln := range strings.Split(rest, "\n") {
-		if planRowRe.MatchString(ln) {
-			out = append(out, ln)
-		}
-	}
-	return out
 }
 
 var planPhaseRowRe = regexp.MustCompile(`(?i)^\|\s*([0-9]+)\s*\|\s*(done|in-progress)\s*`)

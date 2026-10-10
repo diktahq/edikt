@@ -18,7 +18,7 @@ func TestRollbackNoPrevious(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, "versions", "0.6.0"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,10 +45,10 @@ func TestRollbackToPrevious(t *testing.T) {
 		}
 	}
 	// Set up 0.6.0 active with 0.4.3 as previous.
-	if err := writeLock(root, "0.4.3", "test"); err != nil {
+	if err := writeLock(root, "0.4.3", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 

@@ -582,9 +582,7 @@ func phaseEndL1Output(r *phaseEndRun, raw string) string {
 				"This is an evaluator FAILURE — verdict treated as BLOCKED, " +
 				"not a prompt to authenticate this session. The evaluator child " +
 				"resolves its own " + adapter.HostConfigDirNoun() + " from the hook environment " +
-				"(" + adapter.HostConfigDirNote() + "). If this project runs under a non-default profile, " +
-				"ensure " + adapter.HostConfigDirEnv + " is exported where hooks run; otherwise " +
-				"the child uses the default profile, which is unauthenticated here."
+				"(" + adapter.HostConfigDirNote() + "). " + adapter.HostAuthFailureCause()
 		} else {
 			missingMsg = "⚠️  Phase " + phase + " evaluator did not emit a structured JSON verdict. " +
 				"Verdict treated as BLOCKED until the evaluator emits a " +

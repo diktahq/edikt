@@ -54,17 +54,22 @@ func TestSuppressedDirectives_AreSubtracted(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 
-	// ADR-066: this fixture's sidecar declares paths:, so its surviving
-	// directive text renders into directive-index.yaml, not the topic file —
-	// the subtraction this test pins happens upstream of both surfaces
-	// (groupByTopic and BuildDirectiveIndex both read the same
-	// post-subtraction set), so the index is where to check it landed.
-	body := readDirectiveIndex(t, root)
-	if !strings.Contains(body, "Kept rule MUST hold.") {
-		t.Errorf("unsuppressed directive missing from compiled output:\n%s", body)
+	// The subtraction this test pins happens upstream of BOTH surfaces
+	// (groupByTopic and BuildDeliveryMap read the same post-subtraction
+	// set). Under ADR-079 an ADR directive is advisory, so the surviving text
+	// lands in the topic file rather than the index — and the suppressed text
+	// is asserted absent from BOTH, because "not in the surface I happened to
+	// read" is not the property. A regression that leaked it onto the other
+	// surface would otherwise pass.
+	topic := readFileString(t, filepath.Join(root, ".claude", "rules", "governance", "arch.md"))
+	assertNoDirectiveIndex(t, root)
+	if !strings.Contains(topic, "Kept rule MUST hold.") {
+		t.Errorf("unsuppressed directive missing from compiled output:\n%s", topic)
 	}
-	if strings.Contains(body, "Suppressed rule MUST hold.") {
-		t.Errorf("suppressed directive was compiled anyway:\n%s", body)
+	for name, body := range map[string]string{"topic file": topic} {
+		if strings.Contains(body, "Suppressed rule MUST hold.") {
+			t.Errorf("suppressed directive was compiled anyway, into the %s:\n%s", name, body)
+		}
 	}
 }
 
@@ -109,9 +114,11 @@ func TestSuppressedDirectives_EmptyIsNoOp(t *testing.T) {
 			Options{CompiledAt: "2026-05-22T00:00:00Z", CompilerVersion: "0.6.0-test"}); err != nil {
 			t.Fatalf("merge: %v", err)
 		}
-		// ADR-066: this fixture's sidecar declares paths:, so its directive
-		// text renders into directive-index.yaml, not the topic file.
-		return readDirectiveIndex(t, root)
+		// ADR-079: an ADR directive is advisory, so its text renders into the
+		// topic file. The topic file is the whole compiled directive output since
+		// ADR-083; the index's absence is asserted alongside.
+		assertNoDirectiveIndex(t, root)
+		return readFileString(t, filepath.Join(root, ".claude", "rules", "governance", "arch.md"))
 	}
 
 	if nilCase, emptyCase := build(nil), build([]string{}); nilCase != emptyCase {
@@ -185,9 +192,14 @@ func TestSuppressedDirectives_DoNotTouchProhibitions(t *testing.T) {
 		t.Fatalf("merge: %v", err)
 	}
 
-	// ADR-066: this fixture's sidecar declares paths:, so its prohibition
-	// text renders into directive-index.yaml, not the topic file.
-	if body := readDirectiveIndex(t, root); !strings.Contains(body, "MUST NOT do the forbidden thing.") {
-		t.Errorf("suppression reached prohibitions, which the formula does not cover:\n%s", body)
+	// Since SR-003 an ADR prohibition grades ADVISORY, so it renders into the
+	// topic file rather than the index. The subject is unchanged — suppression
+	// must not reach prohibitions, which the ADR-008 formula does not cover —
+	// only the surface it survives on moved. Both are checked so the assertion
+	// cannot pass merely because the entry went somewhere else.
+	topic := readFileString(t, filepath.Join(root, ".claude", "rules", "governance", "arch.md"))
+	if !strings.Contains(topic, "MUST NOT do the forbidden thing.") {
+		t.Errorf("suppression reached prohibitions, which the formula does not cover:\n%s", topic)
 	}
+	assertNoDirectiveIndex(t, root)
 }

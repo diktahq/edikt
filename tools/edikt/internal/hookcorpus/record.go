@@ -38,6 +38,14 @@ type Options struct {
 	// KeepContent writes the added/modified file bytes alongside the manifests.
 	KeepContent bool
 
+	// Oracle overrides the registry-derived oracle for RECORDING: "" or
+	// "auto" resolves from the row's status; OracleHostContract records the
+	// current Go implementation under a named host contract (Contract and
+	// ContractRecordedAt are then required). Never affects diff.
+	Oracle             string
+	Contract           string
+	ContractRecordedAt string
+
 	// Trace observes filesystem operations; nil in production.
 	Trace Trace
 
@@ -80,7 +88,7 @@ func (o *Options) applyDefaults() error {
 
 // implementation is what a scenario will actually execute.
 type implementation struct {
-	oracle string   // OracleBash | OracleGo
+	oracle string   // OracleBash | OracleGo | OracleHostContract
 	argv   []string // the command
 	digest string   // sha256 of the executed artifact
 	path   string   // the artifact, for diagnostics
@@ -159,7 +167,17 @@ func (r *Recorder) resolveImplementation(row RegistryRow, live string) (implemen
 		}
 		return implementation{oracle: OracleBash, argv: []string{"bash", path}, digest: digest, path: path}, nil
 
-	case OracleGo:
+	case OracleGo, OracleHostContract:
+		if want == OracleHostContract {
+			if row.Status != StatusMigrated {
+				return implementation{}, fmt.Errorf("refusing to record %q under a host contract: the row is not "+
+					"migrated, so the bash oracle still exists and must be recorded instead", row.Name)
+			}
+			if r.opts.Contract == "" || r.opts.ContractRecordedAt == "" {
+				return implementation{}, fmt.Errorf("refusing to record %q under a host contract without "+
+					"--contract and --contract-recorded-at: an unnamed contract is oracle=go under another name", row.Name)
+			}
+		}
 		bin, err := r.resolveBinary()
 		if err != nil {
 			return implementation{}, err
@@ -172,9 +190,9 @@ func (r *Recorder) resolveImplementation(row RegistryRow, live string) (implemen
 		if ev, ok := row.EventName(); ok {
 			argv = append(argv, "--event", ev)
 		}
-		return implementation{oracle: OracleGo, argv: argv, digest: digest, path: bin}, nil
+		return implementation{oracle: want, argv: argv, digest: digest, path: bin}, nil
 	}
-	return implementation{}, fmt.Errorf("unknown implementation %q (want auto, bash or go)", live)
+	return implementation{}, fmt.Errorf("unknown implementation %q (want auto, bash, go or host-contract)", live)
 }
 
 // EventName returns the row's event and whether it has one.
@@ -608,7 +626,11 @@ func (r *Recorder) Record(hook, scenarioID string) (*RecordResult, error) {
 
 // RecordOne captures a single scenario and writes its artifacts.
 func (r *Recorder) RecordOne(hook string, sc Scenario) (*Recording, error) {
-	ex, err := r.Run(hook, sc, "auto")
+	live := "auto"
+	if r.opts.Oracle == OracleHostContract {
+		live = OracleHostContract
+	}
+	ex, err := r.Run(hook, sc, live)
 	if err != nil {
 		return nil, err
 	}
@@ -632,6 +654,10 @@ func (r *Recorder) RecordOne(hook string, sc Scenario) (*Recording, error) {
 		WallClockMS:              ex.WallClockMS,
 		VolatileFieldsNormalized: ex.Tokens,
 		FSDiff:                   ex.Diff,
+	}
+	if ex.Impl.oracle == OracleHostContract {
+		rec.Contract = r.opts.Contract
+		rec.ContractRecordedAt = r.opts.ContractRecordedAt
 	}
 	if rec.VolatileFieldsNormalized == nil {
 		rec.VolatileFieldsNormalized = []string{}

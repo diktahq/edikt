@@ -37,7 +37,7 @@ import (
 // probe being inert (INV-013 — a detector that cannot fail measures nothing).
 func TestNoEagerIO(t *testing.T) {
 	root := t.TempDir()
-	idx := plantBlockingFIFO(t, filepath.Join(root, ".claude", "rules", "governance", "directive-index.yaml"))
+	idx := plantBlockingFIFO(t, filepath.Join(root, ".claude", "rules", "governance", "delivery-map.yaml"))
 	cfg := plantBlockingFIFO(t, filepath.Join(root, ".edikt", "config.yaml"))
 
 	// Journal writes go to a scratch HOME; the journal is neither index nor
@@ -112,7 +112,7 @@ func TestNoEagerIO(t *testing.T) {
 // the one asking. Two different failure modes, two checks.
 func TestDispatcherSourceDoesNotReachTheIndex(t *testing.T) {
 	root := repoRoot(t)
-	forbidden := []string{"hookmatch.Match(", "hookmatch.IndexPath(", "hookcfg."}
+	forbidden := []string{"hookmatch.MatchGoverning(", "hookmatch.DeliveryMapPath("}
 	scanned := 0
 	for _, name := range []string{"run.go", "registry.go"} {
 		raw, err := os.ReadFile(filepath.Join(root, "tools", "edikt", "internal", "hook", name))

@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/hookmatch"
 )
 
 type hookSettings struct {
@@ -94,7 +96,11 @@ func dualHookRegistrations(claudeRoot, projectRoot string) []string {
 // user-level settings hooks arrays, preserving everything else. Writes a
 // .bak alongside before rewriting.
 func removeUserHookEntries(claudeRoot string, pairs []string) error {
-	path := filepath.Join(claudeRoot, "settings.json")
+	// Follow the symlink: the user-scope settings.json is commonly a link
+	// into a dotfiles checkout, and writing through the link path would
+	// replace it with a regular file — quietly detaching the user's
+	// dotfiles from the file edikt then edits (FR-034).
+	path := resolvedUserSettings(claudeRoot)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -151,24 +157,47 @@ func removeUserHookEntries(claudeRoot string, pairs []string) error {
 // reader and the operator consents, performs the user-level removal.
 // Returns the warning count.
 func runDualRegistrationCheck(claudeRoot, projectRoot string, in io.Reader, interactive bool, out io.Writer) int {
+	s, _ := hookmatch.ReadSummary()
+	errN, _ := runDualRegistrationCheckWithCost(claudeRoot, projectRoot, in, interactive, s, out)
+	return errN
+}
+
+// runDualRegistrationCheckWithCost is the check proper. It takes the journal
+// Summary as an ARGUMENT rather than reading it: doctor reads the journal
+// once and shares it with the hook-chain check, so a large journal is not
+// scanned twice per run.
+//
+// A doubled hook is an ERROR, not a warning (FR-034). It ran for weeks on the
+// reference machine as a warning printed on every run and acted on by nobody;
+// 13 hooks fired twice per event the whole time. The cost beside it is
+// MEASURED from the journal — and when the journal has never been written,
+// the cost reads UNMEASURED rather than implying none (INV-013).  // edikt-guard:allow
+func runDualRegistrationCheckWithCost(claudeRoot, projectRoot string, in io.Reader, interactive bool,
+	journal hookmatch.Summary, out io.Writer) (errN, warnN int) {
 	dups := dualHookRegistrations(claudeRoot, projectRoot)
 	if len(dups) == 0 {
-		return 0
+		return 0, 0
+	}
+	cost := "cost UNMEASURED — the hook journal has never been written on this machine, which is not the same as no cost"
+	if journal.JournalFound {
+		cost = fmt.Sprintf("measured cost: %d hook invocation(s) recorded in the journal, each doubled event counted twice", journal.Total)
 	}
 	// (ref: ADR-050 — new installs register hooks at project scope only)
-	fmt.Fprintf(out, "  WARN: %d hook(s) registered at BOTH user and project scope — each fires twice per event:\n", len(dups))
+	fmt.Fprintf(out, "  🔴 ERROR: %d hook(s) registered at BOTH user and project scope — each fires twice per event (%s):\n",
+		len(dups), cost)
 	for _, d := range dups {
 		fmt.Fprintf(out, "    dual: %s\n", d)
 	}
 	if interactive {
-		fmt.Fprintf(out, "  Remove the duplicated entries from %s/settings.json (a .bak is written first)? [y/N]: ", claudeRoot)
+		fmt.Fprintf(out, "  Remove the duplicated entries from %s (a .bak is written beside it)? [y/N]: ", resolvedUserSettings(claudeRoot))
 		reader := bufio.NewReader(in)
 		answer, _ := reader.ReadString('\n')
 		if strings.TrimSpace(strings.ToLower(answer)) == "y" {
 			if err := removeUserHookEntries(claudeRoot, dups); err != nil {
 				fmt.Fprintf(out, "  ERROR: could not update user settings: %v\n", err)
 			} else {
-				fmt.Fprintf(out, "  removed %d duplicated user-scope hook entr(ies); project scope now owns them\n", len(dups))
+				fmt.Fprintf(out, "  removed %d duplicated user-scope hook entr(ies) from %s; project scope now owns them\n",
+					len(dups), resolvedUserSettings(claudeRoot))
 			}
 		} else {
 			fmt.Fprintln(out, "  left as-is — the duplicate-invocation guard covers the interim")
@@ -177,5 +206,17 @@ func runDualRegistrationCheck(claudeRoot, projectRoot string, in io.Reader, inte
 		// (ref: ADR-050 — new installs register hooks at project scope only)
 		fmt.Fprintln(out, "  Hooks belong at project scope. Re-run `edikt doctor` interactively to remove the user-scope duplicates, or edit them out manually; the duplicate-invocation guard covers the interim.")
 	}
-	return 1
+	return 1, 0
+}
+
+// resolvedUserSettings names the file the remedy will actually edit. The
+// user-scope settings.json is often a symlink into a dotfiles checkout, and a
+// remedy that names the link while editing the target — or worse, replaces
+// the link — is a remedy the user cannot audit (FR-034).
+func resolvedUserSettings(claudeRoot string) string {
+	p := filepath.Join(claudeRoot, "settings.json")
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }

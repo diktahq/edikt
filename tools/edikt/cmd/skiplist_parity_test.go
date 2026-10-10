@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,7 +66,7 @@ func TestSkipList_ParityWithSharedPredicate(t *testing.T) {
 			if err := os.WriteFile(p, []byte(c.body), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			gotCmd, _ := isSkipListed(p)
+			gotCmd, _ := migrate.IsSkipListed(p)
 			gotShared, _ := sidecar.IsSkipListed(p)
 
 			if gotCmd != c.wantSkip {
@@ -87,7 +88,7 @@ func TestSkipList_ReadmeParity(t *testing.T) {
 	if err := os.WriteFile(p, []byte("# Decisions\n\nThis directory holds ADRs.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	gotCmd, _ := isSkipListed(p)
+	gotCmd, _ := migrate.IsSkipListed(p)
 	gotShared, _ := sidecar.IsSkipListed(p)
 	if !gotCmd || !gotShared {
 		t.Fatalf("README not skipped: cmd=%v shared=%v", gotCmd, gotShared)

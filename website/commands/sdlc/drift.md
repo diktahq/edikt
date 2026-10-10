@@ -43,7 +43,7 @@ Default scope is the full chain.
 
 **Layer 5 — Invariant compliance.** For each active invariant, checks whether it's violated by any changed file.
 
-**Layer 6 — SPEC `verify:` rollup.** Shells to `bin/edikt verify spec SPEC-NNN`. Every `requirements[].verify` (SRs) and `acceptance_criteria[].verify` (ACs / SACs) that fails is folded into the drift report as a 🔴 finding with `Source: verify gate`. Items without a `verify:` field don't count against drift — they surface in `/edikt:doctor`'s coverage report as gaps to fill. The verify-gate failures count toward the divergence total alongside the layer-agent findings, so CI usage (`--output=json` + exit code) catches both code-level drift and unfulfilled `verify:` contracts in one run.
+**Layer 6 — SPEC `verify:` rollup.** Shells to `bin/edikt verify spec SPEC-NNN`. Every `requirements[].verify` (SRs) and `acceptance_criteria[].verify` (ACs / SACs) that fails is folded into the drift report as a 🔴 finding with `Source: verify gate`. Items without a `verify:` field don't count against drift — they surface in `/edikt:doctor`'s coverage report as gaps to fill. These `verify:` failures count toward the divergence total alongside the layer-agent findings, so CI usage (`--output=json` + exit code) catches both code-level drift and unfulfilled `verify:` contracts in one run.
 
 ## Severity model
 

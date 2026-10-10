@@ -12,6 +12,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -133,5 +134,78 @@ func TestSidecarApprove_SucceedsWhenFixturesPresent(t *testing.T) {
 	}
 	if !contains(string(body), "negative_fixture_path: test/fixtures/behavioral/ADR-998/negative.sh") {
 		t.Errorf("expected negative_fixture_path recorded on the directive, got:\n%s", body)
+	}
+}
+
+// D47: a proposal routed from a PROHIBITION carries entry_kind: prohibition,
+// and approve patches prohibitions[i], not directives[i].
+func TestSidecarApprove_ProhibitionEntryKind(t *testing.T) {
+	dir := t.TempDir()
+	_ = seedEdiktRoot(t, dir)
+	sidecarPath := filepath.Join(dir, "ADR-997-example.edikt.yaml")
+	sidecarBody := `schema_version: 2
+topic: "testing"
+path: "ADR-997-example.md"
+signals:
+  - "example signal"
+directives:
+  - text: 'An example rule MUST hold. (ref: ADR-997)'
+    source_excerpts:
+      - line_start: 1
+        line_end: 1
+        quote: 'An example rule holds.'
+prohibitions:
+  - text: 'MUST NOT break the example. (ref: ADR-997)'
+    source_excerpts:
+      - line_start: 1
+        line_end: 1
+        quote: 'An example rule holds.'
+`
+	if err := os.WriteFile(sidecarPath, []byte(sidecarBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pendingID := "ADR-997-p00"
+	pendingPath := filepath.Join(dir, ".edikt", "state", "pending-verifies", pendingID+".yaml")
+	pendingBody := `id: ` + pendingID + `
+sidecar_path: ` + sidecarPath + `
+directive_index: 0
+entry_kind: prohibition
+proposed_verify: "true"
+intent: "example intent"
+falsifying_observation: "the example is broken"
+proposed_at: "2026-09-02T00:00:00Z"
+`
+	if err := os.WriteFile(pendingPath, []byte(pendingBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	withCWD(t, dir)
+	fixtureDir := filepath.Join(dir, "test", "fixtures", "behavioral", "ADR-997")
+	if err := os.MkdirAll(fixtureDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"positive.sh": "#!/bin/sh\nexit 0\n", "negative.sh": "#!/bin/sh\nexit 1\n"} {
+		if err := os.WriteFile(filepath.Join(fixtureDir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out, runErr := runCmd(t, "sidecar", "approve", pendingID, "--decision=approve")
+	if runErr != nil {
+		t.Fatalf("want exit 0, got: %v\noutput: %s", runErr, out)
+	}
+	body, err := os.ReadFile(sidecarPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(body)
+	pi := strings.Index(s, "prohibitions:")
+	if pi < 0 {
+		t.Fatalf("prohibitions list missing after approve:\n%s", s)
+	}
+	if !strings.Contains(s[pi:], "verify_kind: behavioral") || !strings.Contains(s[pi:], "positive_fixture_path: test/fixtures/behavioral/ADR-997/positive.sh") {
+		t.Fatalf("the prohibition must carry the approved verify and its pair:\n%s", s)
+	}
+	if strings.Contains(s[:pi], "verify_kind") {
+		t.Fatalf("the directive must be untouched:\n%s", s)
 	}
 }

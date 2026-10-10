@@ -10,6 +10,61 @@ allowed-tools:
   - Glob
   - Grep
   - Agent
+stops:
+  - id: adr-path-handling
+    class: selection
+    default: adopt
+    options: [adopt, migrate, skip]
+    on_silence: take-default
+    prompt: "Existing architecture decisions were found outside edikt's default path — adopt that path, migrate them, or skip them?"
+  - id: guideline-path-handling
+    class: selection
+    default: adopt
+    options: [adopt, migrate, skip]
+    on_silence: take-default
+    prompt: "Existing guidelines were found outside edikt's default path — adopt that path, migrate them, or skip them?"
+  - id: compile-guidelines-now
+    class: selection
+    default: "yes"
+    options: ["yes", "no"]
+    on_silence: take-default
+    prompt: "Compile these guidelines into governance directives now?"
+  - id: adr-template-source
+    class: selection
+    default: draft-from-majority
+    options: [use-team-template, draft-from-majority, pick-reference]
+    on_silence: take-default
+    prompt: "The existing ADRs have inconsistent styles — is there a team template file to use, or should one be drafted from the majority style?"
+  - id: adr-style-handling
+    class: selection
+    default: adapt
+    options: [adapt, start-fresh, write-my-own]
+    on_silence: take-default
+    prompt: "How should edikt handle the detected ADR style — adapt to it, start fresh from a reference template, or leave the template to you?"
+  - id: adr-reference-template
+    class: selection
+    default: nygard-minimal
+    options: [nygard-minimal, madr-extended]
+    on_silence: take-default
+    prompt: "Which reference ADR template should be used?"
+  - id: invariant-style-handling
+    class: selection
+    default: adapt
+    options: [adapt, start-fresh, write-my-own]
+    on_silence: take-default
+    prompt: "How should edikt handle the detected invariant style — adapt to it, start fresh from a reference template, or leave the template to you?"
+  - id: invariant-reference-template
+    class: selection
+    default: minimal
+    options: [minimal, full]
+    on_silence: take-default
+    prompt: "Which reference invariant template should be used?"
+  - id: guideline-reference-template
+    class: selection
+    default: minimal
+    options: [minimal, extended]
+    on_silence: take-default
+    prompt: "Which reference guideline template should be used?"
 ---
 
 # edikt:init
@@ -63,7 +118,7 @@ ls -la .edikt/ 2>/dev/null || echo "No .edikt/ directory"
        Installed: {INSTALLED}
        Required:  {PROJECT}
 
-    Run: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+    Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
     Then re-run /edikt:init.
     ```
     Stop here.
@@ -166,8 +221,6 @@ ls -la .edikt/ 2>/dev/null || echo "No .edikt/ directory"
 
   Run /edikt:context to load project context.
   ```
-
-  Note: if config contains a `team:` block (legacy from `/edikt:team`), ignore it silently. Do not read, display, or act on it.
 
 - **Reconfigure** (user explicitly wants to change settings): Before any file generation, scan existing `.claude/rules/*.md` for customization:
 
@@ -412,7 +465,11 @@ Present findings — same format for both established and greenfield:
 
 **If existing ADRs or decision docs were detected**, capture the detected folder path (e.g. `docs/decisions/`) as `$DETECTED_DECISIONS_PATH`. Do the same for invariants if found: `$DETECTED_INVARIANTS_PATH`.
 
-If the detected path differs from edikt's default (`docs/architecture/decisions/` / `docs/architecture/invariants/`), you MUST prompt:
+If the detected path differs from edikt's default (`docs/architecture/decisions/` / `docs/architecture/invariants/`), you MUST prompt. With no
+human to answer, take the declared default (`adopt`) and record that it was
+taken by default rather than answered — adopt moves no files.
+
+<!-- stop: adr-path-handling -->
 ```
 Found 3 existing architecture decisions in docs/decisions/.
 
@@ -446,7 +503,11 @@ Choice [1]:
 
 **If existing guidelines or convention docs were detected** (e.g., files with naming patterns, coding standards, style guides, best practices — often in `docs/`, `guides/`, `conventions/`, or `standards/`), capture the detected path as `$DETECTED_GUIDELINES_PATH`.
 
-If the detected path differs from edikt's default (`docs/guidelines/`), prompt:
+If the detected path differs from edikt's default (`docs/guidelines/`), prompt.
+With no human to answer, take the declared default (`adopt`) and record that it
+was taken by default rather than answered — adopt moves no files.
+
+<!-- stop: guideline-path-handling -->
 ```
 Found {n} existing guidelines/conventions in {path}.
 
@@ -473,7 +534,11 @@ Choice [1]:
 - Continue with edikt's default paths
 - Remind them they can import later with `/edikt:docs:intake`
 
-**After adoption or migration**, prompt to compile:
+**After adoption or migration**, prompt to compile. With no human to answer,
+take the declared default (`yes`) and record that it was taken by default
+rather than answered.
+
+<!-- stop: compile-guidelines-now -->
 ```
 Would you like to compile these guidelines into governance directives now?
   [1] Yes — run /edikt:guideline:compile (recommended)
@@ -481,11 +546,11 @@ Would you like to compile these guidelines into governance directives now?
 Choice [1]:
 ```
 
-If yes, run `/edikt:guideline:compile` to generate sentinel blocks. Then remind: "Run `/edikt:gov:compile` to include these in the governance index."
+If yes, run `/edikt:guideline:compile` to generate their sidecars. Then remind: "Run `/edikt:gov:compile` to include these in the governance index."
 
 **Critical:** the generated `.edikt/config.yaml` MUST reflect the actual location of guidelines. Same rule as ADRs — never leave the default path when guidelines live elsewhere.
 
-### 2b. Project Templates (v0.3.0 Adapt mode)
+### 2b. Project Templates (Adapt mode)
 
 This step runs once per artifact type (ADRs, Invariant Records, guidelines) and generates `.edikt/templates/<artifact>.md` files that future `/edikt:adr:new`, `/edikt:invariant:new`, and `/edikt:guideline:new` commands will use via the lookup chain documented in each `new.md` file.
 
@@ -511,7 +576,9 @@ ADR template: using existing .edikt/templates/adr.md
    - What are the section names and their order? (e.g., "Context", "Decision", "Consequences" vs "Context and Problem Statement", "Decision Drivers", "Considered Options", "Decision Outcome")
    - Are sections prose or bulleted lists?
    - Is there a trailing "References" or "More Information" section?
-3. **Check for consistency** across the sampled ADRs. If they all share the same structure, proceed with that structure. If they differ (e.g., 3 MADR-style and 4 Nygard-style), ask:
+3. **Check for consistency** across the sampled ADRs. If they all share the same structure, proceed with that structure. If they differ (e.g., 3 MADR-style and 4 Nygard-style), ask (with no human to answer, take the declared
+   default `draft-from-majority` and record it as taken by default):
+   <!-- stop: adr-template-source -->
    ```
    Your existing ADRs have inconsistent styles:
      {n} follow MADR-style structure
@@ -524,10 +591,12 @@ ADR template: using existing .edikt/templates/adr.md
      [3] No — let me pick from the reference templates instead
    Choice [2]:
    ```
-   - Option [1]: ask for the file path, read it, write it to `.edikt/templates/adr.md` verbatim (ensuring the directives sentinel block is present; add an empty block if missing).
+   - Option [1]: ask for the file path, read it, write it to `.edikt/templates/adr.md` verbatim.
    - Option [2]: use the majority style for the Adapt inference below.
    - Option [3]: jump to the "Start fresh" branch below.
-4. **Present the three-choice prompt**:
+4. **Present the three-choice prompt** (with no human to answer, take the
+   declared default `adapt` and record it as taken by default):
+   <!-- stop: adr-style-handling -->
    ```
    Found {n} existing ADRs in {detected_decisions_path} with a consistent {style_description} style:
      - Frontmatter: {yes|no} ({fields if yes})
@@ -547,11 +616,13 @@ ADR template: using existing .edikt/templates/adr.md
      - The detected section headings, in the same order
      - Placeholder prose in each section ("{Describe the context here}", "{State the decision}", etc.)
      - A writing guidance comment at the top noting this template was generated by Adapt mode from N existing ADRs
-     - A trailing HTML comment pointing at the co-located sidecar contract: `<!-- Compiled directives live in the co-located ADR-NNN-{slug}.edikt.yaml sidecar. edikt never writes to this .md — edit prose only; run /edikt:adr:compile to regenerate the sidecar. -->` (NO in-body `[edikt:directives:start]` block — v0.6.0 removed in-body sentinels)
+     - A trailing HTML comment pointing at the co-located sidecar contract: `<!-- Compiled directives live in the co-located ADR-NNN-{slug}.edikt.yaml sidecar. edikt never writes to this .md — edit prose only; run /edikt:adr:compile to regenerate the sidecar. -->`
    - Write to `.edikt/templates/adr.md`.
    - Report: `Generated .edikt/templates/adr.md from detected style (based on {n} ADRs)`.
 6. **If user picks [2] Start fresh**:
-   - Present the reference template choice:
+   - Present the reference template choice (default `nygard-minimal` on
+     silence, recorded as taken by default):
+     <!-- stop: adr-reference-template -->
      ```
      Pick a reference ADR template:
        [1] Nygard-minimal — Title, Status, Context, Decision, Consequences (5 sections, short)
@@ -586,7 +657,9 @@ Invariant Record template: using existing .edikt/templates/invariant.md
 1. Sample 2-3 invariants from the detected invariants path.
 2. Analyze structural pattern — frontmatter fields, heading levels, section names (Statement vs Rule, presence of Rationale/Consequences of violation/Implementation/Anti-patterns/Enforcement).
 3. Check for consistency; if inconsistent, prompt the user same as ADR (team template / draft from majority / pick reference).
-4. Present the three-choice prompt:
+4. Present the three-choice prompt (with no human to answer, take the declared
+   default `adapt` and record it as taken by default):
+   <!-- stop: invariant-style-handling -->
    ```
    Found {n} existing invariants in {detected_invariants_path} with a consistent {style_description} structure:
      - Sections: {list}
@@ -600,7 +673,9 @@ Invariant Record template: using existing .edikt/templates/invariant.md
    Choice [1]:
    ```
 5. Adapt mode: generate `.edikt/templates/invariant.md` from detected style. **Always include the writing guidance comment** explaining constraint-vs-implementation, present-tense declarative phrasing, and the "not derived from ADRs" principle — even if the detected style doesn't have it. This is edikt's opinion that we commit to teaching every project.
-6. Start fresh: show reference template choice:
+6. Start fresh: show reference template choice (default `minimal` on silence,
+   recorded as taken by default):
+   <!-- stop: invariant-reference-template -->
    ```
    Pick a reference Invariant Record template:
      [1] Minimal — Statement, Rationale, Consequences of violation, Enforcement (4 sections)
@@ -625,7 +700,9 @@ Invariant Record template: using existing .edikt/templates/invariant.md
 2. Analyze structure — which sections are present (Purpose, Rules, Examples, Rationale, When-NOT-to-apply)?
 3. Three-choice prompt (Adapt / Start fresh / Write my own).
 4. Adapt: generate `.edikt/templates/guideline.md` from detected pattern. **Always include the requirement that every bullet in `## Rules` must use MUST or NEVER language** — this is the guideline template's hard contract even when the detected style is looser.
-5. Start fresh: reference template choice:
+5. Start fresh: reference template choice (default `minimal` on silence,
+   recorded as taken by default):
+   <!-- stop: guideline-reference-template -->
    ```
    Pick a reference guideline template:
      [1] Minimal  — Rules only, with MUST/NEVER requirement (shortest)
@@ -651,23 +728,6 @@ Team members can now edit these templates to customize their structure.
 Any edit to a template only affects newly-created artifacts — existing
 artifacts are never modified by template changes.
 ```
-
-### 2c. Grandfather flow (upgrading from v0.2.x)
-
-If `.edikt/config.yaml` already exists AND `edikt_version` in the config is `< 0.3.0` (or absent entirely), this project was initialized under an older edikt version. The v0.3.0 template system was not in place when the project started.
-
-**Grandfather behavior during init:**
-1. Detect this condition by comparing `edikt_version` from config against the installed edikt version.
-2. Print a one-line upgrade notice:
-   ```
-   ℹ Upgrading project template setup from edikt {old_version} to v0.3.0+
-     v0.3.0 introduces project templates for ADRs, Invariant Records, and guidelines.
-     Running the template setup flow now — existing artifacts are NOT touched.
-   ```
-3. Run sections 2b.1, 2b.2, and 2b.3 above as if this were a first-time setup.
-4. After template generation, bump `edikt_version` in config to the current installed version.
-
-**Grandfather behavior during /edikt:<artifact>:new** (handled by Phase 5, documented here for completeness): if the project has `edikt_version >= 0.3.0` AND `.edikt/templates/<artifact>.md` is missing, the command refuses with an error pointing at `/edikt:init` or `/edikt:init --reset-templates`. If `edikt_version < 0.3.0` (legacy project), the command continues using the inline fallback template and prints a one-line warning suggesting the user run `/edikt:upgrade` followed by `/edikt:init`.
 
 **Greenfield (no code detected):**
 ```
@@ -823,16 +883,25 @@ Here's a preview of what Claude will enforce for your project:
 
 These rules will fire automatically on every {extension} file Claude touches.
 
-Want to customize any rules before installing? You can always change them later.
+You can change any of them later:
 
   • Edit directly — modify any file in .claude/rules/ after init
   • Override a pack — copy it to .edikt/rules/{name}.md and edit there
   • Extend a pack — add rules in .edikt/rules/{name}-extensions.md
 
-Ready to install? (y/n)
+Installing now — this writes:
+
+  .edikt/config.yaml, .edikt/.gitignore, docs/project-context.md,
+  {n} rule packs into .claude/rules/, the edikt-managed block in CLAUDE.md,
+  and the agents and hooks selected above.
 ```
 
-This deposits goodwill before the generation step — the user sees proof that their answers produced something real, learns the customization paths, and commits with confidence.
+State what is being written, then write it. `/edikt:init` does not ask
+permission to install what it was invoked to install: the host's permission
+system and the managed-region guard are the write controls, and a second yes/no
+in the prose adds no protection while being the first thing to hang when nobody
+is watching. Naming the files first is what the user actually needs — proof
+that their answers produced something real, and the customization paths.
 
 ### 4. Generate
 
@@ -849,7 +918,9 @@ Generate all files, showing each as it completes:
   ✓ Project context docs/project-context.md
   ✓ Rules           6 packs → .claude/rules/
   ✓ Agents          5 specialists → .claude/agents/
+  ✓ Skills          {n} packages → .claude/skills/
   ✓ Hooks           .claude/settings.json (9 behaviors)
+  ✓ Schemas         {n} JSON schemas → .edikt/schemas/ (project copies of the payload's)
   ✓ CLAUDE.md       updated (sentinel merge)
   ✓ Directories     docs/architecture/, docs/plans/, docs/product/
   {if PR template}: ✓ PR template    .github/pull_request_template.md
@@ -858,6 +929,15 @@ Generate all files, showing each as it completes:
 ```
 
 #### File generation details
+
+**`.edikt/schemas/`** — copy every `$EDIKT_TEMPLATES/schemas/*.schema.json` the installed version ships (the installed version's set is the manifest for this surface — reconcile against what the version ships, never against what the project happens to have); the artifact commands and the extractor resolve these project-locally and emit `$schema` headers pointing at them. Never a lazy per-command copy: `/edikt:init` installs, `/edikt:upgrade` refreshes.
+
+```bash
+mkdir -p .edikt/schemas
+for src in "$EDIKT_TEMPLATES"/schemas/*.schema.json; do
+  [ -f "$src" ] && cp "$src" ".edikt/schemas/$(basename "$src")"
+done
+```
 
 **`.edikt/config.yaml`** — Read `~/.edikt/VERSION` for version.
 
@@ -996,7 +1076,7 @@ Tier mapping:
 If the template file doesn't exist at the expected path:
 ```
 Rule template not found: $EDIKT_TEMPLATES/rules/{tier}/{name}.md
-Install edikt globally: curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
+Install edikt globally: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
 ```
 
 **`CLAUDE.md`** — Read the template from `$EDIKT_TEMPLATES/CLAUDE.md.tmpl`. Sentinel merge using `[edikt:start]` / `[edikt:end]` markers. Fill template variables from config.
@@ -1016,17 +1096,17 @@ Four cases:
 - **No CLAUDE.md** (`SENTINEL=none`) — create the file with the new `[edikt:start]` / `[edikt:end]` markers
 - **CLAUDE.md exists, no edikt block** (`SENTINEL=none`) — append the edikt block (new markers) at the bottom, leave everything above untouched
 - **CLAUDE.md exists, new format** (`SENTINEL=new`) — replace only the content between `[edikt:start]` and `[edikt:end]`, leave everything outside untouched
-- **CLAUDE.md exists, old format** (`SENTINEL=old`) — replace content AND migrate sentinels to new format in the same operation
+- **CLAUDE.md exists, old format** (`SENTINEL=old`) — STOP. Do not write. Print exactly: `this CLAUDE.md carries a pre-v0.2 HTML-sentinel managed block; run /edikt:upgrade` — the upgrade flow owns the one rewriter of a project CLAUDE.md's managed block; init never migrates markers.
 
 Never Write the whole file — use Read + Edit.
 
-**`.claude/settings.json`** — Read the template from `$EDIKT_TEMPLATES/settings.json.tmpl`. The template contains the placeholder `${EDIKT_HOOK_DIR}` which MUST be substituted before writing — Claude Code does NOT expand environment variables in `command:` strings, so unsubstituted placeholders make hooks fail with `/bin/sh: /<hook>.sh: No such file or directory`.
+**`.claude/settings.json`** — Read the template from `$EDIKT_TEMPLATES/settings.json.tmpl`. The template contains the placeholder `${EDIKT_HOOK_DIR}` which MUST be substituted before writing. Claude Code runs each hook `command:` through a shell, so variables in it ARE expanded — but nothing sets `EDIKT_HOOK_DIR` in a hook's environment, so a left-over placeholder expands to the empty string and every hook fails with `/bin/sh: /<hook>.sh: No such file or directory`.
 
-**Substitution rule:**
-- Global mode (project lives outside an existing `.claude/`): replace `${EDIKT_HOOK_DIR}` with the absolute path `<HOME>/.edikt/hooks` (resolve `<HOME>` to the actual home directory, e.g. `/Users/alice`).
-- Project mode (project has its own `.claude/`): replace `${EDIKT_HOOK_DIR}` with the absolute path `<project_root>/.edikt/hooks`.
+**Substitution rule — the portable form.** This file is committed with the project, so it MUST NOT carry one machine's home or checkout path. Replace `${EDIKT_HOOK_DIR}` with one of the anchored tokens the host's shell expands at hook-fire time:
+- Global mode (hooks live in the user's edikt home): `$HOME/.edikt/hooks`.
+- Project mode (hooks ship inside the project, under `<project_root>/.edikt/hooks`): `"$CLAUDE_PROJECT_DIR"/.edikt/hooks` — the variable quoted, so a project path containing a space stays one word.
 
-NEVER write the literal string `$HOME` or `${EDIKT_HOOK_DIR}` into the final settings.json — Claude Code reads it verbatim.
+These are the only tokens `edikt install settings` accepts besides an absolute path (`ValidateHookDir`: `$HOME/`, `$CLAUDE_PROJECT_DIR/`, or either double-quoted and followed by `/`; braces, `$HOMEX`, a mid-path `$`, `..` and command substitution are refused). The project token contains `"`, so substitute into the parsed command strings and re-serialize — never paste it raw into the JSON text, where the quote would end the string. NEVER leave the literal `${EDIKT_HOOK_DIR}` in the final settings.json.
 
 Do NOT invent or modify hook filenames — the template contains the correct paths. If settings.json exists, merge hooks from the substituted template — preserve existing non-edikt settings. The exact hook filenames are: `session-start.sh`, `pre-tool-use.sh`, `post-tool-use.sh`, `stop-hook.sh`, `pre-compact.sh`, `post-compact.sh`, `user-prompt-submit.sh`, `subagent-stop.sh`, `instructions-loaded.sh`.
 
@@ -1127,13 +1207,24 @@ The version field records when the agent was installed, not when it was last tou
 
 **f. Write** — Write the processed content to `.claude/agents/{name}.md`.
 
+**Skills** — For every directory under `$EDIKT_TEMPLATES/skills/`, read its `SKILL.md` and write it, byte-identical (no substitutions, no stack filtering — these are edikt's own on-demand methodology packages, not project-specific rule packs), to `.claude/skills/{name}/SKILL.md`:
+
+```bash
+# Skill template path: $EDIKT_TEMPLATES/skills/{name}/SKILL.md
+# Write to:            .claude/skills/{name}/SKILL.md
+```
+
+These always install — they carry edikt's governance methodology (deciding what qualifies as an ADR vs. invariant vs. guideline, and when to record nothing), not stack-dependent content, so there is no enable/disable step to run first.
+
+**Agents: the registry is the subject set.** Install every slug in `$EDIKT_TEMPLATES/agents/_registry.yaml`'s `always:` list, not a hand-kept list in this file — the same walk `/edikt:upgrade` performs, for the same reason: a dispatch to an agent that is not installed falls back to a general-purpose agent adopting the prompt, so the review reads as a specialist's without one having run.
+
 **Linter sync** — If linter configs were found, run `/edikt:sync` logic.
 
 **Import existing artifacts** — For findings from step 2:
 - **Confident** (clear ADRs, Makefile commands, .cursorrules): act on them
 - **Uncertain** (ambiguous docs): skip with a hint showing the exact prompt to import later
 
-### 4b. Generate Sidecars for Seeded/Adopted Artifacts (v0.6.0+)
+### 4b. Generate Sidecars for Seeded/Adopted Artifacts
 
 After all artifacts are written or imported (steps 2a, 2a.2, and any bootstrap example artifacts seeded above), generate the co-located `<artifact>.edikt.yaml` sidecar for each artifact that does not already have one. v0.6.0 stores generated directive metadata in sidecars — `/edikt:gov:compile` refuses to run if any artifact lacks a sidecar.
 
@@ -1166,7 +1257,7 @@ If `SIDECAR_COUNT > 0`, print:
 
 If `SIDECAR_COUNT == 0` (no artifacts present yet — common in greenfield), skip the line entirely. Sidecars will be generated when the user creates their first artifact via `/edikt:adr:new`, `/edikt:invariant:new`, or `/edikt:guideline:new` (each of which dispatches the sidecar-extractor agent on completion, per Phase 4).
 
-**Important:** never write sidecars for documentation-mention artifacts. The migration tool encodes the canonical skip-list; honor whatever it skips.
+**Important:** never write sidecars for documentation-mention artifacts. `edikt debug skip-listed <path>` is the canonical predicate; honor whatever it skips.
 
 **Conditional compile** — if `SIDECAR_COUNT > 0`, or any `*.edikt.yaml` already exists under `{paths.decisions}`, `{paths.invariants}`, or `{paths.guidelines}` (pre-existing sidecars from an earlier run/adopt), run `/edikt:gov:compile` now and print:
 ```
@@ -1184,6 +1275,7 @@ Otherwise (no sidecars generated and none pre-existing — pure greenfield with 
   Rules:   6 packs — code-quality, testing, security,
            error-handling, go, chi
   Agents:  5 specialists — architect, qa, backend, dba, docs
+  Skills:  {n} on-demand packages — {list installed skill names}
   Hooks:   auto-format on edit, context on session start,
            plan injection on every prompt, compaction recovery,
            decision detection on session end

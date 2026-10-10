@@ -450,6 +450,23 @@ func TestReextractRedispatchesEditedSidecar(t *testing.T) {
 	if _, rerr := Record(RecordOptions{ProjectRoot: root, PlanID: first.PlanID}); rerr != nil {
 		t.Fatalf("record: %v", rerr)
 	}
+	// ...and the verify that closes it, as /edikt:gov:reextract runs it. A
+	// batch left restored-but-unverified is an OPEN plan, and a later plan
+	// over a moved sidecar is refused until it is closed (#11, c1-d) — this
+	// test is about the ledger's hash check, not about that guard.
+	if v, verr := phasea.Verify(phasea.VerifyOptions{ProjectRoot: root, PlanID: first.PlanID}); v == nil || v.ExitCode != phasea.ExitVerifyOK {
+		t.Fatalf("verify: %v", verr)
+	}
+	// Verify stamps extractor_model/extractor_contract onto each ok sidecar
+	// after Record hashed it; re-stamp the ledger (`gov reextract
+	// --restamp-done`) so the only undeclared change left is the hand edit.
+	done, derr := DoneSidecarPaths(root)
+	if derr != nil {
+		t.Fatal(derr)
+	}
+	if _, serr := RestampLedger(root, done); serr != nil {
+		t.Fatal(serr)
+	}
 	edited := filepath.Join(root, "docs/architecture/decisions", adrID(2)+"-fixture.edikt.yaml")
 	// Hand-edited: loadable (phasea.Plan refuses a corpus it cannot read, so
 	// an unparseable edit would fail on the corpus gate rather than the hash

@@ -50,18 +50,18 @@ RANGE="${ARGUMENTS:-HEAD~1..HEAD}"
 case "$RANGE" in
   *..*) ;;
   *)
-    bin/edikt util json emit --field 'status=error' --field 'reason=ref range must contain ..' --field "input=$RANGE"
+    edikt util json emit --field 'status=error' --field 'reason=ref range must contain ..' --field "input=$RANGE"
     exit 1
     ;;
 esac
 
 # Allowlist gate. NFKC + casefold + strip first so Unicode lookalikes
 # and trailing whitespace cannot bypass.
-RANGE_NORM=$(bin/edikt util normalize "$RANGE")
+RANGE_NORM=$(edikt util normalize "$RANGE")
 
 case "$RANGE_NORM" in
   *[!a-z0-9._/~^@-]*|"")
-    bin/edikt util json emit --field 'status=error' --field 'reason=ref range contains disallowed characters' --field "input=$RANGE"
+    edikt util json emit --field 'status=error' --field 'reason=ref range contains disallowed characters' --field "input=$RANGE"
     exit 1
     ;;
 esac
@@ -77,7 +77,7 @@ CHANGED_FILES=$(printf '%s\n' "$CHANGED_RAW" | awk '$1 != "-" && $2 != "-" { pri
 
 # Empty-diff guard (post binary filter).
 if [ -z "$CHANGED_FILES" ]; then
-  bin/edikt util json emit --field 'status=skipped' --field 'reason=empty diff'
+  edikt util json emit --field 'status=skipped' --field 'reason=empty diff'
   exit 0
 fi
 
@@ -98,7 +98,7 @@ Glob: .claude/rules/governance/*.md
 If the result is empty, no compiled governance exists. Emit the skip JSON and exit:
 
 ```bash
-bin/edikt util json emit --field 'status=skipped' --field 'reason=no compiled governance'
+edikt util json emit --field 'status=skipped' --field 'reason=no compiled governance'
 rm -f "$DIFF_FILE"
 exit 0
 ```
@@ -110,29 +110,29 @@ For each `.claude/rules/governance/<topic>.md` returned by Glob:
 1. **Read** the file with the Read tool. Extract the YAML frontmatter between the first two `---` lines.
 2. Parse `paths:` (an array of **code globs** scoping where the topic's directives apply — the union of the contributing sidecars' declared `paths:`, or the single glob `**` when any contributor declared none). If the frontmatter is malformed or `paths:` is missing, emit a per-topic skip:
    ```bash
-   bin/edikt util json emit --field "topic=$TOPIC" --field 'status=skipped' --field 'reason=malformed paths frontmatter'
+   edikt util json emit --field "topic=$TOPIC" --field 'status=skipped' --field 'reason=malformed paths frontmatter'
    ```
    Continue to the next topic; do not crash.
 3. **Topic name allowlist (defense in depth).** The topic name comes from the filename basename (already kebab-case validated upstream by the sidecar schema). Re-validate at use-site by NFKC + casefold + strip + regex:
 
    ```bash
    TOPIC=$(basename "$TOPIC_FILE" .md)
-   TOPIC_NORM=$(bin/edikt util normalize "$TOPIC")
+   TOPIC_NORM=$(edikt util normalize "$TOPIC")
 
    case "$TOPIC_NORM" in
      [a-z]*) ;;
      *) printf '%s\n' "{\"topic\":\"$TOPIC\",\"status\":\"skipped\",\"reason\":\"topic name fails allowlist\"}"; continue ;;
    esac
    # Full regex check via python (case + length cap).
-   bin/edikt util match "$TOPIC_NORM" --pattern '^[a-z][a-z0-9-]{0,39}$' || { bin/edikt util json emit --field "topic=$TOPIC" --field 'status=skipped' --field 'reason=topic name fails allowlist'; continue; }
+   edikt util match "$TOPIC_NORM" --pattern '^[a-z][a-z0-9-]{0,39}$' || { edikt util json emit --field "topic=$TOPIC" --field 'status=skipped' --field 'reason=topic name fails allowlist'; continue; }
    ```
 
 4. **Path-glob match.** For each `paths:` entry from the topic's frontmatter, check if any changed file matches. If at least one changed file matches at least one `paths:` entry, the topic is **in scope** for this diff.
 
-5. **Extract the directive list** from the topic file's body between `[edikt:directives:start]: #` and `[edikt:directives:end]: #`. Build the list via `bin/edikt gov extract-directives`, passing the topic-file path and the artifact's primary ref (e.g., `ADR-NNN`, `INV-NNN`, or topic-stem) as flags — **directive text never traverses shell-string interpolation** (safe input handling). Sequential `directive_id` values are assigned as `<ref>.directive[<index>]`. The extractor supports two directive formats: a simple single-line `- text` format, and a multi-line YAML-like format where `intent` and `falsifying_observation` appear as indented sub-fields next to the `- text:` bullet (a Phase B extension). Both `intent` and `falsifying_observation` are NFKC-normalized, casefolded, stripped, and allowlist-gated before they enter argv.
+5. **Extract the directive list** from the topic file's body between `[edikt:directives:start]: #` and `[edikt:directives:end]: #`. Build the list via `edikt gov extract-directives`, passing the topic-file path and the artifact's primary ref (e.g., `ADR-NNN`, `INV-NNN`, or topic-stem) as flags — **directive text never traverses shell-string interpolation** (safe input handling). Sequential `directive_id` values are assigned as `<ref>.directive[<index>]`. The extractor supports two directive formats: a simple single-line `- text` format, and a multi-line YAML-like format where `intent` and `falsifying_observation` appear as indented sub-fields next to the `- text:` bullet (a Phase B extension). Both `intent` and `falsifying_observation` are NFKC-normalized, casefolded, stripped, and allowlist-gated before they enter argv.
 
    ```bash
-   DIRECTIVES_JSON=$(bin/edikt gov extract-directives \
+   DIRECTIVES_JSON=$(EDIKT_INVOKER=/edikt:gov:verify-diff edikt gov extract-directives \
      --topic-file "$TOPIC_FILE" --ref "$REF")
    ```
 
@@ -150,10 +150,10 @@ Agent(
 )
 ```
 
-**Prompt body construction.** The prompt body MUST be composed via `bin/edikt gov verify-prompt` with the diff file path, topic name, and directive list (from Step 4 sub-step 5) all passed as `sys.argv` values. **Directive text never traverses shell-string interpolation.** Per the AI-agent-first dispatcher contract and safe input handling, attacker-influenceable values (directive text, topic name, falsifying observations) flow as JSON through argv — never concatenated into evaluated strings. The diff body itself is never included; only the diff PATH.
+**Prompt body construction.** The prompt body MUST be composed via `edikt gov verify-prompt` with the diff file path, topic name, and directive list (from Step 4 sub-step 5) all passed as `sys.argv` values. **Directive text never traverses shell-string interpolation.** Per the AI-agent-first dispatcher contract and safe input handling, attacker-influenceable values (directive text, topic name, falsifying observations) flow as JSON through argv — never concatenated into evaluated strings. The diff body itself is never included; only the diff PATH.
 
 ```bash
-PROMPT_BODY=$(bin/edikt gov verify-prompt \
+PROMPT_BODY=$(EDIKT_INVOKER=/edikt:gov:verify-diff edikt gov verify-prompt \
   --diff-file "$DIFF_FILE" --topic "$TOPIC" \
   --directives "$DIRECTIVES_JSON" --agent-version 1.1.0)
 
@@ -164,7 +164,7 @@ if [ -n "${EDIKT_CAPTURE_PROMPT:-}" ]; then
   # Same verb, same shape-selection rule — written once rather than in two
   # adjacent heredocs that could disagree about which directives got which
   # treatment, which is exactly what the capture exists to check.
-  bin/edikt gov verify-prompt \
+  EDIKT_INVOKER=/edikt:gov:verify-diff edikt gov verify-prompt \
     --diff-file "$DIFF_FILE" --topic "$TOPIC" \
     --directives "$DIRECTIVES_JSON" --agent-version 1.1.0 \
     --capture "$EDIKT_CAPTURE_PROMPT" >/dev/null
@@ -179,7 +179,7 @@ Before dispatch, check `EDIKT_VERIFIER_STUB`. If `=1`, skip Agent dispatch and s
 
 ```bash
 if [ "${EDIKT_VERIFIER_STUB:-0}" = "1" ]; then
-  REPORT_JSON=$(bin/edikt gov verify-stub-verdict \
+  REPORT_JSON=$(EDIKT_INVOKER=/edikt:gov:verify-diff edikt gov verify-stub-verdict \
     --fixture test/fixtures/verifier-verdicts/valid/pass-only.json --topic "$TOPIC")
   # Persist via step 6 logic below; do NOT dispatch the agent.
 fi
@@ -197,7 +197,7 @@ REPORT_PATH="$REPORT_DIR/${TOPIC}-${TS}.json"
 # Parsed before it is written — never write the raw agent string to disk
 # unvalidated. The failure belongs to the step that can still do something
 # about it, not to whoever reads the file later.
-printf '%s' "$REPORT_JSON" | bin/edikt util json format --indent 2 > "$REPORT_PATH"
+printf '%s' "$REPORT_JSON" | edikt util json format --indent 2 > "$REPORT_PATH"
 ```
 
 ### 7. Stdout summary
@@ -207,7 +207,7 @@ splicing it, so a malformed fragment is refused here instead of producing a docu
 only looks well-formed:
 
 ```bash
-bin/edikt util json emit --indent 2 \
+edikt util json emit --indent 2 \
   --field 'status=ok' \
   --field "range=$RANGE" \
   --int "topics_processed=$TOPICS_OK" \
@@ -242,7 +242,7 @@ exit 0
 ## Invariants
 
 - **Tier-1 markdown only — the ORCHESTRATION, not every helper.** There is no
-  `bin/edikt verify-diff`, and there must not be: the sequencing, the fan-out and
+  `edikt verify-diff`, and there must not be: the sequencing, the fan-out and
   the decision to dispatch stay here, in markdown, where they are readable and
   changeable without a build.
 
@@ -258,7 +258,7 @@ exit 0
   The test: could a reader still follow what this command does by reading this
   file? If a verb absorbs a decision, it has gone too far.
 - **Safe JSON construction.** All JSON construction goes through a serializer with
-  values passed as arguments — `bin/edikt util json emit --field`, or a verb that
+  values passed as arguments — `edikt util json emit --field`, or a verb that
   builds the document itself. Never shell-string-concatenate JSON.
 
   This named an inline python3 `json.dumps` call until 2026-08-23. The requirement was

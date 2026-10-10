@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/claudepaths"
 )
 
 // HostID names this adapter for the journal and for diagnostics. Written as a
@@ -41,22 +43,35 @@ const HostID = "claude-code"
 // decoded from JSON, and the struct exists ONLY so encoding/json can populate
 // it — nothing outside this file ever sees it.
 type claudePayload struct {
-	HookEventName        string         `json:"hook_event_name"`
-	SessionID            string         `json:"session_id"`
-	Cwd                  string         `json:"cwd"`
-	ToolName             string         `json:"tool_name"`
-	ToolInput            map[string]any `json:"tool_input"`
-	Prompt               string         `json:"prompt"`
-	Source               string         `json:"source"`
-	AgentID              string         `json:"agent_id"`
-	AgentType            string         `json:"agent_type"`
-	SubagentType         string         `json:"subagent_type"`
-	TaskID               string         `json:"task_id"`
-	TaskName             string         `json:"task_name"`
-	WorktreePath         string         `json:"worktree_path"`
-	TranscriptPath       string         `json:"transcript_path"`
-	LastAssistantMessage string         `json:"last_assistant_message"`
-	StopHookActive       bool           `json:"stop_hook_active"`
+	HookEventName  string         `json:"hook_event_name"`
+	SessionID      string         `json:"session_id"`
+	Cwd            string         `json:"cwd"`
+	ToolName       string         `json:"tool_name"`
+	ToolInput      map[string]any `json:"tool_input"`
+	Prompt         string         `json:"prompt"`
+	Source         string         `json:"source"`
+	AgentID        string         `json:"agent_id"`
+	AgentType      string         `json:"agent_type"`
+	SubagentType   string         `json:"subagent_type"`
+	TaskID         string         `json:"task_id"`
+	TaskName       string         `json:"task_name"`
+	WorktreePath   string         `json:"worktree_path"`
+	TranscriptPath string         `json:"transcript_path"`
+	// AgentTranscriptPath is the SUBAGENT's own message stream, distinct from
+	// transcript_path (which is the PARENT session on every event that carries
+	// it, SubagentStop included). Measured 2026-08-30: on one dispatch
+	// transcript_path was a 14-line parent file and agent_transcript_path a
+	// 4-line subagent file at <session>/subagents/agent-<agent_id>.jsonl.
+	// Present ONLY on SubagentStop. This is what makes per-turn subagent
+	// detail reachable from the hook path at all.
+	AgentTranscriptPath string `json:"agent_transcript_path"`
+	// PromptID brackets ONE user turn and is carried by UserPromptSubmit,
+	// Stop, SubagentStart and SubagentStop alike — observed identical across
+	// all four in a single run, which is what joins a parent turn to the
+	// dispatches it spawned without inventing an identifier.
+	PromptID             string `json:"prompt_id"`
+	LastAssistantMessage string `json:"last_assistant_message"`
+	StopHookActive       bool   `json:"stop_hook_active"`
 	// FilePath is the FileChanged event's own top-level spelling —
 	// file-changed.sh's `d.get('file_path','')` reads it off the payload
 	// root, never off tool_input (FileChanged carries no tool_input at all).
@@ -157,6 +172,8 @@ func Parse(raw []byte) (Payload, error) {
 	p.TaskName = wire.TaskName
 	p.WorktreePath = wire.WorktreePath
 	p.TranscriptPath = wire.TranscriptPath
+	p.AgentTranscriptPath = wire.AgentTranscriptPath
+	p.PromptID = wire.PromptID
 	p.LastAssistantMessage = wire.LastAssistantMessage
 	p.StopActive = wire.StopHookActive
 	p.ID = wire.ID
@@ -350,6 +367,8 @@ var presenceMap = map[string]string{
 	"task_name":              "TaskName",
 	"worktree_path":          "WorktreePath",
 	"transcript_path":        "TranscriptPath",
+	"agent_transcript_path":  "AgentTranscriptPath",
+	"prompt_id":              "PromptID",
 	"last_assistant_message": "LastAssistantMessage",
 	"stop_hook_active":       "StopActive",
 	"file_path":              "FilePath", // FileChanged's top-level spelling
@@ -400,6 +419,11 @@ type claudeReply struct {
 // and a dropped half-reply is invisible at the hook's output.
 var ErrMixedResponse = errors.New("adapter: Response sets Text together with protocol fields; they are mutually exclusive")
 
+// ErrEventNoHookSpecificOutput is returned by Encode when a Response carries
+// model-facing fields (Context, Decision) for an event the host's
+// hookSpecificOutput union does not include. See hookevents.go.
+var ErrEventNoHookSpecificOutput = errors.New("adapter: event does not accept hookSpecificOutput")
+
 // Encode renders a host-neutral Response as Claude Code's reply bytes.
 //
 // event is the lifecycle event the reply belongs to; the nested object echoes
@@ -435,6 +459,17 @@ func Encode(event string, r Response) ([]byte, error) {
 		reply.Continue = &t
 	}
 	if r.Context != "" || r.Decision != DecisionUnset {
+		// The host validates hookEventName against a union that is SMALLER
+		// than the set of events a hook can fire on (hookevents.go). An
+		// envelope naming a non-member is a visible hook error since
+		// 2.1.248 and was a silent discard before — never delivered
+		// context. Refusing here is what makes "every envelope edikt can
+		// emit uses a member" a property of the encoder rather than of
+		// each handler's diligence.
+		if !AcceptsHookSpecificOutput(event) {
+			return nil, fmt.Errorf("%w: %q is not a hookSpecificOutput event on %s (recorded %s); reply with a top-level systemMessage or nothing",
+				ErrEventNoHookSpecificOutput, event, HookSpecificOutputUnionVersion, HookSpecificOutputUnionRecordedAt)
+		}
 		hso := &hookSpecificOutput{HookEventName: event}
 		hso.AdditionalContext = r.Context
 		if r.Decision != DecisionUnset {
@@ -576,16 +611,33 @@ func IsRulesFilePath(file string) bool {
 
 // MemoryPath resolves this host's per-project session-memory file —
 // session-start.sh's own "how stale is /edikt:context" check reads it.
-// The directory convention ($HOME/.claude/projects/<cwd, '/' -> '-'>/memory/
+// The directory convention (<config root>/projects/<cwd, '/' -> '-'>/memory/
 // MEMORY.md) is a host-specific storage layout, not a wire field, but it is
 // exactly as host-specific as one: a second harness's memory (if it has any)
 // would live somewhere else entirely, so the convention belongs here rather
 // than hardcoded into a handler (SP-004/SAC-003). cwd is the caller's own
 // working directory, never a host-reported payload field — session-start.sh
 // encodes bash's own $PWD, never anything from the hook's stdin payload.
-func MemoryPath(home, cwd string) string {
+//
+// root is the resolved config root (ConfigRoot below), not $HOME. The path
+// used to be built as $HOME/.claude/..., which is where /edikt:context wrote
+// it only on a machine with no profile selected: under CLAUDE_CONFIG_DIR the
+// command wrote into the active profile and this hook kept reading the
+// default one, so every session reported the memory missing (#11, item 6).
+// The markdown side (commands/context.md, commands/doctor.md) resolves the
+// same three-rung chain; the two move together or not at all.
+func MemoryPath(root, cwd string) string {
 	encoded := strings.ReplaceAll(cwd, "/", "-")
-	return filepath.Join(home, ".claude", "projects", encoded, "memory", "MEMORY.md")
+	return filepath.Join(root, "projects", encoded, "memory", "MEMORY.md")
+}
+
+// ConfigRoot returns this host's active configuration directory through the
+// one shared resolution chain (CLAUDE_HOME -> CLAUDE_CONFIG_DIR ->
+// $HOME/.claude, internal/claudepaths). Handlers call this rather than the
+// resolver directly: which variables select the host's profile is host
+// vocabulary, and it lives on this side of the seam (SP-004).
+func ConfigRoot() string {
+	return claudepaths.ResolveClaudeRoot()
 }
 
 // LastSessionSummary renders session-end.sh's own on-disk summary artifact —
@@ -641,6 +693,11 @@ const ContinueTrueReply = `{"continue": true}`
 // exactly rather than defensively escaping input the bash it replaces never
 // escaped either.
 func NoPython3HookSpecificBanner(event, message string) string {
+	if !AcceptsHookSpecificOutput(event) {
+		// A non-member event cannot carry the banner as context; the
+		// operator-facing shape is the most the host will read.
+		return `{"systemMessage":"` + message + `"}`
+	}
 	return `{"hookSpecificOutput":{"hookEventName":"` + event + `","additionalContext":"` + message + `"}}`
 }
 
@@ -705,20 +762,26 @@ func isSpace(c byte) bool {
 // harness changes this function and the shim template follows, rather than
 // needing its bash rewritten.
 //
-// hookEventName must be the FIRING event. Claude Code discards a
-// hookSpecificOutput whose event name does not match, so a generic value would
-// silently drop the banner for every event class but one — visible as a shim
-// that "exits 0 with a banner" while the session never receives it.
+// hookEventName must be the FIRING event — necessary, not sufficient. The
+// host validates the name against its hookSpecificOutput union
+// (hookevents.go), and a name that does not match the firing event is
+// rejected the same way a name outside the union is: a visible hook error
+// since 2.1.248, a silent discard before. Both look like a shim that "exits 0
+// with a banner" while the session never receives it. So the envelope is
+// emitted only for a member event; for the rest (PostCompact, PreCompact,
+// InstructionsLoaded, …) the banner is the top-level systemMessage alone,
+// which is the most the host will read on those events.
 func AbsenceBanner(hookName, event string) (string, error) {
-	msg := "⚠ edikt: bin/edikt not found on any trusted discovery rung — hook " +
+	msg := "⚠ edikt: edikt not found on any trusted discovery rung — hook " +
 		hookName + " did not run (cause: binary-absent). Run /edikt:doctor to diagnose."
-	b, err := json.Marshal(map[string]any{
-		"systemMessage": msg,
-		"hookSpecificOutput": map[string]any{
+	reply := map[string]any{"systemMessage": msg}
+	if AcceptsHookSpecificOutput(event) {
+		reply["hookSpecificOutput"] = map[string]any{
 			"hookEventName":     event,
 			"additionalContext": msg,
-		},
-	})
+		}
+	}
+	b, err := json.Marshal(reply)
 	if err != nil {
 		return "", fmt.Errorf("adapter: encoding absence banner: %w", err)
 	}
@@ -755,6 +818,23 @@ func HostConfigDirNote() string {
 		return "hook environment has " + HostConfigDirEnv + "=" + v
 	}
 	return HostConfigDirEnv + " is NOT set in the hook environment"
+}
+
+// HostAuthFailureCause renders the likely-cause clause of the same auth-failure
+// message. With the profile variable unset, that is the cause: the child falls
+// back to the default profile. With it set, blaming it is wrong (issue #12) —
+// the likely cause is an installed phase-end-detector.sh from before 0.9.0,
+// which dispatches with --bare, and --bare never reads an OAuth login.
+func HostAuthFailureCause() string {
+	if os.Getenv(HostConfigDirEnv) != "" {
+		return HostConfigDirEnv + " is set, so the profile is not the likely cause. " +
+			"An installed phase-end-detector.sh that still dispatches with --bare never " +
+			"authenticates under an OAuth login (--bare reads only ANTHROPIC_API_KEY or " +
+			"apiKeyHelper); run `edikt upgrade` to reinstall the hook."
+	}
+	return "If this project runs under a non-default profile, ensure " + HostConfigDirEnv +
+		" is exported where hooks run; otherwise the child uses the default profile, " +
+		"which is unauthenticated here."
 }
 
 // evaluatorModelAllowlist is the curated set phase-end-detector.sh's own

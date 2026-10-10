@@ -186,3 +186,48 @@ func TestUserPromptSubmitPlanInjectionFalseSuppressesContext(t *testing.T) {
 		t.Fatal("without plan-injection: false: additionalContext was empty — negative control failed, so the guard assertion above proves nothing")
 	}
 }
+
+// TestPlanNameFromHeading_Frontmatter pins issue #13: a plan written from
+// /edikt:sdlc:plan's template opens with a YAML frontmatter block, which
+// pushes the `# Plan:` heading past the first five lines. The name must
+// still resolve — from the heading after the fence, else the frontmatter id.
+func TestPlanNameFromHeading_Frontmatter(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "no frontmatter, heading on line 1",
+			body: "# Plan: Legacy\n\n## Progress\n",
+			want: "Plan: Legacy",
+		},
+		{
+			name: "template-shaped frontmatter pushes the heading past line 5",
+			body: "---\ntype: plan\nid: PLAN-harness-targets\nmodel: opus\nphases:\n  - id: 1\n  - id: 2\n  - id: 3\n---\n\n# Plan: Harness targets\n\n## Overview\n",
+			want: "Plan: Harness targets",
+		},
+		{
+			name: "frontmatter with no heading falls back to the frontmatter id",
+			body: "---\ntype: plan\nid: PLAN-harness-targets\n---\n\n## Overview\n",
+			want: "PLAN-harness-targets",
+		},
+		{
+			name: "CRLF frontmatter",
+			body: "---\r\ntype: plan\r\nid: PLAN-x\r\n---\r\n\r\n# Plan: CRLF\r\n",
+			want: "Plan: CRLF",
+		},
+		{
+			name: "nothing to name it by",
+			body: "## Overview\n",
+			want: "",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := planNameFromHeading([]byte(c.body)); got != c.want {
+				t.Errorf("planNameFromHeading = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

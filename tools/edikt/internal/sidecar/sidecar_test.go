@@ -123,7 +123,7 @@ func TestValidate_RejectsV2StampOnV1Shape(t *testing.T) {
 	if err == nil {
 		t.Fatal("v2 stamp on a singular-source_excerpt document was accepted")
 	}
-	if !strings.Contains(err.Error(), "migrate to-v2") {
+	if !strings.Contains(err.Error(), "migrate lift") {
 		t.Errorf("error should tell the user how to fix it, got: %v", err)
 	}
 }
@@ -135,7 +135,7 @@ func TestValidate_RejectsNonKebabTopic(t *testing.T) {
 	}
 }
 
-func TestValidate_RejectsDirectiveOver500Chars(t *testing.T) {
+func TestValidate_RejectsDirectiveOverHardCap(t *testing.T) {
 	// The original 200-char ceiling proved too tight on real-world ADRs
 	// (the ddd-workbench corpus had directives in the 209–236 range).
 	// Bumped to 500 — natural-language rules with multiple clauses fit
@@ -143,11 +143,11 @@ func TestValidate_RejectsDirectiveOver500Chars(t *testing.T) {
 	s := &Sidecar{
 		SchemaVersion: 1, Topic: "ok", Path: "x.md",
 		Directives: []Directive{
-			{Text: strings.Repeat("a", 501), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
+			{Text: strings.Repeat("a", HardCapProse+1), SourceExcerpt: SourceExcerpt{LineStart: 1, LineEnd: 1, Quote: "q"}},
 		},
 	}
 	if err := s.Validate(); err == nil {
-		t.Fatal("expected length error for 501-char directive")
+		t.Fatalf("expected length error for a %d-char directive (hard cap %d)", HardCapProse+1, HardCapProse)
 	}
 
 	// And the inverse — a 400-char directive (above the old 200 limit

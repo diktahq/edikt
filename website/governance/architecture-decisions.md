@@ -14,7 +14,7 @@ edikt adopts ADRs as a first-class governance artifact and extends them with a c
 | **Written when** | A decision is made (one-time) | A hard constraint needs enforcement | A pattern needs consistency |
 | **Alternatives** | Yes — central to the format | No — invariants don't have alternatives | No |
 | **Mutability** | Immutable once accepted. Supersede via new ADR. | Content immutable. Status can change. | Editable any time. |
-| **Compiles to** | MUST/NEVER directives in topic files | Pathless invariants land in the ambient core (`.claude/rules/governance.md`); path-scoped invariant directives land in `directive-index.yaml` | Implementation directives in topic files |
+| **Compiles to** | MUST/NEVER directives in topic files | Pathless invariants land in the ambient core (`.claude/rules/governance.md`); path-scoped invariant directives land in their topic file | Implementation directives in topic files |
 | **Typical source** | Design review, team discussion, tech lead decision | Regulation, incident, foundational principle | Team agreement, code review pattern |
 
 ## The template

@@ -11,8 +11,19 @@ allowed-tools:
   - Grep
   - Bash
   - Agent
+stops:
+  - id: outline-approval
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Proceed to write the spec from this outline?"
+  - id: uncovered-fr
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Continue with FRs the spec does not cover?"
 ---
-!`${HOME}/.edikt/bin/edikt next-id spec`
+!`edikt next-id spec`
 
 # edikt:spec
 
@@ -153,6 +164,7 @@ Accept a single user reply covering any subset. Apply defaults for skipped `[opt
 
 Before routing to agents, show what the spec will cover:
 
+<!-- stop: outline-approval -->
 ```
 Based on the PRD and your answers, the spec will cover:
   - Architecture: {what architectural approach}
@@ -165,7 +177,9 @@ Based on the PRD and your answers, the spec will cover:
 Proceed? (y/n)
 ```
 
-If the user says no, ask what to change and revise the outline.
+If the user says no, ask what to change and revise the outline. With no human
+to answer, take the safe side: write no spec file, leave the outline printed,
+and say the approval was declined by default rather than answered.
 
 ### 6. Conflict Detection
 
@@ -332,7 +346,7 @@ Coverage validation adapts to the source type (`$SOURCE_TYPE`):
    # Idempotent: the predecessor appended unconditionally, so a repeat run
    # produced `produced_specs: [SPEC-1, SPEC-1]` — a list saying the same spec
    # was produced twice, which is wrong rather than merely untidy.
-   bin/edikt util frontmatter append "{brainstorm_path}" produced_specs "$SPEC_ID"
+   edikt util frontmatter append "{brainstorm_path}" produced_specs "$SPEC_ID"
    ```
    Output: `✅ Updated BRAIN-NNN: produced_specs += SPEC-NNN`
 
@@ -367,6 +381,7 @@ source_prd_coverage:
 
 Before writing the spec, display coverage to the user:
 
+<!-- stop: uncovered-fr -->
 ```
 FR coverage:
   FR-001 → SR-001, SR-002 ✓
@@ -377,12 +392,14 @@ FR coverage:
 Continue with 1 uncovered FR? (y/n)
 ```
 
-If the user proceeds with uncovered FRs, record them in `uncovered:` — `/edikt:sdlc:drift` will flag them.
+If the user proceeds with uncovered FRs, record them in `uncovered:` — `/edikt:sdlc:drift` will flag them. With no human to answer, take the safe
+side: do not proceed past uncovered FRs, print the coverage table, and say the
+continuation was declined by default rather than answered.
 
 **Change 2: AC pass-through with stable IDs.**
 Every `AC-NNN-M` from the PRD sidecar `acceptance_criteria:` appears verbatim in the spec's YAML with unchanged IDs. The Given/When/Then text is copied exactly. SPEC may ADD new acceptance criteria using `SAC-NNN` (spec acceptance criteria) for architectural layer checks, but MUST NOT renumber, rewrite, or merge PRD ACs.
 
-Each AC MAY also carry an optional `verify:` field — a single shell command run by `bin/edikt verify spec <SPEC-ID>` (exit 0 = AC passes). `/edikt:sdlc:drift` folds verify failures into its drift signal. If the upstream PRD AC already carries a `verify:`, pass it through unchanged. For new spec-only `SAC-NNN`, prompt the user:
+Each AC MAY also carry an optional `verify:` field — a single shell command run by `edikt verify spec <SPEC-ID>` (exit 0 = AC passes). `/edikt:sdlc:drift` folds verify failures into its drift signal. If the upstream PRD AC already carries a `verify:`, pass it through unchanged. For new spec-only `SAC-NNN`, prompt the user:
 
 ```
 How would you verify {SAC-NNN} is satisfied? Give a shell command that
@@ -445,39 +462,13 @@ NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Idempotent: a repeat run adds neither a duplicate id nor a second history
 # entry, so a retried command does not fabricate a second linking event.
-bin/edikt prd link-spec --file "$PRD_YAML" --spec "$SPEC_ID" \
-  --author "$AUTHOR" --at "$NOW"' "$PRD_YAML" "$SPEC_ID" "$AUTHOR" "$NOW"
-import sys, yaml
-path, spec_id, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-
-with open(path) as f:
-    data = yaml.safe_load(f) or {}
-
-# Idempotent append — don't duplicate if already linked
-source_specs = data.setdefault("source_specs", [])
-if spec_id not in source_specs:
-    source_specs.append(spec_id)
-
-# Append revision_history record
-data.setdefault("revision_history", []).append({
-    "at": now,
-    "author": author,
-    "action": "edited",
-    "note": f"Back-reference added: source_specs += {spec_id}",
-    "affected": [spec_id],
-})
-
-# Clear _sync — caller recomputes hashes after this mutation
-data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
-
-with open(path, "w") as f:
-    yaml.safe_dump(data, f, sort_keys=False)
-PYEOF
+EDIKT_INVOKER=/edikt:sdlc:spec edikt prd link-spec --file "$PRD_YAML" --spec "$SPEC_ID" \
+  --author "$AUTHOR" --at "$NOW"
 ```
 
-The python3 heredoc above appends the revision_history record inline and clears `_sync` so the caller recomputes hashes.
+The verb appends the revision_history record and clears `_sync` so the caller recomputes hashes; it keeps the sidecar's `# yaml-language-server` header (a plain-data round-trip would drop it).
 
-Recompute `_sync` hashes (SHA-256 via `bin/edikt util hash` with argv,). Then Edit the sidecar's `_sync:` block with the new hashes and ISO8601 timestamp.
+Recompute `_sync` hashes with `edikt util hash <file>` (if a shell guard refuses the word "hash", `shasum -a 256 <file> | cut -d' ' -f1` is the same value). Then Edit the sidecar's `_sync:` block with the new hashes and ISO8601 timestamp.
 
 Output confirmation:
 ```
@@ -550,7 +541,7 @@ Set the two unused source fields to `null`. The schema's `oneOf` constraint reje
 **Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/spec-sidecar.v1.schema.json`:
 
 ```bash
-bin/edikt util schema-validate "$SPEC_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
+edikt util schema-validate --require-schema-header "$SPEC_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
 ```
 
 If validation fails: do NOT write the sidecar. Show the user which fields are missing/invalid, fix in-memory, re-validate, then write.
@@ -563,21 +554,10 @@ nobody tested on, and passed sidecars this one refuses.
 **Computing `{{schema_path}}`:** Compute the relative path from the SPEC's parent directory to `.edikt/schemas/spec-sidecar.v1.schema.json`:
 
 ```bash
-SCHEMA_PATH=$(bin/edikt util path relative "$(dirname "$SPEC_YAML")" "$PROJECT_ROOT/.edikt/schemas/spec-sidecar.v1.schema.json")
+SCHEMA_PATH=$(edikt util path relative "$(dirname "$SPEC_YAML")" "$PROJECT_ROOT/.edikt/schemas/spec-sidecar.v1.schema.json")
 ```
 
-If `.edikt/schemas/spec-sidecar.v1.schema.json` does NOT exist in the project, auto-install it as part of this step:
-
-```bash
-test -f "$PROJECT_ROOT/.edikt/schemas/spec-sidecar.v1.schema.json" || {
-  mkdir -p "$PROJECT_ROOT/.edikt/schemas"
-  SOURCE_SCHEMA="$EDIKT_HOME/current/templates/schemas/spec-sidecar.v1.schema.json"
-  [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$HOME/.edikt/current/templates/schemas/spec-sidecar.v1.schema.json"
-  cp "$SOURCE_SCHEMA" "$PROJECT_ROOT/.edikt/schemas/spec-sidecar.v1.schema.json"
-}
-```
-
-This bootstrap keeps the IDE autocomplete working on first-ever SPEC creation without requiring a separate install step.
+If `.edikt/schemas/spec-sidecar.v1.schema.json` does not exist in the project, the header still names it and the validator reads the payload's copy. The project copy is installed by `/edikt:init` and refreshed by `/edikt:upgrade`; this command never copies it — print `schema copy absent — run /edikt:upgrade` once and continue.
 
 ---
 

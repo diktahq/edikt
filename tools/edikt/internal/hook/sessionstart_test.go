@@ -186,6 +186,12 @@ func TestSessionStartSessionSummaryFlagChangesOutput(t *testing.T) {
 		home := t.TempDir()
 		cwd := t.TempDir()
 		t.Setenv("HOME", home)
+		// The memory file resolves through the claude root, so both higher
+		// rungs are cleared: an inherited CLAUDE_HOME (run.sh exports one)
+		// would otherwise point the hook at a different tree than the
+		// fixture below writes into.
+		t.Setenv("CLAUDE_HOME", "")
+		t.Setenv("CLAUDE_CONFIG_DIR", "")
 		t.Chdir(cwd)
 
 		cfg := "base: docs\n"
@@ -194,7 +200,7 @@ func TestSessionStartSessionSummaryFlagChangesOutput(t *testing.T) {
 		}
 		writeTestFile(t, filepath.Join(cwd, ".edikt", "config.yaml"), cfg)
 
-		memory := testMemoryPath(home, cwd)
+		memory := testMemoryPath(filepath.Join(home, ".claude"), cwd)
 		writeTestFile(t, memory, "# memory\n")
 		now := time.Now()
 		if err := os.Chtimes(memory, now, now); err != nil {
@@ -252,11 +258,13 @@ func writeTestFile(t *testing.T, path, content string) {
 	}
 }
 
-// testMemoryPath mirrors adapter.MemoryPath's convention ($HOME/.claude/
+// testMemoryPath mirrors adapter.MemoryPath's convention (<claude root>/
 // projects/<cwd, '/' -> '-'>/memory/MEMORY.md) without importing the adapter
 // package's encoding detail into this test file — same computation
-// sessionStart() itself calls via adapter.MemoryPath.
-func testMemoryPath(home, cwd string) string {
+// sessionStart() itself calls via adapter.MemoryPath. root is the resolved
+// claude root (CLAUDE_HOME -> CLAUDE_CONFIG_DIR -> $HOME/.claude), never
+// $HOME itself.
+func testMemoryPath(root, cwd string) string {
 	encoded := make([]byte, len(cwd))
 	for i := 0; i < len(cwd); i++ {
 		if cwd[i] == '/' {
@@ -265,5 +273,48 @@ func testMemoryPath(home, cwd string) string {
 			encoded[i] = cwd[i]
 		}
 	}
-	return filepath.Join(home, ".claude", "projects", string(encoded), "memory", "MEMORY.md")
+	return filepath.Join(root, "projects", string(encoded), "memory", "MEMORY.md")
+}
+
+// TestSessionStart_MemoryPathHonoursClaudeConfigDir is #11 comment item 6's
+// hook half. /edikt:context writes MEMORY.md under the ACTIVE profile, which
+// a user selects with CLAUDE_CONFIG_DIR; the hook read $HOME/.claude
+// regardless, so on such a machine it never saw the file /edikt:context had
+// just written and told the user, every session, to run /edikt:context.
+//
+// The memory file is written ONLY under the CLAUDE_CONFIG_DIR profile, and
+// $HOME/.claude is left empty, so the two answers are distinguishable: the
+// "present" message proves the hook read the profile, the "detected" message
+// proves it read $HOME/.claude. The second run is the control — the same
+// fixture with CLAUDE_CONFIG_DIR unset must NOT find it, or the first run
+// proves nothing about which rung was read.
+func TestSessionStart_MemoryPathHonoursClaudeConfigDir(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not on PATH — session-start's preflight would short-circuit before the memory read")
+	}
+	home := t.TempDir()
+	profile := t.TempDir()
+	cwd := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_HOME", "")
+	t.Chdir(cwd)
+	writeTestFile(t, filepath.Join(cwd, ".edikt", "config.yaml"), "base: docs\nsession-summary: false\n")
+
+	memory := testMemoryPath(profile, cwd)
+	writeTestFile(t, memory, "# memory\n")
+	now := time.Now()
+	if err := os.Chtimes(memory, now, now); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", profile)
+	got := sessionStart(&Invocation{Stderr: io.Discard}).Response.Context
+	if want := fmt.Sprintf(sessionStartMsgSummaryOffFmt, 0); got != want {
+		t.Fatalf("CLAUDE_CONFIG_DIR=%s holds a fresh MEMORY.md, but the hook said %q, want %q — it read the memory path from $HOME/.claude, not the active profile", profile, got, want)
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	if got := sessionStart(&Invocation{Stderr: io.Discard}).Response.Context; got != sessionStartMsgDetected {
+		t.Fatalf("control: with CLAUDE_CONFIG_DIR unset the hook must look under $HOME/.claude and find nothing; got %q", got)
+	}
 }

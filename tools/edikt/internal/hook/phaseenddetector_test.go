@@ -778,6 +778,39 @@ func TestPhaseEndMissingVerdictIsBlockedAndAuthIsNamedSeparately(t *testing.T) {
 	}
 }
 
+// TestPhaseEndAuthFailureNamesLikelyCause pins issue #12's second half: with
+// the profile variable set, the evaluator's auth failure must not blame that
+// variable. The likely cause is then an installed shim that still dispatches
+// with --bare, which never reads an OAuth login; the remedy is an upgrade.
+func TestPhaseEndAuthFailureNamesLikelyCause(t *testing.T) {
+	root, _ := phaseEndSandbox(t)
+	st := phaseEndState{Root: root, PlanFile: "docs/plans/PLAN-v.md", PlanStem: "PLAN-v", PhaseNum: "1"}
+
+	t.Run("profile variable set", func(t *testing.T) {
+		t.Setenv(adapter.HostConfigDirEnv, filepath.Join(root, "profile"))
+		r := &phaseEndRun{state: st, inv: phaseEndInvocation("")}
+		auth := phaseEndL1Output(r, "Not logged in · Please run /login")
+		if !strings.Contains(auth, "FAILED to authenticate") || !strings.Contains(auth, "BLOCKED") {
+			t.Fatalf("auth failure lost its fail-closed diagnostic: %q", auth)
+		}
+		if strings.Contains(auth, "ensure "+adapter.HostConfigDirEnv+" is exported") {
+			t.Fatalf("blames %s although it is set: %q", adapter.HostConfigDirEnv, auth)
+		}
+		if !strings.Contains(auth, "--bare") || !strings.Contains(auth, "edikt upgrade") {
+			t.Fatalf("does not name the --bare dispatch and its remedy: %q", auth)
+		}
+	})
+
+	t.Run("profile variable unset", func(t *testing.T) {
+		t.Setenv(adapter.HostConfigDirEnv, "")
+		r := &phaseEndRun{state: st, inv: phaseEndInvocation("")}
+		auth := phaseEndL1Output(r, "Not logged in · Please run /login")
+		if !strings.Contains(auth, "ensure "+adapter.HostConfigDirEnv+" is exported") {
+			t.Fatalf("unset profile variable is no longer named as the cause: %q", auth)
+		}
+	})
+}
+
 // phaseEndDecodeMessage pulls the systemMessage back out of a rendered reply.
 func phaseEndDecodeMessage(t *testing.T, reply string) string {
 	t.Helper()

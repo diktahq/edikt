@@ -28,7 +28,7 @@ The dashboard has six sections:
 
 **Hook activity** — hook fires by type this session (rule loads, agent invocations, signals detected).
 
-**Signals detected** — ADR candidates, doc gaps, and security signals surfaced by the Stop hook during the session.
+**Signals detected** — ADR candidates, doc gaps, and security signals surfaced by the Stop hook during the session. ADR candidates are suggestions only, relevant only for a product architecture choice; they never appear under What's next or Warnings.
 
 ```text
 EDIKT STATUS — Orders API

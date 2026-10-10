@@ -53,7 +53,7 @@ If they already match, report "already aligned" and stop.
 ### 2. Run the pin update
 
 ```bash
-edikt upgrade-pin
+EDIKT_INVOKER=/edikt:upgrade-pin edikt upgrade-pin
 ```
 
 The binary walks up from `cwd` to find `.edikt/config.yaml`, updates/appends the `edikt_version` field, and exits 0. All other lines in the file are preserved.
@@ -81,7 +81,7 @@ Next: commit the change with `git commit -m "chore(edikt): pin to vX.Y.Z"`.
 
 ### 5. Recovery
 
-If `bin/edikt` is missing:
+If `edikt` is missing:
 
 ```
 edikt binary not found. Bootstrap via /edikt:upgrade in Claude Code (primary path).

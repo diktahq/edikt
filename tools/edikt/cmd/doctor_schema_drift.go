@@ -17,7 +17,6 @@ package cmd
 // automatically as the schema gains required fields.
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,6 +26,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/projectpaths"
 )
 
 // runSchemaDriftCheck inspects PRD and SPEC sidecars for required-field
@@ -89,39 +90,12 @@ func runSchemaDriftCheck(projectRoot string, w io.Writer) (warns int, ran bool) 
 
 // resolveProductDirs reads paths.prds / paths.specs from .edikt/config.yaml,
 // falling back to docs/product/prds and docs/product/specs.
+//
+// It delegates rather than re-deriving. The criteria loader needs the same
+// mapping to resolve the spec a plan declares against, and two copies of
+// "where the specs live" is a second definition that can drift from the first.
 func resolveProductDirs(projectRoot string) (prdsDir, specsDir string) {
-	prdsDir = filepath.Join(projectRoot, "docs/product/prds")
-	specsDir = filepath.Join(projectRoot, "docs/product/specs")
-	cfg := filepath.Join(projectRoot, ".edikt", "config.yaml")
-	data, err := os.ReadFile(cfg)
-	if err != nil {
-		return prdsDir, specsDir
-	}
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	inPaths := false
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "paths:") {
-			inPaths = true
-			continue
-		}
-		if !inPaths {
-			continue
-		}
-		if !(strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")) {
-			if strings.TrimSpace(line) != "" && !strings.HasPrefix(line, "#") {
-				break
-			}
-			continue
-		}
-		ts := strings.TrimSpace(line)
-		if rest, ok := strings.CutPrefix(ts, "prds:"); ok {
-			prdsDir = filepath.Join(projectRoot, strings.TrimSpace(rest))
-		} else if rest, ok := strings.CutPrefix(ts, "specs:"); ok {
-			specsDir = filepath.Join(projectRoot, strings.TrimSpace(rest))
-		}
-	}
-	return prdsDir, specsDir
+	return projectpaths.ProductDirs(projectRoot)
 }
 
 // resolveSchemaDir returns the directory holding the published JSON schemas.

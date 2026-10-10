@@ -11,8 +11,24 @@ allowed-tools:
   - Glob
   - Grep
   - Agent
+stops:
+  - id: cancel-shipped-prd
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "This PRD is shipped — cancel it anyway? (deprecate is usually what you want)"
+  - id: supersede-gates
+    class: knowledge
+    default: null
+    on_silence: refuse
+    prompt: "Four supersede gates: has the problem framing changed; would half the requirements be rewritten; are the protections or goals so different that old ACs no longer apply; has continuation been tried and found insufficient?"
+  - id: supersede-three-of-four
+    class: risk
+    default: "no"
+    on_silence: safe-side
+    prompt: "Three of four supersede gates passed — proceed with the supersede anyway?"
 ---
-!`${HOME}/.edikt/bin/edikt next-id prd`
+!`edikt next-id prd`
 
 # edikt:sdlc:prd
 
@@ -161,7 +177,7 @@ Using the forcing question answers + user description + project context, generat
 
 **AC numbering:** `AC-NNN-M` where NNN = FR number (exact match, not sequential within AC list), M = criterion index within that FR starting at 1. So a FR-001 with 2 ACs has `AC-001-1` and `AC-001-2`. Like FRs, the AC scheme is configurable via `ids.ac_pattern`.
 
-**Given/When/Then:** Every AC uses this format. Each AC MAY also carry an optional `verify:` field — a single shell command run by `bin/edikt verify prd <PRD-ID>` (exit 0 = AC passes). Lifecycle transitions like `ship` shell to that runner first and refuse to advance status when any verify fails.
+**Given/When/Then:** Every AC uses this format. Each AC MAY also carry an optional `verify:` field — a single shell command run by `edikt verify prd <PRD-ID>` (exit 0 = AC passes). Lifecycle transitions like `ship` shell to that runner first and refuse to advance status when any verify fails.
 
 ```yaml
 - id: AC-001-1
@@ -297,7 +313,7 @@ If headless mode is available (`claude` on PATH, `evaluator.mode: headless`):
 
 ```bash
 # Headless evaluator invocation compliant
-bin/edikt util json emit --field 'prd_path={prd_md}' --field 'sidecar_path={prd_yaml}' \
+edikt util json emit --field 'prd_path={prd_md}' --field 'sidecar_path={prd_yaml}' \
   --field 'rubric_path=.edikt/rubrics/prd.md' --field 'rigor={rigor}' | claude -p --model "{evaluator.model}" "Apply the rubric. Output JSON: {score: N, total: M, passed: bool, gaps: [...]}"
 ```
 
@@ -370,7 +386,7 @@ Render `{prd_yaml}` from `templates/prd-sidecar.yaml.tmpl` with the full structu
 **Validation gate before write.** After rendering the sidecar in memory, validate it against `templates/schemas/prd-sidecar.v1.schema.json`:
 
 ```bash
-bin/edikt util schema-validate "$PRD_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
+edikt util schema-validate --require-schema-header "$PRD_YAML_RENDERED" "$SCHEMA_PATH_ABSOLUTE"
 ```
 
 If validation fails: do NOT write the sidecar. Show the user which fields are missing/invalid, fix in-memory, re-validate, then write. The sidecar is a contract — never write a non-conforming one.
@@ -385,30 +401,20 @@ nobody tested on, and passed sidecars this one refuses.
 ```bash
 # Path arithmetic in the binary: the operands are paths, and a shell
 # relative-path computation is where a spaced or dotted segment goes wrong.
-SCHEMA_PATH=$(bin/edikt util path relative "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json")
+SCHEMA_PATH=$(edikt util path relative "$(dirname "$PRD_YAML")" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json")
 ```
 
 For a PRD at `docs/product/prds/PRD-NNN-x.yaml` with default layout, `SCHEMA_PATH` resolves to `../../../.edikt/schemas/prd-sidecar.v1.schema.json`.
 
-If `.edikt/schemas/prd-sidecar.v1.schema.json` does NOT exist in the project, auto-install it as part of this step:
-
-```bash
-test -f "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json" || {
-  mkdir -p "$PROJECT_ROOT/.edikt/schemas"
-  # Source schema lives in the edikt payload — resolve via EDIKT_HOME
-  SOURCE_SCHEMA="$EDIKT_HOME/current/templates/schemas/prd-sidecar.v1.schema.json"
-  [ -f "$SOURCE_SCHEMA" ] || SOURCE_SCHEMA="$HOME/.edikt/current/templates/schemas/prd-sidecar.v1.schema.json"
-  cp "$SOURCE_SCHEMA" "$PROJECT_ROOT/.edikt/schemas/prd-sidecar.v1.schema.json"
-}
-```
-
-This bootstrap keeps the IDE autocomplete working on first-ever PRD creation without requiring the user to run a separate install step.
+If `.edikt/schemas/prd-sidecar.v1.schema.json` does not exist in the project, the header above still names it and the validator below reads the payload's copy (`$SCHEMA_PATH_ABSOLUTE` resolves through `$EDIKT_HOME/current/templates/schemas/` when the project copy is absent). The project copy is installed by `/edikt:init` and refreshed by `/edikt:upgrade`; this command never copies it — print `schema copy absent — run /edikt:upgrade` once and continue.
 
 **8b. Compute SHA-256 hashes:**
 
 ```bash
-MD_HASH=$(bin/edikt util hash "$PRD_MD")
-YAML_HASH=$(bin/edikt util hash "$PRD_YAML")
+# If a shell guard refuses the word "hash" (some worktree guards read it as a git
+# object operation), the same value is: shasum -a 256 "$FILE" | cut -d' ' -f1
+MD_HASH=$(edikt util hash "$PRD_MD")
+YAML_HASH=$(edikt util hash "$PRD_YAML")
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 
@@ -539,7 +545,7 @@ Which to ship? (comma-separated numbers, "all", or "cancel")
 **Pre-transition verify gate.** Before mutating the sidecar, run the completion-evidence gate against the PRD's current state:
 
 ```bash
-bin/edikt verify prd PRD-NNN
+edikt verify prd PRD-NNN
 ```
 
 - Exit 0 → proceed to the mutation below.
@@ -558,32 +564,8 @@ Ship stays pending — the sidecar is not mutated. Do NOT auto-edit verifies awa
 **Mutate sidecar:**
 
 ```bash
-AFFECTED=$(bin/edikt prd ship --file "$PRD_YAML" --frs "$FR_LIST" \
-  --author "$AUTHOR" --at "$NOW")' "$PRD_YAML" "$FR_LIST" "$AUTHOR" "$NOW"
-import sys, yaml
-path, frs_raw, author, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-frs = frs_raw.split(",")
-with open(path) as f:
-    data = yaml.safe_load(f)
-affected = []
-for req in data.get("requirements", []):
-    if req["id"] in frs and req.get("status") != "shipped":
-        req["status"] = "shipped"
-        req["shipped_at"] = now
-        affected.append(req["id"])
-data.setdefault("revision_history", []).append({
-    "at": now, "author": author, "action": "ship",
-    "note": f"Marked shipped: {', '.join(affected)}",
-    "affected": affected,
-})
-all_shipped = all(r.get("status") == "shipped" for r in data.get("requirements", []))
-if all_shipped and data.get("requirements"):
-    data["status"] = "shipped"
-data.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
-with open(path, "w") as f:
-    yaml.safe_dump(data, f, sort_keys=False)
-print(",".join(affected))
-PYEOF
+AFFECTED=$(EDIKT_INVOKER=/edikt:sdlc:prd edikt prd ship --file "$PRD_YAML" --frs "$FR_LIST" \
+  --author "$AUTHOR" --at "$NOW")
 ```
 
 Recompute `_sync` hashes after mutation (same pattern as Step 8b–8c).
@@ -608,7 +590,10 @@ Marks a PRD as `status: cancelled`. Use when work stopped before shipping (hypot
 
 **Difference from deprecate:** cancel = never shipped; deprecate = was shipped/accepted, now obsolete.
 
-**Guard:** If already `cancelled` or `deprecated` → error "PRD-NNN is already {status}." If `shipped` → confirm "PRD-NNN is shipped. Cancel a shipped PRD? Usually you want deprecate. Continue? (y/N)".
+<!-- stop: cancel-shipped-prd -->
+**Guard:** If already `cancelled` or `deprecated` → error "PRD-NNN is already {status}." If `shipped` → confirm "PRD-NNN is shipped. Cancel a shipped PRD? Usually you want deprecate. Continue? (y/N)". With no human to answer,
+take the safe side: leave the status as `shipped`, cancel nothing, and say the
+confirmation was declined by default rather than answered.
 
 **Get reason:** Extract from arguments remainder. If missing, ask:
 
@@ -623,7 +608,7 @@ Minimum 10 characters. Reject empty.
 **Mutate sidecar:**
 
 ```bash
-bin/edikt prd close --file "$PRD_YAML" --status cancelled --reason "$REASON" \
+EDIKT_INVOKER=/edikt:sdlc:prd edikt prd close --file "$PRD_YAML" --status cancelled --reason "$REASON" \
   --author "$AUTHOR" --at "$NOW"
 ```
 
@@ -662,7 +647,7 @@ Minimum 10 characters. Reject empty.
 **Mutate sidecar:**
 
 ```bash
-bin/edikt prd close --file "$PRD_YAML" --status deprecated --reason "$REASON" \
+EDIKT_INVOKER=/edikt:sdlc:prd edikt prd close --file "$PRD_YAML" --status deprecated --reason "$REASON" \
   --author "$AUTHOR" --at "$NOW"
 ```
 
@@ -707,6 +692,7 @@ For routine changes, prefer:
   • /edikt:sdlc:prd PRD-NNN deprecate — retire without replacement
 ```
 
+<!-- stop: supersede-gates -->
 Ask four gating questions one at a time (y/n):
 
 ```
@@ -716,10 +702,17 @@ Gate 3/4 — Are the Protections or Goals so different that old ACs would no lon
 Gate 4/4 — Have you tried continuation via /edikt:sdlc:prd PRD-NNN and found it insufficient?
 ```
 
+These four are knowledge questions: only the person who lived with the PRD can
+answer them, and there is no defensible default. With no human to answer,
+refuse — list the four questions, write nothing, and exit non-zero. A
+fabricated answer here supersedes a PRD on nobody's judgement.
+
+<!-- stop: supersede-three-of-four -->
+
 | Yes count | Action |
 |-----------|--------|
 | 4 | Proceed |
-| 3 | Confirm once more: "Three of four gates passed. Proceed? (y/N)" |
+| 3 | Confirm once more: "Three of four gates passed. Proceed? (y/N)" — with no human to answer, take the safe side: do not proceed |
 | 2 | Show alternatives, require explicit override (`--force`) |
 | 0–1 | Abort with guidance |
 
@@ -728,7 +721,7 @@ If `--force` was passed, skip gate but log `"Supersede gate overridden with --fo
 **Pre-transition verify gate.** Before authoring the new PRD, run the completion-evidence gate against the OLD PRD:
 
 ```bash
-bin/edikt verify prd PRD-NNN
+edikt verify prd PRD-NNN
 ```
 
 - Exit 0 → proceed.
@@ -748,31 +741,10 @@ The new PRD gets its own `id: PRD-MMM` from the live-injected next number.
 # PRD leaves the new one — the document people actually read — claiming no
 # lineage.
 FORCED_FLAG=""; [ "$FORCED" = "1" ] && FORCED_FLAG="--forced"
-bin/edikt prd supersede \
+EDIKT_INVOKER=/edikt:sdlc:prd edikt prd supersede \
   --old-file "$OLD_YAML" --new-file "$NEW_YAML" \
   --old-id "$OLD_ID" --new-id "$NEW_ID" $FORCED_FLAG \
-  --author "$AUTHOR" --at "$NOW"' "$OLD_YAML" "$NEW_YAML" "$OLD_ID" "$NEW_ID" "$AUTHOR" "$NOW" "$FORCED"
-import sys, yaml
-old_path, new_path, old_id, new_id, author, now, forced = sys.argv[1:]
-with open(old_path) as f:
-    old = yaml.safe_load(f) or {}
-old["status"] = "superseded"
-old["superseded_by"] = new_id
-note = f"Superseded by {new_id}"
-if forced == "1":
-    note += " (supersede gate overridden with --force)"
-old.setdefault("revision_history", []).append({"at": now, "author": author, "action": "supersede", "note": note})
-old.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
-with open(old_path, "w") as f:
-    yaml.safe_dump(old, f, sort_keys=False)
-with open(new_path) as f:
-    new = yaml.safe_load(f) or {}
-new["supersedes"] = old_id
-new.setdefault("revision_history", []).append({"at": now, "author": author, "action": "supersede", "note": f"Supersedes {old_id}"})
-new.setdefault("_sync", {}).update({"md_hash": "", "yaml_hash": "", "synced_at": ""})
-with open(new_path, "w") as f:
-    yaml.safe_dump(new, f, sort_keys=False)
-PYEOF
+  --author "$AUTHOR" --at "$NOW"
 ```
 
 Recompute `_sync` hashes on both sidecars.

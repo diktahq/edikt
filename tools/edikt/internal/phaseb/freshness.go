@@ -67,6 +67,51 @@ func (d FreshnessDrift) String() string {
 	}
 }
 
+// RemedyFor returns the action that actually resolves a set of drifts, which
+// is NOT the same action for every kind.
+//
+// Reported from the field 2026-09-18: a consumer project carried one orphaned
+// skill package, `gov compile --check` named it correctly, and the remedy
+// printed beneath it was "Run `edikt gov compile` to re-render." Compile
+// RE-RENDERS; it does not REMOVE. Running it twice left the surface stale both
+// times, so a user following the advice loops forever on a check that is right.
+//
+// A control whose diagnosis is correct and whose remedy cannot resolve it is
+// worse than one that says nothing: it spends the reader's trust on an action
+// that was never going to work.
+//
+// Compile fixes `missing` (it renders what is absent) and `content` (it
+// overwrites what differs). It does not fix `unexpected`: an orphan is a
+// rendered surface no current sidecar produces, so a fresh render has nothing
+// to say about it and leaves it exactly where it is.
+func RemedyFor(drifts []FreshnessDrift) []string {
+	var orphans []string
+	renderable := false
+	for _, d := range drifts {
+		if d.Kind == "unexpected" {
+			orphans = append(orphans, d.Path)
+			continue
+		}
+		renderable = true
+	}
+	var out []string
+	if renderable {
+		out = append(out, "Run `edikt gov compile` to re-render the missing or differing surfaces.")
+	}
+	if len(orphans) > 0 {
+		out = append(out,
+			"`gov compile` will NOT clear the orphan(s) below — it renders from sidecars and has "+
+				"nothing to render for a surface no sidecar produces. Delete them:")
+		for _, p := range orphans {
+			out = append(out, "    rm -rf "+p)
+		}
+		out = append(out,
+			"Check first that no artifact still claims that topic; if one does, the orphan is a "+
+				"symptom and deleting it hides the cause.")
+	}
+	return out
+}
+
 // CheckRenderFreshness renders `pairs` into a scratch root and reports every
 // surface whose bytes differ from the live tree.
 //

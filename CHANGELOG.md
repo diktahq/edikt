@@ -1,5 +1,414 @@
 # edikt changelog
 
+## v0.9.0 (2026-10-10)
+
+**0.9.0: write-time governance retired.** edikt no longer injects rules or blocks edits while
+Claude is writing. Compiled rules reach Claude through the always-loaded core file and the
+per-topic files, and the work is checked once, at the end of each plan phase.
+
+### Upgrading from 0.8.x
+
+- Run `/edikt:upgrade` in each project. It removes the two retired hooks from
+  `.claude/settings.json` and prunes stale plans. Until you run it, Claude Code reports two
+  missing hook commands and carries on.
+- Run `edikt doctor` afterwards. An accepted ADR, invariant or guideline with no sidecar is
+  now an error, and doctor names the compile command for each one.
+- Scripts and CI that call `edikt` verbs which change files must set `EDIKT_INVOKER=ci`.
+  Without it they exit 4.
+- If you gated CI on `gov compile` failing when a directive's `verify:` fails, gate on
+  `edikt verify` instead.
+- `edikt verify all` now deletes old reports under `.edikt/state/verify/`. That directory is a
+  cache, not an archive.
+- If you installed with `install.sh` while `CLAUDE_CONFIG_DIR` was set, re-run the installer
+  for your version. Your commands and hooks may be in the wrong Claude profile.
+
+### Breaking
+
+- **`edikt doctor` reports a missing sidecar as an error.** An accepted ADR, invariant or
+  guideline with no `*.edikt.yaml` beside it was a warning and is now an ERROR. Doctor names
+  the right command for each id: `/edikt:adr:compile`, `/edikt:invariant:compile` or
+  `/edikt:guideline:compile`. It does not suggest `gov compile`, which only merges sidecars
+  that already exist and would exit 0 having written nothing. A project that was green on
+  0.8.x can turn red here with no change to its governance. `proposed` artifacts are still
+  not counted.
+
+- **`edikt verify all` deletes old reports.** It keeps the newest runs for each id under
+  `.edikt/state/verify/`, removes the rest, and prints how many it removed. Plan-phase reports
+  (`<plan>-phase-<N>-*`) are never touched. Before, every run added a report pair and nothing
+  removed any. On edikt's own repository that reached 135,919 files and 1.1 GB, and `doctor`,
+  which scans the directory, took 42 seconds. After the change: 2,937 files, 24 MB, and
+  `doctor` in 4 seconds. The directory is gitignored and only the newest report per id is ever
+  read.
+
+- **Write-time governance is retired (ADR-083).** Nothing is injected into a `Write` or
+  `Edit` any more, and nothing is denied, warned about or annotated when an edit lands.
+  - `gov compile` no longer writes `.claude/rules/governance/directive-index.yaml`. Every
+    path-scoped directive now sits in its topic file, or in the topic's skill package when
+    the topic has no scoped rules file. An empty Directives region in a topic file means the
+    topic has no directives.
+  - `delivery-map.yaml` stays, as the record of which directive covers which path.
+  - `PreToolUse` now does one thing: the INV-005 managed-region guard (`pre-tool-use.sh`).
+    It exempts the `sidecar-extractor` agent, identified by the host's `agent_type` on the
+    payload (INV-021), never by an environment variable.
+  - `verify-gate.sh` and `inject-directives-pre.sh` are removed. The retired-hook window: if a
+    0.8.x project's `.claude/settings.json` still registers them after the binary upgrades,
+    Claude Code reports a missing hook command and continues; `edikt hook run` logs
+    `unregistered-hook-name`; and `edikt doctor` reports `registered hook retired in this
+    version — run /edikt:upgrade`. `/edikt:upgrade` removes both entries and prints `removed
+    verify-gate.sh` and `removed inject-directives-pre.sh`.
+  - The config keys `features.evidence-gate`, `hooks.injection.bounce_budget` and
+    `hooks.injection.dedup_scope` controlled the retired hooks. They are no longer read, and
+    `/edikt:config` no longer lists them.
+  - INV-018, which stops the number and strength of directives reaching the model from
+    dropping unnoticed, now measures the surfaces that remain: the core file, each topic file
+    and each skill package.
+
+- **`gov compile` no longer fails when a directive's `verify:` fails (a deliberate demotion).**
+  The verify still runs and prints its report. The exit code now says only whether the compile
+  succeeded. The check that counts is the phase-end verifier, `edikt verify <plan> --phase N`
+  (ADR-083). If you gated CI on `gov compile` catching a failing verify, gate on `edikt verify`
+  instead.
+
+- **Undeclared calls to file-changing verbs are refused (ADR-084).** When a protected
+  `edikt` verb runs with stdin that is not a terminal and no `EDIKT_INVOKER` matching
+  `^(/edikt:[a-z][a-z:-]*|ci|bench)$`, it exits 4 and names the slash command to use instead.
+  A real terminal always proceeds. Scripts and CI must declare themselves; `EDIKT_INVOKER=ci`
+  is the form for automation. Every call that proceeds is logged with `invoked_by`, or
+  `direct` when a terminal let it through undeclared. This is steering, not authentication:
+  the value is self-declared.
+
+- **`phasea verify` has a new exit code 6.** Exit 5 still means the retry budget is spent.
+  Exit 6, DIVERGED, means at least one item stopped because it was getting worse, with
+  attempts left. They need different responses: re-planning will not help a diverging item.
+  Exit 7 also has its own meaning: the pinned state was never restored after a fan-out, so
+  the run is judging a corpus missing everything a human pinned. Callers that only check zero
+  versus non-zero are unaffected.
+
+- **`edikt doctor` reports behavioral verifies nobody approved.** A behavioral verify is a
+  claim a machine cannot check, so it carries `human_approved_at`, the time a person accepted
+  it. Entries without one now add to doctor's warning count and are each named with the fix,
+  `edikt sidecar approve`. CI that asserts on doctor's warning count will see it change.
+
+### Changed
+
+- **The sidecar-extractor gets 20 turns instead of 8.** (#8.) Long artifacts ran out of turns.
+  The agent file changed, so plans written before the upgrade are stale and get re-planned,
+  and `doctor` prints one INFO contract-drift line per sidecar. The extraction contract
+  (prompt_version 11) is unchanged.
+
+- **The compile commands handle a failed extraction the same way.** (#7, #8, #11.) This
+  covers `/edikt:gov:compile`, `/edikt:gov:reextract`, `/edikt:migrate` and `/edikt:adr:new`.
+  - An extraction has stalled when the extractor's final response is anything other than the
+    single `SIDECAR WRITTEN` line. The stalled item is passed to `phasea verify --stalled`.
+  - Counts (status, `anchors_valid`, `anchors_whitespace_only`, `needs_review`) come from the
+    receipt, never from what the extractor says it did.
+  - Restore writes `paths:` and `paths_approval:` back as they were. If the extractor says
+    scope was lost or needs `sidecar approve --kind paths`, ignore it.
+  - Re-planning over an unclosed earlier plan is refused.
+  - A retry is a correction pass whose only change is the receipt's `correction_prompt`. The
+    old rule to re-dispatch identical fields contradicted this and is gone.
+  - Restore detects a sidecar the extractor never wrote. `lossless-loss` can come from any
+    re-extraction. The concurrency line reads write times that restore records.
+  - `/edikt:migrate` applies the empty lift only to artifacts with an in-body block (a v1
+    sidecar converts without loss), re-dispatches a non-lifted item without the migrate
+    suffix, prints the compile grade out of 10 (it said "/100"), and no longer mentions
+    `--on-loss=auto`, which never existed.
+
+- **ADR suggestions are only suggestions, and only for product architecture.** (#10.)
+  `/edikt:capture`, `/edikt:session`, `/edikt:status` and the architect agent no longer
+  suggest ADRs for implementation details, build tooling that does not ship, local setup or
+  experiments. A missing ADR never blocks a build or a review. `/edikt:adr:new` is unchanged.
+  Run `/edikt:upgrade` to get the new architect agent.
+
+- **Migration lives in one command, `/edikt:migrate`, and depends only on an artifact's
+  state.** An artifact needs migrating when its `.md` still has an in-body directive block or
+  its sidecar is still `schema_version: 1`. The pinned version and the launcher's history play
+  no part.
+  - `/edikt:migrate` carries the whole procedure: the lift with its dry-run check, the proof
+    that nothing was dropped, the recompile, and the regression-manifest flow that used to be
+    `/edikt:sidecar:regenerate`.
+  - `/edikt:upgrade` only detects that migration is needed and hands off. Compile, doctor and
+    init refuse with the same pointer.
+  - The extractor has no migration rules of its own. `/edikt:migrate` adds them only when it
+    dispatches a lifted artifact.
+  - The proof that nothing was dropped moved into `edikt phasea verify`. It compares the
+    output with the pre-dispatch snapshot and records `lossless-loss` (retryable) or
+    `lossless-unmeasured` (never a pass). `--on-loss=accept` passes the item and records the
+    loss on the receipt.
+  - `migrate lift` and `migrate to-v2` can be run by users.
+  - `edikt dev link` builds the launcher from the linked tree with its version stamp and
+    refuses a tree with uncommitted changes.
+  - `edikt doctor` shows a registered hook whose command path does not exist as 🔴.
+
+- **Version comparison follows semver, and a channel name is no longer read as a number.**
+  The launcher used to read the leading digits of each version field, so `dev`, an empty
+  string from a failed fetch, and `0.8.0-rc1` all became numbers and were compared as if they
+  meant something. Ordering now follows semver 2.0.0, including pre-release suffixes. What you
+  will see:
+  1. The pin warning no longer tells a `dev` install that its pin is ahead of it, or warns it
+     off `edikt upgrade-pin`. A channel and a release are reported as not comparable.
+  2. `edikt upgrade` refuses a channel install by saying the versions are not comparable, and
+     a `1.x` release no longer looks like a cross-major upgrade from a dev checkout.
+  3. A pre-release now sorts before its release, so a project on `0.8.0-rc1` sees `0.8.0` as
+     newer and upgrades to it. Before, it was told it was up to date. The guard that should
+     stop this from replacing a locally built payload is not in this release, so an rc install
+     currently upgrades whatever its payload came from.
+
+### Fixed
+
+- **`gov compile --check` and `--dry-run` no longer rewrite sidecars.** (#9.) They did,
+  including when run by `/edikt:adr:review`, `/edikt:invariant:review` and `/edikt:gov:review`,
+  and they dropped the `$schema` header while reporting `0 stale`. Anchor drift that autorepair
+  could fix is now reported as `stale:` and fails the check (JSON `phase_a.repairable_ids`).
+  Run `edikt gov compile` to apply the repair. A full compile keeps the schema header and
+  repairs only the matched text. `--trust` is refused together with `--check`.
+
+- **A re-requested extraction gets a new plan id.** (#11.) This affects
+  `phasea plan --artifact`, the per-artifact compile commands and `gov reextract`. A
+  re-request used to reuse a consumed or FAILED plan's id. It now gets a successor plan and
+  says which plan it replaces. `phasea plan` refuses before dispatch when the latest plan for
+  an item was never closed (dispatched and not restored, mid-retry, or FAILED), and names the
+  plan and the fix. Restore refuses a FAILED plan. Pre-dispatch pins can be written only once.
+  Every plan id changes once on upgrade; plans already in progress keep their own id.
+  **Recovery:** if a 0.9.0 development build damaged a sidecar (missing `body_digest` or
+  `extractor_model`), copy `.edikt/state/phasea/<plan>.pins/<item>.yaml` back over it, or
+  `git checkout` it, and re-run the compile command.
+
+- **An extraction that writes nothing is reported as missing.** (#8, #11.) Usually the
+  extractor ran out of turns. Restore used to stamp the old sidecar as fresh and verify
+  accepted it as ok, which hid the body-drift signal and, under `gov reextract`, marked the
+  item done. The item is now `output-missing`, or `stalled` when the caller passes
+  `--stalled`. `phasea verify`'s concurrency line uses extractor write times recorded by
+  restore, and says `concurrency: not measured` when there are none. `phasea plan` prints the
+  extraction contract's validation state on stderr when the contract is rejected or not
+  recorded (exit 0).
+
+- **A quarantined item reaches verify with its fault and a correction prompt.** (#7, #11.)
+  Restore quarantines an output it cannot accept. Verify used to call that `output-missing`,
+  so the retry had nothing to correct. It is now `anchor-invalid`, `length-exceeded`, or
+  `schema-invalid` with its axis (`parse`, `overclaim`), judged from the quarantined copy.
+  - The correction prompt names each fault by the parent's line range.
+  - A fault that is only whitespace comes with the parent's exact bytes, and the receipt counts
+    these separately as `anchors_whitespace_only`.
+  - The receipt also counts `needs_review` entries. Report that count from the receipt.
+  - The INCOMPLETE next step no longer says to re-dispatch "verbatim". It says to re-dispatch
+    as a correction pass with the item's `correction_prompt`.
+
+- **Every re-extraction is checked for dropped directives.** (#11.) Before, only items lifted
+  by migration were checked. A directive or prohibition that the new output dropped while its
+  source text is still in the artifact is now `lossless-loss` (retryable). The
+  `correction_prompt` names each dropped body and the parent lines it came from.
+  `--on-loss=accept` records the loss and lets the item pass. A body whose anchors moved is
+  matched by its words, and the message says the weaker check decided. A body whose source
+  text was removed from the artifact is reported as `source-removed`, not failed. The
+  INCOMPLETE next step says an `output-missing` or `stalled` item is re-dispatched as a fresh
+  extraction.
+
+- **Restore no longer calls unapproved `paths:` "approved".** (#11.) Paths with no approval
+  receipt are still carried forward, now labelled as unreceipted, or as covered by a receipt
+  that no longer matches them. `gov reextract restore-pinned` labels them the same way. If
+  the extractor writes `paths:` on a sidecar that had none, `phasea restore` removes it and
+  says so. A receipt that first appears in the extractor's output is not an approval. Scope is
+  added only through `proposed_paths` and `edikt sidecar approve --kind paths`.
+
+- **Upgrading to 0.8.0 left five agents uninstalled, and governance quietly stopped.**
+  `edikt upgrade` compared each surface with what the project already had, not with what the
+  version declares, so an agent added in a later release was never installed. Nothing
+  reported it.
+
+  **Affected:** projects that reached 0.8.0 by running `edikt upgrade`. Fresh installs are
+  not affected, because `init` installs every agent.
+
+  **To check:** run `ls .claude/agents/` and confirm these five are present:
+  `sidecar-extractor`, `governance-verifier`, `post-flight-synthesizer`,
+  `compile-quality-grader` and `cheat-rate-adversary`. The full list is the `always:` list in
+  the payload's `templates/agents/_registry.yaml`.
+
+  **What breaks without them:** each is called by name from `.claude/agents/` or
+  `~/.claude/agents/`, and a missing one fails without an error. `sidecar-extractor` alone is
+  called from 14 commands, so `gov compile` skips extraction and reports no failure. Copy the
+  missing files from the installed payload's `templates/agents/`, or re-run the installer for
+  your version.
+
+  `edikt doctor` now reports this under **Upgrade Manifest Drift**, counted against the
+  registry. It reads the manifests directly, so it does not depend on an upgrade running.
+  The lasting fix is INV-019, below.
+
+- **Retired hooks stayed registered.** Upgrade only removed a retired hook's registration once
+  its script was gone, and nothing ever deleted the script, so the removal never ran. A
+  `PreCompact` hook retired before 0.8.0 was still registered after a 0.8.0 upgrade. `doctor`
+  now reports it. The removal itself is not fixed in this release.
+
+- **Upgrade no longer installs `evaluator-headless.md` into `.claude/agents/`.** It copied the
+  file there and reported `✓ Installed`, but nothing reads it from that location: it has no
+  frontmatter, is never called by name, and every caller loads it from the install root. The
+  copy and its report line are removed. Nothing else changes.
+
+- **`install.sh` now installs into the profile `CLAUDE_CONFIG_DIR` selects.** Claude Code picks
+  its profile with `CLAUDE_CONFIG_DIR`, and the edikt binary checks `CLAUDE_HOME`, then
+  `CLAUDE_CONFIG_DIR`, then `$HOME/.claude`. The installer skipped `CLAUDE_CONFIG_DIR`, so
+  commands and hook registrations went to a profile Claude Code was not reading. Nothing
+  failed; the commands simply were not there, and `doctor` reported the right location while
+  the files sat in another. The binary could not correct it, because the installer passed its
+  wrong answer down as `CLAUDE_HOME`, which wins.
+
+  Homebrew installs were not affected: `brew install edikt` ships only the binary, and
+  `edikt use` links the commands through the full lookup. **If you installed with
+  `CLAUDE_CONFIG_DIR` set**, re-run the installer for your version.
+
+- **`edikt gov grade-compile` works outside edikt's own repository.** (#11.) This also fixes
+  `/edikt:migrate` step 4 and `/edikt:gov:grade-compile`. `--print-inputs` looked for its
+  rubric, schema and grader template only in `.edikt/templates/` and `templates/` under the
+  current directory. `templates/` exists only in a checkout of edikt, so on any other project
+  it exited 1 and the grader never ran. It now looks in the project's `.edikt/templates/`,
+  then the installed payload, and works from a subdirectory.
+  - `gov benchmark cheat-rate` (adversary template, baseline pack) and `edikt doctor`'s agent
+    registry use the same lookup.
+  - A project's `.edikt/templates/agents/_registry.yaml` now overrides everything else. It
+    used to lose to a `templates/` directory beside it.
+  - Inside edikt's own checkout the installed payload now comes before the repository's
+    `templates/` (ADR-005). Set `EDIKT_ROOT` to the checkout to use its `templates/` instead.
+
+- **Settings repairs change the file they name, hook paths can be portable, and the pin
+  warning is quieter.** (#11.)
+  - `/edikt:upgrade` finds user settings through `CLAUDE_CONFIG_DIR`.
+  - `edikt install settings --repair --project` repairs the project's `.claude/settings.json`.
+    Upgrade uses it, and asks before changing user-level settings.
+  - A repair of only the status line no longer needs `EDIKT_HOOK_DIR`.
+  - Project settings may use `$HOME/.edikt/hooks` or `"$CLAUDE_PROJECT_DIR"/.edikt/hooks` as
+    the hook path.
+  - The version-pin warning no longer prints inside hooks, or for a `dev` pin. `edikt doctor`
+    reports pin drift instead.
+  - The session-memory path follows `CLAUDE_CONFIG_DIR`.
+  - `edikt doctor` names the repair for the file it flagged: `--repair --project` for the
+    project's file, plain `--repair` for the user-level one. The repair writes through a
+    symlinked settings file instead of replacing the link.
+  - INV-006's `EDIKT_HOOK_DIR` entry has a dated amendment with the allowlist that is actually
+    enforced.
+
+- **The phase-end evaluator and post-flight work with an OAuth login.** (#12.) Both ran
+  `claude --bare`, which reads credentials only from `ANTHROPIC_API_KEY` or `apiKeyHelper`.
+  Under an OAuth login every automatic phase-end evaluation came back BLOCKED. The evaluator
+  now runs with `--safe-mode`. Post-flight runs a slash command, which `--safe-mode` turns
+  off, so it disables hooks with `--settings '{"disableAllHooks":true}'` instead. Neither can
+  re-trigger the Stop hook. The headless runs in `/edikt:sdlc:plan`, `/edikt:doctor` and
+  `/edikt:gov:benchmark` also use `--safe-mode` now. When the evaluator cannot log in and
+  `CLAUDE_CONFIG_DIR` is set, the message no longer blames that variable. It points at an
+  installed hook that still uses `--bare` and tells you to run `edikt upgrade`.
+
+- **The active plan's name shows again for plans with frontmatter.** (#13.) The prompt hook
+  and the post-compact message printed `Active plan: .` for any plan made from
+  `/edikt:sdlc:plan`'s template. The frontmatter pushed the `# Plan:` heading past the five
+  lines that were searched. The search now starts after the frontmatter, and the frontmatter's
+  `id:` is used when there is no heading.
+
+- **`/edikt:adr:new` can accept the ADR it creates.** (#14.) It compiles the new ADR while the
+  ADR is still `status: proposed`, and marks it accepted only once that compile verifies.
+  `phasea plan` refused every proposed ADR, so this could never succeed.
+  `phasea plan --artifact … --bootstrap` now accepts a proposed ADR that has no sidecar yet.
+  Rejected and superseded ADRs are still refused, and so is a proposed ADR without
+  `--bootstrap` or with a sidecar already present.
+
+- **`edikt doctor` no longer reports anchor drift on superseded artifacts.** Compile ignores the
+  sidecar of a superseded guideline, or of an ADR whose status line reads "Superseded by", but
+  doctor still checked its anchors and told you to regenerate it. Doctor now skips the same
+  artifacts compile skips, and says so.
+
+- **`edikt doctor` finds the script in a hook command with an interpreter or arguments.** A hook
+  registered as `bash '<path>/hook.sh' session` was reported as "does not resolve to a file"
+  even when the script existed, because doctor checked the whole command as one path. It now
+  reads the command the way the shell does and checks the script it runs.
+
+### Added
+
+- **INV-019: upgrade works from the version's manifest, in all three directions.** It updates
+  what is out of date, installs what the version declares and the project lacks, and removes
+  what the version retired when edikt can show it owns the file. Hooks already worked this way;
+  every other managed surface did not, which is how the missing-agents bug above happened. The
+  invariant is compiled and enforced, so a surface added to upgrade later cannot skip a
+  direction.
+
+- **Extractions record which model and contract produced them, and stale plans say why they
+  are refused.**
+  - `phasea verify` writes `extractor_model` and `extractor_contract` onto an ok item's
+    receipt and sidecar: the model that ran, and a hash of the exact agent definition it ran
+    under. Both read `unrecorded` when the host reports neither.
+  - A plan in `.edikt/state/phasea/` can be refused for three reasons, and the message names
+    which: a **schema version** gap (`plan file … was written by schema vN; this binary writes
+    vM — run /edikt:upgrade`), a **prompt_version** gap (the extraction contract changed
+    between plan and verify), or a **contract digest** gap (the extractor agent's file changed
+    between plan and verify at the same prompt_version, for example a prompt edited and then
+    reverted).
+  - `/edikt:upgrade` runs `edikt phasea prune-stale`, which removes unconsumed plans written
+    by an older schema and names each one. Consumed plans and plans at the current schema are
+    left alone.
+  - `edikt doctor` reports extractor model and contract drift as information, and a failed item
+    on an unconsumed plan as 🔴. One cause is an `extractor.model` pin the host rejected.
+
+### Known issues
+
+edikt's own test suite does not pass in full on this release. Each failing suite is listed
+here with its cause. The security and hook suites pass in full; they are the only enforcement
+INV-003 and INV-006 have, so they are never waived.
+
+- **`extractor-contract-validated`**: `gov reextract` refuses to run. The extraction contract
+  in this release has not been validated, and `gov reextract` refuses an unvalidated contract.
+  That refusal is deliberate. Re-extraction rewrites every sidecar in your corpus through the
+  new contract, so it is the one place an unproven contract could do damage you cannot undo.
+  Every contract since v4 that was tested against the fixed fixture set (v5, v9, v11 and v12)
+  was rejected. The newest, v12, fixed the formatting faults and handled long documents, but
+  still dropped directives from four of the five test artifacts. Only v4 is recorded as
+  validated, and only after its output was repaired by hand; its record says so. This release
+  ships v11. Work on a validated contract continues in 0.9.1.
+
+  **Still works:** compiling a sidecar for a new or edited artifact, and `gov compile`. Neither
+  depends on this. **Does not work:** re-extracting an existing corpus through a changed
+  contract. If you need that, stay on the contract your corpus was extracted with until a
+  validated one ships.
+
+  Do not work around this with `--skip-fixture-proof`. That flag exists for the validation run
+  itself. Using it here re-extracts your corpus through a contract that was tested and rejected.
+
+- **`spec-plan-coverage`**: 160 requirements across SPEC-008, SPEC-009, SPEC-011 and SPEC-025
+  are not yet covered by any acceptance criterion in their plans, and two plans point at a spec
+  file that does not resolve. This release only backfilled SPEC-023 and SPEC-024 (76 criteria,
+  27 requirements). The check is correct; the remaining backfill is still to do. No effect on
+  your projects.
+
+- **`release-plan-set-complete`**: fails while any phase planned for this release is still
+  open. The only open one is the phase that closes the release, so this clears when the release
+  is done. No effect on your projects.
+
+- **`corpus-gates`**: three findings in edikt's own governance. The anchor check still counts
+  unmeasured anchor drift as a failure: `gov compile --check` now prints the real stale count
+  instead of a hardcoded `0`, but the check has not been switched to read it. Three proposed
+  ADRs have no sidecar and are counted as unmeasured rather than skipped. Two directives
+  contain unresolved bare ordinals. No effect on your projects.
+
+- **`corpus-coverage`**: ADR-054 was superseded by ADR-085 after the coverage baseline was
+  taken, and the check has no way to accept an artifact leaving the corpus legitimately. One
+  behavioral verify in edikt's own governance is still waiting for human approval, and the
+  check counts it on purpose. No effect on your projects.
+
+- **`check-anchor-provenance`**: ADR-086's five directives and prohibitions state obligations
+  that their recorded source quotes do not contain. Known and not fixed in 0.9.0. Affects
+  edikt's own governance only.
+
+- **`consumer-migration`**: two issues you may see. `doctor` reports one accepted artifact
+  with no sidecar when that artifact carries the `edikt:migration:skip` marker, because one of
+  doctor's checks honours the marker and another does not. And `delivery-map.yaml`'s header
+  still refers to a "ROUTING TABLE" that no longer exists.
+
+- **`globmatch-python-parity`**: fails only on a machine that once ran edikt's Python
+  integration tests, because a leftover `test/integration/.venv/` gets scanned. Not a product
+  defect.
+
+- **`integration`**: 21 end-to-end tests fail inside edikt's full test run and pass when run on
+  their own. The test runner isolates `CLAUDE_CONFIG_DIR` so no test can touch a real Claude
+  profile (INV-007), which leaves these tests with no credentials. Pointing them at a real
+  profile would break that isolation, so the fix is to give them their own isolated,
+  logged-in profile, planned for 0.9.1. Not a product defect.
+
 ## v0.8.0 (2026-08-24)
 
 edikt's hook tier no longer needs `python3`. Every lifecycle hook used to shell out to it to emit

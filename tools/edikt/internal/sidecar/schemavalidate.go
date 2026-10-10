@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -82,7 +81,7 @@ func ValidateRawAgainstSchema(raw []byte) error {
 	}
 	var doc any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return fmt.Errorf("decode for schema validation: %w", err)
+		return fmt.Errorf("decode for schema validation: %s", formatYAMLError(err))
 	}
 	// yaml.v3 yields map[string]any for mappings, which the validator accepts;
 	// round-tripping through JSON normalises numeric kinds.
@@ -95,42 +94,13 @@ func ValidateRawAgainstSchema(raw []byte) error {
 		return fmt.Errorf("normalise for schema validation: %w", err)
 	}
 	if err := sch.Validate(norm); err != nil {
-		return fmt.Errorf("schema: %s", compactSchemaError(err))
+		return fmt.Errorf("schema: %s", formatSchemaErrors(err))
 	}
 	return nil
 }
 
-// compactSchemaError flattens a jsonschema error to ONE actionable line.
-//
-// Load's error contract is single-line and bounded — asserted by
-// TestAdversarialCorpus, which checks every Load failure is <500 chars with no
-// newline, because these strings are what a user sees when a sidecar will not
-// load. The library's default renders a multi-line tree headed by a file:// URL
-// of the schema, which is noise to that reader: they need the failing property
-// and why, not where the schema lives.
-func compactSchemaError(err error) string {
-	// Use the library's own rendering and flatten it. Walking ErrorKind
-	// internals panicked on a nil localiser; the public string is stable and
-	// this needs no library internals.
-	raw := err.Error()
-	// Drop the leading "jsonschema validation failed with 'file://...#'" line:
-	// it names where the schema lives, which is noise to someone whose sidecar
-	// will not load. Keep the causes.
-	lines := strings.Split(raw, "\n")
-	var keep []string
-	for _, ln := range lines {
-		ln = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(ln), "- "))
-		if ln == "" || strings.HasPrefix(ln, "jsonschema validation failed") {
-			continue
-		}
-		keep = append(keep, ln)
-	}
-	msg := strings.Join(keep, "; ")
-	if msg == "" {
-		msg = "validation failed"
-	}
-	if len(msg) > 140 {
-		msg = msg[:137] + "..."
-	}
-	return msg
-}
+// Rejection rendering lives in rejectfmt.go, shared by v1 and v2.
+// compactSchemaError was removed 2026-08-30: it joined all causes and then cut
+// the result at 137 chars, so with more than one cause the informative one was
+// frequently the part that got cut. formatSchemaErrors drops WHOLE entries and
+// reports the count instead.

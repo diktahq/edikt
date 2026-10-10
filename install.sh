@@ -230,7 +230,7 @@ detect_existing_for_prompt() {
   HAS_PROJECT=false
   [ -e "${HOME}/.edikt/VERSION" ] && HAS_GLOBAL=true
   [ -e "${HOME}/.edikt/bin/edikt" ] && HAS_GLOBAL=true
-  [ -d "${HOME}/.claude/commands/edikt" ] && HAS_GLOBAL=true
+  [ -d "${CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}/commands/edikt" ] && HAS_GLOBAL=true
   [ -e ".edikt/VERSION" ] && HAS_PROJECT=true
   [ -e ".edikt/bin/edikt" ] && HAS_PROJECT=true
   [ -d ".claude/commands/edikt" ] && HAS_PROJECT=true
@@ -286,7 +286,19 @@ if [ "$INSTALL_MODE" = "project" ]; then
   CLAUDE_HOME_DIR="$(pwd)/.claude"
 else
   EDIKT_ROOT="${EDIKT_HOME:-${HOME}/.edikt}"
-  CLAUDE_HOME_DIR="${CLAUDE_HOME:-${HOME}/.claude}"
+  # Three rungs, in the same order as the Go binary's
+  # internal/claudepaths.ResolveClaudeRoot: CLAUDE_HOME (edikt's explicit
+  # override) -> CLAUDE_CONFIG_DIR (Claude Code's own profile selector) ->
+  # $HOME/.claude.
+  #
+  # CLAUDE_CONFIG_DIR was missing here while the comment above write_settings_json
+  # named all three. On a machine using CLAUDE_CONFIG_DIR to select a profile the
+  # installer wrote commands and settings.json into $HOME/.claude while the active
+  # profile was elsewhere, so /edikt:* resolved to nothing and the project looked
+  # uninstalled. Worse than a local miss: write_settings_json exports this value as
+  # CLAUDE_HOME, the HIGHEST-priority rung, so the binary's own correct chain was
+  # overridden with the wrong answer and could not self-correct.
+  CLAUDE_HOME_DIR="${CLAUDE_HOME:-${CLAUDE_CONFIG_DIR:-${HOME}/.claude}}"
 fi
 
 # Hook directory used to substitute ${EDIKT_HOOK_DIR} in settings.json.tmpl.

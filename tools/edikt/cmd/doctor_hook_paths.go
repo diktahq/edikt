@@ -1,11 +1,13 @@
 package cmd
 
 // doctor_hook_paths.go — verifies every hook command registered in a
-// settings.json actually resolves to a file on disk. Claude Code does not
-// expand env vars in `command:` strings, so an unsubstituted
-// `${EDIKT_HOOK_DIR}` placeholder fails every hook outright; a `$HOME`
-// form (the global-mode install shape) is legitimate — the shell expands
-// it — but only if the resulting path actually exists.
+// settings.json actually resolves to a file on disk. The host runs each
+// `command:` through a shell, which expands variables — but nothing sets
+// EDIKT_HOOK_DIR in a hook's environment, so an unsubstituted
+// `${EDIKT_HOOK_DIR}` placeholder expands to the empty string and fails
+// every hook outright. A `$HOME` form (the global-mode install shape) is
+// legitimate for the same reason — the shell expands it — but only if the
+// resulting path actually exists.
 //
 // A `--project` install is a THIRD shape this check has to cover:
 // commands/init.md substitutes `${EDIKT_HOOK_DIR}` directly to a fully-
@@ -35,8 +37,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/hook"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -50,8 +54,8 @@ func runHookPathCheck(path, content, projectRoot string, out io.Writer) (errN, w
 	// ${EDIKT_HOOK_DIR} is a TEMPLATE placeholder: no shell expands it, so a
 	// settings.json still carrying it will fail every hook.
 	if strings.Contains(content, "${EDIKT_HOOK_DIR}") {
-		fmt.Fprintf(out, "  ERROR: %s contains unsubstituted placeholder %q — hooks will fail. Re-run /edikt:init to regenerate, or substitute manually.\n",
-			path, "${EDIKT_HOOK_DIR}")
+		fmt.Fprintf(out, "  ERROR: %s contains unsubstituted placeholder %q — hooks will fail. %s\n",
+			path, "${EDIKT_HOOK_DIR}", settingsRepairRemedy(path, projectRoot, "substitutes it in place"))
 		return 1, 0
 	}
 
@@ -80,12 +84,26 @@ func runHookPathCheck(path, content, projectRoot string, out io.Writer) (errN, w
 				}
 				resolved = strings.ReplaceAll(resolved, "${CLAUDE_PROJECT_DIR}", projectRoot)
 				resolved = strings.ReplaceAll(resolved, "$CLAUDE_PROJECT_DIR", projectRoot)
-				// Any remaining double quotes are shell quoting around a path
-				// component (e.g. `"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`),
-				// not part of the path itself.
-				resolved = strings.ReplaceAll(resolved, `"`, "")
+				// The host runs the command through a shell, so the file that
+				// must exist is the script the shell would run, not the whole
+				// string: `bash '<path>/x.sh' session` names <path>/x.sh. Quotes
+				// are shell quoting (e.g. `"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`),
+				// not part of the path.
+				resolved = hookScriptPath(resolved)
 				if _, statErr := os.Stat(resolved); statErr != nil {
-					fmt.Fprintf(out, "  ERROR: %s references hook %s which does not resolve to a file (%s) — that hook will fail\n",
+					if name := retiredHookName(projectRoot, raw); name != "" {
+						// A 0.8.x project after the binary upgrades and before
+						// /edikt:upgrade runs: the shim is gone with the release
+						// that retired it, and the registration is stale, not
+						// broken. The shim's absence is fail-open (the host
+						// reports a missing command and continues), so this is
+						// a WARN with the one remedy, not a missing-path RED.
+						fmt.Fprintf(out, "  WARN: %s registers hook %s — registered hook retired in this version — run /edikt:upgrade to remove the entry\n",
+							path, name)
+						warnN++
+						continue
+					}
+					fmt.Fprintf(out, "  🔴 ERROR: %s references hook %s which does not resolve to a file (%s) — that hook will fail; every event it is registered for stops firing\n",
 						path, raw, resolved)
 					missing++
 				}
@@ -93,4 +111,156 @@ func runHookPathCheck(path, content, projectRoot string, out io.Writer) (errN, w
 		}
 	}
 	return missing, warnN
+}
+
+// settingsRepairRemedy names the repair that acts on the settings file a
+// finding was about. doctor checks two files — the project's
+// .claude/settings.json and the user-scope one under the claude root — and
+// `install settings --repair` alone resolves only the second, so naming it
+// for a project finding sent the user to repair a file that was not broken
+// (#11, item 7). The project file gets `--repair --project`, which
+// /edikt:upgrade runs unprompted; the user file gets plain `--repair`, which
+// upgrade offers and asks about first. Both keep the
+// `install settings --repair` substring.
+func settingsRepairRemedy(path, projectRoot, what string) string {
+	if isProjectSettingsFile(path, projectRoot) {
+		return "Run /edikt:upgrade (its pre-flight runs `edikt install settings --repair --project`, which " + what + " in the project's file)."
+	}
+	return "This is the user-scope file: run `edikt install settings --repair` (with EDIKT_HOOK_DIR set when a placeholder is substituted), or let /edikt:upgrade offer it — it asks before touching user-scope settings."
+}
+
+// isProjectSettingsFile reports whether path is projectRoot's own
+// .claude/settings.json. A relative path is resolved against the working
+// directory, the way doctor reads it.
+func isProjectSettingsFile(path, projectRoot string) bool {
+	if projectRoot == "" {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	return samePath(abs, filepath.Join(projectRoot, ".claude", "settings.json"))
+}
+
+// retiredHookName reports the registry name of a settings.json hook command
+// whose shim this release retired (registry.yaml `retired:`), or "" when the
+// command is not a retired hook — including when no registry resolves, in
+// which case nothing can be said and the caller falls through to its
+// ordinary missing-path error.
+func retiredHookName(projectRoot, command string) string {
+	base := strings.TrimSuffix(filepath.Base(strings.TrimSpace(command)), ".sh")
+	if base == "" {
+		return ""
+	}
+	regPath, _, err := hook.ResolveRegistryPath(projectRoot)
+	if err != nil {
+		return ""
+	}
+	reg, err := hook.LoadRegistryFile(regPath)
+	if err != nil {
+		return ""
+	}
+	for _, name := range reg.RetiredNames() {
+		if name == base {
+			return name
+		}
+	}
+	return ""
+}
+
+// hookInterpreters are the programs a hook command may name before its
+// script. The script is then the first argument that is not a flag.
+var hookInterpreters = map[string]bool{
+	"bash": true, "sh": true, "zsh": true, "dash": true, "env": true,
+	"python": true, "python3": true, "node": true, "ruby": true, "perl": true,
+}
+
+// hookScriptPath returns the file a hook command runs: it splits the command
+// as a POSIX shell does (single quotes literal, double quotes grouping,
+// backslash escapes outside single quotes), skips leading VAR=value
+// assignments, steps over an interpreter and its flags, and returns the
+// script argument. A command it cannot split returns unchanged.
+func hookScriptPath(command string) string {
+	words, ok := shellWords(command)
+	if !ok || len(words) == 0 {
+		return command
+	}
+	i := 0
+	for i < len(words) && isEnvAssignment(words[i]) {
+		i++
+	}
+	if i < len(words) && hookInterpreters[filepath.Base(words[i])] {
+		i++
+		for i < len(words) && (strings.HasPrefix(words[i], "-") || isEnvAssignment(words[i])) {
+			i++
+		}
+	}
+	if i >= len(words) {
+		return command
+	}
+	return words[i]
+}
+
+func isEnvAssignment(w string) bool {
+	eq := strings.IndexByte(w, '=')
+	if eq <= 0 {
+		return false
+	}
+	for j, r := range w[:eq] {
+		if !(r == '_' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || j > 0 && r >= '0' && r <= '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// shellWords splits s into words the way a POSIX shell does for quoting. It
+// reports false on an unterminated quote.
+func shellWords(s string) ([]string, bool) {
+	var words []string
+	var cur strings.Builder
+	inWord := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '\'':
+			j := strings.IndexByte(s[i+1:], '\'')
+			if j < 0 {
+				return nil, false
+			}
+			cur.WriteString(s[i+1 : i+1+j])
+			i += j + 1
+			inWord = true
+		case c == '"':
+			i++
+			for ; i < len(s) && s[i] != '"'; i++ {
+				if s[i] == '\\' && i+1 < len(s) {
+					i++
+				}
+				cur.WriteByte(s[i])
+			}
+			if i >= len(s) {
+				return nil, false
+			}
+			inWord = true
+		case c == '\\' && i+1 < len(s):
+			i++
+			cur.WriteByte(s[i])
+			inWord = true
+		case c == ' ' || c == '\t' || c == '\n':
+			if inWord {
+				words = append(words, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		default:
+			cur.WriteByte(c)
+			inWord = true
+		}
+	}
+	if inWord {
+		words = append(words, cur.String())
+	}
+	return words, true
 }

@@ -39,25 +39,13 @@ Because a behavioral verify runs arbitrary code as part of the gate, promoting o
 
 which calls `bin/edikt sidecar approve` and records the approval. No approval, no behavioral verify in compiled governance.
 
-## The pre-edit gate
+## The retired pre-edit gate
 
-Verification is only honest if a claim *can't* land without evidence — but how far the gate goes is a posture dial, not a fixed behavior. The `verify-gate` PreToolUse hook watches for completion-claim edits — flipping a sidecar to `passes: true`, marking a plan row `done`, ticking an `AC-NNN` checkbox — and evaluates them against `features.evidence-gate` in `.edikt/config.yaml`. Each of the four postures is observably distinct (ADR-062):
+Through v0.8.x, verification had a second enforcement point. The `verify-gate` PreToolUse hook watched for completion-claim edits — flipping a sidecar to `passes: true`, marking a plan row `done`, ticking an `AC-NNN` checkbox — and evaluated them against a four-value posture in `features.evidence-gate` (ADR-062), of which only `block` actually refused the edit.
 
-| posture | write | stdout | audit record |
-|---|---|---|---|
-| `block` | refused | `hookSpecificOutput.permissionDecision: "deny"` | `gate.deny` |
-| `warn` (default) | allowed, with a model-facing warning | `hookSpecificOutput.additionalContext` carrying the warning | `gate.warn` |
-| `educate` | allowed | `{"continue": true}` | `posture.educate` |
-| `disabled` | allowed | `{"continue": true}` | none — short-circuited before any state I/O |
+**That hook is retired as of v0.9.0 (ADR-083).** `verify-gate.sh` is no longer shipped, `features.evidence-gate` is no longer read, and the bypass envelope it carried (`EDIKT_HOOK_ACTOR` ∈ `{migrate, compile, upgrade}`, `EDIKT_DISABLE_VERIFY_GATE=1`) has nothing left to bypass.
 
-An unrecognised or unreadable value resolves to `warn`, not `block` — the gate's safe state is the shipped default, not the strictest posture. Only under `block` does the hook actually refuse a completion-claim edit that lacks a fresh verify report; under the default `warn` posture the edit still lands, and the model gets a warning on the same turn instead.
-
-Bypass envelope, for the operations that legitimately write completion state regardless of posture:
-
-- `EDIKT_HOOK_ACTOR` ∈ `{migrate, compile, upgrade}` — the edikt flows themselves.
-- `EDIKT_DISABLE_VERIFY_GATE=1` — an ad-hoc operator escape hatch.
-
-`/edikt:doctor` reports the resolved posture (`block` / `warn` / `educate` / `disabled`), not a binary enabled/bypassed state.
+INV-009 is untouched — it reaches the model through the ambient core on every edit — and the discipline now rests on the layers around it: the evidence itself, produced by `bin/edikt verify`; the non-blocking completion-claim detector at Stop; the diff review below; and `edikt doctor`, which names any behavioral verify still missing its `human_approved_at` approval rather than letting it read as approved.
 
 ## Intent-aware diff review
 

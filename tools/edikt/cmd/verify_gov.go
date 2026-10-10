@@ -19,6 +19,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -42,7 +43,10 @@ import (
 // filesystem directly and was unaffected — only this single-id entry
 // point had the gap, and nothing had exercised it against a real
 // guideline before.
-var govIDRe = regexp.MustCompile(`^(ADR|INV)-\d{3,}$|^GL-\d{3,}-[a-z][a-z0-9-]{0,79}$|^[a-z][a-z0-9-]{0,79}$`)
+// SR-005 (SPEC-018): id segments are uppercase-or-digit, not digits only.
+// `ADR-GOLD-001` is a valid id; the old `\d{3,}` form rejected or truncated it,
+// and fixing only discover.go would relocate the collision to this consumer.
+var govIDRe = regexp.MustCompile(`^(ADR|INV)(?:-[A-Z0-9]+)*-\d{3,}$|^GL-\d{3,}-[a-z][a-z0-9-]{0,79}$|^[a-z][a-z0-9-]{0,79}$`)
 
 var verifyGovCmd = &cobra.Command{
 	Use:   "gov <id>",
@@ -98,9 +102,7 @@ Used by:
 				emitItemProgress(cmd.OutOrStdout(), r)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\nreport: %s\n", jsonPath)
-			fmt.Fprintf(cmd.OutOrStdout(), "summary: %d passed, %d failed, %d timeout, %d skipped (total %d)\n",
-				report.Summary.Passed, report.Summary.Failed,
-				report.Summary.Timeout, report.Summary.Skipped, report.Summary.Total)
+			fmt.Fprintln(cmd.OutOrStdout(), report.Summary.Line())
 		}
 
 		if report.AnyFailures() && !verifyAllowFailures {
@@ -182,8 +184,8 @@ func emitItemProgress(w io.Writer, r verify.Result) {
 // locateGovSidecar resolves <id>.edikt.yaml under the configured artifact
 // dirs (paths.decisions, paths.invariants, paths.guidelines).
 func locateGovSidecar(projectRoot, id string) (string, error) {
-	dirs := resolveArtifactDirs(projectRoot)
-	for _, dir := range []string{dirs.decisions, dirs.invariants, dirs.guidelines} {
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	for _, dir := range []string{dirs.Decisions, dirs.Invariants, dirs.Guidelines} {
 		if dir == "" {
 			continue
 		}

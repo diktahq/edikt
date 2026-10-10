@@ -84,7 +84,7 @@ CRITICAL: NEVER assign a severity level without reading the actual code — ever
 10b. **Run the completion-evidence gate.** Shell to:
 
 ```bash
-bin/edikt verify spec SPEC-{NNN}
+edikt verify spec SPEC-{NNN}
 ```
 
 Walk the JSON output (under `.edikt/state/verify/spec-SPEC-{NNN}-*.json`) and fold every failed item into the drift report as a 🔴 finding with `Source: verify gate`. Skipped items (no `verify:` field) do NOT contribute to drift — they surface in `/edikt:doctor`'s coverage report as gaps to fill. Verify failures count toward the divergence total alongside the layer-agent findings.
@@ -129,7 +129,7 @@ Aspirational entries are warnings, not errors.
 
 14. Log the drift event:
     ```bash
-    bin/edikt hook event --type drift_report \
+    edikt hook event --type drift_report \
       --data '{"spec":"SPEC-{NNN}","compliant":{n},"diverged":{n}}'
     ```
 

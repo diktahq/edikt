@@ -133,3 +133,124 @@ func TestHookPathCheck_claudeProjectDirBracedForm_missing(t *testing.T) {
 		t.Errorf("expected the actual unresolved path named, not a truncated backslash:\n%s", out.String())
 	}
 }
+
+// TestDoctorRetiredHookRegistered — a 0.8.x settings.json still registering
+// inject-directives-pre.sh after the binary upgraded and before
+// /edikt:upgrade ran: the shim no longer exists, and doctor must say the hook
+// is RETIRED with the remedy, not report a missing path as RED.
+func TestDoctorRetiredHookRegistered(t *testing.T) {
+	root := repoRootForDoctorTests(t)
+	hookDir := t.TempDir() // no shims here: the file genuinely does not exist
+	var out bytes.Buffer
+	errN, warnN := runHookPathCheck("settings.json",
+		settingsJSON(filepath.Join(hookDir, "inject-directives-pre.sh")), root, &out)
+	if errN != 0 {
+		t.Fatalf("a retired hook must not be a RED missing path; got %d error(s):\n%s", errN, out.String())
+	}
+	if warnN != 1 {
+		t.Fatalf("want exactly one WARN for the retired registration, got %d:\n%s", warnN, out.String())
+	}
+	if !strings.Contains(out.String(), "registered hook retired in this version — run /edikt:upgrade") {
+		t.Fatalf("remedy missing from the report:\n%s", out.String())
+	}
+	// Control: a hook the registry never knew stays a missing-path error.
+	out.Reset()
+	errN, warnN = runHookPathCheck("settings.json",
+		settingsJSON(filepath.Join(hookDir, "never-existed.sh")), root, &out)
+	if errN != 1 || warnN != 0 {
+		t.Fatalf("an unknown missing hook must still be RED; got %d/%d:\n%s", errN, warnN, out.String())
+	}
+}
+
+// repoRootForDoctorTests walks up from the test's working directory to the
+// checkout root, so ResolveRegistryPath finds templates/hooks/registry.yaml.
+func repoRootForDoctorTests(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for d := wd; d != "/"; d = filepath.Dir(d) {
+		if _, err := os.Stat(filepath.Join(d, "templates", "hooks", "registry.yaml")); err == nil {
+			return d
+		}
+	}
+	t.Fatal("checkout root with templates/hooks/registry.yaml not found above the test")
+	return ""
+}
+
+// A registered hook whose command path does not exist is a RED, not a
+// warning: the host reports a missing command and continues, so every event
+// the hook was registered for silently stops firing.
+func TestDoctorHookPath_MissingIsRed(t *testing.T) {
+	var out bytes.Buffer
+	errN, warnN := runHookPathCheck("settings.json", settingsJSON("/nonexistent/edikt-hooks/gone.sh"), "", &out)
+	if errN != 1 || warnN != 0 {
+		t.Fatalf("missing hook path must count as 1 error, 0 warnings; got %d/%d\n%s", errN, warnN, out.String())
+	}
+	if !strings.Contains(out.String(), "🔴") {
+		t.Fatalf("missing hook path must print as a RED finding:\n%s", out.String())
+	}
+}
+
+// TestHookPathCheck_RemedyNamesTheFlaggedScope: doctor checks two settings
+// files — the user-scope one under the claude root and the project's own —
+// and used to name the same remedy for both, `install settings --repair`,
+// which only ever acts on the user file. On a project finding the remedy ran
+// against a different file and the finding stayed (#11, item 7). Each
+// finding now names the verb that acts on the file it flagged, keeping the
+// `install settings --repair` substring tooling greps for.
+func TestHookPathCheck_RemedyNamesTheFlaggedScope(t *testing.T) {
+	root := t.TempDir()
+	body := settingsJSON("${EDIKT_HOOK_DIR}/pre-tool-use.sh")
+
+	var proj bytes.Buffer
+	runHookPathCheck(filepath.Join(root, ".claude", "settings.json"), body, root, &proj)
+	if !strings.Contains(proj.String(), "install settings --repair --project") {
+		t.Errorf("a project-file finding must name the project-scope repair:\n%s", proj.String())
+	}
+
+	var user bytes.Buffer
+	runHookPathCheck(filepath.Join(t.TempDir(), "profile", "settings.json"), body, root, &user)
+	if !strings.Contains(user.String(), "install settings --repair") || strings.Contains(user.String(), "--project") {
+		t.Errorf("a user-file finding must name the user-scope repair, without --project:\n%s", user.String())
+	}
+}
+
+// bok round 6 (build 9937d03a): a user hook registered as
+// `bash '<path>/herdr-agent-state.sh' session` was reported as "does not resolve
+// to a file" although the script exists — the whole command string was stat'd
+// as one path. The host runs the command through a shell, so doctor must find
+// the script the shell would run: split the command as the shell does, step
+// over an interpreter and its flags, and stat that argument.
+func TestHookPathCheck_interpreterWithArgs(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "My Hooks", "state.sh")
+	if err := os.MkdirAll(filepath.Dir(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		command string
+		wantErr int
+	}{
+		{"interpreter, single-quoted path with a space, trailing arg", "bash '" + script + "' session", 0},
+		{"interpreter flag before the script", "bash -e \\\"" + script + "\\\" session", 0},
+		{"env assignment then interpreter", "FOO=1 sh '" + script + "'", 0},
+		{"script with trailing args", "'" + script + "' --verbose", 0},
+		{"interpreter, missing script still caught", "bash '" + filepath.Join(dir, "gone.sh") + "' session", 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			settings := settingsJSON(c.command)
+			var out bytes.Buffer
+			errN, _ := runHookPathCheck("settings.json", settings, dir, &out)
+			if errN != c.wantErr {
+				t.Fatalf("errors = %d, want %d\n%s", errN, c.wantErr, out.String())
+			}
+		})
+	}
+}

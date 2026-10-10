@@ -20,6 +20,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,8 +36,8 @@ import (
 // false when no gov sidecars exist (so doctor stays quiet on non-edikt
 // projects). Behavioral entries missing human_approved_at increment warns.
 func runVerifyKindCoverageCheck(projectRoot string, w io.Writer) (warns int, ran bool) {
-	dirs := resolveArtifactDirs(projectRoot)
-	govDirs := []string{dirs.decisions, dirs.invariants, dirs.guidelines}
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	govDirs := []string{dirs.Decisions, dirs.Invariants, dirs.Guidelines}
 
 	var (
 		structural   int
@@ -137,7 +138,7 @@ func runVerifyKindCoverageCheck(projectRoot string, w io.Writer) (warns int, ran
 	sort.Strings(unreadable)
 	for _, id := range unreadable {
 		io.WriteString(w, "  WARN: sidecar "+id+" is unreadable — excluded from the "+
-			"coverage tally above; run `bin/edikt gov compile --check` to see why\n")
+			"coverage tally above; run `edikt gov compile --check` to see why\n")
 		warns++
 	}
 	sort.Strings(unreadableDirs)
@@ -149,7 +150,7 @@ func runVerifyKindCoverageCheck(projectRoot string, w io.Writer) (warns int, ran
 
 	for _, ref := range missingApprv {
 		io.WriteString(w, "  WARN: behavioral verify "+ref+
-			" lacks human_approved_at — run `bin/edikt sidecar approve`\n")
+			" lacks human_approved_at — run `edikt sidecar approve`\n")
 		warns++
 	}
 
@@ -159,7 +160,7 @@ func runVerifyKindCoverageCheck(projectRoot string, w io.Writer) (warns int, ran
 	// independent of current corpus state.
 	if len(missingApprv) == 0 {
 		io.WriteString(w, "  behavioral approval policy: every behavioral verify requires `human_approved_at` "+
-			"via `bin/edikt sidecar approve`\n")
+			"via `edikt sidecar approve`\n")
 	}
 
 	return warns, true
@@ -194,7 +195,7 @@ func runCheatRateBenchmarkCheck(projectRoot string, w io.Writer) (warns int, ran
 	benchDir := filepath.Join(projectRoot, ".edikt", "state", "benchmark")
 	entries, err := os.ReadDir(benchDir)
 	if err != nil || len(entries) == 0 {
-		io.WriteString(w, "  No cached cheat-rate reports. Run bin/edikt gov benchmark cheat-rate <id> to generate one.\n")
+		io.WriteString(w, "  No cached cheat-rate reports. Run edikt gov benchmark cheat-rate <id> to generate one.\n")
 		return 0, true
 	}
 
@@ -237,7 +238,7 @@ func runCheatRateBenchmarkCheck(projectRoot string, w io.Writer) (warns int, ran
 	}
 
 	if len(latests) == 0 {
-		io.WriteString(w, "  No cached cheat-rate reports. Run bin/edikt gov benchmark cheat-rate <id> to generate one.\n")
+		io.WriteString(w, "  No cached cheat-rate reports. Run edikt gov benchmark cheat-rate <id> to generate one.\n")
 		return 0, true
 	}
 
@@ -275,7 +276,7 @@ func runCheatRateBenchmarkCheck(projectRoot string, w io.Writer) (warns int, ran
 
 		if report.Summary.CheatRate >= cheatRateThreshold {
 			io.WriteString(w, fmt.Sprintf(
-				"  ⚠  %s: cheat_rate=%.2f (threshold %.2f) — run bin/edikt gov benchmark cheat-rate %s --refresh\n",
+				"  ⚠  %s: cheat_rate=%.2f (threshold %.2f) — run edikt gov benchmark cheat-rate %s --refresh\n",
 				id, report.Summary.CheatRate, cheatRateThreshold, id,
 			))
 			warns++

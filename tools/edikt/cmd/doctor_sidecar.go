@@ -10,14 +10,17 @@ package cmd
 // 3. PATH MISMATCH — sidecar.path does not resolve to the sibling (errN++)
 // 4. SCHEMA INVALID — sidecar.Load() returns a validation error (errN++)
 // 5. EMPTY DIRECTIVES— soft warning only, never a failure (warnN++)
+// 6. ANCHOR DRIFT   — a recorded anchor no longer resolves against the
+//                     parent prose (errN++)
 //
 // Doctor's existing exit semantics remain intact (0 healthy, 1 warnings,
-// 2 errors). Checks 1-4 increment errN; check 5 increments warnN. The check
-// group is silent when run outside a project (no decisions/invariants/
+// 2 errors). Checks 1-4 and 6 increment errN; check 5 increments warnN. The
+// check group is silent when run outside a project (no decisions/invariants/
 // guidelines dirs visible).
 
 import (
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"io"
 	"os"
 	"path/filepath"
@@ -35,8 +38,8 @@ import (
 // dirs (fresh sandbox, non-edikt repo) — in that case the caller skips the
 // whole group header so the doctor output stays clean.
 func runSidecarChecks(projectRoot string, w io.Writer) (errs int, warns int, ran bool) {
-	dirs := resolveArtifactDirs(projectRoot)
-	dirList := []string{dirs.decisions, dirs.invariants, dirs.guidelines}
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	dirList := []string{dirs.Decisions, dirs.Invariants, dirs.Guidelines}
 
 	// If none of the artifact dirs exist, this is not an edikt project root.
 	// Skip the group entirely rather than emit noise.
@@ -98,12 +101,20 @@ func runSidecarChecks(projectRoot string, w io.Writer) (errs int, warns int, ran
 	// PLAN-sidecar-review-fixes #16). Those files contain documentation-mention
 	// sentinels, not real ones.
 	for _, md := range mds {
-		if skip, _ := isSkipListed(md); skip {
+		if skip, _ := migrate.IsSkipListed(md); skip {
 			continue
 		}
-		sp := sidecarPathFor(md)
+		sp := migrate.SidecarPathFor(md)
 		if _, err := os.Stat(sp); err != nil {
 			kind := commandKindForPath(md, dirs)
+			// The same status filter compile applies (sidecar.StatusExcluded,
+			// ADR-020:d03): a proposed or rejected ADR has no sidecar to
+			// demand, and telling the user to compile one was wrong twice —
+			// compile --check would not have produced it (D46 (a)).
+			if excluded, why := sidecar.StatusExcluded(sidecarKindForCommand(kind), md); excluded {
+				fmt.Fprintf(w, "  skipped: %s has no sidecar and needs none (%s)\n", rel(projectRoot, md), why)
+				continue
+			}
 			fmt.Fprintf(w, "  ERROR: MISSING: %s has no sidecar — run /edikt:%s:compile\n",
 				rel(projectRoot, md), kind)
 			errs++
@@ -140,6 +151,74 @@ func runSidecarChecks(projectRoot string, w io.Writer) (errs int, warns int, ran
 				"  WARN: NEEDS REVIEW: %s has no directives in its sidecar — confirm the prose has no rules to extract, or regenerate the sidecar\n",
 				rel(projectRoot, sp))
 			warns++
+		}
+
+		// Check 6 (anchor drift, INV-014): every recorded anchor must still  edikt-guard:allow
+		// resolve against the parent prose.
+		//
+		// Checks 1-5 ask whether a sidecar is structurally ATTACHED to an
+		// artifact. None of them reads the artifact's words. A sidecar can
+		// pass all five while quoting prose that was rewritten underneath
+		// it, and the compiled governance then enforces a rule its authority
+		// no longer states — which is the condition INV-014 exists to
+		// forbid.
+		//
+		// This reuses VerifyAnchors rather than reimplementing the comparison.
+		//
+		// It is deliberately STRICTER than the anchor drift `gov compile
+		// --check` reports, and the two are not interchangeable. Compile's
+		// check tolerates whitespace normalisation; VerifyAnchors requires
+		// the quote to be a byte slice of the parent. Measured on a real
+		// project: compile reported `anchor drift: 0 stale (86 sidecar(s))`
+		// while this check found a reconstructed quote in a sidecar written
+		// minutes earlier. Both are correct about their own question —
+		// compile asks "will the merge still resolve this", doctor asks "was
+		// this quote copied or retyped" — and a retyped quote is stale from
+		// the moment it is written even though it still resolves today.
+		//
+		// Do NOT relax this to match compile. The looser test is what let a
+		// reconstructed anchor reach a sealed sidecar unnoticed.
+		//
+		// Timestamps are deliberately not consulted. A sidecar older than
+		// its parent may be perfectly current (the edit was a typo fix) and
+		// a sidecar newer than its parent may be stale (the body was
+		// reverted). mtime answers a question nobody asked; the anchors
+		// answer the one that matters.
+		mdBody, rerr := os.ReadFile(expectedSibling)
+		if rerr != nil {
+			// A missing or unreadable parent is checks 1 and 2's finding.
+			// Reporting it again here would double-count one defect.
+			continue
+		}
+		// Compile skips a superseded or migration-skip artifact before its
+		// status filter ("existing sidecar ignored; safe to delete"), and that
+		// covers shapes the status filter does not: a superseded guideline, an
+		// ADR whose body status line reads "Superseded by". Doctor skips the
+		// same set, or it tells the user to regenerate a sidecar compile
+		// ignores (bok round 6).
+		if skip, why := sidecar.IsSkipListed(expectedSibling); skip {
+			fmt.Fprintf(w, "  skipped: %s anchors not checked (%s)\n", rel(projectRoot, sp), why)
+			continue
+		}
+		// Status-filtered like compile (D46 (b)): a proposed or rejected
+		// artifact's sidecar is not governed, so its anchors are not a
+		// finding — but the skip is said, never silent (INV-013).
+		if excluded, why := sidecar.StatusExcluded(sidecarKindForCommand(commandKindForPath(expectedSibling, dirs)), expectedSibling); excluded {
+			fmt.Fprintf(w, "  skipped: %s anchors not checked (%s)\n", rel(projectRoot, sp), why)
+			continue
+		}
+		if v := sidecar.VerifyAnchors(sc, string(mdBody)); !v.OK() {
+			// The denominator travels with the verdict (INV-013): "3 faults"  edikt-guard:allow
+			// means nothing without the anchor count it is drawn from.
+			fmt.Fprintf(w,
+				"  ERROR: ANCHOR DRIFT: %s — %d of %d anchor(s) no longer resolve against %s — run /edikt:%s:compile to regenerate\n",
+				rel(projectRoot, sp), len(v.Faults), v.Anchors,
+				rel(projectRoot, expectedSibling),
+				commandKindForPath(expectedSibling, dirs))
+			for _, f := range v.Faults {
+				fmt.Fprintf(w, "    %s\n", f)
+			}
+			errs++
 		}
 	}
 
@@ -179,13 +258,13 @@ func collectArtifacts(dirs []string) (mds, sidecars []string) {
 // commandKindForPath maps an .md path to its :compile command namespace.
 // "adr" / "invariant" / "guideline" — used in the missing-sidecar hint line
 // so the user gets a copy-pasteable command.
-func commandKindForPath(mdPath string, dirs artifactDirs) string {
+func commandKindForPath(mdPath string, dirs migrate.ArtifactDirs) string {
 	switch {
-	case dirs.decisions != "" && strings.HasPrefix(mdPath, dirs.decisions+string(filepath.Separator)):
+	case dirs.Decisions != "" && strings.HasPrefix(mdPath, dirs.Decisions+string(filepath.Separator)):
 		return "adr"
-	case dirs.invariants != "" && strings.HasPrefix(mdPath, dirs.invariants+string(filepath.Separator)):
+	case dirs.Invariants != "" && strings.HasPrefix(mdPath, dirs.Invariants+string(filepath.Separator)):
 		return "invariant"
-	case dirs.guidelines != "" && strings.HasPrefix(mdPath, dirs.guidelines+string(filepath.Separator)):
+	case dirs.Guidelines != "" && strings.HasPrefix(mdPath, dirs.Guidelines+string(filepath.Separator)):
 		return "guideline"
 	}
 	return "adr"
@@ -215,4 +294,17 @@ func rel(root, p string) string {
 		return r
 	}
 	return p
+}
+
+// sidecarKindForCommand maps the command-name kind commandKindForPath
+// returns ("adr" | "invariant" | "guideline") onto sidecar's pair kinds.
+func sidecarKindForCommand(kind string) string {
+	switch kind {
+	case "invariant":
+		return sidecar.KindInvariant
+	case "guideline":
+		return sidecar.KindGuideline
+	default:
+		return sidecar.KindADR
+	}
 }

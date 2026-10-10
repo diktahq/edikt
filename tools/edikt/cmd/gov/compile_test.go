@@ -11,21 +11,16 @@ import (
 )
 
 func TestCompileCheckCleanProject(t *testing.T) {
-	// Smoke: `edikt gov compile --check <repo>` must exit 0 (warnings OK).
-	// The dogfood project is pre-migration (governance .md without sidecars),
-	// so per ADR-027 §5 / Phase 1 of PLAN-sidecar-review-fixes, the
-	// non-legacy path hard-fails. Until the dogfood project itself is
-	// migrated (Phase 8 ship-gate), this smoke test exercises the legacy
-	// in-body sentinel path via --legacy. Once Phase 8's `migrate sidecars
-	// --apply` runs on the dogfood, drop --legacy and the test will
-	// exercise the two-phase compile path natively.
+	// Smoke: `edikt gov compile --check <repo>` must exit 0 (warnings OK) on
+	// the dogfood corpus. The two-phase sidecar path is the only path —
+	// ADR-082 (c) deleted the legacy in-body compile and its --legacy escape.
 	repoRoot := "../../../.." // tools/edikt/cmd/gov/ → repo root
-	buf, err := runGovCmd(t, "gov", "compile", "--legacy", "--check", repoRoot)
+	buf, err := runGovCmd(t, "gov", "compile", "--check", repoRoot)
 	if err != nil {
 		if isExitCode(err, 1) {
-			t.Fatalf("gov compile --legacy --check returned errors:\n%s", buf)
+			t.Fatalf("gov compile --check returned errors:\n%s", buf)
 		}
-		t.Fatalf("gov compile --legacy --check: %v\n%s", err, buf)
+		t.Fatalf("gov compile --check: %v\n%s", err, buf)
 	}
 }
 
@@ -253,24 +248,72 @@ directives:
 	}
 }
 
-// TestCompile_LegacyFlag_Allowed pins the deprecated --legacy escape
-// hatch: when set, in-body parsing runs (with whatever errors it would
-// have produced). The flag is preserved through v0.7.0 per ADR-027 §5
-// commentary.
-func TestCompile_LegacyFlag_Allowed(t *testing.T) {
-	work := t.TempDir()
-	adrDir := filepath.Join(work, "docs", "architecture", "decisions")
-	if err := os.MkdirAll(adrDir, 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
+func TestCompile_RefusesStaleCorpus(t *testing.T) {
+	stage := func(t *testing.T, status, blockShape string) string {
+		t.Helper()
+		work := t.TempDir()
+		adrDir := filepath.Join(work, "docs", "architecture", "decisions")
+		if err := os.MkdirAll(filepath.Join(work, ".edikt"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(adrDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(work, ".edikt", "config.yaml"), []byte("edikt_version: 0.8.0\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		// One migrated artifact, so the corpus is not "pre-migration".
+		if err := os.WriteFile(filepath.Join(adrDir, "ADR-001-migrated.md"), []byte("---\ntype: adr\nid: ADR-001\ntitle: Migrated\nstatus: accepted\n---\n# ADR-001: Migrated\n\n## Decision\n\nThe service MUST log every request. (rule)\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(adrDir, "ADR-001-migrated.edikt.yaml"), []byte("schema_version: 2\ntopic: logging\npath: docs/architecture/decisions/ADR-001-migrated.md\nsignals: [logging]\ndirectives:\n  - text: The service MUST log every request. (ref: ADR-001)\n    source_excerpts:\n      - line_start: 10\n        line_end: 10\n        quote: The service MUST log every request. (rule)\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		block := "[edikt:directives:start]: #\nsource_hash: pending\ndirectives:\n  - A legacy rule.\n[edikt:directives:end]: #\n"
+		if blockShape == "fenced" {
+			block = "```\n" + block + "```\n"
+		}
+		body := "---\ntype: adr\nid: ADR-002\ntitle: Legacy\nstatus: " + status + "\n---\n# ADR-002: Legacy\n\n**Status:** " + map[string]string{"accepted": "Accepted", "superseded-by-ADR-001": "Superseded by ADR-001"}[status] + "\n\n## Decision\n\nProse.\n\n## Directives\n\n" + block
+		if err := os.WriteFile(filepath.Join(adrDir, "ADR-002-legacy.md"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return work
 	}
-	if err := os.WriteFile(filepath.Join(adrDir, "ADR-001-test.md"), []byte("# ADR-001 — Test\n\n## Status\n\nAccepted\n"), 0o644); err != nil {
-		t.Fatalf("write adr: %v", err)
-	}
-	// --legacy must NOT emit the pre-migration error. The legacy run may
-	// still fail for other reasons (no sentinel) but the failure must be
-	// distinct from the migration-required path.
-	buf, _ := runGovCmd(t, "gov", "compile", "--legacy", work)
-	if strings.Contains(buf, "pre-migration project state") {
-		t.Fatalf("--legacy must not surface the pre-migration error; got:\n%s", buf)
-	}
+
+	t.Run("included artifact with an unfenced block refuses", func(t *testing.T) {
+		work := stage(t, "accepted", "unfenced")
+		buf, err := runGovCmd(t, "gov", "compile", "--skip-verify", work)
+		if !isExitCode(err, 1) {
+			t.Fatalf("expected exit 1; got err=%v\n%s", err, buf)
+		}
+		for _, want := range []string{"unstripped legacy", "ADR-002-legacy.md:17", "/edikt:migrate", "Nothing was compiled"} {
+			if !strings.Contains(buf, want) {
+				t.Errorf("refusal must contain %q; got:\n%s", want, buf)
+			}
+		}
+		if _, statErr := os.Stat(filepath.Join(work, ".claude", "rules", "governance.md")); statErr == nil {
+			t.Fatal("a refused compile must not write the compiled tree")
+		}
+	})
+	t.Run("--check refuses the same way", func(t *testing.T) {
+		work := stage(t, "accepted", "unfenced")
+		buf, err := runGovCmd(t, "gov", "compile", "--check", work)
+		if !isExitCode(err, 1) || !strings.Contains(buf, "/edikt:migrate") {
+			t.Fatalf("--check must refuse naming the remedy; err=%v\n%s", err, buf)
+		}
+	})
+	t.Run("skip-listed artifact with a block is not a refusal", func(t *testing.T) {
+		work := stage(t, "superseded-by-ADR-001", "unfenced")
+		buf, _ := runGovCmd(t, "gov", "compile", "--skip-verify", work)
+		if strings.Contains(buf, "unstripped legacy") {
+			t.Fatalf("a superseded artifact's block must not refuse the compile; got:\n%s", buf)
+		}
+	})
+	t.Run("fenced mention is not a block", func(t *testing.T) {
+		work := stage(t, "accepted", "fenced")
+		buf, _ := runGovCmd(t, "gov", "compile", "--skip-verify", work)
+		if strings.Contains(buf, "unstripped legacy") {
+			t.Fatalf("a fenced mention must not refuse the compile; got:\n%s", buf)
+		}
+	})
 }

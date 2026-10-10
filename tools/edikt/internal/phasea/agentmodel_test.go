@@ -32,42 +32,19 @@ func TestResolveExtractorAgentModel_ReadsFrontmatter(t *testing.T) {
 	}
 }
 
-// THE REGRESSION THIS FILE EXISTS FOR (D27).
+// THE REGRESSION THIS FILE EXISTS FOR (D27), now guarded structurally rather
+// than behaviorally.
 //
-// The CLI --model value must never become the reported extractor model. This
-// asserts the two are independent: with EDIKT_EXTRACTOR_MODEL set to a value
-// that resolves fine for the DISPATCHING session, the extractor model is still
-// whatever the agent frontmatter says.
-//
-// Without this, setting the env var to claude-opus-5 while the agent pins
-// sonnet reproduces the exact defect — a confident wrong label — and nothing
-// would notice.
-func TestResolveExtractorAgentModel_IgnoresCLIAndEnvPin(t *testing.T) {
-	root := t.TempDir()
-	writeAgent(t, root, "---\nname: sidecar-extractor\nmodel: sonnet\n---\n")
-	t.Setenv(ExtractorModelEnv, "claude-opus-5")
-
-	// The dispatching-session pin resolves to the env value...
-	session, err := ResolveExtractorModel("")
-	if err != nil {
-		t.Fatalf("session pin: %v", err)
-	}
-	if session != "claude-opus-5" {
-		t.Fatalf("session pin: got %q, want claude-opus-5", session)
-	}
-
-	// ...and the extractor model is emphatically not that.
-	got, err := ResolveExtractorAgentModel(root)
-	if err != nil {
-		t.Fatalf("agent pin: %v", err)
-	}
-	if got != "sonnet" {
-		t.Fatalf("agent pin: got %q, want sonnet", got)
-	}
-	if got == session {
-		t.Fatal("extractor model tracked the dispatching-session pin — D27 has regressed")
-	}
-}
+// D27 was: the CLI --model value (a pin on the DISPATCHING session) leaked
+// into the reported extractor model. ADR-085 removed the dispatching-session
+// pin entirely — its model constant, its env-var override, and the resolver
+// that combined them are gone, since no code dispatches the extractor via
+// a CLI --model flag any more (the two-phase split moved dispatch to tier-1
+// markdown via the host Agent-tool primitive). With no second pin left to
+// leak from, the regression this file existed for has no mechanism to
+// recur: ResolveExtractorAgentModel below has exactly one source, the
+// installed agent frontmatter, and nothing else in this package can supply
+// a competing value.
 
 // INV-013 / ADR-055 §4: an unresolvable pin reports UNKNOWN and never falls
 // back. Each case supplies a different reason the model cannot be determined,
@@ -92,8 +69,6 @@ func TestResolveExtractorAgentModel_UnknownNeverFallsBack(t *testing.T) {
 			if !tc.skip {
 				writeAgent(t, root, tc.body)
 			}
-			// Set both fallbacks to values the function must NOT return.
-			t.Setenv(ExtractorModelEnv, "claude-opus-5")
 			// F4/F5: ResolveExtractorAgentModel also falls back to the
 			// active Claude profile's agents/ dir. Point CLAUDE_HOME at an
 			// empty sandbox so this test's "nothing resolves" premise holds
@@ -107,9 +82,6 @@ func TestResolveExtractorAgentModel_UnknownNeverFallsBack(t *testing.T) {
 			}
 			if got != ExtractorModelUnknown {
 				t.Fatalf("got %q, want %q", got, ExtractorModelUnknown)
-			}
-			if got == DefaultExtractorModel || got == "claude-opus-5" {
-				t.Fatalf("fell back to a default (%q) instead of reporting UNKNOWN", got)
 			}
 		})
 	}
@@ -188,9 +160,13 @@ func TestResolveExtractorAgentModel_ProjectLocalTakesPrecedenceOverFallback(t *t
 	}
 }
 
-// The shipped template must satisfy the contract this ADR pins, so the
-// decision and the artifact cannot drift apart silently.
-func TestShippedExtractorTemplateDeclaresAModel(t *testing.T) {
+// Inverted under ADR-085 Decision 2: the shipped template now carries no
+// model: key at all, so extractor.model's default (inherit) is honored
+// with no per-project edit. A model key reappearing here would mean the
+// template regressed to a hardcoded pin, which is exactly what this ADR
+// removed — the decision and the artifact must not drift apart silently
+// in either direction.
+func TestShippedExtractorTemplateDeclaresNoModel(t *testing.T) {
 	root := t.TempDir()
 	src, err := os.ReadFile(filepath.Join("..", "..", "..", "..",
 		"templates", "agents", "sidecar-extractor.md"))
@@ -200,11 +176,10 @@ func TestShippedExtractorTemplateDeclaresAModel(t *testing.T) {
 	writeAgent(t, root, string(src))
 
 	got, err := ResolveExtractorAgentModel(root)
-	if err != nil {
-		t.Fatalf("shipped sidecar-extractor.md pins no usable model: %v", err)
+	if err == nil {
+		t.Fatalf("shipped template unexpectedly resolved to a pinned model %q — it must carry no model: key under inherit", got)
 	}
-	if got == "" || got == ExtractorModelUnknown {
-		t.Fatalf("shipped template resolved to %q", got)
+	if got != ExtractorModelUnknown {
+		t.Fatalf("got %q, want %q", got, ExtractorModelUnknown)
 	}
-	t.Logf("shipped extractor model: %s", got)
 }

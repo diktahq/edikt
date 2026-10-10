@@ -38,7 +38,6 @@ import (
 // forked subagent that performs extraction, so the assertion pinned the defect.
 // It is not weakened here — it is pointed at the value that governs.
 
-
 // stageExtractorAgent installs an agent file pinning `model` under root.
 //
 // It also pins prompt_version, which `phasea plan` requires: an UNKNOWN
@@ -56,13 +55,33 @@ func stageExtractorAgent(t *testing.T, root, model string) {
 	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// ADR-085: Phase A now re-renders the installed frontmatter from
+	// extractor.model config before every dispatch. Under the config
+	// default (inherit, since these fixtures write no .edikt/config.yaml)
+	// that render would strip the model: line this helper just staged.
+	// Pin extractor.model explicitly so the staged value survives the
+	// render and these tests keep testing what they say they test — that
+	// the resolved model comes from the agent frontmatter, not a CLI/env
+	// pin — rather than accidentally testing the inherit path instead.
+	stageExtractorModelConfig(t, root, model)
+}
+
+// stageExtractorModelConfig writes .edikt/config.yaml with an explicit
+// extractor.model pin.
+func stageExtractorModelConfig(t *testing.T, root, model string) {
+	t.Helper()
+	dir := filepath.Join(root, ".edikt")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := "extractor:\n  model: " + model + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRunTwoPhase_RecordsExtractorAgentModel(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
-	// The CLI/env pin is set to a DIFFERENT value than the agent's. This is
-	// the whole point: if the report ever tracks this again, D27 is back.
-	t.Setenv(phasea.ExtractorModelEnv, "claude-opus-5")
 
 	root := stageNeverInitialised(t)
 	stageExtractorAgent(t, root, "claude-sonnet-5")
@@ -86,20 +105,16 @@ func TestRunTwoPhase_RecordsExtractorAgentModel(t *testing.T) {
 		t.Errorf("ExtractorModel = %q, want the AGENT's model %q — the reported value must name the process that performs extraction",
 			res.ExtractorModel, "claude-sonnet-5")
 	}
-	if res.ExtractorModel == "claude-opus-5" {
-		t.Error("ExtractorModel tracked the CLI/env pin, which governs the dispatching session and not the extractor — this is D27")
-	}
 	if want := "Phase A — extractor model: claude-sonnet-5"; !strings.Contains(errBuf.String(), want) {
 		t.Errorf("stderr does not announce the extractor's model.\nwant substring: %q\nstderr:\n%s", want, errBuf.String())
 	}
 }
 
 // ADR-055 §4 / INV-013: no agent file means the model is UNKNOWN. It must not
-// silently become the CLI pin, the default, or an empty string that reads as
-// "nothing to report".
+// silently become a default, or an empty string that reads as "nothing to
+// report".
 func TestRunTwoPhase_UnknownExtractorModelIsReportedNotSubstituted(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
-	t.Setenv(phasea.ExtractorModelEnv, "claude-opus-5")
 	// F4/F5: ResolveExtractorAgentModel also falls back to the active
 	// Claude profile's agents/ dir. Point CLAUDE_HOME at an empty sandbox
 	// so this test's "deliberately no agent file" premise holds regardless
@@ -122,9 +137,6 @@ func TestRunTwoPhase_UnknownExtractorModelIsReportedNotSubstituted(t *testing.T)
 	if want := "Phase A — extractor model: " + phasea.ExtractorModelUnknown; !strings.Contains(errBuf.String(), want) {
 		t.Errorf("stderr does not report the model as unknown.\nwant substring: %q\nstderr:\n%s", want, errBuf.String())
 	}
-	if strings.Contains(errBuf.String(), "extractor model: claude-opus-5") {
-		t.Error("substituted the CLI/env pin for an unresolvable extractor model — the exact shape ADR-055 §4 forbids")
-	}
 }
 
 // The extractor model must be reported on the plan-emitting path too.
@@ -141,15 +153,11 @@ func TestRunTwoPhase_UnknownExtractorModelIsReportedNotSubstituted(t *testing.T)
 // test existed to prevent, arrived at from the other direction.
 //
 // The rule that survives is ADR-055's: the value comes from the extractor
-// AGENT'S frontmatter and never from the CLI/env pin. A run that emits a plan
-// for tier-1 to fan out is exactly a run whose output needs attributing to a
-// model, so it is reported here even though this process will not dispatch.
+// AGENT'S frontmatter. A run that emits a plan for tier-1 to fan out is
+// exactly a run whose output needs attributing to a model, so it is
+// reported here even though this process will not dispatch.
 func TestRunTwoPhase_PlanEmittingRunReportsAgentModel(t *testing.T) {
 	t.Setenv("EDIKT_HEADLESS", "")
-	// A DIFFERENT value than the agent's, so a pass cannot be read as "the
-	// env was simply unset". If the report ever tracks the pin again, D27 is
-	// back and this fails.
-	t.Setenv(phasea.ExtractorModelEnv, "claude-opus-5")
 
 	root := stageNeverInitialised(t)
 	stageExtractorAgent(t, root, "claude-sonnet-5")
@@ -175,8 +183,5 @@ func TestRunTwoPhase_PlanEmittingRunReportsAgentModel(t *testing.T) {
 
 	if res.ExtractorModel != "claude-sonnet-5" {
 		t.Errorf("ExtractorModel = %q, want %q from the agent frontmatter", res.ExtractorModel, "claude-sonnet-5")
-	}
-	if strings.Contains(errBuf.String(), "claude-opus-5") {
-		t.Error("reported the CLI/env pin instead of the agent's model — the exact shape ADR-055 §4 forbids (D27)")
 	}
 }

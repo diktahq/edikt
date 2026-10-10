@@ -54,14 +54,14 @@ func snapshotLauncherBinary(targetDir, tag string) {
 	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not stage launcher at %s: %v — "+
-			"bin/edikt may not match the activated payload\n", tmp, err)
+			"the launcher binary may not match the activated payload\n", tmp, err)
 		return
 	}
 	if _, err := io.Copy(out, src); err != nil {
 		out.Close()
 		os.Remove(tmp)
 		fmt.Fprintf(os.Stderr, "warning: could not copy versioned launcher: %v — "+
-			"bin/edikt may not match the activated payload\n", err)
+			"the launcher binary may not match the activated payload\n", err)
 		return
 	}
 	out.Close()
@@ -70,7 +70,7 @@ func snapshotLauncherBinary(targetDir, tag string) {
 	if err := os.Rename(tmp, dest); err != nil {
 		os.Remove(tmp)
 		fmt.Fprintf(os.Stderr, "warning: could not activate versioned launcher: %v — "+
-			"bin/edikt may not match the activated payload\n", err)
+			"the launcher binary may not match the activated payload\n", err)
 	}
 }
 
@@ -116,7 +116,7 @@ func repairVersionedBinary(ediktRoot string) {
 	src, err := os.Open(versionedBinary)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not read versioned launcher %s: %v — "+
-			"bin/edikt may not match the activated payload\n", versionedBinary, err)
+			"the launcher binary may not match the activated payload\n", versionedBinary, err)
 		return
 	}
 	defer src.Close()
@@ -124,7 +124,7 @@ func repairVersionedBinary(ediktRoot string) {
 	binDir := filepath.Join(ediktRoot, "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: could not create %s: %v — "+
-			"bin/edikt may not match the activated payload\n", binDir, err)
+			"the launcher binary may not match the activated payload\n", binDir, err)
 		return
 	}
 	dest := filepath.Join(binDir, "edikt")

@@ -422,7 +422,13 @@ func TestRegistryReaderAgreesWithFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
-	want := strings.Count(string(body), "\n  - name:")
+	// Only rows under `hooks:` are rows; the `retired:` list (ADR-083) names
+	// hooks that no longer run and is deliberately not parsed as one.
+	hooksOnly := string(body)
+	if i := strings.Index(hooksOnly, "\nretired:"); i >= 0 {
+		hooksOnly = hooksOnly[:i]
+	}
+	want := strings.Count(hooksOnly, "\n  - name:")
 	if want == 0 {
 		t.Fatal("counted zero rows in the registry file — this assertion measured nothing")
 	}

@@ -7,9 +7,15 @@ package cmd
 // .edikt/state/verify/. Exit codes:
 //
 // 0 — all executed criteria passed (or only skipped/informational)
-// 1 — at least one criterion failed or timed out
+// 1 — at least one criterion failed, timed out, or was UNMEASURED
 // 2 — sidecar missing or malformed YAML
 // 3 — invalid args (unknown plan-id, etc.)
+//
+// Unmeasured joins exit 1 for THIS verb only. It is a distinct class
+// from a failure and the console output says so by name, but it is the same
+// answer to the only question this exit code is asked: may the phase row flip
+// to done? It may not. `verify gov|prd|spec|all` keep the old rule — see
+// verify.Report.AnyUnmeasured for why.
 //
 // `--allow-failures` suppresses exit-1 (used by /edikt:sdlc:plan to surface
 // failures without blocking; the plan-command makes the gating decision).
@@ -77,9 +83,14 @@ report to .edikt/state/verify/.
 
 Exit codes:
   0 — all executed criteria passed (or only skipped/informational)
-  1 — at least one criterion failed or timed out
+  1 — at least one criterion failed, timed out, or was unmeasured
   2 — sidecar missing or malformed YAML
   3 — invalid args (unknown plan-id, malformed --phase, etc.)
+
+An UNMEASURED criterion is one whose subject could not be read, so its
+verify never reached the rule it names. It is not a failure and the output
+names it separately, but it does not let a phase pass: exit 0 here is what
+/edikt:sdlc:plan flips a phase row to done on.
 
 Use --allow-failures to suppress exit-1 (the run still records failures
 in the report). The /edikt:sdlc:plan command gates row-flips on exit 0.`,
@@ -105,6 +116,11 @@ in the report). The /edikt:sdlc:plan command gates row-flips on exit 0.`,
 		}
 		if terr := ensureVerifyTrust(projectRoot); terr != nil {
 			return terr
+		}
+		// D74 (b): a stale runner verifies the plan with old checks. Refuse
+		// (or warn under --allow-stale-binary) before a single criterion runs.
+		if ferr := binaryFreshness(readBinaryProvenance(), gitSHA(projectRoot), verifyAllowStaleBinary, cmd.ErrOrStderr()); ferr != nil {
+			return &exitCodeError{code: 3, msg: ferr.Error()}
 		}
 
 		criteriaPath, err := locateCriteriaSidecar(projectRoot, planID)
@@ -158,16 +174,55 @@ in the report). The /edikt:sdlc:plan command gates row-flips on exit 0.`,
 			fmt.Fprintln(cmd.OutOrStdout(), string(body))
 		} else {
 			fmt.Fprintf(cmd.OutOrStdout(), "\nreport: %s\n", jsonPath)
-			fmt.Fprintf(cmd.OutOrStdout(), "summary: %d passed, %d failed, %d timeout, %d skipped (total %d)\n",
-				report.Summary.Passed, report.Summary.Failed,
-				report.Summary.Timeout, report.Summary.Skipped, report.Summary.Total)
+			fmt.Fprintln(cmd.OutOrStdout(), report.Summary.Line())
 		}
 
-		if report.AnyFailures() && !verifyAllowFailures {
+		// UNMEASURED GATES THE PHASE. This branch is the plan-criteria
+		// runner only — `verify gov|prd|spec|all` keep AnyFailures() alone; see
+		// verify.Report.AnyUnmeasured for the scope decision and the corpus
+		// measurement behind it.
+		//
+		// The reason it belongs HERE and nowhere else: this exit code is what
+		// commands/sdlc/plan.md gates the phase row-flip on, so exit 0 asserts
+		// the phase is done. A criterion whose subject could not be read
+		// established nothing about the artifact the phase promised, and a
+		// phase whose criteria are ALL unmeasured previously exited 0 — work
+		// marked done having measured nothing. That is "absence is never a
+		// pass" broken by the runner that enforces it everywhere else, and a
+		// completion claim asserted with no evidence.
+		// (ref: INV-013, INV-009)  edikt-guard:allow
+		//
+		// Named, not generic: a bare exit 1 sends the reader hunting for a
+		// failing assertion that does not exist.
+		if report.AnyUnmeasured() {
+			emitUnmeasured(cmd.ErrOrStderr(), report)
+		}
+		if (report.AnyFailures() || report.AnyUnmeasured()) && !verifyAllowFailures {
 			return &exitCodeError{code: 1, msg: ""}
 		}
 		return nil
 	},
+}
+
+// emitUnmeasured names every criterion whose subject could not be read, with
+// the subject the pre-flight could not open. Written to stderr so it survives
+// --json (whose stdout must stay a single parseable document) and so the
+// reason travels with the non-zero exit rather than only into the report file.
+func emitUnmeasured(w io.Writer, r *verify.Report) {
+	un := r.UnmeasuredCriteria()
+	fmt.Fprintf(w, "\nUNMEASURED — %d of %d criteria did not measure anything:\n", len(un), r.Summary.Total)
+	for _, c := range un {
+		detail := oneLine(c.StderrExcerpt)
+		if detail == "" {
+			detail = "subject not readable"
+		}
+		// Same "U" the progress line uses, so a reader scanning the run and a
+		// reader reading the summary are looking at one symbol, not two.
+		fmt.Fprintf(w, "  U %s — %s\n      %s\n", c.ID, c.Statement, detail)
+	}
+	fmt.Fprint(w, "An unmeasured criterion is NOT a pass and NOT a failure: its verify never\n"+
+		"reached the thing it names, so it says nothing about the rule. The phase is\n"+
+		"not done. Create the subject, or fix the verify to name one that exists.\n")
 }
 
 // emitProgress writes a single status line per criterion to w.
@@ -180,7 +235,13 @@ func emitProgress(w io.Writer, p verify.Phase, r verify.Result) {
 		mark = "x"
 	case verify.StatusTimeout:
 		mark = "T"
-	case verify.StatusSkippedOperational, verify.StatusSkippedInformational:
+	case verify.StatusUnmeasured:
+		// Its own mark. Under "?" it was indistinguishable from a status this
+		// switch had never heard of, which is how a class that gates the phase
+		// read as a class nobody had classified.
+		mark = "U"
+	case verify.StatusSkippedOperational, verify.StatusSkippedInformational,
+		verify.StatusSkippedSuppressed, verify.StatusSkippedOwner:
 		mark = "~"
 	}
 	fmt.Fprintf(w, "  %s [phase %s] %s — %s (%dms)\n",
@@ -324,6 +385,10 @@ func gitSHA(projectRoot string) string {
 	return sha
 }
 
+// verifyAllowStaleBinary backs --allow-stale-binary (D74 b): a runner built at a
+// commit other than the checkout HEAD refuses to verify unless this is set.
+var verifyAllowStaleBinary bool
+
 func init() {
 	verifyCmd.Flags().StringVar(&verifyPhase, "phase", "", "verify a single phase by id (e.g. 1, 4b, 12)")
 	// --json and --allow-failures are persistent so the gov / prd / spec
@@ -332,6 +397,7 @@ func init() {
 	verifyCmd.PersistentFlags().BoolVar(&verifyAllowFailures, "allow-failures", false, "exit 0 even when criteria fail (failures still recorded in the report)")
 	// --trust approves this project to run its repo-defined verify: commands
 	// (ADR-041). Persistent so verify all / gov / prd / spec inherit it.  // edikt-guard:allow
+	verifyCmd.PersistentFlags().BoolVar(&verifyAllowStaleBinary, "allow-stale-binary", false, "run even when this binary was built at a commit other than the checkout HEAD (it still warns)")
 	verifyCmd.PersistentFlags().BoolVar(&verifyTrust, "trust", false, "approve this project to run its repo-defined verify: commands (records it in ~/.edikt/state)")
 	rootCmd.AddCommand(verifyCmd)
 }

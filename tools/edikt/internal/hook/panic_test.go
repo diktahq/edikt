@@ -123,6 +123,10 @@ func TestPanicRecovery(t *testing.T) {
 func TestPanicRecoveryReachesTheRealJournal(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// State resolves EDIKT_HOME before HOME (7e799074); test/run.sh exports the
+	// developer's live EDIKT_HOME, so HOME alone left this test looking for a
+	// journal the hook wrote into ~/.edikt (INV-007).
+	t.Setenv("EDIKT_HOME", filepath.Join(home, ".edikt"))
 
 	reg := NewRegistry()
 	reg.Register("post-compact", func(*Invocation) Result { panic("deliberate") })

@@ -36,7 +36,7 @@ var listCmd = &cobra.Command{
 
 		versionsDir := filepath.Join(listRoot, "versions")
 		if _, err := os.Stat(versionsDir); os.IsNotExist(err) {
-			fmt.Println("(no versions installed)")
+			printNoVersionsInstalled()
 			return nil
 		}
 
@@ -63,7 +63,7 @@ var listCmd = &cobra.Command{
 		sort.Strings(tags)
 
 		if len(tags) == 0 {
-			fmt.Println("(no versions installed)")
+			printNoVersionsInstalled()
 			return nil
 		}
 
@@ -98,4 +98,25 @@ func init() {
 	listCmd.Flags().BoolVarP(&listVerbose, "verbose", "v", false, "show installed_at timestamp")
 	listCmd.Flags().BoolVar(&listGlobal, "global", false, "list from global ~/.edikt/versions/")
 	rootCmd.AddCommand(listCmd)
+}
+
+// printNoVersionsInstalled explains the empty state instead of stating it.
+//
+// `brew install edikt` ships the LAUNCHER ONLY — the payload it runs is a
+// separate download. A user who has just installed via Homebrew reasonably
+// believes edikt is installed, runs `list`, and gets "(no versions installed)"
+// with nowhere to go. One reporter had to discover `edikt install` unaided.
+//
+// Documentation cannot fix this: the user is in a terminal, not reading the
+// README. `install` already handles its own equivalent moment correctly —
+// "installed %s (not activated — run `edikt use %s` to activate)" — and this is
+// the same treatment for the other end of the flow.
+func printNoVersionsInstalled() {
+	fmt.Println("(no versions installed)")
+	fmt.Println()
+	fmt.Println("The launcher is installed but no payload is. If you installed with")
+	fmt.Println("Homebrew, that is expected — a formula ships the binary alone.")
+	fmt.Println()
+	fmt.Println("  edikt install v0.8.0    # fetch the payload")
+	fmt.Println("  edikt use v0.8.0        # activate it and link the /edikt:* commands")
 }

@@ -114,11 +114,11 @@ Strict mode records the losses described above as a machine-readable manifest:
 bin/edikt migrate sidecars --strict --report-json .edikt/state/v060-strict-report.json
 ```
 
-`/edikt:sidecar:regenerate` consumes that manifest. It **auto-fixes LOST items by re-running the extractor, and writes FACTUAL and DEGRADED items to a worklist for manual review.**
+`/edikt:migrate` (Step 5, regression-manifest mode) consumes that manifest. It **auto-fixes LOST items by re-running the extractor, and writes FACTUAL and DEGRADED items to a worklist for manual review.**
 
 ```bash
-/edikt:sidecar:regenerate
-/edikt:sidecar:regenerate --manifest <path>     # default: .edikt/state/v060-strict-report.json
+/edikt:migrate
+/edikt:migrate --manifest <path>     # default: .edikt/state/migration-strict-report.json
 ```
 
 #### How it works

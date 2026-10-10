@@ -74,6 +74,7 @@ always protected regardless of sort position.`,
 
 		anyFailed := false
 		pruned := []string{}
+		lockChanged := false
 		for _, tag := range toPrune {
 			tn := normalizeTag(tag)
 			if activeTag != "" && (tn == activeTag || tag == activeTag) {
@@ -94,6 +95,15 @@ always protected regardless of sort position.`,
 					anyFailed = true
 				} else {
 					pruned = append(pruned, tag)
+					// The payload is gone; its StagedSources provenance
+					// entry (D396) has nothing left to describe and would
+					// otherwise sit in lock.yaml forever — StagedSources is
+					// pruned only here, when the version it describes
+					// actually stops existing on disk, never merely
+					// because the version stopped being active.
+					if pruneStagedSource(&lf, tag) {
+						lockChanged = true
+					}
 				}
 			}
 		}
@@ -101,6 +111,12 @@ always protected regardless of sort position.`,
 		if pruneDryRun {
 			fmt.Fprintf(os.Stderr, "prune: dry-run complete (no changes)\n")
 			return nil
+		}
+
+		if lockChanged {
+			if err := atomicWriteLock(ediktRoot, lf); err != nil {
+				fmt.Fprintf(os.Stderr, "warn: prune: removed version(s) but failed to update lock.yaml provenance: %v\n", err)
+			}
 		}
 
 		if len(pruned) > 0 {

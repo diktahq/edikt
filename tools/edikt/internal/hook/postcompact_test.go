@@ -1,9 +1,12 @@
 package hook
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/hook/adapter"
 )
 
 // TestPostCompactRendersAttemptOnlyWhenWellFormed is the Go-side successor to
@@ -66,5 +69,53 @@ func TestPostCompactRendersAttemptOnlyWhenWellFormed(t *testing.T) {
 				t.Errorf("want %q in message, got %q", tc.want, got)
 			}
 		})
+	}
+}
+
+// PostCompact is not a hookSpecificOutput event; the handler must reply with
+// nothing model-facing, whatever the project holds.
+func TestPostCompact_IsQuiet(t *testing.T) {
+	res := postCompact(&Invocation{Name: "post-compact"})
+	if res.Response != (adapter.Response{}) {
+		t.Fatalf("post-compact must reply with nothing; got %+v", res.Response)
+	}
+}
+
+// sessionCompact injects only when the host says the session started from a
+// compaction, and carries the same message postCompact used to build.
+func TestSessionCompact_InjectsOnlyForCompactSource(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".edikt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".edikt", "config.yaml"), []byte("base: docs\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	inv := filepath.Join(dir, "docs", "architecture", "invariants")
+	if err := os.MkdirAll(inv, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(inv, "INV-001-no-compiled-code.md"), []byte("# INV-001 — No compiled code\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(wd) //nolint:errcheck
+
+	for _, src := range []string{"startup", "resume", "clear", "fork", ""} {
+		res := sessionCompact(&Invocation{Name: "session-compact", Payload: adapter.Payload{Source: src}})
+		if res.Response.Context != "" {
+			t.Errorf("source %q must not inject; got %q", src, res.Response.Context)
+		}
+	}
+	res := sessionCompact(&Invocation{Name: "session-compact", Payload: adapter.Payload{Source: "compact"}})
+	if !strings.HasPrefix(res.Response.Context, "Context recovered after compaction.") || !strings.Contains(res.Response.Context, "INV-001") {
+		t.Fatalf("source compact must inject the recovery message with invariants; got %q", res.Response.Context)
+	}
+	// And the envelope it becomes is one the host reads.
+	if _, err := adapter.Encode("SessionStart", res.Response); err != nil {
+		t.Fatalf("SessionStart must encode the recovery context: %v", err)
 	}
 }

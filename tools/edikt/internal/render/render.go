@@ -8,6 +8,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"text/template"
@@ -16,20 +17,38 @@ import (
 	"github.com/diktahq/edikt/tools/edikt/internal/compile"
 )
 
-// EmptySHA is sha256("") in lower-case hex; the anchor for any
-// freshly-bootstrapped empty managed region defaults to this so the
-// bootstrap-write step emits a deterministic value rather than a literal
-// empty string.
+// EmptySHA is sha256("") in lower-case hex: the anchor a managed region whose
+// body is EMPTY hashes to.
+//
+// It is a fact about the hash, not a default. Nothing here substitutes it for
+// a missing value — every anchor is computed from the bytes this package
+// emitted between that region's own markers (see anchorRegions), so a
+// directives or manual region with no bullets ARRIVES at this value by
+// hashing "", and the prohibitions region never does: topic.md.tmpl emits its
+// "## Prohibitions" heading INSIDE the markers, so that body is never empty.
+//
+// The comment this replaces called it "the anchor for any freshly-bootstrapped
+// empty managed region" and RenderTopic defaulted all three region anchors to
+// it. That was true of two regions and false of the third, and the false one
+// shipped: a bootstrap-written prohibitions region declared sha256("")
+// (e3b0c442…) over a body that hashes to d1674c1a…. A doc comment stating a
+// semantic the code did not implement, failing silently — the shape this
+// package's tests exist to catch (PLAN-test-reach-on-the-delivery-path).
 var EmptySHA = func() string {
 	h := sha256.Sum256(nil)
 	return hex.EncodeToString(h[:])
 }()
 
-// RegionSHA computes the sha256 of a region's rendered body. The body is
-// the concatenation of each bullet line followed by '\n'. For an empty
-// region the result is sha256("") (==EmptySHA). Used by phase B to anchor
-// each managed region inside a topic file per Phase 8 of
-// PLAN-v060-governance-accuracy.
+// RegionSHA computes the sha256 of a region's rendered body — the bytes
+// strictly between that region's start- and end-marker lines, heading and
+// bullets included.
+//
+// This is the ONE implementation of the anchor formula. anchorRegions calls it
+// on the bytes it just emitted; a reader verifying a compiled topic file calls
+// it on the bytes they read back. No caller may compute an anchor from its own
+// model of what the renderer WILL emit: predicting another component's bytes
+// is how the prohibitions heading came to be counted in one place and not in
+// the other (D357).
 func RegionSHA(body string) string {
 	h := sha256.Sum256([]byte(body))
 	return hex.EncodeToString(h[:])
@@ -70,9 +89,15 @@ type TopicView struct {
 	// Phase 8 (PLAN-v060-governance-accuracy) — three managed regions per
 	// topic file. DirectiveLines is the interleaved auto+manual list with
 	// the *(manual)* marker on author-overrides. ProhibitionLines is the
-	// MUST NOT bullets. ManualLines is the manual-only faithful copy. The
-	// SHA fields are sha256 over the rendered content of each region
-	// (excluding marker lines and the anchor line itself).
+	// MUST NOT bullets. ManualLines is the manual-only faithful copy.
+	//
+	// There are no SHA fields. Each region's sha256 anchor is computed by
+	// this package from the bytes it emits between that region's markers
+	// (D357). A caller cannot supply one, correctly or otherwise: a field
+	// that is accepted and discarded is the silent-discard shape this repo
+	// has already paid for, and a field that is accepted and TRUSTED is one
+	// component predicting another's private layout.
+	//
 	// Reminders and Verification moved here from governance.md's always-on
 	// body. They are ARTIFACT-SCOPED guidance, so they belong beside the
 	// directives they qualify, behind the topic file's `paths:` glob —
@@ -84,24 +109,6 @@ type TopicView struct {
 	DirectiveLines   []string
 	ProhibitionLines []string
 	ManualLines      []string
-	DirectivesSHA    string
-	ProhibitionsSHA  string
-	ManualSHA        string
-
-	// DeliveryNote explains an empty Directives region that is empty on
-	// purpose — every contributing directive was path-scoped and therefore
-	// delivered from directive-index.yaml at write time (ADR-066).  edikt-guard:allow
-	//
-	// It renders OUTSIDE the managed region, above the start anchor. Inside
-	// would fold prose into the bytes DirectivesSHA covers, making a
-	// generated explanation indistinguishable from a hand-edit of a managed
-	// region; and a reader who has already scrolled past two bare anchors has
-	// already drawn the wrong conclusion, so the explanation has to arrive
-	// first.
-	//
-	// Empty for every topic that renders its own directives, which keeps the
-	// common case byte-identical.
-	DeliveryNote string
 }
 
 // IndexView is the data passed to the governance.md index template.
@@ -158,6 +165,17 @@ type TopicIndexRow struct {
 	// Description is verbatim registry content, or empty when no approved
 	// entry exists for this topic.
 	Description string
+
+	// SkillOnly marks a topic whose scoped rules file was RETIRED to a skill
+	// package, so no .claude/rules/governance/<topic>.md exists for it.
+	//
+	// Without this the index told the reader to "read the named file" for four
+	// topics that have none — agent-rules, compile, governance-authoring and
+	// lifecycle. A model following the ambient core's own instruction found
+	// nothing, and nothing pointed it at the skill package that does carry the
+	// topic. A broken pointer is worse than an absent one: it spends the
+	// reader's attention and returns nothing.
+	SkillOnly bool
 }
 
 var tmplFuncs = template.FuncMap{
@@ -214,26 +232,26 @@ func excludedNote(m map[string]int) string {
 	return fmt.Sprintf("%d retired %s excluded (%s)", total, noun, strings.Join(parts, ", "))
 }
 
-// RenderTopic produces the body of a single topic file.
+// RenderTopic produces the body of a single topic file, with every managed
+// region's sha256 anchor computed from the bytes this call emitted.
+//
+// It returns ("", err) on any failure. Never a partial body with a nil error:
+// a truncated topic file is a plausible-looking surface, which is the failure
+// shape this package is least likely to notice and most likely to ship.
 func RenderTopic(v TopicView) (string, error) {
+	return renderTopic(topicTmplSrc, v)
+}
+
+// renderTopic is RenderTopic with the template source as a parameter, so a
+// test can render through an ALTERED template and observe the anchors follow
+// it. The seam is unexported: the template that ships is the embedded one.
+func renderTopic(src string, v TopicView) (string, error) {
 	// Sort paths and sources for determinism — template's iteration order
 	// must not depend on insertion order.
 	sort.Strings(v.Paths)
 	sort.Strings(v.Sources)
-	// Default SHA fields to the empty-region hash when caller did not set
-	// them. Empty-region anchor is sha256("") — keeps the bootstrap path
-	// from emitting a literal empty hex.
-	if v.DirectivesSHA == "" {
-		v.DirectivesSHA = EmptySHA
-	}
-	if v.ProhibitionsSHA == "" {
-		v.ProhibitionsSHA = EmptySHA
-	}
-	if v.ManualSHA == "" {
-		v.ManualSHA = EmptySHA
-	}
 
-	tmpl, err := template.New("topic").Funcs(tmplFuncs).Parse(topicTmplSrc)
+	tmpl, err := template.New("topic").Funcs(tmplFuncs).Parse(src)
 	if err != nil {
 		return "", fmt.Errorf("parse topic template: %w", err)
 	}
@@ -241,12 +259,23 @@ func RenderTopic(v TopicView) (string, error) {
 	if err := tmpl.Execute(&buf, v); err != nil {
 		return "", fmt.Errorf("exec topic template: %w", err)
 	}
-	return buf.String(), nil
+	out, err := anchorRegions(buf.String())
+	if err != nil {
+		return "", fmt.Errorf("anchor topic %q: %w", v.Name, err)
+	}
+	return out, nil
 }
 
-// RenderIndex produces the body of governance.md.
+// RenderIndex produces the body of governance.md. Same contract as
+// RenderTopic: ("", err) or a complete body, never a partial one.
 func RenderIndex(v IndexView) (string, error) {
-	tmpl, err := template.New("index").Funcs(tmplFuncs).Parse(indexTmplSrc)
+	return renderIndex(indexTmplSrc, v)
+}
+
+// renderIndex is RenderIndex with the template source as a parameter — see
+// renderTopic for why the seam exists.
+func renderIndex(src string, v IndexView) (string, error) {
+	tmpl, err := template.New("index").Funcs(tmplFuncs).Parse(src)
 	if err != nil {
 		return "", fmt.Errorf("parse index template: %w", err)
 	}
@@ -254,7 +283,83 @@ func RenderIndex(v IndexView) (string, error) {
 	if err := tmpl.Execute(&buf, v); err != nil {
 		return "", fmt.Errorf("exec index template: %w", err)
 	}
-	return buf.String(), nil
+	out, err := anchorRegions(buf.String())
+	if err != nil {
+		return "", fmt.Errorf("anchor index: %w", err)
+	}
+	return out, nil
+}
+
+// ── managed-region anchoring ────────────────────────────────────────────────
+//
+// ONE FACT, ONE PLACE (D357). A managed region's anchor is the sha256 of the
+// bytes between its own markers, and the only component entitled to state
+// those bytes is the one that wrote them. Before this, a caller
+// (phaseb.regionSHA) rebuilt the body from the same inputs it had handed the
+// renderer and hashed its RECONSTRUCTION — carrying a `withProhibitionsHeading`
+// flag because the template puts a heading inside one region's markers. Three
+// copies of that one fact (template, caller flag, renderer default), and the
+// renderer's copy had drifted.
+//
+// There is no circularity: the anchor line sits AFTER the region's :end
+// marker, outside the range being hashed, so the body can be emitted, hashed,
+// and the anchor written into a line the body does not contain.
+
+var (
+	regionStartRe = regexp.MustCompile(`(?m)^\[edikt:([A-Za-z0-9_-]+):start\]: #$`)
+	// An anchor line still carrying no hex value after the pass ran.
+	unfilledAnchorRe = regexp.MustCompile(`(?m)^\[edikt:([A-Za-z0-9_-]+):sha256\]: #[ \t]*$`)
+)
+
+// anchorRegions writes each managed region's sha256 anchor into the rendered
+// output, computed over that region's own emitted body.
+//
+// Every failure is loud. A region with markers and no anchor line, a region
+// with two, a start marker with no end marker, and an anchor line left unfilled
+// all return an error rather than output: an anchor that silently did not get
+// written is indistinguishable from one that did, because a wrong hash still
+// looks like a hash.
+func anchorRegions(out string) (string, error) {
+	for _, m := range regionStartRe.FindAllStringSubmatch(out, -1) {
+		name := m[1]
+		body, err := regionBody(out, name)
+		if err != nil {
+			return "", err
+		}
+		prefix := "[edikt:" + name + ":sha256]: #"
+		anchorRe := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(prefix) + `.*$`)
+		locs := anchorRe.FindAllStringIndex(out, -1)
+		if len(locs) != 1 {
+			return "", fmt.Errorf("region %q: %d %q lines in the rendered output, want exactly 1 — "+
+				"a region whose anchor is missing or duplicated cannot be verified", name, len(locs), prefix)
+		}
+		loc := locs[0]
+		out = out[:loc[0]] + prefix + " " + RegionSHA(body) + out[loc[1]:]
+	}
+	if m := unfilledAnchorRe.FindStringSubmatch(out); m != nil {
+		return "", fmt.Errorf("region %q declares a sha256 anchor but has no [edikt:%s:start]/:end region "+
+			"to hash — the anchor line would ship empty", m[1], m[1])
+	}
+	return out, nil
+}
+
+// regionBody returns the bytes a managed region encloses: everything strictly
+// between its start-marker line and its end marker. A missing marker is an
+// error, not an empty string — "the region is not there" and "the region is
+// empty" are different facts and must not both read as "".
+func regionBody(out, name string) (string, error) {
+	start := "[edikt:" + name + ":start]: #\n"
+	i := strings.Index(out, start)
+	if i < 0 {
+		return "", fmt.Errorf("region %q: no %q line in the rendered output", name, strings.TrimSuffix(start, "\n"))
+	}
+	rest := out[i+len(start):]
+	end := "[edikt:" + name + ":end]: #"
+	j := strings.Index(rest, end)
+	if j < 0 {
+		return "", fmt.Errorf("region %q: start marker with no %q after it", name, end)
+	}
+	return rest[:j], nil
 }
 
 // titleCase turns "agent-rules" into "Agent-Rules" for headings.

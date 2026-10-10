@@ -27,6 +27,15 @@ import (
 // runVerifyChecks emits warnings for ✅/done progress rows that lack a
 // recent passing verification report. Returns warnings count and a
 // `ran` flag (false when the project has no plans+criteria pairs).
+// runVerifyChecks reports plan-phase staleness — ONE roll-up line per ACTIVE
+// plan (FR-035).
+//
+// It used to print one line per unverified phase across every plan the
+// project had ever had: 159 of 184 warning lines on the reference repo were
+// this single finding, repeated, and the one signal worth reading was
+// underneath them. A completed historical plan is not a finding at all —
+// nobody is going to re-verify a plan that shipped — so it stays silent, and
+// the active plan gets a count with its remedy.
 func runVerifyChecks(projectRoot string, w io.Writer) (warns int, ran bool) {
 	plans := discoverPlansWithCriteria(projectRoot)
 	if len(plans) == 0 {
@@ -35,46 +44,84 @@ func runVerifyChecks(projectRoot string, w io.Writer) (warns int, ran bool) {
 	io.WriteString(w, "  ── Plan Verification ──────────────────────────\n")
 
 	stateDir := filepath.Join(projectRoot, ".edikt", "state", "verify")
+	examined, reported := 0, 0
 	for _, p := range plans {
+		rows := parseProgressTable(p.planPath)
+		if !planNeedsReport(rows) {
+			// A plan whose every phase is done, with no override, is
+			// history. Reporting it every run is what buried the finding
+			// that mattered. An OVERRIDE is the exception: a phase flipped
+			// without verification is an unverified claim whether or not the
+			// plan has since finished, and completeness must not silence it.
+			continue
+		}
+		examined++
 		criteriaMTime, _ := lastCriteriaCommitTime(projectRoot, p.criteriaPath)
-		// Report timestamps are second-precision; truncate the threshold so a
-		// report written in the same second as the sidecar still counts.
 		criteriaMTime = criteriaMTime.Truncate(time.Second)
-		for _, row := range parseProgressTable(p.planPath) {
+
+		var stalePhases, overriddenPhases []string
+		for _, row := range rows {
 			if !rowMarkedDone(row.status) {
 				continue
 			}
 			if hasOverrideMarker(row.updated) {
-				io.WriteString(w, "  WARN: "+p.planID+" phase "+row.phase+
-					" marked done with override — verification was skipped at flip time. Run: edikt verify "+
-					p.planID+" --phase "+row.phase+"\n")
-				warns++
+				overriddenPhases = append(overriddenPhases, row.phase)
 				continue
 			}
-			ok, _ := hasRecentPassingReport(stateDir, p.planID, row.phase, criteriaMTime)
-			if !ok {
-				io.WriteString(w, "  WARN: "+p.planID+" phase "+row.phase+
-					" marked done but no recent passing verification report found — run: edikt verify "+
-					p.planID+" --phase "+row.phase+"\n")
-				warns++
+			if ok, _ := hasRecentPassingReport(stateDir, p.planID, row.phase, criteriaMTime); !ok {
+				stalePhases = append(stalePhases, row.phase)
 			}
 		}
+		if len(stalePhases)+len(overriddenPhases) == 0 {
+			continue
+		}
+		// ONE line, and it still names the phases: the roll-up exists to stop
+		// the repetition, not to take away what the reader needs to act.
+		detail := ""
+		if len(overriddenPhases) > 0 {
+			detail = ", " + itoa(len(overriddenPhases)) + " flipped with an override (phase " +
+				strings.Join(overriddenPhases, ", ") + ")"
+		}
+		phases := "none"
+		if len(stalePhases) > 0 {
+			phases = "phase " + strings.Join(stalePhases, ", ")
+		}
+		io.WriteString(w, "  WARN: "+p.planID+": "+itoa(len(stalePhases))+
+			" phase(s) without a recent passing report ("+phases+")"+detail+
+			" — run: edikt verify "+p.planID+" --phase <n>\n")
+		warns++
+		reported++
 	}
-	if warns == 0 {
-		io.WriteString(w, "  All marked-done phases have recent passing reports.\n")
+	// A check that looked and found nothing SAYS so. Silence here reads the
+	// same as a check that did not run (INV-013).  // edikt-guard:allow
+	if examined > 0 && reported == 0 {
+		io.WriteString(w, "  [ok] All marked-done phases of the active plan(s) have a recent passing report.\n")
 	}
 	return warns, true
 }
 
-// planEntry is one (plan markdown, criteria sidecar) pair.
+// planNeedsReport reports whether a plan is worth a line: it still has work,
+// or one of its done rows was flipped with an override.
+func planNeedsReport(rows []progressRow) bool {
+	for _, r := range rows {
+		if !rowMarkedDone(r.status) {
+			return true
+		}
+		if hasOverrideMarker(r.updated) {
+			return true
+		}
+	}
+	return false
+}
+
 type planEntry struct {
 	planID       string
 	planPath     string
 	criteriaPath string
 }
 
-// discoverPlansWithCriteria walks the conventional plan directories
-// looking for PLAN-<id>.md files with a sibling PLAN-<id>-criteria.yaml.
+// discoverPlansWithCriteria walks the conventional plan directories and
+// returns each plan that has a criteria sidecar beside it.
 func discoverPlansWithCriteria(projectRoot string) []planEntry {
 	var out []planEntry
 	for _, sub := range []string{

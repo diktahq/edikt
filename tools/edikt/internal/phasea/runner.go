@@ -1,13 +1,10 @@
 // Package phasea implements the conditional resync phase of two-phase
 // gov:compile. It dispatches stale-sidecar regenerations to
 // the locked sidecar-extractor agent, one fresh subagent context per
-// artifact, parallel up to a concurrency cap, continue-on-error.
+// artifact, continue-on-error. The concurrency cap is a PLAN field
+// (budget.max_concurrency, SPEC-013 SR-012) read by the tier-1 dispatcher;
+// no decorator in this process bounds anything (dispatch_bounds.go).
 package phasea
-
-import (
-	"os"
-	"github.com/diktahq/edikt/tools/edikt/internal/idvalidate")
-
 
 // Task describes one Phase A unit of work.
 type Task struct {
@@ -29,54 +26,14 @@ type Task struct {
 	ProjectRoot string
 }
 
-// DefaultExtractorModel is the model the extractor dispatch pins when
-// nothing overrides it.
-//
-// Before this pin existed the dispatch passed no --model at all, so every
-// extraction — including the banked greenfield baseline — was produced by
-// whatever the CLI defaulted to at that moment. That made every
-// extraction-quality measurement unattributable: a difference between two
-// runs could not be assigned to the prompt, the corpus, or a model that
-// changed underneath both.
-//
-// Pinning does not retroactively attribute the baseline; it makes runs
-// from here on attributable, which is what measuring a prompt change
-// requires. The corollary is that the first run after this pin may differ
-// from the baseline for model reasons rather than prompt reasons — treat
-// a baseline taken before it as un-comparable until re-taken.
-//
-// Changing this value changes what every future measurement means, so
-// treat it as a governance decision rather than a version bump — ADR-040  // edikt-guard:allow
-// required an amending ADR to change the benchmark adversary's model for
-// the same reason.
-const DefaultExtractorModel = "claude-opus-5"
-
-// ExtractorModelEnv overrides DefaultExtractorModel for one run.
-const ExtractorModelEnv = "EDIKT_EXTRACTOR_MODEL"
-
-// ResolveExtractorModel returns the model id the extractor dispatch should
-// pin, in precedence order: explicit argument, then ExtractorModelEnv,
-// then DefaultExtractorModel. The result is validated before return, so a
-// caller that gets a value back can pass it to argv unchecked.
-//
-// The environment value is operator-supplied and reaches an argv element,
-// which is INV-006's definition of externally-controlled — hence the  // edikt-guard:allow
-// validation here rather than trust at the call site.
-func ResolveExtractorModel(explicit string) (string, error) {
-	model := explicit
-	if model == "" {
-		model = os.Getenv(ExtractorModelEnv)
-	}
-	if model == "" {
-		model = DefaultExtractorModel
-	}
-	if err := idvalidate.ModelID(model); err != nil {
-		return "", err
-	}
-	return model, nil
-}
-
-
-
-
-
+// The three symbols that used to live here — the dispatching-session
+// model constant, its env-var override, and the resolver that combined
+// them — were deleted, comments included: the dispatching session no
+// longer dispatches the extractor at all (the two-phase compile split
+// removed the last Go-code path that shells out to `claude -p` for
+// extraction), so their one remaining honest job — validating an
+// operator-supplied override before a `--model` flag no code passes
+// anywhere — had no call site left to protect. The extractor's own model
+// is unaffected: ResolveExtractorAgentModel (agentmodel.go), which reads
+// the installed sidecar-extractor.md frontmatter, is retained and remains
+// the answer.

@@ -1,6 +1,6 @@
 ---
 name: test:golden-sidecar
-description: "Regenerate a sidecar golden fixture by invoking the live sidecar-extractor agent and compare against expected via bin/edikt sidecar diff. Dev-only — gated behind EDIKT_REGEN_FIXTURES=1."
+description: "Regenerate a sidecar golden fixture by invoking the live sidecar-extractor agent and compare against expected via edikt sidecar diff. Dev-only — gated behind EDIKT_REGEN_FIXTURES=1."
 tier: 1
 tier_2_dependency: edikt
 on_absent: refuse-and-direct-user
@@ -30,13 +30,13 @@ if [ "${EDIKT_REGEN_FIXTURES:-0}" != "1" ]; then
 fi
 ```
 
-If the env var is unset, exit 0 with the skip message. CI runs in this gated state — only the deterministic comparator (`bin/edikt sidecar diff`) runs there.
+If the env var is unset, exit 0 with the skip message. CI runs in this gated state — only the deterministic comparator (`edikt sidecar diff`) runs there.
 
-### 2. Verify `bin/edikt` on PATH
+### 2. Verify `edikt` on PATH
 
 ```bash
-if ! command -v bin/edikt >/dev/null 2>&1 && ! command -v edikt >/dev/null 2>&1; then
-  echo "error: bin/edikt not found on PATH. Run: edikt install edikt"
+if ! command -v edikt >/dev/null 2>&1; then
+  echo "error: edikt not found on PATH. Run: edikt install edikt"
   exit 1
 fi
 ```
@@ -62,7 +62,7 @@ mv "<fixture-dir>/${INPUT_BASENAME}.edikt.yaml" "<fixture-dir>/actual.edikt.yaml
 ### 6. Run the deterministic comparator
 
 ```bash
-bin/edikt sidecar diff <fixture-dir>
+EDIKT_INVOKER=/edikt:test:golden-sidecar edikt sidecar diff <fixture-dir>
 ```
 
 Exit codes:

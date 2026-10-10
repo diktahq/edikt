@@ -6,8 +6,8 @@ edikt governance flows through a pipeline: you write decisions for humans, compi
 
 - You write prose for humans (an ADR, invariant, or guideline). Compile generates a co-located `.edikt.yaml` sidecar for the model — it never edits your prose.
 - `/edikt:gov:compile` runs in two phases: **Phase A** regenerates any stale sidecar (the only step that calls an LLM), **Phase B** deterministically renders the output — no LLM, always runs.
-- Phase B produces four surfaces: an **ambient core** loaded on every edit, **topic files** loaded when a matching path is touched, a **directive index** that drives write-time enforcement, and a **manifest**.
-- A `must`-grade directive blocks the write before it happens. An `advisory`-grade one lets the write through and adds context after.
+- Phase B produces four surfaces: an **ambient core** loaded on every edit, **topic files** loaded when a matching path is touched, a **delivery map** recording which directive governs which path, and a **manifest**.
+- Every directive reaches the model *before* it writes, through the core and the topic files. Grade (`must` vs. `advisory`) is derived from the directive's own modal force and still decides which surface carries it; the finished diff is reviewed against every directive at phase end.
 
 The rest of this page is the detail behind each of those four points.
 
@@ -143,15 +143,15 @@ Compile takes an advisory file-lock at `.edikt/state/compile.lock`. A second inv
 - **Ambient core** — `.claude/rules/governance.md`. Loaded on every edit (`paths: "**/*"`). It carries only pathless-invariant canonical statements — the handful of rules that hold everywhere, no exceptions, regardless of what file is touched — plus a one-line topic index. No routing table, no aggregate reminders, no verification checklist.
 
   Each topic's line in that index is its **approved registry description**, and a description is capped at **160 characters**. Approving a longer one is refused with `error: description is N chars (max 160)`. The cap exists because this file loads on every edit in every session: 160 characters is roughly the 25-token per-topic budget the ambient index is priced at. A description that will not fit usually signals a topic that should be split rather than compressed.
-- **Scoped topic files** — `.claude/rules/governance/<topic>.md`, one per topic, loaded automatically when the frontmatter `paths:` glob matches a touched file. Each carries a `Directives`/`Prohibitions` region (may be empty — see [the single-home rule](#the-single-home-rule-scoped-directive-text-renders-exactly-once) below), a hand-authored `ManualDirectives` region (may also be empty), and always-present `Reminders` and `Verification Checklist` sections built from that topic's directives. A topic whose contributing sidecars declare no `paths:` at all renders no topic file — it's reached only through its skill package instead.
-- **The directive index** — `.claude/rules/governance/directive-index.yaml`. A single glob-keyed YAML file, not meant for ambient reading — it is `bin/edikt hook match`'s exclusive input, read by the write-time hook shims (see [The write-time split](#the-write-time-split-what-happens-to-a-directive-when-a-write-happens) below). Each entry under a glob key carries an `id`, a pinned `grade` (`must` or `advisory`, decided once at compile time — consumers never re-derive it), the literal directive `text`, a `falsifying_observation`, and its `reminders`. A single directive can appear under every glob it matches, not once per directive.
+- **Scoped topic files** — `.claude/rules/governance/<topic>.md`, one per topic, loaded automatically when the frontmatter `paths:` glob matches a touched file. Each carries a `Directives`/`Prohibitions` region (may be empty, meaning a topic with no directives — see [the single-home rule](#the-single-home-rule-scoped-directive-text-renders-exactly-once) below), a hand-authored `ManualDirectives` region (may also be empty), and always-present `Reminders` and `Verification Checklist` sections built from that topic's directives. A topic whose contributing sidecars declare no `paths:` at all renders no topic file — it's reached only through its skill package instead.
+- **The delivery map** — `.claude/rules/governance/delivery-map.yaml`. A single glob-keyed YAML file, not meant for ambient reading and deliberately carrying no directive text: it is the routing record, not a delivery surface. Each entry under a glob key names a directive's `id`, its pinned `grade` (`must` or `advisory`, decided once at compile time — consumers never re-derive it), its `class`, its `topic`, and the `surface` that delivers it. It is the one source of path→directive scope, read by `bin/edikt hook match`, `edikt gov scope`, the session tally and the prune counter. A single directive appears under every glob it matches, not once per directive.
 - **The manifest** — `.claude/rules/governance/manifest.yaml`. Lists every surface this compile produced, each with the SHA-256 of its bytes, and nothing else — no timestamp, deliberately, so the manifest is byte-identical for byte-identical input and freshness checking can tell stale from recompiled. It cannot hash itself and omits itself from its own surface list.
 
 A reader can tell which surface they're looking at from its shape alone:
 
 - Ambient core — `paths: "**/*"`, almost no body.
 - Topic file — a topic-scoped `paths:` list, a `Directives`/`Prohibitions`/`ManualDirectives` triad, always a Reminders + Verification Checklist tail.
-- Directive index — pure YAML keyed by glob, never prose.
+- Delivery map — pure YAML keyed by glob, never prose, and never directive text.
 - Manifest — a flat list of `path` + `kind` + `sha256` triples.
 
 Skill packages (`.claude/skills/edikt-<topic>/SKILL.md`) are a fifth thing worth knowing about, even though they're not one of the four rendered surfaces above — they're a trigger-loaded surface, read in full on task-language selection rather than passively included by path, and it's where a fully-unscoped topic's directives live when no topic file exists to carry them. They're still listed in `manifest.yaml` (`kind: "skill-package"`, one entry per topic).
@@ -160,52 +160,40 @@ No rendered surface carries a "compiled at" timestamp field — a timestamp woul
 
 ## The single-home rule: scoped directive text renders exactly once
 
-A scoped directive has two possible homes — its topic file, and `directive-index.yaml` — and without a rule pinning it to exactly one, it can end up delivered by both. Measured directly on a real 50-sidecar project: 78 of 110 directive lines in that project's topic files were exact duplicates of entries already in `directive-index.yaml`, both surfaces scoped to overlapping `paths:` globs and both firing on the same edit.
+A compiled directive has exactly one home. It renders into its topic file — the file the host loads whenever a touched path matches that topic's `paths:` frontmatter — or, when a topic's contributing sidecars declare no globs at all and it therefore has no rules file, into that topic's skill package. Nowhere else. The ambient core carries only the pathless-invariant statements that hold on every edit, and `delivery-map.yaml` carries routing, not text.
 
-The two surfaces aren't accidental duplicates — each is an independent delivery channel with its own contract:
+The rule earns its keep because the alternative is measurable duplication. Measured directly on a real 50-sidecar project: 78 of 110 directive lines in that project's topic files were exact duplicates of entries in a second surface, both scoped to overlapping `paths:` globs and both firing on the same edit. A directive delivered twice costs tokens twice and covers nothing extra.
 
-- **`directive-index.yaml`** — `hook match`'s exclusive input. Fires precisely on the file being touched, matched per-directive against that directive's own glob. Drives the write-time hooks: a synchronous PreToolUse deny for `must`-grade directives, a PostToolUse `additionalContext` for `advisory`-grade ones.
-- **Topic file** — the native ambient rule-loading surface. The whole file loads into context whenever a touched path matches the topic's `paths:` frontmatter, independent of the hook — passive background context, not a guaranteed synchronous delivery.
+**The precise rule: a sidecar's `Directives`/`Prohibitions` text renders into its topic file's compiled-directives region, whether or not the sidecar declares `paths:`.** A topic file carries every directive of its topic.
 
-When a scoped directive is delivered by both, the second delivery adds token cost without adding coverage, since the hook's guarantee is strictly the stronger of the two.
+**What "one home" meant through v0.8.x, and why it changed.** ADR-066 drew the line elsewhere: a sidecar that declared `paths:` sent its directive and prohibition text to `directive-index.yaml` and *only* there, to be delivered by a hook at the moment of a matching edit, leaving the topic file's compiled-directives region empty. That reading rested on the edit-time channel being the stronger of the two deliveries. ADR-083 retired the channel on the measurement below, so the surviving delivery is now the only delivery: the 482 path-scoped entries that lived in the index on edikt's own corpus were re-homed into their topic files, and the index is no longer rendered at all.
 
-**The precise rule: "scoped" means the sidecar declares a `paths:` field.** A sidecar's `Directives`/`Prohibitions` text renders into its topic file's compiled-directives region only when the sidecar declares no `paths:`. A sidecar that *does* declare `paths:` sends its directive and prohibition text to `directive-index.yaml` alone — the topic file's compiled-directives region omits it entirely.
+One consequence worth knowing, and it inverted with that change: an empty compiled-directives region used to mean "this topic's directives are all path-scoped and live in the index." It now means what it looks like — a topic with no directives.
 
-One consequence worth knowing: a topic file whose contributing sidecars all declare `paths:` renders an *empty* compiled-directives region — open/close sentinel markers with nothing between them. That's the rule working as designed on a corpus where scoping is thorough, not a bug or a sign the corpus is thin.
+Two things are unaffected either way:
+- **Pathless/unscoped directive text** renders into the topic file's body, as it always did.
+- **`ManualDirectives`** — hand-authored directly into the sidecar, never extracted, no other delivery channel — always render into the topic file's manual region.
 
-Two things are unaffected by this rule either way:
-- **Pathless/unscoped directive text** still renders into the topic file's body — a sidecar with no `paths:` has no glob for the hook to key on, so the topic file is the only place it can reach a reader.
-- **`ManualDirectives`** — hand-authored directly into the sidecar, never extracted, no other delivery channel — always render into the topic file's manual region regardless of whether that sidecar also declares `paths:`.
+## How a directive reaches the model
 
-## The write-time split: what happens to a directive when a write happens
+Schema 3's ambient-token reduction opens a gap: a directive scoped to, say, `tools/**/*.go` only reaches a reader when the host loads that topic file. edikt closes it structurally — the topic file's `paths:` frontmatter is what the host matches against the file being worked on, so the rule is in context *before* an edit is attempted, which is the only point at which a rule can still change what gets written.
 
-Schema 3's ambient-token reduction opens a gap: a directive scoped to, say, `tools/**/*.go` only reaches a reader when the host happens to load that topic file, which depends on the host's own rules-loading behavior, not on the write actually happening. That's acceptable for an advisory rule. It is not acceptable for a `must`-grade rule, because the entire point of an invariant is that it applies whether or not anyone remembered to load it.
-
-The answer is a channel that fires *because a write is happening*, keyed on the file being written, independent of ambient loading — two hooks over one matcher, split by grade:
-
-| Grade | Hook | Shape |
+| Surface | When it loads | What it carries |
 |---|---|---|
-| `must` | PreToolUse | **deny**, naming the matched directive; the write does not happen |
-| `advisory` | PostToolUse | `additionalContext`; the write already happened |
+| Ambient core | Every edit | The pathless invariants that hold everywhere, plus a one-line topic index |
+| Topic file | The host matches a touched path against its `paths:` frontmatter | Every directive of that topic, its Reminders, its Verification Checklist |
+| Skill package | The task language selects it — before anything has been touched | A topic with no scoped rules file, in full |
+| `delivery-map.yaml` | Never — it is not a delivery surface | Routing only: which directive governs which path, at which grade, through which surface |
 
-A `must`-grade directive is enforced *before* the write completes: the PreToolUse hook blocks the tool call with a deny that names the specific matched directive, and the write does not go through until the agent complies. An `advisory`-grade directive is delivered *after* the write completes: the PostToolUse hook injects `additionalContext` carrying the directive text, but nothing was blocked — the write already happened, and the injected text is guidance for what comes next, not a gate on what just occurred.
+Grade survives all of this and still means what it meant. `must` is a guardrail and `advisory` is context; grade is derived once, at compile time, from the directive's actual modal force rather than a keyword scan, and it is pinned onto the delivery-map entry where the phase-end verifier reads it. Consumers never re-derive it. What grade no longer selects is a *moment* of enforcement.
 
-This split is grounded in a direct behavioral measurement: advisory text appended after the fact was read and largely ignored, while a deny naming the rule and forcing a retry was complied with. The two paths are kept disjoint deliberately — a `must` rule that also appeared in advisory context would be delivered twice, and the weaker of the two deliveries is the one an agent learns to route around.
+### The channel that was retired
 
-The grade itself (`must` vs. `advisory`) is decided once, at compile time, and pinned directly into `directive-index.yaml`'s `grade` field — consumers of the index never re-derive it. Grade derivation is keyed off the directive's actual modal verb, not a keyword scan.
+Through v0.8.x a second channel fired *because* an edit was happening: `bin/edikt hook match` read `directive-index.yaml`, and a `must`-grade match became a synchronous PreToolUse refusal naming the matched directive, while an `advisory`-grade one became PostToolUse `additionalContext` after the fact. **ADR-083 retired it**, and the measurement behind the retirement is blunt. Against a no-governance floor where 9 of 9 benchmark subjects finished, and an ambient-only arm where 7 of 7 finished, the arm carrying both surfaces finished **1 of 9**. One migration edit matched 25 rules and 8.9–33.5 KB of payload, roughly 60 % of it duplicating the always-loaded core the model already had, opening on a currency-arithmetic rule with nothing to do with the change. The channel was bypassable by construction, too: its matcher was `Write|Edit`, so when an agent was refused an `Edit` to a governed file it completed the identical edit through `Bash` and nothing saw it.
 
-The write-time tier is deliberately fail-open rather than fail-closed: this code runs inside PreToolUse, and failing closed would mean a governance bug blocks every write in the user's editor until someone diagnoses it — a worse outcome than a missed injection.
+So nothing is injected as an edit lands, and **an edit that violates a rule is not stopped, not warned about, and not annotated at that moment.** Verification moved to the point where the work is whole enough to judge: `/edikt:gov:verify-diff` forks a read-only `governance-verifier` over the finished diff and the compiled directives and returns a per-directive `PASS` / `FAIL` / `NEEDS_REVIEW`, and post-flight runs it as its L2 layer at phase end. ADR-083 names it the only verification surface.
 
-Fail-open must never be *silent*, though. These all produce the exact same observable as a correct "no directive applies here" pass — a write that proceeds with nothing injected:
-
-- The binary is absent
-- The index is missing
-- The index is corrupt
-- The path is unresolvable
-
-So every invocation is journaled with a distinctly-typed outcome, even when the observable behavior looks identical.
-
-This tier only covers `file_path`-bearing tool calls. A write performed through Bash (redirection, `tee`, in-place stream editing) carries no `file_path` and is not matched by this tier at all — a named and accepted gap, not a silent one.
+`PreToolUse` still runs, and it keeps exactly one job — the same one it had before, untouched by the retirement: the INV-005 managed-region guard. It refuses an `Edit` or `Write` that would overwrite bytes edikt generated — the managed blocks in `CLAUDE.md` and `settings.json`, and the wholly-generated compiled surfaces — and for a write arriving through `Bash`, which the hook never sees, an integrity sidecar notices the rewritten region afterwards instead. That is edikt guarding its own files. It is not a rule check on your code, and it does not grow into one.
 
 ## What the retired schema-2 render looked like
 

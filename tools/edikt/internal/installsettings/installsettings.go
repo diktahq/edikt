@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 )
@@ -43,6 +44,10 @@ type Options struct {
 	// HookDir is the raw EDIKT_HOOK_DIR value to substitute into the
 	// template. Validated against hookDirAllowlist before use.
 	HookDir string
+	// Force overwrites a settings.json that carries entries the template
+	// does not produce. Without it, Write refuses rather than destroying a
+	// user's own hooks — see NonTemplateEntriesError.
+	Force bool
 	// BackupHome overrides $HOME for the one-shot pre-v0.6.0 backup. Tests
 	// set this to an isolated tmp dir; production callers leave it empty
 	// and os.Getenv("HOME") is used, matching install.sh:826's literal
@@ -85,9 +90,25 @@ func (e *FatalSidecarError) Unwrap() error { return e.Err }
 // The denylist (install.sh:844-849) rejected only `"`, `\`, `|`, tab, CR,
 // LF — leaving `$`, backticks, `(`, `)`, and `;` all permitted through into
 // `"command": "<dir>/session-start.sh"` in settings.json, a value Claude
-// Code shell-interprets at hook-fire time. This pattern permits only an
-// absolute path built from letters, digits, '.', '_', '/', '-'.
-var hookDirAllowlist = regexp.MustCompile(`^/[A-Za-z0-9._/-]+$`)
+// Code shell-interprets at hook-fire time.
+//
+// The value starts with one of a CLOSED set of anchors, then continues in
+// the original character class (letters, digits, '.', '_', '/', '-'):
+//
+//	/                          an absolute path (the original allowlist)
+//	$HOME/                     portable, user-scoped
+//	$CLAUDE_PROJECT_DIR/       portable, project-scoped
+//	"$HOME"/                   the same two, double-quoted so a home or
+//	"$CLAUDE_PROJECT_DIR"/     project path with a space stays one word
+//
+// The portable anchors exist because a committed project settings file
+// that carries one machine's absolute path is wrong on every other machine
+// (#11 comment item 7, D-P a). They are safe for the same reason the
+// absolute form is: the host's shell expands exactly one known variable at
+// the very start, every other `$`, brace, quote, backtick and parenthesis is
+// still outside the class, and the anchor must be followed by '/' so
+// `$HOMEX` or a bare `$HOME` does not match. ".." is rejected separately.
+var hookDirAllowlist = regexp.MustCompile(`^(?:/|\$HOME/|\$CLAUDE_PROJECT_DIR/|"\$HOME"/|"\$CLAUDE_PROJECT_DIR"/)[A-Za-z0-9._/-]+$`)
 
 // ValidateHookDir reports whether dir is safe to interpolate into a shell
 // command string. Exported so cmd/install_settings.go (and tests) can
@@ -98,13 +119,119 @@ func ValidateHookDir(dir string) error {
 	}
 	if !hookDirAllowlist.MatchString(dir) {
 		return &ValidationError{Msg: fmt.Sprintf(
-			"EDIKT_HOOK_DIR %q does not match the allowed pattern ^/[A-Za-z0-9._/-]+$ "+
-				"(must be an absolute path built only from letters, digits, '.', '_', '/', '-')", dir)}
+			"EDIKT_HOOK_DIR %q is not an allowed hook dir: it must be an absolute path, or start with "+
+				"$HOME/, $CLAUDE_PROJECT_DIR/, \"$HOME\"/ or \"$CLAUDE_PROJECT_DIR\"/, and otherwise contain only "+
+				"letters, digits, '.', '_', '/', '-'", dir)}
 	}
 	if strings.Contains(dir, "..") {
 		return &ValidationError{Msg: fmt.Sprintf("EDIKT_HOOK_DIR %q must not contain '..'", dir)}
 	}
 	return nil
+}
+
+// PortableHookDir returns the form of an absolute hook dir that a settings
+// file shared across machines should carry: `"$CLAUDE_PROJECT_DIR"/<rel>`
+// when it lies under projectRoot (quoted, so a project path with a space
+// survives the shell), `$HOME/<rel>` when it lies under home, and resolved
+// unchanged otherwise. The project is checked first — a project inside the
+// home directory is still the project. A form that would not pass
+// ValidateHookDir is never returned; resolved is returned instead.
+func PortableHookDir(resolved, home, projectRoot string) string {
+	for _, anchor := range []struct{ root, token string }{
+		{projectRoot, `"$CLAUDE_PROJECT_DIR"`},
+		{home, "$HOME"},
+	} {
+		if anchor.root == "" {
+			continue
+		}
+		rel, err := filepath.Rel(filepath.Clean(anchor.root), filepath.Clean(resolved))
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "../") || filepath.IsAbs(rel) {
+			continue
+		}
+		candidate := anchor.token + "/" + filepath.ToSlash(rel)
+		if ValidateHookDir(candidate) == nil {
+			return candidate
+		}
+	}
+	return resolved
+}
+
+// jsonStringFragment returns s escaped for the inside of a JSON string
+// literal. The template carries ${EDIKT_HOOK_DIR} inside a JSON string and
+// is substituted as text before it is parsed; the quoted portable anchors
+// contain '"', which unescaped would end that string early.
+func jsonStringFragment(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1])
+}
+
+// NonTemplateEntriesError reports that the settings.json on disk carries
+// hook entries the template does not produce — a user's own hooks, or another
+// tool's. `install settings` is a WHOLESALE overwrite, so proceeding would
+// delete them silently. bok round 2 (D83 a) reached for plain
+// `install settings` as the natural recovery from a broken settings file;
+// the recovery would have destroyed every user-added hook.
+type NonTemplateEntriesError struct {
+	Path    string
+	Entries []string
+}
+
+func (e *NonTemplateEntriesError) Error() string {
+	return fmt.Sprintf(
+		"%s carries %d hook entr(y/ies) this template does not produce: %s.\n"+
+			"`install settings` REPLACES the whole file, so those would be lost.\n"+
+			"  to fix the two mechanical defects in place, leaving everything else alone: edikt install settings --repair\n"+
+			"  to overwrite anyway, having read what is above: edikt install settings --force",
+		e.Path, len(e.Entries), strings.Join(e.Entries, ", "))
+}
+
+// hookCommands returns every hook command string in a parsed settings map,
+// as "<Event>: <command>". The shape is settings.hooks.<Event>[].hooks[].command;
+// anything that does not match is ignored rather than guessed at.
+func hookCommands(parsed map[string]interface{}) []string {
+	var out []string
+	hooks, _ := parsed["hooks"].(map[string]interface{})
+	for event, groups := range hooks {
+		list, _ := groups.([]interface{})
+		for _, g := range list {
+			gm, _ := g.(map[string]interface{})
+			inner, _ := gm["hooks"].([]interface{})
+			for _, h := range inner {
+				hm, _ := h.(map[string]interface{})
+				if cmdStr, ok := hm["command"].(string); ok {
+					out = append(out, event+": "+cmdStr)
+				}
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// nonTemplateEntries returns the hook entries present on disk that the
+// template does not produce. An unreadable or unparseable existing file
+// yields none: this check exists to protect content it can SEE, and a file
+// it cannot read is the install path's own problem, not this one's.
+func nonTemplateEntries(settingsPath string, fromTemplate map[string]interface{}) []string {
+	raw, err := os.ReadFile(settingsPath) //nolint:gosec // operator-supplied path
+	if err != nil {
+		return nil
+	}
+	var existing map[string]interface{}
+	if err := json.Unmarshal(raw, &existing); err != nil {
+		return nil
+	}
+	want := map[string]bool{}
+	for _, c := range hookCommands(fromTemplate) {
+		want[c] = true
+	}
+	var extra []string
+	for _, c := range hookCommands(existing) {
+		if !want[c] {
+			extra = append(extra, c)
+		}
+	}
+	return extra
 }
 
 // Write performs the full FR-009 sequence: validate EDIKT_HOOK_DIR, read
@@ -134,13 +261,21 @@ func Write(opts Options) (skipped bool, err error) {
 	// order the python implementation used, and the reason a naive
 	// sed-based substitution was neither JSON-aware nor escape-safe
 	// (install.sh:853-857, audit HI-2).
-	substituted := strings.ReplaceAll(string(raw), "${EDIKT_HOOK_DIR}", opts.HookDir)
+	substituted := strings.ReplaceAll(string(raw), "${EDIKT_HOOK_DIR}", jsonStringFragment(opts.HookDir))
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(substituted), &parsed); err != nil {
 		return false, &ValidationError{Msg: fmt.Sprintf(
 			"template produced invalid JSON after substitution: %v (check that EDIKT_HOOK_DIR=%q is a safe path)",
 			err, opts.HookDir)}
+	}
+
+	// REFUSE BEFORE THE OVERWRITE, not after. Everything above this point is
+	// read-only, so a refusal here leaves the file exactly as it was.
+	if !opts.Force {
+		if extra := nonTemplateEntries(opts.SettingsPath, parsed); len(extra) > 0 {
+			return false, &NonTemplateEntriesError{Path: opts.SettingsPath, Entries: extra}
+		}
 	}
 
 	if err := backupPreV060(opts.SettingsPath, opts.BackupHome); err != nil {

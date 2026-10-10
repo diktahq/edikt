@@ -12,7 +12,7 @@
     "signals",
     "directives"
   ],
-  "$comment": "v2 \u2014 source_excerpts[] replaces source_excerpt. The singular key is NOT accepted as an alias: additionalProperties:false rejects it, and the Go loader reports it by name so a half-migrated sidecar fails loudly instead of validating with zero anchors. Migration is bin/edikt migrate --to-v2.",
+  "$comment": "v2 \u2014 source_excerpts[] replaces source_excerpt. The singular key is NOT accepted as an alias: additionalProperties:false rejects it, and the Go loader reports it by name so a half-migrated sidecar fails loudly instead of validating with zero anchors. Migration is edikt migrate --to-v2.",
   "properties": {
     "schema_version": {
       "type": "integer",
@@ -33,6 +33,18 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
       "description": "Hex SHA-256 of the parent .md body after whitespace normalization, recorded at extraction time. Powers the BODY DRIFT signal: when this differs from the recomputed digest, prose changed that extraction never saw, so the sidecar may be INCOMPLETE \u2014 distinct from ANCHOR DRIFT, where a recorded quote no longer matches and the sidecar is WRONG. This is NOT the forbidden source_hash field: that field was a fast-path substitute for checking, where a divergence between recorded and computed values was the DEFECT. Here divergence is the PRODUCT \u2014 the field exists precisely to be compared and to disagree. source_hash, agent_prompt_version and directives_hash remain forbidden. Optional: sidecars written before this field existed have no baseline and MUST be reported as UNMEASURED, never as unchanged."
+    },
+    "extractor_model": {
+      "type": "string",
+      "pattern": "^([a-z][a-z0-9-]{0,40}|unrecorded)$",
+      "description": "The model that actually performed this sidecar's most recent extraction, carried forward from that run's receipt. Compile-derived: written once by `phasea verify` after an `ok` receipt item, never by the extractor itself and never hand-authored. Read by `doctor`'s per-sidecar drift line, `/edikt:sdlc:drift`, and `gov:score`'s provenance line, each of which prints `extracted under X, current Y` when this differs from the currently-resolved model \u2014 informational only, never gating. Not derivable at compile time: under `extractor.model: inherit` there is no static value anywhere to derive it from, only a fact about one already-completed run. Falsifying observation: a sidecar written by a run whose receipt records `extractor_model: X` carries a different value, or none, in this field. The literal `unrecorded` \u2014 never a guess, never the dispatching session's own model, never a config or constant value \u2014 is written when the dispatching context reported none. Optional: sidecars written before this field existed have no baseline and MUST be reported as UNMEASURED, never as unchanged.",
+      "examples": ["sonnet", "unrecorded"]
+    },
+    "extractor_contract": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64}|unrecorded)$",
+      "description": "SHA-256 of the resolved extractor agent definition's exact body at the time of this sidecar's most recent extraction, carried forward from that run's receipt the same way extractor_model is \u2014 same compile-derived timing, same reader set (`doctor`, `/edikt:sdlc:drift`, `gov:score`). Distinguishes two dispatches that share a `prompt_version` but not a body \u2014 a prompt patched and then reverted keeps its version number across both states, and prompt_version alone cannot tell them apart. Not derivable at compile time, for the same reason extractor_model is not: it names a fact about one already-completed run. Falsifying observation: a sidecar written by a run whose receipt records `extractor_contract: H` carries a different digest, or none, in this field. The literal `unrecorded` is written when the dispatching context reported none. Optional: sidecars written before this field existed have no baseline and MUST be reported as UNMEASURED, never as unchanged.",
+      "examples": ["afd03a749b35758360fdbede6c9d525088273d729cad0445b4cb6c7ec06a524d", "unrecorded"]
     },
     "signals": {
       "type": "array",
@@ -80,8 +92,8 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 500,
-            "description": "MUST NOT directive synthesised from a rejected option. Same shape as directives[].text."
+            "maxLength": 2000,
+            "description": "MUST NOT directive synthesised from a rejected option. Same shape as directives[].text. HARD cap (schema refusal). The SOFT target is 500 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 500 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "derived_from": {
             "type": "string",
@@ -90,7 +102,7 @@
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that returns exit 0 when the prohibition is honored, non-zero when it is violated. Run via `bin/edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
+            "description": "Optional shell command that returns exit 0 when the prohibition is honored, non-zero when it is violated. Run via `edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
           },
           "verify_kind": {
             "type": "string",
@@ -104,14 +116,14 @@
           "intent": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line semantic claim of the prohibition, generator-neutral. Consumed by the L2 governance-verifier instead of the raw text. Must read as the assertion without referencing implementation symbols the generator controls."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line semantic claim of the prohibition, generator-neutral. Consumed by the L2 governance-verifier instead of the raw text. Must read as the assertion without referencing implementation symbols the generator controls. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "falsifying_observation": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "human_approved_at": {
             "type": [
@@ -119,7 +131,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral, but NOT enforced at compile \u2014 the check is deferred to a later phase (AC-4.3), so an unapproved behavioral verify compiles today. Set by `bin/edikt sidecar approve`."
+            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral, but NOT enforced at compile \u2014 the check is deferred to a later phase (AC-4.3), so an unapproved behavioral verify compiles today. Set by `edikt sidecar approve`."
           },
           "positive_fixture_path": {
             "type": "string",
@@ -248,7 +260,7 @@
               "verify": {
                 "type": "string",
                 "minLength": 1,
-                "description": "Optional shell command that runs the checklist item mechanically. Exit 0 = pass. Used by `bin/edikt verify gov <ID>` to enforce the completion-evidence discipline."
+                "description": "Optional shell command that runs the checklist item mechanically. Exit 0 = pass. Used by `edikt verify gov <ID>` to enforce the completion-evidence discipline."
               }
             }
           }
@@ -342,13 +354,13 @@
           "text": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 500,
-            "description": "The directive sentence as it will appear in compiled governance, \u2264 500 characters. Includes its own ref tail (e.g., '(ref: ADR-NNN)'). 500 chars is deliberate headroom \u2014 natural-language rules with multiple clauses routinely run 200\u2013280 chars; rules that would exceed it should be split."
+            "maxLength": 2000,
+            "description": "The directive sentence as it will appear in compiled governance, \u2264 500 characters. Includes its own ref tail (e.g., '(ref: ADR-NNN)'). 500 chars is deliberate headroom \u2014 natural-language rules with multiple clauses routinely run 200\u2013280 chars; rules that would exceed it should be split. HARD cap (schema refusal). The SOFT target is 500 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 500 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that returns exit 0 when the directive holds, non-zero when it is violated. Run via `bin/edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
+            "description": "Optional shell command that returns exit 0 when the directive holds, non-zero when it is violated. Run via `edikt verify gov <ID>`. The completion-evidence discipline refuses to declare success when any verify fails. Omit when no mechanical check is possible \u2014 the field stays absent, not empty."
           },
           "verify_kind": {
             "type": "string",
@@ -362,14 +374,14 @@
           "intent": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line semantic claim of the directive, generator-neutral. Consumed by the L2 governance-verifier instead of the raw `text`. Must read as the directive's assertion without referencing implementation symbols the generator controls."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line semantic claim of the directive, generator-neutral. Consumed by the L2 governance-verifier instead of the raw `text`. Must read as the directive's assertion without referencing implementation symbols the generator controls. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "falsifying_observation": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint."
+            "maxLength": 2000,
+            "description": "v1.2 (optional). One-line description of what a violation looks like. Used by the L2 verifier to decide PASS/FAIL/NEEDS_REVIEW. Required (non-null) when verify_kind == behavioral; Phase B compile enforces this conditional-required constraint. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "human_approved_at": {
             "type": [
@@ -377,7 +389,7 @@
               "null"
             ],
             "format": "date-time",
-            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral, but NOT enforced at compile \u2014 the check is deferred to a later phase (AC-4.3), so an unapproved behavioral verify compiles today. Set by `bin/edikt sidecar approve`; the tier-1 wrapper captures the user's decision via Claude Code's AskUserQuestion before dispatching the tier-2 binary."
+            "description": "v1.2 (optional). RFC 3339 UTC timestamp of human approval. Required by CONTRACT (non-null) for verify_kind == behavioral, but NOT enforced at compile \u2014 the check is deferred to a later phase (AC-4.3), so an unapproved behavioral verify compiles today. Set by `edikt sidecar approve`; the tier-1 wrapper captures the user's decision via Claude Code's AskUserQuestion before dispatching the tier-2 binary."
           },
           "positive_fixture_path": {
             "type": "string",
@@ -460,7 +472,7 @@
     },
     "proposed_paths": {
       "type": "array",
-      "description": "v2 (optional). Paths globs PROPOSED by extraction but not yet human-approved \u2014 they do not scope anything until promoted into paths[] via `bin/edikt sidecar approve --kind paths`. Kept separate from paths[] so an inferred guess can never silently become an enforced scope; an unapproved proposal is unmeasured, not authoritative.",
+      "description": "v2 (optional). Paths globs PROPOSED by extraction but not yet human-approved \u2014 they do not scope anything until promoted into paths[] via `edikt sidecar approve --kind paths`. Kept separate from paths[] so an inferred guess can never silently become an enforced scope; an unapproved proposal is unmeasured, not authoritative.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -485,8 +497,8 @@
           "evidence": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "Why this glob was proposed \u2014 the prose or filename observation it came from. Required: a proposal without evidence cannot be reviewed, only rubber-stamped."
+            "maxLength": 2000,
+            "description": "Why this glob was proposed \u2014 the prose or filename observation it came from. Required: a proposal without evidence cannot be reviewed, only rubber-stamped. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           },
           "matched_example": {
             "type": "string",
@@ -498,7 +510,7 @@
     },
     "proposed_removals": {
       "type": "array",
-      "description": "v2 (optional). Paths globs PROPOSED for removal from an existing paths[] scope, but not yet human-approved — they continue to enforce until promoted (removed) via `bin/edikt sidecar approve --kind paths`. Unlike proposed_paths (extractor-generated), a removal is a reviewed, human-initiated narrowing: nothing infers that a glob is over-broad. At approval time the ceremony computes a coverage preview (files that would lose this artifact's directives) and REFUSES outright if any lost file is literally named in the sidecar's own directive/prohibition text — a narrowing that un-governs a file the text mentions is a defect, not a judgment call.",
+      "description": "v2 (optional). Paths globs PROPOSED for removal from an existing paths[] scope, but not yet human-approved \u2014 they continue to enforce until promoted (removed) via `edikt sidecar approve --kind paths`. Unlike proposed_paths (extractor-generated), a removal is a reviewed, human-initiated narrowing: nothing infers that a glob is over-broad. At approval time the ceremony computes a coverage preview (files that would lose this artifact's directives) and REFUSES outright if any lost file is literally named in the sidecar's own directive/prohibition text \u2014 a narrowing that un-governs a file the text mentions is a defect, not a judgment call.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -515,8 +527,8 @@
           "evidence": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 300,
-            "description": "Why this glob is over-broad relative to what the directive text actually supports — the prose evidence a reviewer can check the coverage preview against."
+            "maxLength": 2000,
+            "description": "Why this glob is over-broad relative to what the directive text actually supports \u2014 the prose evidence a reviewer can check the coverage preview against. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 300 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
           }
         }
       }
@@ -524,9 +536,9 @@
     "proposed_topic_description": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 160,
+      "maxLength": 500,
       "pattern": "^[^\\r\\n]+$",
-      "description": "v2 (optional, transient). The extractor's SUGGESTED one-line registry description for this sidecar's topic \u2014 the 'extracted' half of the extracted-then-approved ceremony. It is not a description: no surface renders it, and it reaches .edikt/topics.yaml only through `bin/edikt sidecar approve --kind topic-description`, which stamps a hash over the exact bytes a human approved. Routed out to .edikt/state/pending-topic-descriptions/<topic>.yaml and stripped from the sidecar before steady state, exactly like proposed_paths and migration_preserved."
+      "description": "v2 (optional, transient). The extractor's SUGGESTED one-line registry description for this sidecar's topic \u2014 the 'extracted' half of the extracted-then-approved ceremony. It is not a description: no surface renders it, and it reaches .edikt/topics.yaml only through `edikt sidecar approve --kind topic-description`, which stamps a hash over the exact bytes a human approved. Routed out to .edikt/state/pending-topic-descriptions/<topic>.yaml and stripped from the sidecar before steady state, exactly like proposed_paths and migration_preserved. HARD cap (schema refusal). The SOFT target is 300 and lives in the extractor contract; between soft and hard a sidecar is accepted, written, and flagged for review rather than rejected. Raised from 160 on 2026-08-30: the corpus max was 473 against a 500 limit with nothing in 474..500, which is censoring by the cap, not headroom."
     },
     "paths_approval": {
       "type": "object",
@@ -535,7 +547,7 @@
         "approved_at",
         "globs_sha256"
       ],
-      "description": "v2 (optional). Receipt for a paths approval performed through `bin/edikt sidecar approve --kind paths`. Without it, a sidecar whose paths went through the ceremony is BYTE-IDENTICAL to one where an extractor wrote paths[] directly \u2014 so no gate can tell an approved scope from a declared one, and AC-4.4's 'approved fields survive regeneration byte-intact' asserts a property the data cannot express. Recorded as F-004.",
+      "description": "v2 (optional). Receipt for a paths approval performed through `edikt sidecar approve --kind paths`. Without it, a sidecar whose paths went through the ceremony is BYTE-IDENTICAL to one where an extractor wrote paths[] directly \u2014 so no gate can tell an approved scope from a declared one, and AC-4.4's 'approved fields survive regeneration byte-intact' asserts a property the data cannot express. Recorded as F-004.",
       "properties": {
         "approved_at": {
           "type": "string",
@@ -547,6 +559,13 @@
           "description": "SHA-256 over the sorted approved globs, newline-joined. Content-addressed on purpose: a receipt carrying only a timestamp would still validate after someone edited paths[] by hand afterwards, which is exactly the case it exists to catch."
         }
       }
+    },
+    "path_scope": {
+      "type": "string",
+      "enum": [
+        "judgement"
+      ],
+      "description": "v2 (optional). Declares that this artifact deliberately has NO file scope, so its directives are delivered by judgement \u2014 through the topic's skill package \u2014 rather than by a path match. Use it for rules that cannot trigger on a file: process rules, naming conventions, review conduct. Its purpose is to separate two states that are otherwise byte-identical: an artifact whose paths inference came up EMPTY, and one that has no file scope by design. Without it a delivery downgrade is indistinguishable from a deliberate routing choice. Declaring it does not weaken enforcement \u2014 for a rule with no file scope the skill package description IS the enforcement mechanism, since nothing else can select the rule before a file is touched."
     }
   }
 }

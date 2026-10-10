@@ -3,6 +3,8 @@ name: invariant:review
 description: "Review invariant language quality for enforceability"
 effort: high
 argument-hint: "[INV-NNN] — omit to review all active invariants"
+tier_2_dependency: edikt gov prose-stats
+on_absent: skip-with-warning
 allowed-tools:
   - Read
   - Glob
@@ -140,16 +142,34 @@ Each directive gets a 1-10 score. Directives scoring <5 get a concrete rewrite s
 - "NEVER use goroutines" in a Go project → high friction, suggest naming the alternative
 - "NEVER use global state" with a `var db *sql.DB` in cmd/ → clarify scope (cmd/ exempt)
 
+### 3c. Prose Statistics (mechanical count, display-only)
+
+For each invariant reviewed, run:
+
+```bash
+EDIKT_INVOKER=/edikt:invariant:review edikt gov prose-stats {invariants_path}/{INV-NNN}-{slug}.md
+```
+
+If `edikt` is not on PATH (`tier_2_dependency`, absent → `skip-with-warning`), emit `⚠ prose-stats unavailable — install the edikt binary for bare-id/hedge counts` once and skip this step; the review continues without it.
+
+This prints `bare_ids` and `hedges` counts (plus a few samples of each) — a mechanical count, not a verdict. **Display the numbers; never branch on them** — a mechanical count decides nothing on its own. Nothing in step 3 or 3b changes based on this count — it is one more line in the report the human reads.
+
+Include the raw counts and up to 3 samples of each inline in the invariant's review section:
+```
+  Prose stats: bare_ids={n}, hedges={n}
+    {sample lines, if n > 0}
+```
+
 ### 4. Check Sidecar Staleness
 
 Display progress: `Step 2/3: Checking sidecar staleness...`
 
-v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars. Staleness is detected by `bin/edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. The legacy v0.2-v0.4 `content_hash:` field is NOT used — its writer/reader hash mismatch made every freshly-compiled file born-stale.
+Governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars. Staleness is detected by `edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. The legacy v0.2-v0.4 `content_hash:` field is NOT used — its writer/reader hash mismatch made every freshly-compiled file born-stale.
 
 For each invariant reviewed, run the corpus-wide check once and grep for the artifact:
 
 ```bash
-check_output=$(bin/edikt gov compile --check 2>&1)
+check_output=$(EDIKT_INVOKER=/edikt:invariant:review edikt gov compile --check 2>&1)
 inv_stale=$(echo "$check_output" | grep -E "^\s*stale:\s+INV-${NNN}\b" | head -1)
 inv_missing=$(echo "$check_output" | grep -E "INV-${NNN}.*sidecar missing" | head -1)
 ```
@@ -164,7 +184,6 @@ Report:
   Run /edikt:invariant:compile INV-{NNN} to generate.
 ```
 
-If the parent `.md` has a legacy v0.2-v0.4 sentinel block (with `content_hash:`), don't try to re-hash it — `/edikt:doctor` flags such files with a migration prompt; review trusts that migration is the correct remedy and treats the file as missing-sidecar rather than stale-sentinel.
 
 ### 5. Output Report
 
@@ -236,6 +255,9 @@ INV-{NNN}: {Title}
     Current:  {n}
     Stale:    {n} — run /edikt:invariant:compile to regenerate
     Missing:  {n} — run /edikt:invariant:compile to generate
+
+  Prose stats (bare ids / hedges, summed across reviewed invariants): {n} / {n}
+    {a count, not a verdict — nothing above branched on it}
 
   {If weak + vague > 0}:
   Top recommendations:

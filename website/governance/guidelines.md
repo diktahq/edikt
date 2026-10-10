@@ -2,7 +2,7 @@
 
 Guidelines document team conventions and preferences — the patterns that should be consistent across the codebase but aren't hard constraints. They fill the gap between [ADRs](architecture-decisions) (decisions with alternatives considered, formalized by [Michael Nygard](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions)) and [Invariant Records](invariant-records) (non-negotiable constraints).
 
-Guidelines are edikt's lightest governance artifact. They compile into the same directive format as ADRs and invariants but carry lower enforcement weight — they never land in the ambient core's non-negotiable section. Where the compiled text itself lives follows the same single-home rule as any other artifact (ADR-066): a guideline scoped to specific paths renders into `directive-index.yaml` for write-time delivery; only a fully unscoped guideline (no `paths:`) renders into its topic file's body.
+Guidelines are edikt's lightest governance artifact. They compile into the same directive format as ADRs and invariants but carry lower enforcement weight — they never land in the ambient core's non-negotiable section. Where the compiled text itself lives follows the same rule as any other artifact: a guideline's directives render into its topic file's body, which the host loads whenever a touched path matches that topic's `paths:` frontmatter — or into the topic's skill package, when the topic has no scoped rules file to carry them. (Through v0.8.x a path-scoped guideline rendered into `directive-index.yaml` instead, to be delivered at the moment of a matching edit; that surface is retired — ADR-083.)
 
 ## When to use a guideline
 

@@ -27,9 +27,7 @@ Compile accepted ADRs, active invariants, and team guidelines into topic-grouped
 
 This integer identifies the output format contract of this command. It is independent of edikt's marketing version.
 
-- `1` — v0.1.x flat `governance.md` (single file, one directive per line, 30-directive cap). Legacy.
-- `2` — v0.2.x topic-grouped rule files under `governance/`, with a signal→file index that has since been retired, and no directive cap. Legacy. (In v0.5.x this schema carried in-body directive sentinel blocks; under v0.6.0+ the schema is identical but inputs come from co-located `<artifact>.edikt.yaml` sidecars.)
-- `3` — the four-surface render. Ambient core (`governance.md`: pathless-invariant canonical statements plus a one-line topic index, no routing table, no aggregate reminder or verification sections), scoped topic files under `governance/`, the glob-keyed `directive-index.yaml`, and per-topic skill packages at `.claude/skills/edikt-<topic>/SKILL.md`. Accompanied by `manifest.yaml` listing every rendered surface with its SHA-256. No timestamps in any rendered surface. Current.
+- `3` — the four-surface render. Ambient core (`governance.md`: pathless-invariant canonical statements plus a one-line topic index, no routing table, no aggregate reminder or verification sections), scoped topic files under `governance/`, and per-topic skill packages at `.claude/skills/edikt-<topic>/SKILL.md`. Accompanied by `manifest.yaml` listing every rendered surface with its SHA-256, and by `delivery-map.yaml`, the path->directive scope record (which directive governs which path, and which surface delivers it — it delivers nothing itself). The glob-keyed `directive-index.yaml` this version once rendered beside them is retired: edikt no longer injects rule text into a write in progress — only the ambient core and topic files deliver rules, and they deliver before any edit is attempted, never at the moment of the edit itself. A compile renders none and `edikt upgrade` removes a stale copy. No timestamps in any rendered surface. Current.
 
 Bump this constant ONLY when the output structure changes in a way that older tooling cannot read. Prose updates, bug fixes, and new directives do NOT bump the schema. When bumped, write a new ADR to document the migration.
 
@@ -48,7 +46,8 @@ CRITICAL: NEVER write governance files that contain contradictions — detect an
 
 ## Arguments
 
-- `--check` — validate only, don't write. In two-phase mode (default, v0.6.0+) emits a verdict line on stderr (`up-to-date` or stale-count). Exits non-zero on stale sidecars. For CI.
+- `--check` — validate only; **never writes** a sidecar, a rendered surface, or the trust store. Emits a verdict line on stderr (`anchor drift: N stale (M sidecar(s))`). Exits 1 on any stale sidecar — including anchor drift the mechanical autorepair could fix: that drift is reported as `stale:` (`not written (--check) — run edikt gov compile`) and listed in the JSON `phase_a.repairable` / `phase_a.repairable_ids`. Run `edikt gov compile` to apply the repair. For CI.
+- `--trust` — record this project in the user trust store before the post-compile verify gate. Refused with `--check` / `--dry-run` (exit 2): a non-writing flag cannot record trust.
 - `--dry-run` — alias for `--check`. Use the flag that matches your mental model.
 - `--json` — output structured JSON (see Reference). In two-phase mode emits a single object with `phase_a` and `phase_b` summaries; `phase_b` is **always** a populated object, never `null` (Claude Code consumers rely on this contract).
 - `--no-wait` — fail fast instead of blocking on a held `compile.lock`.
@@ -69,7 +68,7 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
     Scan for the marker `[edikt:directives:start]: #` outside fenced regions and outside the documentation skip-list. The `edikt` binary handles fence detection and skip-list correctly:
 
     ```bash
-    edikt migrate sidecars --dry-run > /tmp/edikt-sidecar-precheck.out 2>&1
+    EDIKT_INVOKER=/edikt:gov:compile edikt migrate sidecars --dry-run > /tmp/edikt-sidecar-precheck.out 2>&1
     PRECHECK_EXIT=$?
     ```
 
@@ -88,13 +87,7 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
 
 1. Display progress: `Step 1/5: Reading source documents...`
 
-1b. Read the edikt version from `~/.edikt/VERSION`. If this file doesn't exist, fall back to `edikt_version:` in `.edikt/config.yaml`. If BOTH differ (e.g., VERSION says 0.2.3 but config says 0.3.0), warn:
-   ```
-   ⚠ ~/.edikt/VERSION (0.2.3) differs from .edikt/config.yaml edikt_version (0.3.0).
-     The compiled_by stamp will use ~/.edikt/VERSION. To update, re-run the installer:
-     curl -fsSL https://raw.githubusercontent.com/diktahq/edikt/main/install.sh | bash
-   ```
-   Use `~/.edikt/VERSION` as the authoritative version for the `compiled_by` stamp.
+1b. The version stamped into `compiled_by` is what `edikt version` reports — the active binary's own version, resolved by the launcher. A `.edikt/config.yaml` pin that disagrees with it is `edikt doctor`'s finding ("the pin is AHEAD/BEHIND the active version"), not this command's; compile stamps what ran.
 
 2. Read `.edikt/config.yaml`. Resolve paths from the `paths:` section using the Path Defaults in the Reference section.
 
@@ -117,19 +110,19 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
 
 9. Display progress: `Step 3/5: Grouping directives by topic...`
 
-10. For each source document (ADR, invariant, guideline), look for its co-located sidecar: `{same_dir}/{basename}.edikt.yaml`. sidecars are the authoritative source — `gov:compile` MUST read sidecars only. In-body sentinel blocks are pre-migration artifacts; their presence was already rejected by step 0a.
+10. For each source document (ADR, invariant, guideline), look for its co-located sidecar: `{same_dir}/{basename}.edikt.yaml`. sidecars are the authoritative source — `gov:compile` MUST read sidecars only. A legacy in-body block is never an input: step 0a refuses the compile while one is present.
 
 11. **If sidecar exists:** read the sidecar YAML. The sidecar conforms to `templates/schemas/gov-sidecar.v2.schema.json` (v2):
 
     - **`directives[]`** — auto-extracted by `/edikt:<artifact>:compile` from the source body. Each entry has `text` and `source_excerpts[]` (an ordered array of 1..N anchors).
     - **`manual_directives[]`** — user-authored rules. Optional (defaults to `[]`). Preserved across sidecar regenerations. Always included in the effective rule set.
     - **`suppressed_directives[]`** — auto directives the user rejected. Optional (defaults to `[]`). Preserved across sidecar regenerations. Subtracted from `directives` at compile time.
-    - **`reminders[]`** — pre-action reminders. Optional. Aggregated into `governance.md § Reminders`.
-    - **`verification[]`** — verification checklist items. Optional. Aggregated into `governance.md § Verification Checklist`.
+    - **`reminders[]`** — pre-action reminders. Optional. Rendered per topic — into the topic file or skill package.
+    - **`verification[]`** — verification checklist items. Optional. Rendered per topic — into the topic file or skill package.
     - **`topic`** — the topic key for grouping (e.g., `ai`, `backend`, `privacy`).
     - **`signals[]`** — routing keywords retained for search and for the benchmark's attack corpus. They no longer render a routing table: topic routing is the registry description.
 
-    Compute the **effective rule set** using the directive merge formula (still applies, now over sidecar fields):
+    Compute the **effective rule set** using the directive merge formula:
 
     ```
     effective_rules = (directives[].text - suppressed_directives) ∪ manual_directives
@@ -137,25 +130,48 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
 
     Where `-` is set difference by exact string match, and `∪` is set union preserving document order. Duplicates across both lists are de-duplicated; the first occurrence's source reference is kept.
 
-    **Within-artifact contradiction detection** (same as before): a directive and a manual directive that contradict each other → warn but include both. A suppressed directive that matches nothing in `directives[]` → warn (stale suppression).
+    **Within-artifact contradiction detection**: a directive and a manual directive that contradict each other → warn but include both. A suppressed directive that matches nothing in `directives[]` → warn (stale suppression).
 
 12. **If no sidecar exists, or a sidecar is stale** (fresh artifact, never compiled, quote drift, or a whole project adopting edikt on pre-existing docs): run the Phase A contract below. Then re-run step 11.
 
     This is the bootstrap path, and it applies whether ONE artifact needs extraction or ALL of them do. A project adopting edikt on hand-written ADRs arrives here with every artifact missing — that is expected, not an error state.
 
-    **Extraction is tier-1's job, not the binary's.** `bin/edikt gov compile` computes the work-list and emits a plan; it does NOT dispatch. Fanning extractors out means invoking an LLM, which INV-012 forbids a tier-2 binary from doing (ADR-030, SPEC-013). You are the dispatcher.
+    **Extraction is tier-1's job, not the binary's.** `edikt gov compile` computes the work-list and emits a plan; it does NOT dispatch. Fanning extractors out means invoking an LLM, which INV-012 forbids a tier-2 binary from doing (ADR-030). You are the dispatcher.
 
     **Step A1 — plan.**
 
     ```bash
-    bin/edikt phasea plan
+    edikt phasea plan
     ```
 
-    Exit 0 means a plan was written and its path printed. Exit 1 means there is nothing to extract — skip to step 11. Exit 4 is a refusal (budget ceiling, or an unpinned extractor `prompt_version`): report the message verbatim and stop. Never re-run to get past a refusal.
+    **Exit codes — the whole `phasea` group, one table.** The same number means
+    different things per verb, and a caller that assumes otherwise retries a
+    refusal or accepts a loss. A normal outcome prints once on stdout and is never
+    prefixed "error:"; a failure prints once, on stderr.
+    
+    | Verb | 0 | 1 | 2 | 3 | 4 | 5 | 6 |
+    |---|---|---|---|---|---|---|---|
+    | `plan` | a plan was written (path printed) | nothing to plan — the corpus is current; **normal**, not a failure | usage/internal error | — | refused: ceiling, unresolvable root, the extractor contract unresolved, a terminal plan id, or an unclosed earlier plan | — | — |
+    | `restore` | pinned state reinstated | — | the plan was rejected (id mismatch, consumed, FAILED, unreadable) | the plan is malformed | — | — | — |
+    | `verify` | every item passed; the plan is consumed | items incomplete — retryable, re-dispatch and verify again | the plan was rejected | the plan is malformed | — | an item failed terminally — do NOT re-dispatch against this plan | an item diverged — worse than the previous attempt; stop |
+| `verify` (cont.) | | | | | | | **7 — restore has not run for this plan.** The pinned state the fan-out overwrote (approved paths, approval receipts, human-approved verifies, suppressions) was never reinstated, so every item result would describe a corpus missing what a human decided. Run `edikt phasea restore --plan <id>`; verify refuses rather than restoring, because a verify that mutates what it judges cannot be re-run to check the mutation. |
+
+    Exit 1 on `plan` means there is nothing to extract — skip to step 11; it is an answer, not a failure. Exit 4 is a refusal: the budget ceiling; the extractor contract unresolved — either `extractor definition not found; looked at: <every path>` (install the agent) or `definition found at <path> but carries no prompt_version` (pin it), or two pinned copies that disagree; no `.edikt/config.yaml` above the working directory; the plan this corpus state derives was already consumed or failed — the corpus path never reuses a closed plan's id, and requesting the artifacts by name (`edikt phasea plan --artifact <path>`, or the per-artifact compile command) derives a successor plan instead; or an earlier plan for an item was never closed (dispatched and not restored, mid-retry, or FAILED) while its sidecar has moved since that plan pinned it — the message names the plan, its state and what to do, because planning over it would pin unrestored or failed output as the new baseline. Report the message verbatim and stop. Never re-run to get past a refusal.
 
     Read `.edikt/state/phasea/<plan_id>.plan.json`. Validate it is well-formed JSON with `schema_version`, `plan_id`, `created_from`, `budget` and `items` before acting on any part of it. A malformed plan is never partially acted on.
 
-    **Step A2 — fan out, one subagent per item.**
+    **Step A2 — fan out, one subagent per item, at most `budget.max_concurrency` in flight.**
+
+    The cap is the plan's `budget.max_concurrency` (from `phasea.max_concurrency`, default 2 —
+    D19's measured-safe number, dated by `FINDING-2026-09-02-fanout-stall.md`). Read it from the
+    plan you are executing; it is not a sentence in any command.
+
+    **A stall is any final response other than the extractor's one-line result.** If a
+    subagent's final response is anything other than exactly one `SIDECAR WRITTEN: <path>` line
+    — including an empty response, the stream watchdog, a kill or a crash — report its
+    `item_id` to A4 with `--stalled`, so the receipt records `stalled` (retryable) rather than a
+    bare `output-missing`. Reporting an item that did write costs nothing: verify judges a
+    written output on its bytes and ignores the report.
 
     For each entry in `items[]`, spawn **exactly one** `sidecar-extractor` subagent via `Task`. Compose the prompt from **only** that item's `artifact_path` and `item_id` — nothing else:
 
@@ -164,35 +180,104 @@ All paths are resolved dynamically from `.edikt/config.yaml`. Defaults are never
          prompt: "<item.artifact_path> <item.item_id>")
     ```
 
-    **No add, drop, merge, retry-with-changes, or reword.** Do not skip an item. Do not combine two items into one subagent context — ADR-027's one-fresh-context-per-artifact still holds, and a merged context is how one artifact's prose leaks into another's sidecar. Do not dispatch an item that is not in `items[]`. On a retry, re-dispatch the **identical** fields; never a "fixed" or annotated prompt.
+    **No add, drop, merge, retry-with-changes, or reword.** Do not skip an item. Do not combine two items into one subagent context — every artifact's extraction still runs in its own fresh subagent context, never shared with another artifact's, and a merged context is how one artifact's prose leaks into another's sidecar. Do not dispatch an item that is not in `items[]`. This rule covers every first dispatch. A retry is A4-bis's correction pass, whose one permitted change is the receipt's `correction_prompt` prepended to the same two fields — never a prompt you fixed, annotated or summarised yourself.
+
+    **The extractor's hand-back is not evidence.** Never relay what a subagent says it did — its count of entries or of `needs_review`, or what it kept; report counts from the receipt, never from the extractor's hand-back (A4-bis). In particular a hand-back may say a sidecar's scope was lost, or that it needs re-approval with `edikt sidecar approve --kind paths`. Restore owns `paths:`: it writes `paths:` and `paths_approval:` back exactly as they stood before the dispatch, labels globs that no approval receipt covers as unreceipted (never as approved), and drops a `paths:` the extractor wrote on a sidecar that had none. A hand-back saying scope was lost or needs re-approval is wrong — do not act on it.
 
     Continue on error: one subagent failing does not stop the fan-out of the rest. `phasea verify` is what decides what actually landed, and it can only do that if every item was attempted.
 
-    **Step A3 — restore pinned state.**
+    **Step A3 — restore pinned state. NOT optional; Step A4 refuses without it.**
 
     ```bash
-    bin/edikt phasea restore --plan <plan_id>
+    edikt phasea restore --plan <plan_id>
     ```
 
-    The extractor never sees the previous sidecar, so a regeneration arrives without whatever a human pinned on it. Restore puts it back, quarantines any regenerated sidecar that fails the content gate, and records the body-drift baseline. Run it before verify, once, for the whole plan.
+    This step writes `.edikt/state/phasea/<plan_id>.restore.json`, and Step A4 refuses with exit 7 when it is absent. Nothing else enforced the order: a run that went fan-out → verify produced per-item results and correction prompts with no sign the pinned state had never come back. The extractor's input is the parent document, and its contract does not carry forward what a human pinned on the previous sidecar — it may not write `paths:` at all — so a regeneration arrives without it. Restore puts it back (manual and suppressed directives, approved verifies, `paths:` and `paths_approval:` as above), quarantines any regenerated sidecar that fails the content gate, and records the body-drift baseline. Run it before verify, once for the whole plan, and again after every re-dispatch round.
+
+    Restore is also where "did the extractor write anything" is measured. It compares each sidecar with the plan's pre-dispatch pin (and, on a retry round, with what the previous restore left). A sidecar byte-identical to it is left exactly as found — not gated, not stamped — and listed as `unwritten` in the restore receipt; A4 grades it `output-missing` (`stalled` under `--stalled`) with the diagnostic `restore observed no write since plan <plan_id>`. Exit 2 is a rejected plan (unknown id, consumed, FAILED, or unreadable): report it verbatim and stop.
 
     **Step A4 — verify, and act on the exit code.**
 
     ```bash
-    bin/edikt phasea verify --plan <plan_id>
+    edikt phasea verify --plan <plan_id>                          # or, for subagents that died:
+    edikt phasea verify --plan <plan_id> --stalled <item_id>[,<item_id>...]
     ```
+
+    A4's report may end with a `concurrency (approximate, ...)` line: outputs written closer
+    together than the cap allows, from extractor write times recorded by restore (end times,
+    not dispatch starts) — captured before restore's own writes move them. With too few
+    recorded times it says `concurrency: not measured` instead. It is reported, never
+    enforced, and never changes the exit code.
 
     **Read the receipt's existence BEFORE interpreting the exit code.** If `.edikt/state/phasea/<plan_id>.receipt.json` does not exist, the run refused before evaluating anything — report that as a pre-run refusal, never as "items failed". A missing receipt and a receipt full of failures are different events, and only one of them says anything about the extraction.
 
     | Exit | Meaning | What you do |
     |------|---------|-------------|
     | 0 | every item ok | proceed to step 11 |
-    | 1 | some items failed | re-dispatch step A2 for each receipt item with `attempts < phasea.max_attempts_per_item`, then repeat A4 |
-    | 2 | plan rejected (unknown, malformed, or already consumed) | abort; report the message verbatim; never retry |
+    | 1 | some items failed | re-dispatch each receipt item with `attempts < phasea.max_attempts_per_item` per A4-bis (below), then repeat A3 and A4 |
+    | 2 | plan rejected (unknown, malformed, already consumed, or FAILED) | abort; report the message verbatim; never retry |
     | 3 | receipt unwritable | abort; report the message verbatim; never retry |
     | 5 | failed-terminal | **stop and report the failing items. Do NOT retry.** Exit 5 means the retry budget is spent; re-dispatching burns tokens against an item that has already been given every attempt it is owed |
+    | 6 | diverged | **stop and report. Do NOT retry**, even though attempts remain. The item produced MORE defects than its previous attempt on the same axis; the remaining budget was deliberately left unspent because a retry that is getting worse does not improve by being run again |
+    | 7 | restore has not run | run Step A3, then A4 again |
 
     Exit 1 and exit 5 differ only in whether anything is still owed a retry, and treating 5 as 1 is an unbounded loop that looks like progress.
+
+    #### A4-bis. Re-dispatch as a CORRECTION PASS, never as a bare re-run
+
+    **A re-dispatch MUST carry `correction_prompt` from the receipt item.** Read
+    it out of `.edikt/state/phasea/<plan_id>.receipt.json` and prepend it to the
+    extractor prompt. Do not paraphrase it and do not summarise it. A2's rule
+    still holds for everything else: the prepend is the only permitted change
+    to the item's two fields.
+
+    This is not a refinement. Until the receipt carried a diagnostic, the retry
+    resent the identical prompt against the identical artifact with no knowledge
+    that it had failed or why — the diagnostic was computed at verify time and
+    held in memory, and the retry reads the receipt. An unseeded retry draws its
+    second sample from the same distribution as the first, so "different" is as
+    likely to be worse as better. Measured, it was: one over-cap directive
+    became four, across ~280k tokens and ~3.4 hours that produced nothing.
+
+    Each item carries what the next dispatch needs:
+
+    | Field | Use |
+    |-------|-----|
+    | `correction_prompt` | prepend verbatim; empty means the axis admits no mechanical correction — do NOT re-dispatch, report instead (except `output-missing` / `stalled`, below) |
+    | `defect_axis` | `length` and `anchor` are correctable; `schema` and `parse` are not |
+    | `defect_count` | compared against the previous attempt to detect divergence |
+    | `anchors_valid` / `anchors_broken` / `anchors_whitespace_only` | a length failure with valid anchors needs sentences split, not a re-extraction; whitespace-only faults are quotes whose bytes differ from the parent only in whitespace |
+    | `needs_review` | the count of `needs_review` entries in the written sidecar — the number to report |
+    | `convergence` | `diverged` means stop; `improved` means the correction is working |
+
+    An empty `correction_prompt` on a non-ok item is a refusal to guess, not an
+    oversight. Re-dispatching without one reproduces the exact defect this
+    section exists to remove. The one exception is an item with no output to
+    correct: `output-missing` or `stalled` is re-dispatched fresh, with the
+    plain A2 prompt.
+
+    What arrives with a `correction_prompt`:
+
+    - **A quarantined item arrives classified.** Restore moves a regenerated
+      sidecar that fails the content gate into `.edikt/state/phasea/<plan_id>.quarantine/`;
+      verify classifies it from that copy — `anchor-invalid`, `length-exceeded`,
+      or `schema-invalid` (an over-claim carries `defect_axis: overclaim`) — and its `correction_prompt`
+      names each faulting entry by the parent's line range (for a whitespace-only
+      quote, the parent's exact bytes). It is never `output-missing`.
+    - **`lossless-loss` can come from any re-extraction of an existing sidecar.**
+      The output dropped a directive or prohibition body whose source prose is
+      still in the artifact; the `correction_prompt` names each lost body and its
+      line range. Remedies: the correction pass; restore the lost entries by
+      hand and re-run; or, only on the user's explicit say,
+      `edikt phasea verify --plan <plan_id> --on-loss=accept`, which passes the
+      item with the loss recorded. An `ok` item can carry a diagnostic too — a
+      prior body matched only by the weaker lexical fallback, or `source-removed`
+      because its prose is gone from the artifact. Quote it; it is not a failure.
+
+    **Report results from the receipt, never from the extractor's hand-back:**
+    each item's `status`, `anchors_valid`, `anchors_whitespace_only` and
+    `needs_review` (an absent count is zero), and the verify summary's
+    `needs_review: K (counted on N sidecar(s))`.
 
     **Headless mode** (`EDIKT_HEADLESS=1` or no `/dev/tty`): do not fan out. Print the plan path and the explicit `/edikt:adr:compile`-style run-these list, and exit non-zero.
 
@@ -221,7 +306,7 @@ Do NOT partial-write `governance.md` on an incomplete input set.
 
 12c. **After** the contradiction-detection pass (steps 5–8) and **before** grouping, run the shared directive-quality sub-procedure from `commands/gov/_shared-directive-checks.md` for every accepted ADR and active invariant.
 
-For each source document that has a parsed sentinel block, invoke `bin/edikt gov directive-check` (the tier-2 subcommand documented in `_shared-directive-checks.md §Tier-2 Subcommand`) once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
+For each source document that has a parsed sentinel block, invoke `edikt gov directive-check` (the tier-2 subcommand documented in `_shared-directive-checks.md §Tier-2 Subcommand`) once per directive in `directives:` and once per directive in `manual_directives:`. Pass:
 
 ```json
 {
@@ -250,7 +335,7 @@ If no warnings were produced, skip the header entirely (do not emit an empty sec
 12d. **After** the directive-quality pass (step 12c), run the orphan-detection and history-comparison pass.
 
 **Two-layer atomicity model:**
-- **Outer layer:** the compile operation as a whole is serialized by the existing `lock.yaml + flock` pattern in `bin/edikt`. This prevents two concurrent compiles from racing on source files or the governance output. Phase 7 does not change this layer.
+- **Outer layer:** the compile operation as a whole is serialized by the existing `lock.yaml + flock` pattern in `edikt`. This prevents two concurrent compiles from racing on source files or the governance output. Phase 7 does not change this layer.
 - **Inner layer:** the state file `.edikt/state/compile-history.json` is protected specifically from torn writes by using write-to-tempfile + `os.rename()`. If the process crashes between the write and the rename, the previous state file remains intact — safe toward re-warning rather than a silent skip. The `.tmp` file may exist and is safe to remove manually.
 
 #### Pass 1: Orphan collection
@@ -298,15 +383,15 @@ blocks compilation.
 Delegate the five-rule orphan-set state machine to the tier-2 helper. This is an authorized tier-2 orchestration call; the implementation is pure Go (no LLM dispatch).
 
 ```bash
-bin/edikt gov compile-history \
+EDIKT_INVOKER=/edikt:gov:compile edikt gov compile-history \
     --orphans "$EDIKT_ORPHAN_IDS" \
     --history-path ".edikt/state/compile-history.json" \
-    --edikt-version "$EDIKT_VERSION"
+    --edikt-version "$(edikt version)"
 ```
 
 **Inputs (set by the caller):**
 - `EDIKT_ORPHAN_IDS` — comma-separated list of orphan IDs (e.g. `ADR-NNN,INV-NNN`). Empty = no orphans this run.
-- `EDIKT_VERSION` — version string from step 1b, optional (stamps the `edikt_version` field).
+- `--edikt-version` — `$(edikt version)`, the active binary's own version (stamps the `edikt_version` field).
 
 **Exit-code contract (— output is informational, exit code is the contract):**
 - `0` — first detection, subset/recovered, superset, different-reset, or no-orphans. Compile continues.
@@ -324,7 +409,7 @@ If exit is 0, continue to step 13 (group by topic).
 After the orphan script completes (regardless of exit code), run the tier-2 bootstrap subcommand. This is an authorized orchestration call; trailing-slash variants (`.edikt/state/` vs `.edikt/state`) are deduplicated inside the helper.
 
 ```bash
-bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
+EDIKT_INVOKER=/edikt:gov:compile edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
 ```
 
 **`.gitignore` note:** The helper checks for both `.edikt/state/` (with trailing slash) and `.edikt/state` (without) before appending, to avoid duplicates under trailing-slash normalization variants. If the file is absent, it is created. If the entry is already present in any recognized form, the file is left unchanged. Exit code is the contract — output is informational.
@@ -340,7 +425,7 @@ bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
     - Invariants are special — their effective rules go into `governance.md` (the index), not into topic files
     - Across source documents: if the same rule string appears in multiple effective sets, de-duplicate by exact string match. Keep the first occurrence's source reference.
 
-13a. **Topic and signals come from the sidecar.** Under v0.6.0+, `topic` and `signals[]` live on the sidecar — they are written by the `sidecar-extractor` agent when the sidecar is generated or resynced (Phase A of `bin/edikt gov compile`, dispatched by per-artifact `:compile` commands). The slash command MUST NOT write back to the parent `.md`; edikt does not mutate user-authored prose. If a sidecar is missing `topic`, the resolution is to regenerate the sidecar (`/edikt:adr:compile <id>` or similar), not to edit the prose.
+13a. **Topic and signals come from the sidecar.** Under v0.6.0+, `topic` and `signals[]` live on the sidecar — they are written by the `sidecar-extractor` agent when the sidecar is generated or resynced (Phase A of `edikt gov compile`, dispatched by per-artifact `:compile` commands). The slash command MUST NOT write back to the parent `.md`; edikt does not mutate user-authored prose. If a sidecar is missing `topic`, the resolution is to regenerate the sidecar (`/edikt:adr:compile <id>` or similar), not to edit the prose.
 
 ### Derive Path Patterns
 
@@ -406,12 +491,9 @@ bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
     the named file when it matches what you are about to do.
 
     - **{topic}** — {approved registry description from .edikt/topics.yaml}
+    ```
 
-    The signal→file routing table this section replaced was retired with the
-    tier-3 render. Signals were bare keywords a reader matched by
-    accident; the registry description says when a topic applies, and it is
-    human-approved rather than extracted. Never render a routing table here, and
-    never invent a description — an unapproved topic shows as pending.
+    Never render a routing table here, and never invent a description — an unapproved topic shows as pending.
 
     **A description is capped at 160 characters** (`topicregistry.MaxDescriptionChars`,
     and `maxLength` in `topic-registry.v1.schema.json`). Over-length is refused with
@@ -421,44 +503,7 @@ bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
     index is priced at. A description that needs more room is usually a topic that
     should be split.
 
-    ## Reminders
-
-    Before acting, check the relevant constraint.
-
-    [edikt:reminders:start]: #
-    {Aggregate all `reminders:` lists from all source-document sidecars.
-     De-duplicate by exact string match. Cap at 10 reminders total.
-     Format: "- Before {action} → {check} (ref: ID)"}
-    [edikt:reminders:end]: #
-
-    ## Verification Checklist
-
-    Before finishing, verify each item. If any fails, fix before submitting.
-
-    {Aggregate all `verification:` lists from all source-document sidecars.
-     De-duplicate by exact string match. Cap at 15 items total.
-     Format: "- [ ] {what to check} (ref: ID)"}
-
-    ## Reminder: Non-Negotiable Constraints
-
-    These constraints were listed above and are restated for emphasis.
-    Do not violate them under any circumstances.
-
-    - {repeat invariant directives}
-    ```
-
-20. If the compiled output detects an existing flat `governance.md` (old format with `edikt:compiled` marker but no `governance/` directory), this is a migration:
-    - Create the `governance/` directory
-    - Generate topic files from the old directives
-    - Replace the old `governance.md` with the new index format
-    - Report the migration:
-      ```
-      📦 Migrated from flat governance.md to topic-grouped rule files.
-         Old format: 1 file, {n} directives
-         New format: {m} topic files + index
-      ```
-
-21. If any single topic file exceeds 100 directives, warn:
+20. If any single topic file exceeds 100 directives, warn:
     ```
     ⚠ {topic}.md has {count} directives. Large rule files may dilute compliance.
       Consider splitting into subtopics or running /edikt:gov:review to tighten language.
@@ -466,7 +511,7 @@ bin/edikt gov gitignore-bootstrap --project-root "$EDIKT_PROJECT_ROOT"
 
 22. Log the compilation event:
     ```bash
-    bin/edikt hook event --type compile \
+    edikt hook event --type compile \
       --data '{"adrs_compiled":{n},"invariants_compiled":{m},"guidelines_compiled":{g},"topics":{t},"total_directives":{total},"sidecar_coverage":"{pct}%"}'
     ```
 
@@ -512,42 +557,6 @@ REMEMBER: NEVER write governance files with contradictions. Invariants go in the
 | `paths.invariants` | `docs/architecture/invariants` |
 | `paths.guidelines` | `docs/guidelines` |
 
-### Fallback Directive Extraction Rules (legacy — v0.5.x and earlier)
-
-> **Not reached in v0.6.0+.** Sidecar generation happens through the locked `sidecar-extractor` agent dispatched by the per-artifact `:compile` commands and `bin/edikt gov compile` Phase A. These prose rules are preserved for historical reference and for projects pinned to the legacy `--legacy` mode during the v0.5.x→v0.6.0 transition window only.
-
-**From ADRs** — read the `## Decision` section. Extract all enforceable statements. Preserve specifics (namespaces, patterns, thresholds, tool names). Drop rationale, context, alternatives. Each statement becomes one directive.
-
-Example transformation:
-```
-ADR source (150 lines):
-  # ADR-NNN — Single-Tool Platform Target
-  ## Decision
-  Build the system as a lean context engine targeting one tool exclusively.
-  Other tools lack the required surfaces — path-conditional rules, hooks,
-  slash commands...
-  [... 100 more lines of rationale, alternatives, consequences ...]
-
-Compiled directive (1 line):
-  - The target tool is the only supported platform. Do not write code or
-    configuration targeting alternative tools.
-```
-
-**From invariants** — directives are already constraint-shaped; use the Rule section directly:
-```
-Invariant source:
-  # INV-NNN — Source Files Are Plain Markdown
-  ## Rule
-  Every command is a .md file. No TypeScript, no compiled binaries...
-
-Compiled directive:
-  - Every command and template must be a .md or .yaml file. No TypeScript,
-    no compiled binaries, no build step. This constraint is non-negotiable.
-
-```
-
-**From guidelines** — each file becomes a set of directives. Guidelines are freeform; extract enforceable bullet points.
-
 ### Contradiction Detection Examples
 
 ```
@@ -576,7 +585,7 @@ Compiled directive:
     Action: Remove the guideline — invariants are non-negotiable.
 ```
 
-### JSON Output Format (two-phase mode, v0.6.0+)
+### JSON Output Format (two-phase mode)
 
 `--json` in default or `--check` mode emits a single object. `phase_b` is **always** a populated object — never `null` — so consumers can distinguish "ran and produced no changes" from "did not run" via the `ran` field.
 
@@ -586,6 +595,10 @@ Compiled directive:
   "phase_a": {
     "dispatched": 0,
     "stale": 0,
+    "stale_ids": [],
+    "bootstrap": 0,
+    "repairable": 0,
+    "repairable_ids": [],
     "errors": []
   },
   "phase_b": {
@@ -598,13 +611,14 @@ Compiled directive:
 }
 ```
 
-In `--check --json` mode, `phase_b.ran` is `false` (the merge is skipped):
+In `--check --json` mode, `phase_b.ran` is `false` (the merge is skipped). Over drifted anchors that autorepair resolves, the check fails and names them — `repairable_ids` is the subset of `stale_ids` that `edikt gov compile` fixes without an extraction, and is always an array (`[]` when none):
 
 ```json
 {
-  "status": "ok",
-  "phase_a": {"dispatched": 0, "stale": 0, "errors": []},
-  "phase_b": {"ran": false, "topics_rendered": [], "topics_unchanged": [], "index_written": false, "total_directives": 0}
+  "status": "error",
+  "phase_a": {"dispatched": 0, "stale": 2, "stale_ids": ["ADR-NNN", "INV-NNN"], "bootstrap": 0, "repairable": 1, "repairable_ids": ["ADR-NNN"], "errors": []},
+  "phase_b": {"ran": false, "topics_rendered": [], "topics_unchanged": [], "index_written": false, "total_directives": 0},
+  "error": "stale sidecars in --check mode"
 }
 ```
 
@@ -625,17 +639,21 @@ On error, `status: "error"` and `error: "<message>"` are set; `phase_a`/`phase_b
 
 ### Check Output Format (prose, default mode `--check`)
 
-Two-phase mode emits a single verdict line on stderr:
+`--check` never writes. When no sidecar is stale it emits the verdict line, then the body-drift, conflict and render-freshness lines:
 
 ```
-edikt gov compile --check: up-to-date (14 sidecar(s), 0 stale)
+edikt gov compile --check: anchor drift: 0 stale (14 sidecar(s))
 ```
 
-If any sidecars are stale, exits non-zero with:
+The stale count is computed, not printed as a constant. If any sidecar is stale — whether its drift needs extraction or autorepair could fix it — each one gets a `stale:` line and the run exits 1:
 
 ```
-error: 3 sidecar(s) stale — run 'edikt gov compile' to resync
+  stale: ADR-NNN — anchor drift, 2 anchor(s) mechanically repairable; not written (--check) — run edikt gov compile
+  stale: INV-NNN — directive[1].anchor[0]: quote not found at lines 40-41
+error: 2 sidecar(s) stale — 1 mechanically repairable (run edikt gov compile), 1 need extraction (run /edikt:gov:compile in Claude Code)
 ```
+
+A partially repairable sidecar is listed once, with the anchor that is still stale after the repair. `/edikt:adr:review`, `/edikt:invariant:review` and `/edikt:gov:review` read these `stale:` lines.
 
 Legacy mode (`--legacy --check`) emits the longer prose summary:
 

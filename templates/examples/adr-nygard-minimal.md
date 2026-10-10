@@ -23,6 +23,14 @@ If you prefer a richer format with Decision Drivers, Considered Options,
 Pros and Cons, and Confirmation, see adr-madr-extended.md.
 -->
 
+## In plain terms
+
+<!-- One paragraph. Declarative, present tense, no modal verb, no date. What this
+     record means to someone reading it cold, before they read anything else.
+     A record whose plain-terms paragraph cannot be written without naming a
+     plan step or a code site is a record about the wrong subject. -->
+{Say what this means, plainly.}
+
 ## Status
 
 Accepted
@@ -38,6 +46,17 @@ six months from now can understand why a decision was needed.}
 {What did we decide? State the decision in a single sentence if
 possible, followed by any clarifying detail. Use active voice and
 present tense: "We will use X" not "X should be used".}
+
+## Considered Options
+
+<!-- REQUIRED (GL-001 G2): /edikt:adr:new refuses an ADR without a real rejected alternative. Keep it short — one line per option is enough here. -->
+- **{Option A — chosen}** — {one line}
+- **{Option B — rejected}** — {one line, and why not}
+
+## Reversal Cost
+
+<!-- REQUIRED (GL-001 G2): /edikt:adr:new refuses an ADR without this section. -->
+{What it costs to undo this decision, concretely.}
 
 ## Consequences
 

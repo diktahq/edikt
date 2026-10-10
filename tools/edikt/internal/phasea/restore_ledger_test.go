@@ -3,6 +3,7 @@ package phasea
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
@@ -36,6 +37,19 @@ import (
 // carries its body digest.
 func TestLedgerPersistsPerArtifactOnMidBatchKill(t *testing.T) {
 	f := newTwoItemFixture(t)
+	// The fan-out wrote both items. Without that, restore finds both sidecars
+	// unwritten and leaves them as found, so item[1] is "untouched" at the
+	// first hook under a batched loop too, and this test would distinguish
+	// nothing.
+	for _, md := range []string{f.mdPath, f.secondMD} {
+		id := strings.TrimSuffix(filepath.Base(md), "-test.md")
+		writeMarshalledSidecar(t, sidecarPathFor(md), &sidecar.Sidecar{
+			SchemaVersion: 2,
+			Topic:         "testing",
+			Path:          "docs/architecture/decisions/" + filepath.Base(md),
+			Directives:    []sidecar.Directive{anchoredAtGateQuote("Rule for " + id + " MUST hold. (ref: " + id + ")")},
+		})
+	}
 
 	secondSidecar := sidecarPathFor(f.secondMD)
 	before, rerr := os.ReadFile(secondSidecar)

@@ -82,9 +82,36 @@ type planCritSpec struct {
 	id, statement, verify, verifyKind string
 }
 
+// writeOperationalPlanCriteriaSidecar mirrors writePlanCriteriaSidecar
+// but marks the phase `classification: operational` instead of
+// `testable` — required for a phase whose criteria carry no verify
+// command at all (this repo's own real
+// PLAN-SPEC-010-extractor-quality-criteria.yaml phases containing
+// verify_kind:behavioral-with-no-verify entries are all classified
+// operational; verify.LoadCriteria's schema validator rejects a
+// `testable`-classified phase with an unverified criterion outright,
+// which `testable` phases require).
+func writeOperationalPlanCriteriaSidecar(t *testing.T, plansDir, fileName, planID string, crits ...planCritSpec) {
+	t.Helper()
+	if err := os.MkdirAll(plansDir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", plansDir, err)
+	}
+	body := "schema_version: 1\nplan: " + planID + "\ncreated: 2026-05-23T00:00:00Z\nphases:\n  - id: p1\n    name: Phase 1\n    classification: operational\n    criteria:\n"
+	for _, c := range crits {
+		body += "      - id: " + c.id + "\n        statement: " + c.statement + "\n        verify: \"" + c.verify + "\"\n"
+		if c.verifyKind != "" {
+			body += "        verify_kind: " + c.verifyKind + "\n"
+		}
+	}
+	if err := os.WriteFile(filepath.Join(plansDir, fileName), []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", fileName, err)
+	}
+}
+
 // makeSDLCConfig drops .edikt/config.yaml with paths.{specs,prds,plans}.
 func makeSDLCConfig(t *testing.T, root string) {
 	t.Helper()
+	isolateEdiktRoot(t, root)
 	cfgDir := filepath.Join(root, ".edikt")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir .edikt: %v", err)
@@ -310,6 +337,59 @@ func TestSelectSidecarPairs_UnionIncludesSDLC(t *testing.T) {
 	}
 	if !found.sdlc {
 		t.Error("expected SDLC pair (SPEC-007) in --all union")
+	}
+}
+
+// TestSdlcExcludedBehavioral_CountsEntriesWithNoVerify covers D213:
+// a verify_kind:behavioral entry with no verify command is counted as
+// excluded, distinctly from an ordinary structural/tooling/unset
+// entry (which is a normal, non-reportable exclusion) and from an
+// entry that IS surfaced (verify_kind:behavioral WITH a verify).
+func TestSdlcExcludedBehavioral_CountsEntriesWithNoVerify(t *testing.T) {
+	root := t.TempDir()
+	makeSDLCConfig(t, root)
+
+	writeSpecSidecar(t, filepath.Join(root, "docs/product/specs"), "SPEC-001-foo", "SPEC-001",
+		specReqSpec{id: "SR-001", text: "surfaced", verify: "true", verifyKind: "behavioral"},
+		specReqSpec{id: "SR-002", text: "excluded — no verify", verify: "", verifyKind: "behavioral"},
+		specReqSpec{id: "SR-003", text: "normal exclusion", verify: "", verifyKind: "structural"},
+	)
+	writePRDSidecar(t, filepath.Join(root, "docs/product/prds"), "PRD-001.yaml", "PRD-001",
+		prdReqSpec{id: "FR-001", text: "excluded — no verify", verify: "", verifyKind: "behavioral"},
+	)
+	writeOperationalPlanCriteriaSidecar(t, filepath.Join(root, "docs/internal/plans"), "PLAN-x-criteria.yaml", "PLAN-x",
+		planCritSpec{id: "AC-1.1", statement: "excluded — no verify", verify: "", verifyKind: "behavioral"},
+		planCritSpec{id: "AC-1.2", statement: "excluded — no verify", verify: "", verifyKind: "behavioral"},
+	)
+
+	excluded, err := sdlcExcludedBehavioral(root)
+	if err != nil {
+		t.Fatalf("sdlcExcludedBehavioral: %v", err)
+	}
+	// 1 (SPEC SR-002) + 1 (PRD FR-001) + 2 (PLAN AC-1.1, AC-1.2) = 4.
+	// SPEC SR-001 (surfaced) and SR-003 (ordinary exclusion) don't count.
+	if excluded != 4 {
+		t.Errorf("expected 4 excluded entries, got %d", excluded)
+	}
+}
+
+// TestSdlcExcludedBehavioral_ZeroWhenNoneExcluded confirms a clean
+// corpus (every behavioral entry carries a verify) reports zero —
+// the report line must not fire when there is genuinely nothing to
+// report.
+func TestSdlcExcludedBehavioral_ZeroWhenNoneExcluded(t *testing.T) {
+	root := t.TempDir()
+	makeSDLCConfig(t, root)
+	writeSpecSidecar(t, filepath.Join(root, "docs/product/specs"), "SPEC-001-foo", "SPEC-001",
+		specReqSpec{id: "SR-001", text: "surfaced", verify: "true", verifyKind: "behavioral"},
+	)
+
+	excluded, err := sdlcExcludedBehavioral(root)
+	if err != nil {
+		t.Fatalf("sdlcExcludedBehavioral: %v", err)
+	}
+	if excluded != 0 {
+		t.Errorf("expected 0 excluded entries, got %d", excluded)
 	}
 }
 

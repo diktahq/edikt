@@ -126,11 +126,15 @@ When all three hold, the hook emits:
 
 The message uses `systemMessage` only — **never `decision: block`**. The user is the final judge; the warning is advisory. Plan-id and phase are parsed with a strict allowlist regex and double-validated in bash before flowing into the JSON template (no raw message text ever reaches the model-facing channel). See [features.quality-gates](/governance/features#quality-gates) for the opt-out.
 
-## Pre-edit gate
+## The retired pre-edit gate
 
-The completion-claim detector above is a soft, non-blocking signal fired at Stop. A separate mechanism — the `verify-gate` PreToolUse hook — watches the same class of edit (flipping a sidecar to `passes: true`, marking a plan row `done`, ticking an `AC-NNN` checkbox) and acts *before* the edit lands. Unlike the specialist-agent gates described elsewhere on this page, its enforcement is not fixed at "block": it reads a four-value posture (`block | warn | educate | disabled`, default `warn`) from `features.evidence-gate` in `.edikt/config.yaml`, and only `block` actually refuses the write (ADR-062).
+Through v0.8.x a second mechanism sat beside the detector above. The `verify-gate` PreToolUse hook watched the same class of edit — flipping a sidecar to `passes: true`, marking a plan row `done`, ticking an `AC-NNN` checkbox — and acted on it *before* it landed, under a four-value posture (`block | warn | educate | disabled`, default `warn`) read from `features.evidence-gate` in `.edikt/config.yaml`, of which only `block` actually refused the edit (ADR-062).
 
-See [Configurable Features → evidence-gate](/governance/features#evidence-gate) for the posture table, and [Falsifiable verification → The pre-edit gate](/guides/falsifiable-verification#the-pre-edit-gate) for the bypass envelope and full mechanics.
+**It is retired as of v0.9.0 (ADR-083).** `verify-gate.sh` is no longer shipped and `features.evidence-gate` is no longer read — `/edikt:config` does not list it, and leaving it in an upgraded config changes nothing. A 0.8.x project whose `.claude/settings.json` still registers the hook fails open once the binary upgrades: the host reports a missing hook command and continues, and `edikt doctor` reports `registered hook retired in this version` until `/edikt:upgrade` removes the entry.
+
+INV-009 — no completion claim without fresh verification evidence in the same turn — is untouched, and reaches the model through the ambient core on every edit. What carries it now: the non-blocking completion-claim detector above, `bin/edikt verify <plan-id> --phase <N>` producing the evidence a claim is meant to rest on, the phase-end review reading the finished diff, and `edikt doctor` naming any behavioral verify still missing its `human_approved_at` approval rather than letting it read as approved.
+
+See [Falsifiable verification → The retired pre-edit gate](/guides/falsifiable-verification#the-retired-pre-edit-gate) for the same history from the verification side.
 
 ## CI integration
 

@@ -18,6 +18,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -123,9 +124,7 @@ Used by:
 				emitItemProgress(cmd.OutOrStdout(), r)
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "\nreport: %s\n", jsonPath)
-			fmt.Fprintf(cmd.OutOrStdout(), "summary: %d passed, %d failed, %d timeout, %d skipped (total %d)\n",
-				report.Summary.Passed, report.Summary.Failed,
-				report.Summary.Timeout, report.Summary.Skipped, report.Summary.Total)
+			fmt.Fprintln(cmd.OutOrStdout(), report.Summary.Line())
 		}
 
 		if report.AnyFailures() && !verifyAllowFailures {
@@ -167,13 +166,13 @@ func runPRDVerifies(sc *prdSidecar, projectRoot string) []verify.Result {
 // same stem for the PRD/SPEC class, distinct from the gov-sidecar
 // .edikt.yaml convention).
 func locatePRDSidecar(projectRoot, id string) (string, error) {
-	dirs := resolveArtifactDirs(projectRoot)
-	if dirs.prds == "" {
+	dirs := migrate.ResolveArtifactDirs(projectRoot)
+	if dirs.Prds == "" {
 		return "", fmt.Errorf("verify prd: paths.prds not configured")
 	}
-	entries, err := os.ReadDir(dirs.prds)
+	entries, err := os.ReadDir(dirs.Prds)
 	if err != nil {
-		return "", fmt.Errorf("verify prd: read %s: %w", dirs.prds, err)
+		return "", fmt.Errorf("verify prd: read %s: %w", dirs.Prds, err)
 	}
 	for _, e := range entries {
 		name := e.Name()
@@ -181,10 +180,10 @@ func locatePRDSidecar(projectRoot, id string) (string, error) {
 			continue
 		}
 		if name == id+".yaml" || startsWithPrefix(name, id+"-") {
-			return filepath.Join(dirs.prds, name), nil
+			return filepath.Join(dirs.Prds, name), nil
 		}
 	}
-	return "", fmt.Errorf("verify prd: no sidecar for %q under %s", id, dirs.prds)
+	return "", fmt.Errorf("verify prd: no sidecar for %q under %s", id, dirs.Prds)
 }
 
 // startsWithPrefix is a small helper kept out of the regex path for safety.

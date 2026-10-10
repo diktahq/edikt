@@ -29,6 +29,7 @@ always:
   - evaluator
   - sidecar-extractor
   - governance-verifier
+  - governance-auditor
   - post-flight-synthesizer
   - compile-quality-grader
   - cheat-rate-adversary

@@ -83,12 +83,12 @@ Just build. edikt works in the background:
 **Signal detection** watches every response for decisions worth capturing:
 
 ```text
-💡 ADR candidate — run /edikt:adr to capture it.
+💡 adr-candidate: chose Postgres over DynamoDB for the order store … run /edikt:adr:new — the intake gates (GL-001) will classify it
 📄 Doc gap: new /webhooks/retry endpoint — run /edikt:docs:review to review.
 🔒 Security-sensitive domain — run /edikt:sdlc:audit before shipping.
 ```
 
-When you see one of these, run the command. That decision becomes a permanent record, not a conversation that gets lost.
+Act on doc-gap and security signals. An ADR candidate is a suggestion, never required: most sessions produce none, and only a product architecture choice (a new boundary, a contract, a data store, a cross-context dependency, an external provider in the product's call path) is worth recording. Implementation, tooling that does not ship, local dev setup and experiments never need one.
 
 **Update your plan progress table** as phases complete — it's the state that survives context compaction:
 
@@ -138,7 +138,7 @@ For security-sensitive features (auth, payments, PII), also run:
 
 ## 5. Ending a session
 
-**The problem without edikt:** You make three architectural decisions during a session. Context compacts. Next session you can't remember why you chose exponential backoff, what the new endpoint is called, or whether you captured the constraint about idempotency keys.
+**The problem without edikt:** You make three architectural decisions during a session. Context compacts. Next session you can't remember why you chose Postgres over DynamoDB for the order store, what the new endpoint is called, or whether you captured the constraint about idempotency keys.
 
 **What happens automatically:**
 
@@ -161,15 +161,15 @@ Commits:  feat(webhooks): delivery with retry logic
 Updated:  PLAN-007 phase 2 → done
 
 Possible captures:
-  💡 ADR: exponential backoff over fixed intervals
-     → Run /edikt:adr to capture
+  💡 ADR: Postgres over DynamoDB for the order store — rejected alternative, reversal cost and re-litigation risk all named
+     → suggestion only — /edikt:adr:new if you want it recorded
 
   📄 Doc gap: POST /webhooks/retry — new endpoint
      → Run /edikt:docs:review to review
 ─────────────────────────────────────────────────────
 ```
 
-Capture what matters. What you save in `docs/architecture/decisions/` is available to the model in every future session.
+Capture what you choose to — nothing here is required. What you save in `docs/architecture/decisions/` is available to the model in every future session.
 
 ---
 
@@ -200,7 +200,7 @@ These variables are read by Claude Code itself; edikt doesn't change its behavio
 | Session start | SessionStart hook surfaces git changes | `/edikt:context` |
 | Planning | — | `/edikt:sdlc:plan` |
 | Pre-flight | Runs at end of `/edikt:sdlc:plan` | `--no-review` to skip |
-| Building | PostToolUse formats, Stop hook flags signals | `/edikt:adr`, `/edikt:invariant` |
+| Building | PostToolUse formats, Stop hook flags signals | `/edikt:adr:new`, `/edikt:invariant:new` |
 | Review | — | `/edikt:sdlc:code-review` |
 | Security | Pre-push hook scans on push | `/edikt:sdlc:audit` |
 | End of session | PreCompact reminds you | `/edikt:session` |

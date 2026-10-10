@@ -16,17 +16,17 @@ import (
 // Frontmatter is the YAML header of an ADR/INV/guideline source document.
 // Fields are optional — legacy documents may lack any or all of them.
 type Frontmatter struct {
-	Type        string   `yaml:"type"`
-	ID          string   `yaml:"id"`
-	Title       string   `yaml:"title"`
-	Status      string   `yaml:"status"`
-	Supersedes  string   `yaml:"supersedes,omitempty"`
-	NoDirectives string  `yaml:"no-directives,omitempty"`
+	Type         string `yaml:"type"`
+	ID           string `yaml:"id"`
+	Title        string `yaml:"title"`
+	Status       string `yaml:"status"`
+	Supersedes   string `yaml:"supersedes,omitempty"`
+	NoDirectives string `yaml:"no-directives,omitempty"`
 	// BoldStatus is read from the `**Status:** …` line in the body when
 	// frontmatter is absent (legacy INVs).
 }
 
-// Document is a parsed source file: path + frontmatter + body + sentinel.
+// Document is a parsed source file: path + frontmatter + body.
 type Document struct {
 	Path        string
 	Frontmatter Frontmatter
@@ -34,12 +34,13 @@ type Document struct {
 	// the body when no frontmatter `status:` is present. Used for legacy
 	// that pre-date the frontmatter convention.
 	BoldStatus string
-	Body       string   // full file contents
-	Sentinel   Sentinel // the [edikt:directives:start/end] block, if any
+	Body       string // full file contents
 }
 
-// LoadDocument reads a file from disk, parses its frontmatter and sentinel
-// block, and returns a Document. Non-existent files or unreadable ones
+// LoadDocument reads a file from disk, parses its frontmatter, and returns a
+// Document. It does not look for a legacy sentinel block: steady-state
+// components are migration-blind (ADR-082 (b)); the scanner in
+// internal/migrate reports one, and only the lifter parses it. Non-existent files or unreadable ones
 // return an error.
 func LoadDocument(path string) (*Document, error) {
 	data, err := os.ReadFile(path)
@@ -55,17 +56,11 @@ func LoadDocument(path string) (*Document, error) {
 
 	boldStatus := extractBoldStatus(body)
 
-	sentinel, err := ExtractSentinel(body)
-	if err != nil {
-		return nil, fmt.Errorf("sentinel %s: %w", path, err)
-	}
-
 	return &Document{
 		Path:        path,
 		Frontmatter: fm,
 		BoldStatus:  boldStatus,
 		Body:        body,
-		Sentinel:    sentinel,
 	}, nil
 }
 
@@ -110,7 +105,16 @@ func LoadDocuments(_ fs.FS, absDir string) ([]*Document, error) {
 // IsIncluded reports whether a document should be included in the compile
 // output. Applies the status filter from compile.md §3:
 // - ADRs: include if status == "accepted". Fallback: body has **Status:** Accepted.
-// - INVs: include if status == "active" OR no status (backwards compat). Skip "revoked".
+//   - INVs: include if status == "active" OR no status (backwards compat).
+//     EVERYTHING ELSE IS EXCLUDED, not just "revoked". This comment used to say
+//     "Skip \"revoked\"", which describes one exclusion where the code
+//     implements a whitelist: `accepted` — the word every ADR uses, and the
+//     obvious thing to write on an invariant — matches neither branch and the
+//     artifact is dropped from every surface. The behaviour is deliberate and
+//     unchanged; only this description of it was wrong. `doctor`'s delivery-gap
+//     check reports the condition, because a skip line at compile is not a
+//     check and was missed for exactly that reason.
+//
 // - Guidelines: include unconditionally.
 //
 // kind is one of: "adr", "inv", "guideline".

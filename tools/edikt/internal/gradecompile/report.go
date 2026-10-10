@@ -16,6 +16,33 @@ import (
 	"strings"
 )
 
+// GraderModelUnrecorded is what a recorded grade reports when the grading
+// agent did not name the model that produced it.
+//
+// PROVENANCE ABSENT, NOT A SELECTION. `grader_model` is not a knob that picks
+// a grader — nothing in this package dispatches one, and a tier-2 binary never
+// dispatches an LLM at all. It is a record of which model actually graded, so
+// when the agent omits it the only honest value is the one that says nobody
+// observed it. A model name
+// substituted here makes the report assert that a specific model graded this
+// corpus when it may never have run: the absence-is-never-a-pass rule at the
+// provenance layer, a value standing in for an observation nobody made.
+// (ref: INV-013, INV-012)  edikt-guard:allow
+//
+// SAME LITERAL, DELIBERATELY, as phasea.ExtractorContractUnrecorded — the
+// contract already stated for extractor provenance: the host-reported model, or
+// `unrecorded` when the host reports none, and never a literal from the
+// binary. It is NOT phasea.ExtractorModelInherit ("inherit"), which is a
+// SELECTION literal meaning "take the host's model"; using that here would
+// have the report claim a selection was made. TestGraderModelUnrecorded_
+// MatchesTheExtractorProvenanceLiteral pins the two together so they cannot
+// drift into two spellings of one concept.
+//
+// A non-empty value is required: the schema declares grader_model with
+// minLength 1, so "absent" has to have a name rather than being the empty
+// string.
+const GraderModelUnrecorded = "unrecorded"
+
 // Report is the compile-quality grader output, validated against
 // templates/schemas/compile-quality-report.v1.schema.json.
 type Report struct {

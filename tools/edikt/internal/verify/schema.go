@@ -12,10 +12,13 @@
 package verify
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
 // SchemaVersion is the on-disk shape this package understands.
@@ -73,6 +76,31 @@ type Criterion struct {
 	Statement string `yaml:"statement"`
 	Verify    string `yaml:"verify,omitempty"`
 
+	// Requirements lists the spec ids this criterion CLAIMS to satisfy —
+	// requirement ids (SR-*) or protection ids (SSP-*) drawn from the spec
+	// the plan implements.
+	//
+	// OPTIONAL here, and required by the coverage gate rather than by this
+	// decoder. That direction is the whole design and getting it backwards is
+	// a breaking change: this file is read with KnownFields(true), so a
+	// REQUIRED field would stop every criteria file in every downstream
+	// project that has not backfilled from loading at all on upgrade.
+	//
+	// A declaration records that a requirement is CLAIMED. It is NOT evidence
+	// that the criterion asserts the property — a criterion may name an id and
+	// assert nothing about it, and nothing mechanical can tell. The ids
+	// themselves are checked (LoadCriteria rejects one the spec does not
+	// define, by name); whether the claim holds is a reading.
+	Requirements []string `yaml:"requirements,omitempty"`
+
+	// TimeoutS overrides the runner's per-criterion timeout (30 s) when a
+	// criterion legitimately runs longer — a release gate that runs the
+	// whole suite, an install-and-upgrade path. Optional; absent means the
+	// default. Without it the runner recorded such a criterion as `timeout`
+	// and doctor counted it as not-passing, so a release plan could never
+	// flip its own gate (PLAN-v090-release pre-flight, performance finding 2).
+	TimeoutS int `yaml:"timeout_s,omitempty"`
+
 	// SPEC-009 Plan G — cheat-rate scoring metadata. Optional;  // edikt-guard:allow
 	// populated only when this criterion carries a behavioral verify
 	// the cheat-rate benchmark should score. Plan-level criteria
@@ -111,13 +139,12 @@ const (
 // LoadCriteria strictly decodes the criteria sidecar at path and validates
 // the v1 shape. Returns an error wrapped with the path for caller context.
 func LoadCriteria(path string) (*CriteriaFile, error) {
-	f, err := os.Open(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
 
-	dec := yaml.NewDecoder(f)
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
 	dec.KnownFields(true)
 
 	var c CriteriaFile
@@ -125,6 +152,48 @@ func LoadCriteria(path string) (*CriteriaFile, error) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
 	if err := c.Validate(); err != nil {
+		return nil, fmt.Errorf("validate %s: %w", path, err)
+	}
+	// AC-1.5: gives the third mirrored schema copy
+	// (internal/sidecar/schema/plan-criteria.v1.schema.json) a real
+	// production caller, not only its own test. The Go decoder's
+	// KnownFields(true) mirrors additionalProperties:false, but a
+	// constraint like uniqueItems on a criterion's `requirements:` list
+	// exists ONLY in the schema document — nothing on the Go side
+	// re-expresses it, so before this call a duplicate declared id
+	// ([SR-001, SR-001]) decoded cleanly and nothing here ever noticed it
+	// was the same claim made twice. Runs on the RAW bytes, never the
+	// decoded struct — see ValidateRawPlanCriteriaRequirements's own doc
+	// comment for why: the struct carries runtime-only fields
+	// additionalProperties:false would reject, so marshalling it would
+	// validate a different document than the one on disk.
+	//
+	// Deliberately the SCOPED validator, not ValidateRawPlanCriteria (the
+	// whole document). D390 (2026-09-08): running the full validator here
+	// enforces every OTHER schema constraint — e.g. timeout_s's minimum —
+	// against files nothing ever checked against it, turning THIS coverage
+	// improvement into the exact breaking-upgrade change SSP-004 forbids, by
+	// a route SSP-004's text does not name (the optional field stays
+	// optional; the harm arrives through an unrelated constraint instead).
+	// ValidateRawPlanCriteriaRequirements checks only the `requirements:`
+	// property this phase adds.
+	if err := sidecar.ValidateRawPlanCriteriaRequirements(raw); err != nil {
+		return nil, fmt.Errorf("validate %s: %w", path, err)
+	}
+	// AC-1.4: the file's `plan:` field must agree with the plan id its own
+	// filename asserts, and a declared requirement id that names nothing is
+	// the same defect one level up — a declaration nothing validates. Both
+	// are rejected here, at load, rather than carried into a report that
+	// would then read as coverage.
+	//
+	// The filename check runs INSIDE validateDeclaredRequirements now, not
+	// as a separate unconditional call — D391 (2026-09-09): calling it here,
+	// ahead of the no-op-when-nothing-declared guard, made a `plan:` field
+	// that has always disagreed with its filename (harmless, since nothing
+	// was ever resolved from it) a NEW load failure for files that declare
+	// no requirements at all, which is exactly the breaking-upgrade shape
+	// this phase exists not to introduce.
+	if err := c.validateDeclaredRequirements(path); err != nil {
 		return nil, fmt.Errorf("validate %s: %w", path, err)
 	}
 	return &c, nil

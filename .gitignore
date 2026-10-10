@@ -26,6 +26,9 @@ __pycache__/
 
 # Compiled Go binary (ADR-022 — shipped via release assets, never committed)
 bin/edikt
+# edikt_dev-tagged binary built on demand by test/integration/governance/test_install_tier2.py's
+# _dev_launcher() fixture (D125) — same reason as bin/edikt above.
+bin/edikt-dev-test
 
 # Python build artifacts (tier-2 tools)
 tools/*/build/
@@ -41,6 +44,18 @@ tools/*/*.egg-info/
 test/integration/benchmarks/results/
 test/integration/failures/
 docs/product/plans/verdicts/
+
+# Per-arm edikt binaries built from git-tag source for the hooks-enabled
+# benchmark sandbox (BRAIN-017). Built on demand, cached locally; INV-001
+# forbids committing tier-2 binaries — only the (tier-1) hook scripts under
+# test/fixtures/projects/golden/compiled/<arm>/hooks/ are committed.
+test/integration/benchmarks/.arm-binary-cache/
+
+# `bin/edikt hook match`'s index cache, written under whatever --root it's
+# pointed at (BRAIN-017 §8 manual verification runs it directly against the
+# compiled fixtures, outside the benchmark sandbox's isolated HOME) — derived
+# state, regenerable from directive-index.yaml, never a fixture input.
+test/fixtures/projects/golden/compiled/*/.edikt/state/
 bin/edikt
 
 # Test-run artifacts inside fixture projects — OUTPUTS only, named
@@ -51,3 +66,55 @@ bin/edikt
 # location; "the suite writes it" is the claim that matters.
 test/fixtures/projects/*/.edikt/state/.hook-dedup/
 test/fixtures/projects/*/.edikt/state/post-flight/
+# Three more run outputs, named individually for the reason above rather than
+# by ignoring state/ wholesale. A fixture project carries its own .edikt/, so
+# edikt's ancestor-walk resolves the FIXTURE as the project root and writes
+# run state inside it — and the fixture is a frozen subject whose manifest.txt
+# must stay verifiable in a fresh clone.
+#   compile.lock  — advisory flock handle from acquireCompileLock
+#                   (govrun/twophase.go:1058); 0 bytes, released with the process.
+#   hook-ledger.jsonl / hook-acks.json
+#                 — append-only emission ledger and its ack map. ADR-050 already
+#                   specifies both as "per-repo, machine-local, gitignored";
+#                   this is that requirement reaching the fixture copies.
+test/fixtures/projects/*/.edikt/state/compile.lock
+test/fixtures/projects/*/.edikt/state/hook-ledger.jsonl
+test/fixtures/projects/*/.edikt/state/hook-acks.json
+
+# Stray repo-root state/ — belt-and-braces only.
+#
+# The CURE is in hookmatch/journal.go: ediktHome() now refuses a relative
+# EDIKT_ROOT/EDIKT_HOME/$HOME instead of joining it into the relative path
+# "state", which MkdirAll created in whatever cwd a hook fired in. This entry
+# guards the residue and any future mechanism that reaches the same place.
+#
+# Tradeoff, recorded rather than glossed: ignoring it also hides a recurrence
+# from INV-017's new-top-level-path gate, which reads the staged tree and so
+# could never see an unstaged stray in the first place. If this line ever
+# starts mattering, the resolver fix has been defeated by a different route
+# and that is worth investigating, not ignoring.
+/state/
+
+# Self-hosted Langfuse dev stack for SPEC-016 (ADR-075). Dev-machine only,
+# never a release artifact. .env holds generated local secrets/API keys and
+# MUST NOT be committed -- INV-007's exporter-boundary amendment (2026-08-27)
+# treats this the same as any other host credential.
+test/integration/extraction-cost/langfuse/.env
+test/integration/extraction-cost/langfuse/volumes/
+# run_pilot_small.sh called itself "gitignored alongside .env" while tracked and
+# carrying both API keys in plaintext. The keys are read from .env now; this line
+# is what the header always claimed.
+test/integration/extraction-cost/langfuse/run_pilot_small.sh
+
+# Local Python venv for test/integration/ (this session, standing up the SPEC-016
+# pilot). Not a lockfile substitute -- installs from pyproject.toml.
+test/integration/.venv/
+
+# Build artifact from `pip install -e test/integration`, which is now how CI
+# installs the dependency manifest. Never a source file.
+test/integration/*.egg-info/
+
+# Runtime journal at the project root (tools/edikt/cmd/migrate.go's emitEvent;
+# ADR-084's frontdoor.go writes verb_invoked entries here too). Local state
+# from actually running the binary in this checkout, never source.
+/events.jsonl

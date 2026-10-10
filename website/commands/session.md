@@ -18,7 +18,7 @@ Run it before ending a session or before `/compact`. The PreCompact hook reminds
 
 1. **Git summary** — what files changed, what was committed in the last few hours
 2. **Plan progress** — which phases moved, what's still open
-3. **Uncaptured decisions** — decision language in the conversation ("we decided to", "chose X over Y") not reflected in any ADR
+3. **Uncaptured decisions** — product architecture choices (a new boundary, a contract, a data store, a cross-context dependency, an external provider in the product's call path) that pass the GL-001 capture gates and are not reflected in any ADR. Implementation inside existing boundaries, tooling that does not ship, local dev setup and experiments are never surfaced, and every ADR candidate is a suggestion, never required
 4. **Uncaptured constraints** — constraint language ("never", "always must") not reflected in any invariant
 5. **Doc gaps** — new routes, env vars, or services not yet documented
 
@@ -34,14 +34,14 @@ Commits:  feat(webhooks): delivery with retry logic
 Updated:  PLAN-004 phase 2 → done
 
 Possible captures:
-  💡 ADR: exponential backoff over fixed retry intervals — clear trade-off discussed
-     → Run /edikt:adr:new to capture
+  💡 ADR: Postgres over DynamoDB for the order store — rejected alternative, reversal cost and re-litigation risk all named
+     → suggestion only — /edikt:adr:new if you want it recorded
 
   📄 Doc gap: POST /webhooks/retry — new endpoint not in API docs
-     → Run /edikt:docs to review
+     → Run /edikt:docs:review to review
 
 ─────────────────────────────────────────────────────
-2 possible captures. Context compaction coming — capture now or later.
+2 possible captures — none of them blocks anything; record only what you choose to.
 ```
 
 If nothing was built:

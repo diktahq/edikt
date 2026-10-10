@@ -50,10 +50,10 @@ func TestRollbackMovesBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.7.0", "test"); err != nil {
+	if err := writeLock(root, "0.7.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 
@@ -108,10 +108,10 @@ func TestRollbackVersionedSurfacesOriginateFromSameVersion(t *testing.T) {
 	setupVersion("0.6.0", "v6")
 	setupVersion("0.7.0", "v7")
 
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.7.0", "test"); err != nil {
+	if err := writeLock(root, "0.7.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,10 +169,10 @@ func TestRollbackPreMigrationPayloadStillSucceeds(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeLock(root, "0.4.3", "test"); err != nil {
+	if err := writeLock(root, "0.4.3", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, "0.6.0", "test"); err != nil {
+	if err := writeLock(root, "0.6.0", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 
@@ -231,7 +231,7 @@ func TestUseSyncsBinaryToActivatedVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeLock(root, "0.8.1", "test"); err != nil {
+	if err := writeLock(root, "0.8.1", "test", lockSourcePublished); err != nil {
 		t.Fatal(err)
 	}
 

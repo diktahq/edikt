@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://edikt.dev/schemas/command-stops/v1.json",
+  "title": "Command stop-point declarations",
+  "description": "The `stops:` block a command file carries in its YAML frontmatter. One entry per place the command waits for a human, each naming what happens when nobody answers. Validated per command file: the document is that file's frontmatter reduced to its `stops:` key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["stops"],
+  "properties": {
+    "stops": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Every stop point in this command. A command with no stop point carries no `stops:` key at all rather than an empty list — an empty list reads as 'measured, none found' and would be indistinguishable from a file the scan never opened.",
+      "items": { "$ref": "#/$defs/stop" }
+    }
+  },
+  "$defs": {
+    "stop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "class", "on_silence", "prompt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+          "description": "Stable identity of this stop point, unique within the command. It is what the prose anchor `<!-- stop: <id> -->` names, and what a ledger record or a pending entry binds to. Constrained to a filename- and path-safe alphabet because it becomes both."
+        },
+        "class": {
+          "type": "string",
+          "enum": ["duplicate", "risk", "selection", "knowledge"],
+          "description": "duplicate — the prompt restated a control the host's permission system and the managed-region guard already apply; it is removed and the command states what it writes instead. risk — a confirmation with an unsafe side (delete, apply, flip). selection — a choice among options with a sane default. knowledge — a question only a human can answer.\n\n`duplicate` is in the enum so the scan has a name for what was removed and can reject a declaration that still carries it; a surviving `duplicate` entry is a scan failure, not a valid declaration."
+        },
+        "default": {
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "description": "The answer taken when nobody answers. Required for risk and selection. Null for knowledge: a knowledge question has no defensible default, and inventing one is the failure this whole declaration exists to prevent."
+        },
+        "on_silence": {
+          "type": "string",
+          "enum": ["take-default", "safe-side", "refuse", "unanswered"],
+          "description": "What the command does when the session cannot produce a human answer. safe-side — take the non-destructive branch (never delete, never apply, never flip). take-default — take the declared default. refuse — stop before writing anything and list the questions. unanswered — leave the field unanswered in the produced artifact and record it as such."
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "The question as the command asks it, in one line. This is what a refusal lists and what a pending entry shows, so it has to read as a question to a human, not as an internal key."
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "For a selection: the answers on offer. The declared default must be one of them, and an override map may never widen a selection past this list."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "class": { "const": "risk" } }, "required": ["class"] },
+          "then": {
+            "properties": { "on_silence": { "const": "safe-side" } },
+            "required": ["default"],
+            "not": { "properties": { "default": { "type": "null" } } }
+          }
+        },
+        {
+          "if": { "properties": { "class": { "const": "selection" } }, "required": ["class"] },
+          "then": {
+            "properties": { "on_silence": { "const": "take-default" } },
+            "required": ["default"],
+            "not": { "properties": { "default": { "type": "null" } } }
+          }
+        },
+        {
+          "if": { "properties": { "class": { "const": "knowledge" } }, "required": ["class"] },
+          "then": {
+            "properties": { "on_silence": { "enum": ["refuse", "unanswered"] } }
+          }
+        }
+      ]
+    }
+  }
+}

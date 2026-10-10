@@ -187,10 +187,40 @@ Show the list with checkmarks. Include DB_TYPE source warning when applicable:
   ✓ model.mmd — domain class diagram (auto, alongside data-model)
   ✓ contracts/api.yaml — API endpoint references
   ✓ test-strategy.md — testing strategy section
-  ✗ migrations/ — no schema changes
-  ✗ contracts/events.yaml — no messaging patterns
-  ✗ config-spec.md — no config changes
+  ✗ migrations/    [absent] db.type = document-mongo in .edikt/config.yaml; the
+                            generation rule limits migrations/ to sql and mixed
+  ✗ events.yaml    [absent] zero matches for event, message, queue, Kafka,
+                            RabbitMQ, pub/sub, webhook across the spec
+  ✗ config-spec.md [drift]  every key is already the table in commands/config.md;
+                            a second copy is a source that can disagree
 ```
+
+**Every `✗` row is an evidence record, and it MUST carry one of three arms.** A row
+that says only "not applicable" is the thing this rule exists to stop: it reads the
+same whether you looked and found nothing or never looked at all.
+
+| Arm | Means | Worked example |
+|---|---|---|
+| `[drift]` | Generating it would RESTATE a single source that already says it, creating a second copy that can disagree with the first | a config-spec whose every key is already the key table in another document |
+| `[loss]` | Generating it would express LESS than the spec already does | an OpenAPI file for a CLI whose contract is its exit codes — the format cannot carry an exit-code contract |
+| `[absent]` | There is NOTHING to describe | no database; no messaging |
+
+**The `[absent]` arm carries an obligation the other two do not: cite what
+established the absence.** `[drift]` and `[loss]` are judgements about two artifacts
+you can both point at, so the reader can check them. `[absent]` is a claim about
+something that is not there, and the only way a reader can tell "we found nothing"
+from "we did not look" is if you say HOW you looked. One of:
+
+- **a config value** — name the key and its value (`db.type = document-mongo`)
+- **a zero-match scan** — name the terms you scanned for, not just the result;
+  "no messaging patterns" is unfalsifiable, "zero matches for event, message,
+  queue, Kafka, RabbitMQ, pub/sub, webhook" is checkable in one command
+- **a generation rule** — quote the rule that excludes it (`migrations/` is
+  generated only for sql and mixed)
+
+An `[absent]` row with no citation is incomplete. Fix the row rather than dropping
+it: a skipped artifact with no record is worse than a record with a weak reason,
+because nothing later can tell it was ever considered.
 
 If DB_TYPE was resolved via keyword-scan, add a warning beneath the data model line:
 ```

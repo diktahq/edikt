@@ -28,5 +28,5 @@ The binary is args-driven and non-interactive. This tier-1 command owns the huma
 ## Related
 
 - [`/edikt:gov:compile`](/commands/gov/compile) — brings the promoted behavioral verify into compiled governance.
-- [`/edikt:sidecar:regenerate`](/commands/migrate#resolving-regressions) — regenerate sidecars from a migration manifest.
+- [`/edikt:migrate` Step 5](/commands/migrate#resolving-regressions) — regenerate sidecars from a migration manifest.
 - [Sidecar architecture](/governance/sidecar) — sidecar shape and the verify lifecycle.

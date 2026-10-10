@@ -108,24 +108,31 @@ while [ "$_STEP" -le 4 ]; do
     2)
       # L1 evaluator. stderr is folded into the captured output because the
       # verdict parser treats an auth complaint as evidence, not as noise.
+      # --safe-mode, not --bare: both keep hooks (so this Stop hook cannot
+      # re-fire in the child), CLAUDE.md and skills out, but --bare reads auth
+      # only from ANTHROPIC_API_KEY/apiKeyHelper and never authenticates under
+      # an OAuth login (issue #12).
       "${_PRE[@]+"${_PRE[@]}"}" "$_TOOL" -p "$_PROMPT" \
         --system-prompt "$(cat "$_RUN/sysprompt" 2>/dev/null)" \
         --allowedTools "Read,Grep,Glob,Bash" \
         --disallowedTools "Write,Edit" \
         --model "$(cat "$_RUN/model" 2>/dev/null)" \
         --output-format text \
-        --bare > "$_DOUT" 2>&1
+        --safe-mode > "$_DOUT" 2>&1
       _DEXIT=$?
       ;;
     3)
       # Post-flight. Pinned to the closed tool set commands/sdlc/post-flight.md
       # declares, with Write/Edit explicitly disallowed so the pipeline cannot
       # modify files. Agent is REQUIRED — post-flight forks the L2/L3 reviewers.
+      # The prompt is a slash command, which --safe-mode disables, so hooks are
+      # turned off through settings instead of --bare, which never
+      # authenticates under an OAuth login (issue #12).
       "${_PRE[@]+"${_PRE[@]}"}" "$_TOOL" -p "$_PROMPT" \
         --allowedTools "Glob,Read,Bash,Agent" \
         --disallowedTools "Write,Edit" \
         --output-format json \
-        --bare \
+        --settings '{"disableAllHooks":true}' \
         --max-turns 5 > "$_DOUT" 2>/dev/null
       _DEXIT=$?
       ;;

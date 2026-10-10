@@ -54,11 +54,21 @@ func loadSidecar(path string) (*yaml.Node, *yaml.Node, error) {
 	return &doc, doc.Content[0], nil
 }
 
+// saveSidecar is the one writer every sidecar-mutating verb shares. The
+// yaml.Node round-trip keeps comments, so the `# yaml-language-server`
+// header normally survives on its own; the guard below makes that a
+// property of the writer rather than of the library — whatever the file
+// opened with, it opens with after.
 func saveSidecar(path string, doc *yaml.Node) error {
 	b, err := yaml.Marshal(doc)
 	if err != nil {
 		return err
 	}
+	var header string
+	if prev, rerr := os.ReadFile(path); rerr == nil { //nolint:gosec // operator-supplied path
+		header = schemaHeaderOf(prev)
+	}
+	b = withSchemaHeader(header, b)
 	return os.WriteFile(path, b, 0o644) //nolint:gosec // sidecars are world-readable by design
 }
 

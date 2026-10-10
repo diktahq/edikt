@@ -229,3 +229,73 @@ type fakeClock struct{ now time.Time }
 
 func (c *fakeClock) Now() time.Time          { return c.now }
 func (c *fakeClock) advance(d time.Duration) { c.now = c.now.Add(d) }
+
+// TestJournalCarriesSubagentIdentity is the Stage 0 control.
+//
+// BEFORE this change, every subagent-stop record was kind=hook_run carrying
+// only hook/exit_code/duration_us — 1,703 of them in this repo's journal, none
+// able to say WHICH skill produced it, while the host was sending agent_type on
+// the very payload the hook received. A trace that cannot name its skill is the
+// same defect one layer up, so this asserts the identity reaches the record.
+func TestJournalCarriesSubagentIdentity(t *testing.T) {
+	// Real wire shape, matching the 2026-08-30 capture.
+	const payload = `{"hook_event_name":"SubagentStop","session_id":"sess-1",` +
+		`"prompt_id":"prompt-1","agent_id":"agent-1","agent_type":"sidecar-extractor",` +
+		`"transcript_path":"/p/sess-1.jsonl",` +
+		`"agent_transcript_path":"/p/sess-1/subagents/agent-agent-1.jsonl"}`
+
+	reg := NewRegistry()
+	reg.Register("subagent-stop", func(inv *Invocation) Result { return Result{ExitCode: 0} })
+	cap := &capture{}
+	if code := Dispatch(Options{
+		Name: "subagent-stop", Stdin: strings.NewReader(payload),
+		Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+		Registry: reg, Journal: cap.append,
+	}); code != 0 {
+		t.Fatalf("exit code: got %d, want 0", code)
+	}
+	if len(cap.records) != 1 {
+		t.Fatalf("journal records: got %d, want 1", len(cap.records))
+	}
+	r := cap.records[0]
+	for _, c := range []struct{ field, got, want string }{
+		{"AgentType", r.AgentType, "sidecar-extractor"},
+		{"ContextID", r.ContextID, "agent-1"},
+		{"Actor", r.Actor, "subagent"},
+		{"PromptID", r.PromptID, "prompt-1"},
+		{"AgentTranscriptPath", r.AgentTranscriptPath, "/p/sess-1/subagents/agent-agent-1.jsonl"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s: got %q, want %q", c.field, c.got, c.want)
+		}
+	}
+}
+
+// TestJournalIdentityAbsentWhenHostSendsNone is the NEGATIVE control, and it
+// guards the distinction the scope doc got wrong once already: the constant "-"
+// on 491 injection-path records is NOT edikt dropping the identity, it is the
+// honest fallback for an event that carries none. This must keep reading as
+// "the host sent nothing", never as a subagent.
+func TestJournalIdentityAbsentWhenHostSendsNone(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register("session-start", func(inv *Invocation) Result { return Result{ExitCode: 0} })
+	cap := &capture{}
+	Dispatch(Options{
+		Name:   "session-start",
+		Stdin:  strings.NewReader(`{"hook_event_name":"SessionStart","session_id":"s1"}`),
+		Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{},
+		Registry: reg, Journal: cap.append,
+	})
+	r := cap.records[0]
+	if r.Actor != "parent" {
+		t.Errorf("Actor: got %q, want %q for an event with no agent identity", r.Actor, "parent")
+	}
+	if r.AgentType != "-" {
+		t.Errorf("AgentType: got %q, want %q — the honest unknown, not a guess", r.AgentType, "-")
+	}
+	if r.PromptID != "" || r.AgentTranscriptPath != "" {
+		t.Errorf("a payload with no prompt_id/agent_transcript_path must leave both "+
+			"empty (omitempty), got PromptID=%q AgentTranscriptPath=%q",
+			r.PromptID, r.AgentTranscriptPath)
+	}
+}

@@ -21,7 +21,7 @@ func seedUpgradeProject(t *testing.T, currentV string) string {
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeLock(root, currentV, "launcher"); err != nil {
+	if err := writeLock(root, currentV, "launcher", lockSourcePublished); err != nil {
 		t.Fatalf("writeLock: %v", err)
 	}
 	t.Setenv("EDIKT_ROOT", root)

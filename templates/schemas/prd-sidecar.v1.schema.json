@@ -71,12 +71,12 @@
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that returns exit 0 when this FR is shipped/satisfied. Run via `bin/edikt verify prd <PRD-ID>`. PRD lifecycle transitions (ship, supersede) refuse to proceed when any verify fails — the completion-evidence discipline treats a status flip without evidence as unverifiable. Omit when no programmatic check exists — the field stays absent, not empty."
+            "description": "Optional shell command that returns exit 0 when this FR is shipped/satisfied. Run via `edikt verify prd <PRD-ID>`. PRD lifecycle transitions (ship, supersede) refuse to proceed when any verify fails — the completion-evidence discipline treats a status flip without evidence as unverifiable. Omit when no programmatic check exists — the field stays absent, not empty."
           },
           "verify_kind": {
             "type": "string",
             "enum": ["behavioral", "tooling", "structural"],
-            "description": "Discriminator for the cheat-rate benchmark. Required only when this FR should be scored by `bin/edikt gov benchmark cheat-rate`."
+            "description": "Discriminator for the cheat-rate benchmark. Required only when this FR should be scored by `edikt gov benchmark cheat-rate`."
           },
           "intent": {
             "type": "string",
@@ -123,7 +123,7 @@
           "verify": {
             "type": "string",
             "minLength": 1,
-            "description": "Optional shell command that mechanically validates the Given/When/Then. Exit 0 = the AC passes. Run by `bin/edikt verify prd <PRD-ID>`; used by PRD lifecycle gates and the completion-evidence discipline. Omit when no programmatic check is possible — the AC then relies on human judgment, surfaced via doctor's verify-coverage metric."
+            "description": "Optional shell command that mechanically validates the Given/When/Then. Exit 0 = the AC passes. Run by `edikt verify prd <PRD-ID>`; used by PRD lifecycle gates and the completion-evidence discipline. Omit when no programmatic check is possible — the AC then relies on human judgment, surfaced via doctor's verify-coverage metric."
           },
           "verify_kind": {
             "type": "string",

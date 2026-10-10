@@ -12,8 +12,7 @@ import (
 
 	"github.com/diktahq/edikt/tools/edikt/internal/contradiction"
 	"github.com/diktahq/edikt/tools/edikt/internal/idvalidate"
-	"github.com/diktahq/edikt/tools/edikt/internal/lossless"
-	"github.com/diktahq/edikt/tools/edikt/internal/parse"
+	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
 	"github.com/diktahq/edikt/tools/edikt/internal/phaseb"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
@@ -22,19 +21,97 @@ import (
 	"golang.org/x/term"
 )
 
+// writeSourceSidecar is the ONE way this package writes a source artifact.
+//
+// The rule: every write of a source sidecar goes through this function, and
+// nothing below govrun writes one. phasea's autorepair returns bytes and never
+// persists (it used to, and that write was reachable from `--check`: #9).
+// Two properties follow from the rule being structural rather than incidental:
+//
+//  1. NO PATH REACHABLE FROM A DOCUMENTED NON-WRITING FLAG WRITES. `--check`,
+//     `--check --json` and `--dry-run` all set CheckOnly, and the refusal is
+//     on the write itself, so a caller reordered above the check branch's
+//     return still cannot write under a flag whose contract is that it does
+//     not.
+//  2. The `# yaml-language-server: $schema=` header the file opened with is
+//     re-attached: Marshal emits canonical bytes with no comments, so a
+//     strip-and-rewrite silently drops the header the templates ship and the
+//     validator demands.
+func writeSourceSidecar(opts TwoPhaseOptions, path string, data []byte) error {
+	if opts.CheckOnly {
+		return fmt.Errorf("refusing to write %s: --check / --dry-run must not modify a source artifact", path)
+	}
+	var header string
+	if prev, rerr := os.ReadFile(path); rerr == nil { //nolint:gosec // path from the discovered corpus
+		header = sidecar.SchemaHeaderOf(prev)
+	}
+	return os.WriteFile(path, sidecar.WithSchemaHeader(header, data), 0o644) //nolint:gosec // sidecars are world-readable by design
+}
+
+// checkOnlyAutorepair classifies one stale pair under --check / --dry-run by
+// running the autorepair on an independent copy loaded from disk.
+//
+// handled=true: the copy is fully resolved. The pair is recorded once in
+// StaleSidecars and once in RepairableSidecars, a `stale:` line is printed,
+// and the caller must skip its task path. handled=false: the pair still needs
+// extraction (or the repair could not run); residual, when non-empty, is the
+// staleness reason re-measured on the repaired copy, which the caller prints
+// instead of the pre-repair one. Nothing is written either way.
+func checkOnlyAutorepair(opts TwoPhaseOptions, p sidecar.Pair, res *TwoPhaseResult) (handled bool, residual string) {
+	cp, lerr := sidecar.Load(p.SidecarPath)
+	if lerr != nil {
+		fmt.Fprintf(opts.Stderr, "  autorepair: %s — could not load a copy to measure (%v); counted as needing extraction\n", p.ArtifactID, lerr)
+		return false, ""
+	}
+	out, rerr := phasea.TryAutoRepair(cp, opts.ProjectRoot, p.ParentPath)
+	if rerr != nil {
+		fmt.Fprintf(opts.Stderr, "  autorepair: %s — %v; counted as needing extraction\n", p.ArtifactID, rerr)
+		return false, ""
+	}
+	if out.AnchorsRepaired == 0 {
+		return false, ""
+	}
+	if !out.StillStale {
+		res.StaleSidecars = append(res.StaleSidecars, p.ArtifactID)
+		res.RepairableSidecars = append(res.RepairableSidecars, p.ArtifactID)
+		fmt.Fprintf(opts.Stderr,
+			"  stale: %s — anchor drift, %d anchor(s) mechanically repairable; not written (--check) — run edikt gov compile\n",
+			p.ArtifactID, out.AnchorsRepaired)
+		return true, ""
+	}
+	fmt.Fprintf(opts.Stderr, "  autorepair: %s — %d anchor(s) repairable, residual drift needs extraction; not written (--check)\n",
+		p.ArtifactID, out.AnchorsRepaired)
+	return false, residualReason(cp, opts.ProjectRoot, "")
+}
+
+// residualReason re-measures a partially repaired sidecar and returns the
+// first anchor that is STILL stale. Reporting the pre-repair reason would
+// name an anchor the repair already fixed and send the reader to prose that
+// is fine. fallback is returned when the re-measure finds nothing it can name
+// (the residual sits outside the directive anchors the reason covers).
+func residualReason(sc *sidecar.Sidecar, projectRoot, fallback string) string {
+	if stale, reason, err := sc.IsStale(projectRoot); err == nil && stale && reason != "" {
+		return reason
+	}
+	if fallback == "" {
+		return "residual anchor drift after autorepair"
+	}
+	return fallback
+}
+
 // TwoPhaseOptions configures one invocation of the sidecar-aware compile.
 type TwoPhaseOptions struct {
 	ProjectRoot string
 	CheckOnly   bool
 	NoWait      bool
-	JSONMode    bool          // suppress prose UI on stdout; caller emits JSON
-	Concurrency int           // defaults to DefaultDispatchConcurrency
+	JSONMode    bool // suppress prose UI on stdout; caller emits JSON
+	Concurrency int  // defaults to DefaultDispatchConcurrency
 	// DispatchTimeout bounds ONE artifact's extraction. Defaults to
 	// DefaultDispatchTimeout; a negative value disables the bound and is
 	// only meaningful to tests that drive a runner they control.
 	DispatchTimeout time.Duration
-	Stderr      io.Writer
-	Stdout      io.Writer
+	Stderr          io.Writer
+	Stdout          io.Writer
 
 	// OnLoss governs what happens when the post-extractor lossless
 	// check finds directives in MigrationPreserved that the extractor
@@ -47,6 +124,14 @@ type TwoPhaseOptions struct {
 // TwoPhaseResult summarizes the run for both prose UI and --json output.
 type TwoPhaseResult struct {
 	StaleSidecars []string `json:"stale_sidecars,omitempty"`
+
+	// RepairableSidecars is the subset of StaleSidecars whose drift the
+	// deterministic autorepair resolves completely. Populated only under
+	// --check / --dry-run, where the repair is computed on a copy and never
+	// written: these are the ids `edikt gov compile` would fix without an
+	// extraction. A partially repairable sidecar is NOT listed — it still
+	// needs the extractor.
+	RepairableSidecars []string `json:"repairable_sidecars,omitempty"`
 
 	// BootstrapSidecars is the subset of StaleSidecars that had no sidecar
 	// on disk at all (as opposed to a sidecar whose anchors drifted). Kept
@@ -169,8 +254,8 @@ func losslessUnmeasurableReason(mp *sidecar.MigrationPreserved) string {
 
 // LossArtifactRec is a JSON-friendly per-artifact loss record.
 type LossArtifactRec struct {
-	SidecarPath string          `json:"sidecar_path"`
-	Losses      []lossless.Loss `json:"losses"`
+	SidecarPath string         `json:"sidecar_path"`
+	Losses      []migrate.Loss `json:"losses"`
 }
 
 // resolveLossPolicy maps a string OnLoss flag value into a concrete
@@ -201,68 +286,14 @@ type PhaseAErrorRec struct {
 	Err          string `json:"error"`
 }
 
-// statusExcluded reports whether a discovered pair's parent artifact is
-// disqualified from compiling by its STATUS — a `proposed` ADR, a `revoked`
-// invariant — and returns a human-readable reason on a hit.
-//
-// ADR-020:d03 is the requirement: the tier-2 compile helper filters source  edikt-guard:allow
-// documents by status (accepted ADRs, active invariants, all guidelines).
-// Nothing on the sidecar path enforced it. sidecar.Discover carries a
-// DENYLIST (skip `superseded` / `deprecated` / migration:skip) and
-// parse.IsIncluded carries the ALLOWLIST the ADR describes, and the denylist
-// — the weaker one — is the one on the path that runs, so every other
-// status walked straight through: ADR-038, `status: proposed`, compiled 165  edikt-guard:allow
-// directive-index entries and the write-time tier delivered them as
-// MUST-grade denies (F-069).
-//
-// The decision is NOT re-implemented here. It delegates to parse.IsIncluded
-// because a second copy of a decision procedure is the defect, not the fix
-// (GL-002): the two copies that already existed are what drifted. In
-// particular, an allowlist written fresh against frontmatter alone would
-// take 344 index entries dark rather than 165 — ADR-001, ADR-007, ADR-010  edikt-guard:allow
-// and ADR-060 carry no frontmatter status and declare acceptance in a  edikt-guard:allow
-// `**Status:** Accepted` body line, which is exactly the fallback
-// parse.IsIncluded already implements and a third copy would forget.
-//
-// The filter deliberately does NOT live in sidecar.isSkipListed. That
-// predicate also feeds `migrate sidecars`, doctor coverage, verify-all and
-// legacy-sentinel detection — none of which are asking "should these
-// directives compile". Widening it would answer four questions with the
-// answer to one.
+// statusExcluded is sidecar.StatusExcluded applied to a discovered pair —
+// the one status filter (ADR-020:d03, decision procedure parse.IsIncluded).
+// The history of why it is one function and not a second copy is on
+// sidecar.StatusExcluded; the F-069 finding (a `status: proposed` ADR
+// compiled 165 MUST-grade directives because only the weaker denylist ran)
+// is what it exists to prevent.
 func statusExcluded(p sidecar.Pair) (bool, string) {
-	var kind string
-	switch p.Kind {
-	case sidecar.KindADR:
-		kind = "adr"
-	case sidecar.KindInvariant:
-		kind = "inv"
-	case sidecar.KindGuideline:
-		kind = "guideline"
-	default:
-		// Parent found in a directory the caller gave no class for. This
-		// filter's job is to drop artifacts whose status is known and
-		// disqualifying, not artifacts whose class could not be read.
-		return false, ""
-	}
-
-	doc, err := parse.LoadDocument(p.ParentPath)
-	if err != nil {
-		// An unreadable parent is not a status verdict. The LoadErr and
-		// bootstrap paths in RunTwoPhase report it on their own terms.
-		return false, ""
-	}
-	if doc.IsIncluded(kind) {
-		return false, ""
-	}
-
-	status := strings.TrimSpace(doc.Frontmatter.Status)
-	if status == "" {
-		status = strings.TrimSpace(doc.BoldStatus)
-	}
-	if status == "" {
-		status = "no status"
-	}
-	return true, fmt.Sprintf("status: %s — only accepted ADRs and active invariants compile", status)
+	return sidecar.StatusExcluded(p.Kind, p.ParentPath)
 }
 
 // RunTwoPhase is the sidecar-aware compile path.
@@ -399,21 +430,49 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			// to see if pure-Go quote-primary / line-secondary scanning
 			// can resolve the drift. Skip dispatch entirely when the
 			// repair removes every stale anchor.
-			repaired, rerr := phasea.TryAutoRepair(p.Sidecar, opts.ProjectRoot, p.ParentPath, p.SidecarPath)
-			if rerr != nil {
-				fmt.Fprintf(opts.Stderr, "  autorepair: %s — %v (falling back to LLM dispatch)\n", p.ArtifactID, rerr)
-			} else if repaired.AnchorsRepaired > 0 {
-				fmt.Fprintf(opts.Stderr, "  autorepair: %s — repaired %d anchor(s)%s\n",
-					p.ArtifactID, repaired.AnchorsRepaired,
-					func() string {
-						if repaired.StillStale {
-							return " (residual drift, dispatching extractor)"
-						}
-						return " (fully resolved, skipping LLM dispatch)"
-					}())
-			}
-			if rerr == nil && !repaired.StillStale {
-				continue
+			//
+			// Under --check / --dry-run the repair runs on an INDEPENDENT
+			// copy loaded from disk, never on p.Sidecar: the check is asked
+			// to measure the corpus, and a repair applied to the pairs it
+			// goes on to measure (contradictions, render freshness) would
+			// report the state it produced instead of the state it found.
+			// Repairable drift is drift — it is counted stale, printed with
+			// the `stale:` prefix the review commands grep for, and fails
+			// the check (#9, c4-b). Nothing is written (c4-a).
+			if opts.CheckOnly {
+				if handled, residual := checkOnlyAutorepair(opts, p, res); handled {
+					continue
+				} else if residual != "" {
+					reason = residual
+				}
+			} else {
+				// p is a range-variable COPY of the pair, but p.Sidecar is a
+				// pointer into pairs: the in-memory repair below reaches
+				// Phase B through it. Never reassign p.Sidecar here — a new
+				// pointer would be written to disk while Phase B compiled
+				// the drifted original.
+				repaired, rerr := phasea.TryAutoRepair(p.Sidecar, opts.ProjectRoot, p.ParentPath)
+				if rerr == nil && repaired.Repaired != nil {
+					rerr = writeSourceSidecar(opts, p.SidecarPath, repaired.Repaired)
+				}
+				if rerr != nil {
+					fmt.Fprintf(opts.Stderr, "  autorepair: %s — %v (falling back to LLM dispatch)\n", p.ArtifactID, rerr)
+				} else if repaired.AnchorsRepaired > 0 {
+					fmt.Fprintf(opts.Stderr, "  autorepair: %s — repaired %d anchor(s)%s\n",
+						p.ArtifactID, repaired.AnchorsRepaired,
+						func() string {
+							if repaired.StillStale {
+								return " (residual drift, dispatching extractor)"
+							}
+							return " (fully resolved, skipping LLM dispatch)"
+						}())
+					if repaired.StillStale {
+						reason = residualReason(p.Sidecar, opts.ProjectRoot, reason)
+					}
+				}
+				if rerr == nil && !repaired.StillStale {
+					continue
+				}
 			}
 			// validate artifact ID + type at the dispatch boundary
 			// before they flow into a `claude -p` argv string. A name that
@@ -448,12 +507,15 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		return res, fmt.Errorf("%d sidecar error(s)", len(loadErrs))
 	}
 
-	if opts.CheckOnly && len(tasks) > 0 {
+	if opts.CheckOnly && len(res.StaleSidecars) > 0 {
 		// --check mode is gate-friendly (called by CI and by tier-1 markdown).
-		// Lead with the slash command for human readers; mention the binary
-		// form parenthetically for CI/scripting contexts that don't have a
-		// Claude Code session.
-		fmt.Fprintf(opts.Stderr, "error: %d sidecar(s) stale — run /edikt:gov:compile in Claude Code to resync (or 'edikt gov compile' directly in CI)\n", len(tasks))
+		// Every stale sidecar counts, repairable or not: a check that passed
+		// over drift it could have repaired reported a clean corpus that was
+		// not one. The two remedies differ, so the line names both — the
+		// binary applies a mechanical repair, extraction needs Claude Code.
+		fmt.Fprintf(opts.Stderr,
+			"error: %d sidecar(s) stale — %d mechanically repairable (run edikt gov compile), %d need extraction (run /edikt:gov:compile in Claude Code)\n",
+			len(res.StaleSidecars), len(res.RepairableSidecars), len(tasks))
 		return res, fmt.Errorf("stale sidecars in --check mode")
 	}
 
@@ -481,8 +543,8 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			}
 			fmt.Fprintln(opts.Stderr, "The extractor writes gov-sidecar.v2 (source_excerpts[]). Dispatching now would convert")
 			fmt.Fprintln(opts.Stderr, "the corpus one artifact at a time, by accident, leaving it in two shapes at once.")
-			fmt.Fprintln(opts.Stderr, "Run `bin/edikt migrate to-v2` first — it converts every sidecar in one deterministic pass.")
-			return res, fmt.Errorf("phase A: %d v1-shaped sidecar(s); run `edikt migrate to-v2`", len(legacy))
+			fmt.Fprintln(opts.Stderr, "Run `edikt migrate lift` first — it converts every sidecar in one deterministic pass.")
+			return res, fmt.Errorf("phase A: %d v1-shaped sidecar(s); run `edikt migrate lift`", len(legacy))
 		}
 
 		// Phase A no longer dispatches from here, and must not.
@@ -500,6 +562,21 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		// through tier-1.
 		if n := len(res.BootstrapSidecars); n > 0 {
 			fmt.Fprintf(opts.Stderr, "Phase A: %d sidecar(s) need bootstrapping from prose (first compile of these artifacts)\n", n)
+		}
+
+		// Render the installed frontmatter from extractor.model config
+		// BEFORE resolving it, so the resolution immediately below always
+		// reflects the current config rather than
+		// whatever the file happened to carry from a prior render or a
+		// hand edit. A config load failure here is reported but does not
+		// abort the plan — the render is best-effort; ResolveExtractorAgentModel
+		// still runs against whatever is on disk.
+		if planCfg, cfgErr := phasea.LoadConfig(opts.ProjectRoot); cfgErr == nil {
+			if rerr := phasea.RenderInstalledExtractorFrontmatter(opts.ProjectRoot, planCfg.ExtractorModel); rerr != nil {
+				fmt.Fprintf(opts.Stderr, "Phase A — could not render extractor frontmatter from config: %v\n", rerr)
+			}
+		} else {
+			fmt.Fprintf(opts.Stderr, "Phase A — could not load config for extractor.model: %v\n", cfgErr)
 		}
 
 		// The extractor model is reported unconditionally now. It used to be
@@ -538,7 +615,7 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			len(planOut.Plan.Items), planOut.Plan.PlanID,
 			phasea.PlanFilePath(opts.ProjectRoot, planOut.Plan.PlanID))
 		fmt.Fprintln(opts.Stderr, "Run /edikt:gov:compile from inside Claude Code: it fans out one")
-		fmt.Fprintln(opts.Stderr, "sidecar-extractor per plan item, then runs `bin/edikt phasea verify`.")
+		fmt.Fprintln(opts.Stderr, "sidecar-extractor per plan item, then runs `edikt phasea verify`.")
 		return res, fmt.Errorf("phase A: %d artifact(s) await tier-1 extraction (plan %s); not running phase B",
 			len(planOut.Plan.Items), planOut.Plan.PlanID)
 	}
@@ -624,7 +701,7 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 
 		if !opts.JSONMode {
 			fmt.Fprintf(opts.Stderr,
-				"edikt gov compile --check: anchor drift: 0 stale (%d sidecar(s))\n", len(pairs))
+				"edikt gov compile --check: anchor drift: %d stale (%d sidecar(s))\n", len(res.StaleSidecars), len(pairs))
 			fmt.Fprintf(opts.Stderr, "%s\n", bodySummary.ReportLine())
 			if len(res.Conflicts) == 0 {
 				fmt.Fprintln(opts.Stderr, "conflicts: none detected (same-topic, same-subject, opposing-modality pairs)")
@@ -670,6 +747,7 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			CompiledAt:        clk.Now().Format(time.RFC3339),
 			CompilerVersion:   CompilerVersion,
 			Excluded:          excludedByKind,
+			ContractBlock:     phaseb.ContractBlockFor(opts.ProjectRoot, "governance-authoring"),
 			TopicDescriptions: checkDescriptions,
 		})
 		if ferr != nil {
@@ -694,7 +772,9 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			for _, d := range drifts {
 				fmt.Fprintf(opts.Stderr, "  - %s\n", d.String())
 			}
-			fmt.Fprintln(opts.Stderr, "  Run `bin/edikt gov compile` to re-render.")
+			for _, line := range phaseb.RemedyFor(drifts) {
+				fmt.Fprintf(opts.Stderr, "  %s\n", line)
+			}
 		}
 		return res, fmt.Errorf("%d rendered surface(s) stale relative to current sidecars", len(drifts))
 	}
@@ -731,7 +811,7 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		mp := pairs[i].Sidecar.MigrationPreserved
 		switch {
 		case losslessMeasurable(mp):
-			losses := lossless.CheckLosslessAgainstDirectives(mp.Directives, pairs[i].Sidecar)
+			losses := migrate.CheckLosslessAgainstDirectives(mp.Directives, pairs[i].Sidecar)
 			if len(losses) > 0 {
 				res.LosslessReport = append(res.LosslessReport, LossArtifactRec{
 					SidecarPath: pairs[i].SidecarPath,
@@ -759,7 +839,7 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		if merr != nil {
 			return res, fmt.Errorf("strip migration_preserved from %s: %w", pairs[i].SidecarPath, merr)
 		}
-		if werr := os.WriteFile(pairs[i].SidecarPath, out, 0o644); werr != nil {
+		if werr := writeSourceSidecar(opts, pairs[i].SidecarPath, out); werr != nil {
 			return res, fmt.Errorf("rewrite %s after migration_preserved strip: %w", pairs[i].SidecarPath, werr)
 		}
 	}
@@ -876,6 +956,7 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		CompiledAt:        clk.Now().Format(time.RFC3339),
 		CompilerVersion:   CompilerVersion,
 		Excluded:          excludedByKind,
+		ContractBlock:     phaseb.ContractBlockFor(opts.ProjectRoot, "governance-authoring"),
 		TopicDescriptions: descriptions,
 	})
 	if err != nil {
@@ -946,12 +1027,34 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 		fmt.Fprintf(summaryOut,
 			"Tier 3 — %d topic(s) retired from .claude/rules/ to skill packages: %s\n",
 			len(pbRes.TopicsRetiredToSkill), strings.Join(pbRes.TopicsRetiredToSkill, ", "))
+
+		// THE CONSEQUENCE, said out loud. The line above reports where the
+		// topics went; this reports what it COST, which is the half a reader
+		// cannot derive. Retiring a topic reaches every sidecar in it — a
+		// scoped sidecar with perfectly good globs still loses path-triggered
+		// delivery because a SIBLING declared none.
+		//
+		// Judgement routing is the right destination for a rule with no file
+		// scope: a process rule or a naming convention has nothing to trigger
+		// on, and for those the skill package's description IS the enforcement
+		// mechanism, not a nicety — it is the only thing that can select the
+		// rule before any file is touched. This line is not a defect queue.
+		// What it makes visible is the OTHER case: a directive routed to
+		// judgement because path inference came up empty used to be
+		// indistinguishable from one routed there deliberately.
+		if pbRes.JudgementRoutedDirectives > 0 {
+			fmt.Fprintf(summaryOut,
+				"         %d directive(s) are consequently reachable by judgement only — no path match delivers them.\n",
+				pbRes.JudgementRoutedDirectives)
+			fmt.Fprintf(summaryOut,
+				"         Path inference is owned by PRD-004 (extractor quality); PRD-005 records it as DF-7. Not fixed by declaring globs by hand.\n")
+		}
 	}
 
 	// F-115/A3 — a reachability REGRESSION, reported distinctly from the
 	// routine tier-3 line above. The line above answers "which topics are
 	// skill-only right now" (true on a fresh clone too, nothing wrong). This
-	// answers "which topics had write-time delivery a moment ago and lost
+	// answers "which topics had path-triggered delivery a moment ago and lost
 	// it because of THIS run" — found live: a topic reassignment left a
 	// project's core domain silently unreachable, with nothing warning at
 	// compile time; the only existing signal was doctor's own scope check,
@@ -959,11 +1062,11 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 	// this compile cause it" and no attribution to which reassignment did.
 	if len(pbRes.TopicsNewlyUnreachable) > 0 {
 		fmt.Fprintf(summaryOut,
-			"⚠ REACHABILITY REGRESSION — %d topic(s) had write-time delivery before this compile and do not after it: %s\n"+
+			"⚠ REACHABILITY REGRESSION — %d topic(s) had path-triggered delivery before this compile and do not after it: %s\n"+
 				"  Each had a .claude/rules/governance/<topic>.md file an instant ago; this run removed it because "+
 				"every contributing sidecar is now undeclared (no paths:). If an artifact was just reassigned to "+
 				"one of these topics, that reassignment is very likely why. Declare paths: on at least one "+
-				"contributing sidecar (bin/edikt sidecar approve --kind paths) to restore delivery, or confirm the "+
+				"contributing sidecar (edikt sidecar approve --kind paths) to restore delivery, or confirm the "+
 				"topic dropping to tier 3 (skill-invoked only) is intended.\n",
 			len(pbRes.TopicsNewlyUnreachable), strings.Join(pbRes.TopicsNewlyUnreachable, ", "))
 	}

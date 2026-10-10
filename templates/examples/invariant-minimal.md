@@ -33,6 +33,16 @@ list of qualities, traps, and self-test questions.
 
 -->
 
+## In plain terms
+
+<!-- One paragraph. Declarative, present tense, no modal verb, no date. What is
+     always true here, said the way you would say it to a colleague rather than
+     to a linter — the Statement below carries the MUST, this carries the
+     meaning. If the paragraph cannot be written without naming a file, a
+     function, or the tool you happen to use today, the record is about an
+     implementation and not about an invariant. -->
+{Say what always holds, plainly.}
+
 ## Statement
 
 {One declarative sentence, present tense, stating the constraint.

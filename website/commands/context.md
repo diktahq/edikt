@@ -54,7 +54,7 @@ Loads your project's memory into the current session.
 
 ## Auto-memory
 
-After running `/edikt:context`, edikt writes a compact snapshot to the model's auto-memory (`~/.claude/projects/.../memory/MEMORY.md`). This file is automatically loaded at the start of every future session — so the model knows the project name, stack, active plan, and hard invariants without you running `/edikt:context` first.
+After running `/edikt:context`, edikt writes a compact snapshot to the model's auto-memory (`~/.claude/projects/.../memory/MEMORY.md`, or under the profile `CLAUDE_CONFIG_DIR` selects when it is set). This file is automatically loaded at the start of every future session — so the model knows the project name, stack, active plan, and hard invariants without you running `/edikt:context` first.
 
 The `SessionStart` hook checks if memory is stale (>7 days old) and prompts you to refresh. The memory file is local to your machine, not committed to git.
 

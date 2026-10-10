@@ -208,7 +208,7 @@ func UntrustedMessage(projectRoot string) string {
 	return fmt.Sprintf(
 		"refusing to run this repo's verify: commands — %s is not an approved edikt project (EDIKT_VERIFY_TRUST_MODE=block).\n"+
 			"verify: fields execute arbitrary shell from the repo's sidecars. To approve this repo once:\n"+
-			"  bin/edikt verify <id> --trust      (or: bin/edikt gov compile --trust)\n"+
+			"  edikt verify <id> --trust      (or: edikt gov compile --trust)\n"+
 			"For CI or a one-off run, set EDIKT_VERIFY_TRUST=1.",
 		Realpath(projectRoot))
 }
@@ -221,6 +221,6 @@ func WarnMessage(projectRoot string) string {
 		"edikt: running this project's repo-defined verify: commands (%s) and trusting it from now on (trust-on-first-use).\n"+
 			"  verify: fields run arbitrary shell from the repo's sidecars. If you do NOT trust this repo, remove its entry\n"+
 			"  from ~/.edikt/state/trusted-roots.json. To require explicit approval for unknown repos instead, set\n"+
-			"  EDIKT_VERIFY_TRUST_MODE=block (then approve with: bin/edikt gov compile --trust).",
+			"  EDIKT_VERIFY_TRUST_MODE=block (then approve with: edikt gov compile --trust).",
 		Realpath(projectRoot))
 }

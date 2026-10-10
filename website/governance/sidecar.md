@@ -8,7 +8,7 @@ docs/architecture/decisions/
 └── ADR-001-api-versioning.edikt.yaml  ← edikt writes this. directives live here.
 ```
 
-The sidecar is a YAML file co-located with the artifact, sharing its base name. It conforms to `templates/schemas/gov-sidecar.v2.schema.json` (`schema_version: 2`). v2 replaced v1's singular `source_excerpt` with `source_excerpts[]` — an ordered array of 1..N anchors per directive — and added an optional `actor_scope: true` field that excludes a directive from write-time delivery while it still renders in ambient surfaces. A v1-shaped sidecar must be migrated (`bin/edikt migrate to-v2`) before it validates.
+The sidecar is a YAML file co-located with the artifact, sharing its base name. It conforms to `templates/schemas/gov-sidecar.v2.schema.json` (`schema_version: 2`). v2 replaced v1's singular `source_excerpt` with `source_excerpts[]` — an ordered array of 1..N anchors per directive — and added an optional `actor_scope: true` field marking a directive whose subject is an edikt-internal operation rather than file content a human edit could violate. A v1-shaped sidecar must be migrated (`bin/edikt migrate to-v2`) before it validates.
 
 ## Why this exists
 
@@ -57,7 +57,7 @@ verification:
 | `signals` | Domain keywords, lowercase and deduplicated. Legacy field — the routing table they fed was retired under ADR-059; topic membership is now driven by `paths:` matching and skill-package trigger descriptions instead. |
 | `directives[].text` | The directive sentence (≤ 200 chars). |
 | `directives[].source_excerpts[]` | An ordered array of 1..N verbatim quotes from the prose body, each with its own line range. v2 replaced v1's singular `source_excerpt` so a directive whose meaning spans separate sentences can anchor to all of them. Used by `:review` to detect drift. |
-| `directives[].actor_scope` | **Optional v2** — `true` excludes this directive from write-time PreToolUse delivery while it still renders in ambient/topic-file surfaces. |
+| `directives[].actor_scope` | **Optional v2** — `true` marks a directive whose subject is an edikt-internal operation (the compile pipeline, `migrate`, `upgrade`) rather than file content a human edit could violate. It was the per-directive opt-out from the channel that delivered rules as an edit landed (ADR-065); that channel is retired (ADR-083), so the field no longer changes where a directive renders. It is preserved on the sidecar rather than re-derived. |
 | `directives[].verify` | **Optional v0.6.0** — a single shell command run by `bin/edikt verify gov <ID>`. Exit 0 = the directive holds; non-zero = the directive is violated. Omit when no mechanical check is possible — the field stays absent, not empty. Same optional field is available on `prohibitions[].verify` and on the structured form of `verification[]` items. |
 
 What's **not** in the sidecar: hashes. `source_hash`, `directives_hash`, `agent_prompt_version` — all forbidden at the root. Hashes are recomputed on read at compile time, so commits never carry a stale hash.
@@ -66,7 +66,7 @@ What's **not** in the sidecar: hashes. `source_hash`, `directives_hash`, `agent_
 
 Every claim-bearing slot in a sidecar — `directives[]`, `prohibitions[]`, structured `verification[]` on gov; `requirements[]` and `acceptance_criteria[]` on PRD and SPEC — MAY carry an optional `verify:` field. The runner (`bin/edikt verify gov|prd|spec <ID>`) executes each one via `bash -c` with a 30-second timeout. Exit 0 is a pass, non-zero is a fail, and missing means "skipped".
 
-The discipline is wired into every completion-claiming path: gov compile blocks on failure post-merge, `/edikt:sdlc:prd ship` refuses on failure, drift folds failures into its report. The doctor's "Sidecar Verify Coverage" line surfaces gaps as soft warnings — never blocks. See [`edikt verify`](/commands/verify) for the full contract.
+The discipline is wired into every completion-claiming path: `/edikt:sdlc:prd ship` refuses on failure, and drift folds failures into its report. `gov compile` runs the post-merge verify and prints its result but does not fail on it — its exit code answers only whether the render succeeded, since the phase-end reviewer is the one verification surface (ADR-083). The doctor's "Sidecar Verify Coverage" line surfaces gaps as soft warnings — never blocks. See [`edikt verify`](/commands/verify) for the full contract.
 
 ## When sidecars regenerate
 
@@ -100,13 +100,15 @@ Phase B writes one file per topic under `.claude/rules/governance/`, plus two ma
 ├── hooks.md                   ← topic file: pathless/manual directives with topic: hooks
 ├── release.md
 ├── tooling.md
-├── directive-index.yaml       ← glob-keyed YAML; bin/edikt hook match's exclusive input
+├── delivery-map.yaml          ← glob-keyed routing record: which directive governs which path, and which surface delivers it
 └── manifest.yaml              ← every rendered surface, path + kind + SHA-256, no timestamp
 ```
 
 Not every topic renders a topic file: a topic whose contributing sidecars declare no `paths:` at all is reachable only through its skill package (`.claude/skills/edikt-<topic>/SKILL.md`) instead.
 
-Per ADR-066, a sidecar's `Directives`/`Prohibitions` text contributes to its topic file's compiled-directives region only when that sidecar declares **no** `paths:`. A sidecar that does declare `paths:` contributes its directive text to `directive-index.yaml` alone. In a corpus where scoping is thorough — every contributing sidecar declares `paths:` — a topic file still renders (to carry its `paths:` frontmatter and any pathless/manual content), but its compiled-directives region is empty: open and close sentinel markers with nothing between them. That's expected, not a bug.
+A sidecar's `Directives`/`Prohibitions` text contributes to its topic file's compiled-directives region whether or not that sidecar declares `paths:` — the topic file carries every directive of its topic, so an empty region between the open and close sentinel markers means a topic with no directives at all.
+
+That is the opposite of what v0.8.x did. Under ADR-066's single-home rule a `paths:`-declaring sidecar sent its directive text to `directive-index.yaml` alone, to be delivered as a matching edit landed, and a thoroughly-scoped corpus therefore rendered topic files whose compiled-directives regions were empty by design. That surface is retired (ADR-083) and its entries were re-homed into the topic files; `delivery-map.yaml` kept the routing record, without the directive text.
 
 Each topic file carries a `_fingerprint:` field in its frontmatter — a sorted SHA-256 of the contributing sidecar paths and content hashes. If a single sidecar changes, only its topic file rerenders; every other topic file is byte-equal across the two compiles. This keeps `git diff` legible after edits. `manifest.yaml` gives the same freshness guarantee across the whole render: it lists every surface's SHA-256 with no timestamp field, so it is byte-identical for byte-identical input.
 

@@ -40,6 +40,8 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 	"gopkg.in/yaml.v3"
+
+	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
 )
 
 func init() { rootCmd.AddCommand(newUtilCmd()) }
@@ -245,7 +247,7 @@ func newUtilJSONValidateCmd() *cobra.Command {
 
 func newUtilYAMLCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "yaml", Short: "Read, validate and canonicalise YAML"}
-	cmd.AddCommand(newUtilYAMLGetCmd(), newUtilYAMLValidateCmd(), newUtilYAMLCanonicalCmd())
+	cmd.AddCommand(newUtilYAMLGetCmd(), newUtilYAMLValidateCmd(), newUtilYAMLCanonicalCmd(), newUtilYAMLRecordCmd())
 	return cmd
 }
 
@@ -452,7 +454,8 @@ func scalarString(v any) string {
 // nobody tested on. The library is a build-time dependency of this binary, so
 // there is no absent case left and no second implementation to disagree.
 func newUtilSchemaCmd() *cobra.Command {
-	return &cobra.Command{
+	var requireHeader bool
+	cmd := &cobra.Command{
 		Use:   "schema-validate <document> <schema>",
 		Short: "Validate a YAML or JSON document against a JSON Schema",
 		Long: `Validate a document against a JSON Schema (draft 2020-12).
@@ -465,6 +468,13 @@ stops at the first error makes a caller fix one field per run.`,
 			docBytes, err := os.ReadFile(args[0]) //nolint:gosec // operator-supplied path
 			if err != nil {
 				return err
+			}
+			// The header is a comment: schema-valid with or without it. A
+			// validate step that must catch a lost header asks for it.
+			if requireHeader {
+				if err := requireSchemaHeader(args[0], docBytes, os.Stderr); err != nil {
+					return err
+				}
 			}
 			var doc any
 			if err := yaml.Unmarshal(docBytes, &doc); err != nil {
@@ -522,6 +532,9 @@ stops at the first error makes a caller fix one field per run.`,
 			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&requireHeader, "require-schema-header", false,
+		"also require the `# yaml-language-server: $schema=<path>` header on line 1 — a lost or empty header is a finding (exit 1)")
+	return cmd
 }
 
 // ── render ──────────────────────────────────────────────────────────────────
@@ -789,6 +802,33 @@ func newUtilJSONJoinCmd() *cobra.Command {
 // produced twice. Corrected here rather than reproduced.
 func newUtilFrontmatterCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "frontmatter", Short: "Edit YAML frontmatter keys"}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "render-extractor-model <template-file> <project-root>",
+		Short: "Render sidecar-extractor.md's frontmatter from extractor.model config; writes to stdout",
+		Long: `Renders <template-file> through <project-root>'s resolved extractor.model
+config and writes the result to stdout. Used by test/test-agent-copies.sh's
+comparison so it calls the same phasea.RenderExtractorFrontmatter function
+Phase A itself uses before every dispatch — the test asserts the resolved
+outcome, it does not reproduce the rendering logic in shell.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			templatePath, projectRoot := args[0], args[1]
+			tmplBody, err := os.ReadFile(templatePath) //nolint:gosec // operator-supplied path
+			if err != nil {
+				return err
+			}
+			extractorModel := phasea.ExtractorModelInherit
+			if planCfg, cerr := phasea.LoadConfig(projectRoot); cerr == nil {
+				extractorModel = planCfg.ExtractorModel
+			}
+			rendered, rerr := phasea.RenderExtractorFrontmatter(tmplBody, extractorModel)
+			if rerr != nil {
+				return rerr
+			}
+			_, err = cmd.OutOrStdout().Write(rendered)
+			return err
+		},
+	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "append <file> <key> <value>",
 		Short: "Append a value to an inline list in frontmatter, idempotently",

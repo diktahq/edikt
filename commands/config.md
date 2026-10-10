@@ -65,7 +65,6 @@ edikt config — {project_name or repo directory name}
  signal-detection:  {true|false}   (default: true)
  plan-injection:    {true|false}   (default: true)
  quality-gates:     {true|false}   (default: true)
- evidence-gate:     {block|warn|educate|disabled}   (default: warn)
 
  ARTIFACTS
  ─────────
@@ -198,10 +197,10 @@ Run /edikt:config to see all available keys.
 | `paths.project-context` | `docs/project-context.md` | any file path | context, init | Project identity file |
 | `features.auto-format` | `true` | `true`, `false` | PostToolUse hook | Format files after edits |
 | `features.session-summary` | `true` | `true`, `false` | SessionStart hook | Show changes since last session |
-| `features.signal-detection` | `true` | `true`, `false` | Stop hook | Detect uncaptured ADR/invariant candidates |
+| `features.signal-detection` | `true` | `true`, `false` | Stop hook | Detect uncaptured ADR/invariant candidates (advisory — a suggestion, never a requirement) |
+| `signals.adr_candidate` | `quiet` | `quiet`, `eager` | Stop hook | `quiet` fires only when a rejected alternative, a reversal cost, and a re-litigation risk are all named in the session; `eager` fires on decision language alone (advisory — a suggestion, never a requirement) |
 | `features.plan-injection` | `true` | `true`, `false` | UserPromptSubmit hook | Inject active plan phase |
 | `features.quality-gates` | `true` | `true`, `false` | SubagentStop hook | Block on critical agent findings |
-| `features.evidence-gate` | `warn` | `block`, `warn`, `educate`, `disabled` | PreToolUse verify-gate hook | Completion-claim gate posture |
 | `artifacts.database.default_type` | `auto` | `sql`, `document`, `key-value`, `mixed`, `auto` | artifacts | Database type for artifact generation |
 | `artifacts.sql.migrations.tool` | `~` | `golang-migrate`, `flyway`, `alembic`, `django`, `rails`, `prisma`, `liquibase`, `drizzle`, `knex`, `ecto`, `diesel`, `ef-core`, `raw-sql`, `~` | artifacts | SQL migration tool |
 | `artifacts.fixtures.format` | `yaml` | `yaml`, `json`, `sql` | artifacts | Fixture format |
@@ -214,12 +213,12 @@ Run /edikt:config to see all available keys.
 | `ids.sr_pattern` | `^SR-\d{3,}$` | any valid regex | spec | Spec requirement ID pattern. Override alongside `ids.fr_pattern` when the project uses a component-coded scheme |
 | `ids.ac_pattern` | `^AC-\d{3,}-\d+$` | any valid regex | prd, spec | Acceptance criterion ID pattern. The middle segment mirrors the FR number, so a custom `ids.fr_pattern` usually needs a matching AC pattern (e.g. `^AC-[A-Z]+-\d{3,}-\d+$`) |
 | `hooks.pre-push-security` | `true` | `true`, `false` | pre-push hook | Pre-push secret scanning |
-| `hooks.injection.bounce_budget` | `8` | integer ≥ 1 (floor is enforced — a value below 1 is refused, since 0 would mean "never bounce", i.e. enforcement switched off) | PreToolUse injection hook | Caps how many times ONE directive set may bounce (deny) a write within a session. **Once spent, a write that would otherwise be denied proceeds instead — delivered as advisory `additionalContext` naming the still-applicable directives, not as a deny.** MUST-grade enforcement is not unconditional: past this budget, the same directive set stops blocking for the rest of the session. |
 | `evaluator.preflight` | `true` | `true`, `false` | plan (step 11) | Pre-flight criteria validation before phases start |
 | `evaluator.phase-end` | `true` | `true`, `false` | plan (phase evaluation) | Phase-end evaluation after phases complete |
 | `evaluator.mode` | `headless` | `headless`, `subagent` | plan, evaluator agent | Execution mode — headless (separate claude -p) or subagent (forked in session) |
 | `evaluator.max-attempts` | `5` | positive integer | plan | Max phase retries before marking phase as stuck |
 | `evaluator.model` | `sonnet` | `sonnet`, `opus`, `haiku` | plan (headless mode) | Model for headless evaluator invocation |
+| `extractor.model` | `inherit` | `inherit`, or any value passing shape validation | gov compile (Phase A) | Sidecar-extractor's frontmatter model; `inherit` means no `model:` key — the subagent inherits the dispatching session's model |
 | `agents.custom` | `[]` | list of agent slugs | upgrade | Agents to skip on upgrade |
 | `gates.<agent>` | `critical` | `critical`, `warning`, `info` | SubagentStop hook | Severity threshold for the named agent gate. `critical` = block on critical only; `warning` = block on warning and above; `info` = block on any finding |
 | `gates.default` | `critical` | `critical`, `warning`, `info` | SubagentStop hook | Fallback threshold for agents not individually configured |

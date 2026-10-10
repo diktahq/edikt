@@ -151,15 +151,25 @@ func TestBackupOneShot(t *testing.T) {
 	}
 }
 
-// TestHookDirValidation pins AC-10.3: the allowlist (^/[A-Za-z0-9._/-]+$,
-// no "..") must reject $, backticks, parentheses, and semicolons — every
-// one of which install.sh's old denylist (install.sh:844-849) permitted
-// through into a shell-interpreted command string.
+// TestHookDirValidation pins AC-10.3: the allowlist (an absolute path or one
+// of four anchored tokens — $HOME/, $CLAUDE_PROJECT_DIR/, either
+// double-quoted — then [A-Za-z0-9._/-]+, no "..") must reject $, backticks,
+// parentheses, and semicolons anywhere else — every one of which install.sh's
+// old denylist (install.sh:844-849) permitted through into a
+// shell-interpreted command string.
 func TestHookDirValidation(t *testing.T) {
 	valid := []string{
 		"/home/user/.edikt/hooks",
 		"/opt/edikt-hooks/v0.8.0",
 		"/Users/me/My.Project/.edikt/hooks",
+		// Portable, anchored tokens (#11 comment item 7, D-P a): a committed
+		// project settings file must not carry one machine's absolute path.
+		// The host's shell expands these at hook-fire time; each is a closed
+		// prefix followed by '/', then the same character class as above.
+		"$HOME/.edikt/hooks",
+		"$CLAUDE_PROJECT_DIR/.edikt/hooks",
+		`"$HOME"/.edikt/hooks`,
+		`"$CLAUDE_PROJECT_DIR"/.edikt/hooks`,
 	}
 	for _, v := range valid {
 		if err := ValidateHookDir(v); err != nil {
@@ -176,6 +186,24 @@ func TestHookDirValidation(t *testing.T) {
 		"/home/../etc/passwd",
 		"relative/not/absolute",
 		"",
+		// The token set is CLOSED and ANCHORED: anything else that reaches
+		// the shell as an expansion is still rejected.
+		"${HOME}/.edikt/hooks",                 // braces
+		"$HOMEX/.edikt/hooks",                  // a different variable sharing the prefix
+		"$HOME",                                // the token alone, not followed by '/'
+		"$HOME/",                               // nothing after the anchor
+		"$CLAUDE_PROJECT_DIR",                  // ditto
+		`"$CLAUDE_PROJECT_DIR"`,                // quoted, nothing after
+		`"$HOME/.edikt/hooks"`,                 // quote does not close on the token
+		`"$HOME"x/hooks`,                       // closing quote not followed by '/'
+		`'$HOME'/.edikt/hooks`,                 // single quotes suppress expansion
+		"$HOME/.edikt/$USER/hooks",             // mid-path '$'
+		"$HOME/../etc/hooks",                   // traversal after the anchor
+		"$HOME/$(id)/hooks",                    // command substitution after the anchor
+		"$(echo $HOME)/hooks",                  // command substitution as the anchor
+		"/a/\"$HOME\"/b",                       // a token not at the start
+		"$EDIKT_HOOK_DIR/x",                    // not in the closed set
+		"$CLAUDE_PROJECT_DIR/.edikt/hooks; id", // the class still applies after the anchor
 	}
 	for _, v := range invalid {
 		if err := ValidateHookDir(v); err == nil {
@@ -363,5 +391,133 @@ func TestCapabilityPreflightSurfacesProbeError(t *testing.T) {
 	}
 	if err := CheckCapability("/staged/bin/edikt", probe); err == nil {
 		t.Fatal("expected an error when the probe itself fails")
+	}
+}
+
+// `install settings` REPLACES settings.json in full, so a file carrying hook
+// entries the template does not produce — a user's own hooks, or another
+// tool's — must stop the write rather than lose them. bok reached for plain
+// `install settings` as the recovery from a broken settings file, and the
+// recovery would have destroyed every user-added hook (D83 a).
+func TestWrite_RefusesWhenTheFileCarriesNonTemplateHooks(t *testing.T) {
+	tmplPath := writeTestTemplate(t, t.TempDir())
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "settings.json")
+	sidecar := filepath.Join(dir, "sidecar.json")
+	existing := `{
+  "hooks": {
+    "SessionStart": [
+      {"hooks": [{"type": "command", "command": "/opt/edikt/hooks/session-start.sh"}]}
+    ],
+    "PreToolUse": [
+      {"hooks": [{"type": "command", "command": "/home/me/my-own-guard.sh"}]}
+    ]
+  }
+}
+`
+	if err := os.WriteFile(dest, []byte(existing), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	opts := Options{TemplatePath: tmplPath, SettingsPath: dest, SidecarPath: sidecar, HookDir: "/opt/edikt/hooks", BackupHome: t.TempDir()}
+
+	_, err := Write(opts)
+	var nerr *NonTemplateEntriesError
+	if !errors.As(err, &nerr) {
+		t.Fatalf("want a NonTemplateEntriesError, got %v", err)
+	}
+	if len(nerr.Entries) != 1 || !strings.Contains(nerr.Entries[0], "my-own-guard.sh") {
+		t.Fatalf("the refusal must name the entries at risk, got %v", nerr.Entries)
+	}
+	for _, want := range []string{"--repair", "--force", "REPLACES the whole file"} {
+		if !strings.Contains(nerr.Error(), want) {
+			t.Errorf("the refusal must offer %q:\n%s", want, nerr.Error())
+		}
+	}
+	// NOTHING was touched: the refusal happens before the write.
+	after, rerr := os.ReadFile(dest)
+	if rerr != nil || string(after) != existing {
+		t.Fatalf("a refused write must leave the file byte-identical:\n%s", after)
+	}
+	if _, serr := os.Stat(sidecar); serr == nil {
+		t.Fatal("a refused write must not leave a managed sidecar behind")
+	}
+}
+
+// --force is the documented way through, and it does overwrite.
+func TestWrite_ForceOverwritesAndSaysNothingElse(t *testing.T) {
+	tmplPath := writeTestTemplate(t, t.TempDir())
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "settings.json")
+	sidecar := filepath.Join(dir, "sidecar.json")
+	if err := os.WriteFile(dest, []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"/home/me/mine.sh"}]}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(Options{TemplatePath: tmplPath, SettingsPath: dest, SidecarPath: sidecar, HookDir: "/opt/edikt/hooks", BackupHome: t.TempDir(), Force: true}); err != nil {
+		t.Fatalf("--force must proceed: %v", err)
+	}
+	after, _ := os.ReadFile(dest)
+	if strings.Contains(string(after), "mine.sh") {
+		t.Fatal("--force is a wholesale overwrite; the fixture asserts that, so the user is told the truth")
+	}
+	if !strings.Contains(string(after), "session-start.sh") {
+		t.Fatalf("the template's own hooks must be written:\n%s", after)
+	}
+}
+
+// A file whose hooks are exactly the template's is not a user's file, and a
+// fresh install has no file at all: neither refuses.
+func TestWrite_TemplateOnlyFileAndFreshInstallDoNotRefuse(t *testing.T) {
+	tmplPath := writeTestTemplate(t, t.TempDir())
+	for _, c := range []struct {
+		name    string
+		content string
+		write   bool
+	}{
+		{"fresh install, no file", "", false},
+		{"exactly the template's hooks", `{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"/opt/edikt/hooks/session-start.sh"}]}]}}`, true},
+		{"unparseable file", "{not json", true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			dest := filepath.Join(dir, "settings.json")
+			if c.write {
+				if err := os.WriteFile(dest, []byte(c.content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := Write(Options{TemplatePath: tmplPath, SettingsPath: dest, SidecarPath: filepath.Join(dir, "sidecar.json"), HookDir: "/opt/edikt/hooks", BackupHome: t.TempDir()}); err != nil {
+				t.Fatalf("must not refuse: %v", err)
+			}
+		})
+	}
+}
+
+// TestPortableHookDir: the portable form a project settings file carries.
+// A hook dir under the project becomes the quoted project token (quoted so a
+// project path with a space still reaches the shell as one word); one under
+// $HOME becomes $HOME/...; anything else stays absolute. Every result must
+// itself pass ValidateHookDir — a "portable" form the writer then refuses is
+// no form at all.
+func TestPortableHookDir(t *testing.T) {
+	cases := []struct{ name, resolved, home, project, want string }{
+		{"under the project", "/work/app/.edikt/hooks", "/Users/me", "/work/app", `"$CLAUDE_PROJECT_DIR"/.edikt/hooks`},
+		{"project inside home: the project wins", "/Users/me/app/.edikt/hooks", "/Users/me", "/Users/me/app", `"$CLAUDE_PROJECT_DIR"/.edikt/hooks`},
+		{"under home only", "/Users/me/.edikt/hooks", "/Users/me", "/work/app", "$HOME/.edikt/hooks"},
+		{"no project known", "/Users/me/.edikt/hooks", "/Users/me", "", "$HOME/.edikt/hooks"},
+		{"outside both", "/opt/edikt/hooks", "/Users/me", "/work/app", "/opt/edikt/hooks"},
+		{"a sibling sharing a prefix is not under the project", "/work/app2/.edikt/hooks", "", "/work/app", "/work/app2/.edikt/hooks"},
+		{"the project root itself is not a hook dir under it", "/work/app", "", "/work/app", "/work/app"},
+		{"trailing slash on the root", "/work/app/.edikt/hooks", "", "/work/app/", `"$CLAUDE_PROJECT_DIR"/.edikt/hooks`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := PortableHookDir(c.resolved, c.home, c.project)
+			if got != c.want {
+				t.Fatalf("PortableHookDir(%q, %q, %q) = %q, want %q", c.resolved, c.home, c.project, got, c.want)
+			}
+			if err := ValidateHookDir(got); err != nil {
+				t.Fatalf("the portable form %q fails ValidateHookDir: %v", got, err)
+			}
+		})
 	}
 }

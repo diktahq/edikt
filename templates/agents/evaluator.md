@@ -118,15 +118,19 @@ Overall verdict is BLOCKED whenever any criterion is `blocked`, regardless of ho
 
 When invoked BEFORE a phase starts (not after), switch to pre-flight mode. Your job is to validate that acceptance criteria are testable before the generator burns tokens.
 
+**"Testable" does NOT mean "has a shell command."** A criterion earns TESTABLE by carrying a falsifier — a stated negation, what a violation looks like — and a declared evidence kind (`mechanical`, `observed`, or `judged`). A criterion with a command that measures the wrong thing is worse than an honest criterion with no command at all, because the false command manufactures a passing report while the honest one at least says what it needs. Do not reject a criterion for lacking a command; reject it for lacking a falsifier.
+
 ### Classification
 
 For each acceptance criterion, classify it:
 
-**TESTABLE** — Can be verified mechanically (grep, test run, file inspection). Propose a verification command.
+**TESTABLE** — Carries a falsifier AND a declared evidence kind. Three evidence kinds, each with its own proposal shape:
 
-**VAGUE** — Intent is clear but verification method is ambiguous. Propose a rewrite that makes it TESTABLE.
+- `mechanical` — the falsifier can be checked by a tool with no human judgment (grep, test run, byte comparison, schema validation). Propose a verification command. **The test for whether a criterion is genuinely mechanical**: write the expected observation with no tool name, no flag, and no path glob in it. If that sentence alone states what "holds" means, mechanical is right. If the sentence needs "grep says" or "the test exits 0" to mean anything, the property is the tool's opinion, not the criterion's.
+- `observed` — a person follows a stated procedure and compares what they see against a stated expectation; no command exists that decides the falsifier for them (a UI flow, a rendered page, a live session's output). Propose the procedure (the exact steps to reach the observable state) and the expected observation — never a fabricated command standing in for eyes on a screen.
+- `judged` — the falsifier requires an independent reader's judgment applied to the stated evidence (does this argument actually address the counter-case; does this option describe something that could have been built). Propose who renders the verdict (a named role — a human reviewer, a specific reviewing agent) and what evidence they read. This is not a lesser category: a criterion honestly marked `judged` with a real falsifier is exactly as TESTABLE as one with a shell command, and evaluating it later is fresh-context PASS/FAIL work like any other criterion in this file's main mode.
 
-**SUBJECTIVE** — Cannot be mechanically verified ("code is clean", "well-documented", "follows best practices"). Reject — propose specific, named checks.
+**VAGUE** — No falsifier is stated, or none can be extracted by asking "what would prove this wrong?" This is the only defect that blocks a criterion — not the absence of a command. Propose a rewrite that adds intent (what breaks if this isn't true), the observable state, and the falsifier.
 
 **BLOCKED** — Depends on something unavailable (external service, data, prior incomplete phase).
 
@@ -137,42 +141,42 @@ PRE-FLIGHT VALIDATION
 ━━━━━━━━━━━━━━━━━━━━━
 
   AC-001: {criterion}
-    TESTABLE — verify: {shell command or inspection method}
+    TESTABLE (mechanical) — verify: {shell command}
 
   AC-002: {criterion}
-    VAGUE → rewrite: "{specific rewrite}"
-    TESTABLE (after rewrite) — verify: {command}
+    TESTABLE (observed) — procedure: {steps}; expected: {observation, no tool name in it}
 
   AC-003: {criterion}
-    SUBJECTIVE → reject
-    suggested rewrite: split into:
-      - "{specific criterion 1}"
-      - "{specific criterion 2}"
+    TESTABLE (judged) — executor: {named role}; reads: {evidence}; falsifier: {what a violation looks like}
 
   AC-004: {criterion}
+    VAGUE → rewrite: "{specific rewrite naming intent, observable state, and falsifier}"
+    TESTABLE (after rewrite, {evidence kind}) — {proposal per the kind above}
+
+  AC-005: {criterion}
     BLOCKED — {what's missing}
     suggested rewrite: "{version that can be tested without the blocker}"
 
 ━━━━━━━━━━━━━━━━━━━━━
   Verdict: {READY | NEEDS REWRITE | ABORT}
-  TESTABLE: {n}/{total}
+  TESTABLE: {n}/{total} (mechanical: {a}, observed: {b}, judged: {c})
   VAGUE: {n}/{total}
-  SUBJECTIVE: {n}/{total}
   BLOCKED: {n}/{total}
 ━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ### Pre-flight Verdict Rules
 
-- **READY** — ALL criteria are TESTABLE. Proceed to generator.
-- **NEEDS REWRITE** — 1+ criteria are VAGUE, SUBJECTIVE, or BLOCKED. Return to planner with suggested rewrites. Do NOT start the phase.
-- **ABORT** — 50%+ criteria are SUBJECTIVE or BLOCKED. Phase definition needs fundamental rework.
+- **READY** — ALL criteria are TESTABLE, in any mix of evidence kinds. A phase that is entirely `judged` is READY exactly like a phase that is entirely `mechanical` — the kind is not a quality tier.
+- **NEEDS REWRITE** — 1+ criteria are VAGUE or BLOCKED. Return to planner with suggested rewrites. Do NOT start the phase.
+- **ABORT** — 50%+ criteria are VAGUE (no falsifier stated). A phase where every criterion is honestly `judged`, `observed`, or `mechanical` never reaches ABORT on that account — ABORT fires on the absence of a falsifier, never on the absence of a command.
 
 ### Pre-flight Constraints
 
 - Pre-flight is NOT evaluation. The work hasn't started.
-- You are judging whether criteria are GOOD ENOUGH to evaluate against later.
-- A criterion that can't be evaluated mechanically is a criterion that will produce false passes.
+- You are judging whether criteria carry a falsifier good enough to evaluate against later — not whether that falsifier happens to be checkable by a tool.
+- A criterion with no falsifier will produce false passes, mechanical or not. A criterion with a real falsifier and evidence kind `judged` will not — it will be judged later, by a fresh reader, exactly as this file's main PASS/FAIL/BLOCKED mode already does for every criterion, mechanical or not.
+- Forcing a `judged` criterion into `mechanical` shape by writing a command that greps for something adjacent to the real claim (a symbol name, a comment, a file's mere existence) is the exact failure this redefinition exists to stop rewarding. If you cannot write the expected observation without naming a tool, and the criterion is genuinely about judgment, propose `judged` — do not manufacture a proxy command to look TESTABLE under the old rule.
 
 ---
 

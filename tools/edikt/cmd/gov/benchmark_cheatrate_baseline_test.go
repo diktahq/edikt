@@ -20,11 +20,22 @@ import (
 	"testing"
 )
 
+// isolateEdiktRoot pins the edikt root to an empty path under root. The
+// baseline pack and the adversary template resolve through the ADR-005 §1
+// ladder, whose payload rung sits ABOVE <root>/templates/ — so without this a
+// test would read the developer's real ~/.edikt payload instead of the tree
+// it planted (INV-007).
+func isolateEdiktRoot(t *testing.T, root string) {
+	t.Helper()
+	t.Setenv("EDIKT_ROOT", filepath.Join(root, ".no-edikt-root"))
+}
+
 // makeBaselineSidecarsTree writes N minimal-but-valid gov-schema
 // sidecars at templates/sidecars/baseline/ inside the given root.
 // Returns the project root for chaining.
 func makeBaselineSidecarsTree(t *testing.T, root string, names ...string) {
 	t.Helper()
+	isolateEdiktRoot(t, root)
 	dir := filepath.Join(root, "templates", "sidecars", "baseline")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", dir, err)
@@ -60,6 +71,7 @@ directives:
 // govrun.GovernanceDirs.
 func makeMinimalEdiktConfig(t *testing.T, root string) {
 	t.Helper()
+	isolateEdiktRoot(t, root)
 	cfgDir := filepath.Join(root, ".edikt")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatalf("mkdir .edikt: %v", err)
@@ -76,7 +88,7 @@ func makeMinimalEdiktConfig(t *testing.T, root string) {
 func TestDiscoverBaselinePackSidecars_Empty(t *testing.T) {
 	root := t.TempDir()
 	// Note: NO templates/sidecars/baseline/ dir created.
-	pairs, err := discoverBaselinePackSidecars(filepath.Join(root, baselinePackDir))
+	pairs, err := discoverBaselinePackSidecars(filepath.Join(root, "templates", baselinePackRel))
 	if err != nil {
 		t.Fatalf("unexpected error on missing dir: %v", err)
 	}
@@ -92,7 +104,7 @@ func TestDiscoverBaselinePackSidecars_LoadsValidSidecars(t *testing.T) {
 	root := t.TempDir()
 	makeBaselineSidecarsTree(t, root, "backend-api", "db-queries", "frontend-component")
 
-	pairs, err := discoverBaselinePackSidecars(filepath.Join(root, baselinePackDir))
+	pairs, err := discoverBaselinePackSidecars(filepath.Join(root, "templates", baselinePackRel))
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
@@ -130,12 +142,12 @@ func TestDiscoverBaselinePackSidecars_SkipsMalformed(t *testing.T) {
 	root := t.TempDir()
 	makeBaselineSidecarsTree(t, root, "backend-api")
 	// Write a malformed sidecar — invalid YAML.
-	bad := filepath.Join(root, baselinePackDir, "broken.edikt.yaml")
+	bad := filepath.Join(root, "templates", baselinePackRel, "broken.edikt.yaml")
 	if err := os.WriteFile(bad, []byte("not: valid: yaml: [["), 0o644); err != nil {
 		t.Fatalf("write bad: %v", err)
 	}
 
-	pairs, err := discoverBaselinePackSidecars(filepath.Join(root, baselinePackDir))
+	pairs, err := discoverBaselinePackSidecars(filepath.Join(root, "templates", baselinePackRel))
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}

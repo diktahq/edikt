@@ -8,16 +8,29 @@
 #
 # Every entry records its provenance. Grouped verbs permit the whole
 # subcommand group under the named parent decision.
+#
+# `audience` (2026-09-02, migration Phase 3): who the verb ships to. The
+# shipped manifest admits `user` only — a tier-1 command may call only what a
+# user's build carries. Dev tooling (the gov-benchmark installer) lives behind
+# the edikt_dev build tag and is NOT listed here; the audience gate
+# (test/test-audience-gate.sh) proves both builds.
 
 schema_version: 1
 verbs:
   - verb: "verify"            # verify <plan-id> [--phase N] | gov|prd|spec|all
+    audience: user
     provenance: ADR-029
   - verb: "doctor"
+    audience: user
     provenance: ADR-029
+  - verb: "version"           # the active binary's own version; compile stamps what ran
+    audience: user
+    provenance: ADR-082   # edikt-guard:allow
   - verb: "migrate"
+    audience: user
     provenance: ADR-029
   - verb: "util"              # group permit: json {emit,get,len,validate,format,
+    audience: user
     provenance: PRD-007       # join,stamp}, yaml {get,validate,canonicalize},
                               # hash, path relative, schema-validate, render,
                               # normalize, match, frontmatter append.
@@ -29,28 +42,46 @@ verbs:
                               # decision — see commands/gov/verify-diff.md's
                               # Tier-1-markdown-only invariant for the test.
   - verb: "prd"               # group permit: ship, close, link-spec, supersede
+    audience: user
     provenance: PRD-007       # PRD lifecycle mutations. Each appends a
                               # revision_history entry unconditionally — there
                               # is no verb here that mutates without recording
                               # who did it, which is why these are not a
                               # generic "set this YAML path".
   - verb: "plan"              # group permit: active, last-phase
+    audience: user
     provenance: PRD-007       # Plan-file queries, read-only.
   - verb: "gov"               # group permit: compile, compile-history,
+    audience: user
     provenance: ADR-033       # gitignore-bootstrap, directive-check,
                               # benchmark cheat-rate (ADR-040), grade-compile (ADR-044),
-                              # post-flight-scope, reextract (F-092 item 11, EXP-006)
+                              # post-flight-scope, reextract (F-092 item 11, EXP-006),
+                              # audit-cite (SPEC-020 SR-001), prose-stats (SPEC-020 SR-008),  edikt-guard:allow
+                              # prune-candidates (governance capture quality, SR-006)
   - verb: "install"
+    audience: user
     provenance: ADR-029
   - verb: "upgrade"
+    audience: user
     provenance: ADR-029
+  - verb: "upgrade-pin"     # updates edikt_version in .edikt/config.yaml to the
+    audience: user
+    provenance: ADR-042 # edikt-guard:allow — active version; exempt from the
+                              # version gate as a read-only/meta remedy command.
   - verb: "use"
+    audience: user
     provenance: ADR-029
   - verb: "rollback"
+    audience: user
     provenance: ADR-029
-  - verb: "sidecar"           # group permit: add-manual-directive (ADR-031),
-    provenance: ADR-031       # approve (ADR-039), diff
+  # group permit: add-manual-directive (ADR-031), approve (ADR-039), diff,
+  # record, and suppress-directive — the suppression field was readable and
+  # unwritable: five call sites subtracted it and no verb could write one.
+  - verb: "sidecar"
+    audience: user
+    provenance: ADR-031
   - verb: "phasea"            # group permit: plan, restore, verify (D6).
+    audience: user
     provenance: ADR-052       # The dispatch itself is NOT a verb here and
                               # never will be — fanning extractors out means
                               # invoking an LLM, which INV-012 forbids a
@@ -58,8 +89,10 @@ verbs:
                               # step and calls these three around it
                               # (SPEC-013, PLAN-v080 Phases 4-5).
   - verb: "next-id"
+    audience: user
     provenance: ADR-029       # pre-exec live-block helper for the :new/:sdlc commands
   - verb: "hook"              # ack / held / unack (ADR-050) — operator-invoked
+    audience: user
                               # match / probe / report (ADR-060) — invoked by the  edikt-guard:allow
                               # write-time injection shims, not by an operator
     provenance: ADR-050       # today; listed for when tier-1 markdown references it

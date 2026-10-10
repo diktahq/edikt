@@ -59,7 +59,7 @@ func ValidateRawAgainstSchemaV2(raw []byte) error {
 	}
 	var doc any
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return fmt.Errorf("decode for v2 schema validation: %w", err)
+		return fmt.Errorf("decode for v2 schema validation: %s", formatYAMLError(err))
 	}
 	j, err := json.Marshal(doc)
 	if err != nil {
@@ -70,7 +70,7 @@ func ValidateRawAgainstSchemaV2(raw []byte) error {
 		return fmt.Errorf("normalise for v2 schema validation: %w", err)
 	}
 	if err := sch.Validate(norm); err != nil {
-		return fmt.Errorf("gov-sidecar v2 schema: %w", err)
+		return fmt.Errorf("gov-sidecar v2 schema: %s", formatSchemaErrors(err))
 	}
 	return nil
 }

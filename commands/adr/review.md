@@ -3,6 +3,8 @@ name: adr:review
 description: "Review ADR language quality for enforceability and directive strength"
 effort: high
 argument-hint: "[ADR-NNN] — omit to review all accepted ADRs"
+tier_2_dependency: edikt gov prose-stats
+on_absent: skip-with-warning
 allowed-tools:
   - Read
   - Glob
@@ -153,16 +155,34 @@ Score manual directives to the same standard. Flag soft language, missing `(ref:
 
 **Friction risk:** flag directives contradicting common language/framework patterns with a suggested alternative.
 
+### 3d. Prose Statistics (mechanical count, display-only)
+
+For each ADR reviewed, run:
+
+```bash
+EDIKT_INVOKER=/edikt:adr:review edikt gov prose-stats {decisions_path}/{ADR-NNN}-{slug}.md
+```
+
+If `edikt` is not on PATH (`tier_2_dependency`, absent → `skip-with-warning`), emit `⚠ prose-stats unavailable — install the edikt binary for bare-id/hedge counts` once and skip this step; the review continues without it.
+
+This prints `bare_ids` and `hedges` counts (plus a few samples of each) — a mechanical count, not a verdict. **Display the numbers; never branch on them** — a mechanical count decides nothing on its own. This step never gates, skips, or reorders anything else in this review based on the count — it is one more line in the report the human reads, same as the soft-language scanner's findings in §3b, which it does not replace: prose-stats counts every bare id occurrence and every hedge phrase in the whole body; §3b's scanner is narrower (compiled directive text only, six specific markers) and still runs.
+
+Include the raw counts and up to 3 samples of each inline in the ADR's review section:
+```
+  Prose stats: bare_ids={n}, hedges={n}
+    {sample lines, if n > 0}
+```
+
 ### 4. Check Sidecar Staleness
 
 Display progress: `Step 2/3: Checking sidecar staleness...`
 
-v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars. Staleness is detected by `bin/edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. The legacy v0.2-v0.4 `content_hash:` field is NOT used — its writer/reader hash mismatch made every freshly-compiled file born-stale.
+v0.6.0+ governance metadata lives in co-located `<artifact>.edikt.yaml` sidecars. Staleness is detected by `edikt gov compile --check`, which compares each of a directive's `source_excerpts[]` entries' recorded `quote` against the current parent `.md` body line range. The legacy v0.2-v0.4 `content_hash:` field is NOT used — its writer/reader hash mismatch made every freshly-compiled file born-stale.
 
 For each ADR reviewed, run the corpus-wide check once and grep for the artifact:
 
 ```bash
-check_output=$(bin/edikt gov compile --check 2>&1)
+check_output=$(EDIKT_INVOKER=/edikt:adr:review edikt gov compile --check 2>&1)
 adr_stale=$(echo "$check_output" | grep -E "^\s*stale:\s+ADR-${NNN}\b" | head -1)
 adr_missing=$(echo "$check_output" | grep -E "ADR-${NNN}.*sidecar missing" | head -1)
 ```
@@ -223,6 +243,9 @@ ADR-{NNN}: {Title}
   Soft-language warnings: {n}
     {If n > 0}: Run /edikt:adr:review and apply suggested rewrites.
     {Note: --backfill mode is deprecated under v0.6.0 — canonical_phrases is not part of the current sidecar schema.}
+
+  Prose stats (bare ids / hedges, summed across reviewed ADRs): {n} / {n}
+    {a count, not a verdict — nothing above branched on it}
 
   {If weak + vague > 0}:
   Top recommendations:
