@@ -256,6 +256,37 @@ edikt upgrade
 
 **Homebrew installs are two halves, upgraded separately.** `brew upgrade edikt` replaces the launcher binary; `edikt upgrade` fetches a new payload and never touches the binary. Verified rather than asserted: `edikt upgrade` downloads `edikt-payload-<tag>.tar.gz`, which ships no `bin/` directory, and the formula's install stanza is `bin.install "bin/edikt"` — the launcher alone. Neither command can update the other, so run both when moving between versions, launcher first.
 
+### Upgrading to 0.9.1: upgrade the binary first
+
+0.9.1 adds `edikt doctor --contract-state`, and the 0.9.1 commands call it. `/edikt:upgrade` and
+`edikt upgrade` fetch the new commands and do not replace the binary, so upgrade the binary first:
+
+```bash
+brew upgrade edikt        # if you installed with Homebrew
+# or re-run the installer, which replaces the binary:
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
+```
+
+Then run `/edikt:upgrade` in each project.
+
+To check which binary you are running:
+
+```bash
+edikt doctor --contract-state
+```
+
+A 0.9.1 binary prints one line about the extraction contract. A 0.9.0 binary answers
+`unknown flag: --contract-state`. Do not go by `edikt version`: it reports the version of the
+active payload, so it says 0.9.1 as soon as the payload is upgraded, whichever binary is running.
+
+If the flag is still unknown after `brew upgrade edikt`, an older binary is ahead of Homebrew's on
+your `PATH`. `which -a edikt` lists them in order. This happens when edikt was first installed
+with the installer, which puts a binary in `~/.edikt/bin/`, and later with Homebrew. Re-run the
+installer to replace that copy.
+
+With 0.9.1 commands on a 0.9.0 binary, the compile commands say the contract state is unmeasured
+and carry on. You are missing the report; your sidecars are written as before.
+
 ### Rollback
 
 Revert to the previous payload version:
