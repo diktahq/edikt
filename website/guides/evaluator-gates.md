@@ -18,7 +18,7 @@ The verify runner is the hardest gate — exit code 1 blocks state transitions. 
 
 Dispatched by `/edikt:sdlc:plan` at two points in a phase's lifecycle:
 
-- **Pre-flight** — before the phase starts. Validates that every acceptance criterion is **testable** (mechanically checkable), not vague ("works well", "feels right"). Returns BLOCKED when criteria need rewriting; the plan command refuses to start the phase until they're addressed.
+- **Pre-flight** — before the phase starts. Validates that every acceptance criterion is **testable**, not vague ("works well", "feels right"). Testable means the criterion states what would prove it wrong and declares how it is checked: by a command (mechanical), by someone watching a procedure (observed), or by a named person reading named evidence (judged). It does not mean "has a shell command". Returns BLOCKED when criteria need rewriting; the plan command refuses to start the phase until they're addressed.
 - **Phase-end** — after the generator agent finishes. Reads the evidence (test outputs, file content, git diff) and emits a PASS / FAIL / BLOCKED verdict per criterion.
 
 The evaluator is configured under `evaluator:` in `.edikt/config.yaml`:

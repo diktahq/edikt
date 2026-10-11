@@ -559,7 +559,7 @@ func pythonizeJSON(b []byte) []byte {
 // otherwise.
 func writeJSONRune(out *bytes.Buffer, r rune) {
 	if r < 0x80 {
-		out.WriteByte(byte(r))
+		out.WriteByte(byte(r)) // #nosec G115 -- r < 0x80 is checked on the line above, so byte(r) cannot overflow
 		return
 	}
 	if r > 0xFFFF {

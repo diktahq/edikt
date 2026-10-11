@@ -108,6 +108,10 @@ Hooks (.claude/settings.json)
 Agents (.claude/agents/)
   ⬆  dba.md        — template updated
   ✓  architect.md  — up to date
+  ✓  sidecar-extractor.md — up to date
+     Extraction contract (installed now): extraction contract v11 is REJECTED in this build's validation record: sidecars it writes may drop or merge rules, so review each one against its prose
+     Extraction contract (template): extraction contract v11 is REJECTED in this build's validation record: sidecars it writes may drop or merge rules, so review each one against its prose
+     Compiling a sidecar for a new or edited artifact still works; review the result. Whether re-extraction is available: edikt gov reextract --status
   —  security.md   — custom, skipped
 
 Rule packs (.claude/rules/)
@@ -117,6 +121,10 @@ Rule packs (.claude/rules/)
 ─────────────────────────────────────────────────────
 Apply these upgrades? (y/n/select)
 ```
+
+<!-- contract-report:website-upgrade:start -->
+The two `Extraction contract` lines tell you, before you answer the question, what state the extraction contract is in for the extractor installed in your project now and for the template this version ships. The project ends up with the template's when this run installs or replaces its extractor, and keeps the installed one when its extractor is custom, preserved or skipped. They print on every run that reaches this summary, including when the extractor itself is up to date. A major-version jump never reaches the summary: it stops and sends you to the installer. A minor-version jump updates edikt itself before the summary is shown. When either line is not validated, or could not be measured, one more line says that compiling a sidecar for a new or edited artifact still works and points at `edikt gov reextract --status`, which says whether re-extraction is available. A line that says the state could not be measured ends with what to do about it; the command shows it to you in full and does not make the repair itself, because changing an agent file is your decision. When both are validated, nothing follows them. The first upgrade from 0.9.0 does not show the lines, because that run uses the 0.9.0 command body already loaded; they appear from the next run.
+<!-- contract-report:website-upgrade:end -->
 
 ## What's new
 
@@ -152,6 +160,8 @@ v0.6.0 replaced the hash-diff classifier with a provenance-first upgrade flow. E
 | Template changed AND you edited | 3-way diff prompt — you decide |
 | File has `<!-- edikt:custom -->` | Always skip, regardless of template changes |
 | File has no `edikt_template_hash` (pre-v0.6.0) | Legacy classifier (v0.4.3 diff heuristic) |
+
+The edikt block in `CLAUDE.md` follows the same rule: a block that still equals what an earlier edikt template produced is updated without asking, and a block you have edited asks first.
 
 ## Pinning only
 

@@ -338,7 +338,7 @@ func runVerifyAll(projectRoot string, govOnly bool) (*AllReport, error) {
 			case verify.StatusTimeout:
 				out.Summary.Timeout++
 				anyFail = true
-			case verify.StatusUnmeasured:
+			case verify.StatusUnmeasured, verify.StatusUnmeasuredNoCommand:
 				out.Summary.Unmeasured++
 			case verify.StatusSkippedOperational, verify.StatusSkippedInformational,
 				verify.StatusSkippedSuppressed, verify.StatusSkippedOwner:

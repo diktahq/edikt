@@ -64,10 +64,12 @@ SIDECAR HEALTH
 
 Hard-fail checks (1–4) exit 1. The empty-directives check is soft — exit 0 with a warning summary. Resolve via:
 
-- `MISSING` → run `/edikt:<type>:compile <id>` for the artifact
+- `MISSING` → run `/edikt:<type>:compile <id>` for the artifact.
 - `ORPHAN` → delete the stale sidecar (no parent prose)
 - `PATH MISMATCH` → fix the `path:` field, then run `:compile` to regenerate canonically
 - `directives: []` → confirm the prose is intentionally rule-free, or re-run `:compile`
+
+Every remedy above and in the Delivery Gaps finding ("accepted artifact(s) have no sidecar") that names a compile command (MISSING, PATH MISMATCH, empty directives, anchor drift) runs the installed extraction contract, `edikt doctor --contract-state` prints that contract's state, and a sidecar written under a contract that is not validated must be reviewed against the prose before it is relied on; when the contract is not validated, the MISSING finding, the Delivery Gaps finding and the note that skips the prohibition check for a record with no sidecar each print that same state as a `contract: …` line directly under the remedy, and when it is validated they print nothing extra.
 
 ### PRD/SPEC artifact health (v0.6.0)
 

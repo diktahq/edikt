@@ -1,7 +1,6 @@
 package reextract
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -12,7 +11,6 @@ import (
 	"time"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/phasea"
-	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 )
 
 // THE GATE THAT MAKES THE MIRROR SAFE.
@@ -148,11 +146,6 @@ func extractInto(t *testing.T, root, planID string, limit int) {
 		}
 	}
 }
-
-
-type errString string
-
-func (e errString) Error() string { return string(e) }
 
 // newCorpus builds a scratch project with n ADRs, each with a parent .md and a
 // sidecar, plus the config and the installed extractor agent.
@@ -393,7 +386,6 @@ func TestReextractLedgerIsWrittenPerCompletion(t *testing.T) {
 		t.Fatalf("ledger held %d completed entry(ies) mid-run; want at least 2 — completions must be persisted as they happen, not at the end (a killed process never reaches the end)", seenDuringRun)
 	}
 }
-
 
 // TestReextractResumesAfterKill is the resumability clause, and it is the one
 // that pays for the whole ledger: a kill mid-batch must cost only the
@@ -771,30 +763,6 @@ func TestReextractRefusesEvenInConsumerProjectShape(t *testing.T) {
 		t.Fatal("dispatched with an unvalidated contract in a project with no test/ directory at all — " +
 			"this is exactly the shape that shipped broken to every real consumer")
 	}
-}
-
-// validSidecarRunner writes a genuinely sidecar.Load-able regenerated
-// sidecar, unlike fakeRunner's placeholder shorthand. Needed only by
-// TestReextractSurfacesLoadFailureThroughTheFullPipeline, where a control
-// artifact's real `before` sends PreservePinned into the actual
-// sidecar.Load(afterPath) path — fakeRunner's own output would fail there
-// for reasons unrelated to what this test is checking.
-type validSidecarRunner struct{}
-
-func (validSidecarRunner) Preflight() error { return nil }
-
-func (validSidecarRunner) Resync(_ context.Context, t phasea.Task) error {
-	sc := &sidecar.Sidecar{
-		SchemaVersion: 2,
-		Topic:         "testing",
-		Path:          t.ParentPath,
-		Directives:    []sidecar.Directive{anchored("A regenerated rule. (ref: " + t.ArtifactID + ")")},
-	}
-	body, err := sidecar.Marshal(sc)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(t.SidecarPath, body, 0o644)
 }
 
 // TestReextractSurfacesLoadFailureThroughTheFullPipeline — F-115/A1, wired

@@ -37,7 +37,7 @@ func scanCommandLauncherPaths(commandsDir string, out io.Writer) (warnN int) {
 		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".md") {
 			return nil //nolint:nilerr // an unreadable entry is skipped, never fatal
 		}
-		f, oerr := os.Open(p) //nolint:gosec // path comes from the walk
+		f, oerr := os.Open(p) // #nosec G122 -- read-only scan of the installed commands dir; a local race on it is not in the threat model
 		if oerr != nil {
 			return nil
 		}

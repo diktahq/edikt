@@ -25,8 +25,6 @@ import (
 // bodies' verbs share ONE implementation. A second copy is how the property
 // drifts: the writer that keeps the header and the validator that demands it
 // have to agree about what a header is.
-const schemaHeaderPrefix = sidecar.SchemaHeaderPrefix
-
 func schemaHeaderOf(b []byte) string { return sidecar.SchemaHeaderOf(b) }
 
 func schemaHeaderFinding(b []byte) string { return sidecar.SchemaHeaderFinding(b) }

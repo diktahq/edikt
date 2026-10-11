@@ -318,9 +318,6 @@ func noteEmitterFingerprint() string {
 // hand-written wrapping already used in the skill-package bodies.
 const noteWrapWidth = 78
 
-// blockquote wraps text as a markdown blockquote.
-func blockquote(text string) string { return wrapText(text, "> ") }
-
 // wrapText greedy-wraps text at noteWrapWidth, prefixing every line.
 //
 // Greedy and whitespace-only, so it is deterministic: the same input wraps to
@@ -355,18 +352,6 @@ func wrapText(text, prefix string) string {
 	}
 	b.WriteString(line)
 	return b.String()
-}
-
-// plural renders "1 directive" / "3 directives" — a count and its noun,
-// agreeing. Written out rather than left as "1 directive(s)" because these
-// notes are read by a person deciding whether their governance is broken, and
-// a rendered surface that reads like a debug print invites the same doubt the
-// note exists to remove.
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }
 
 // manualEntry pairs a manual_directive's text with the artifact ID of the

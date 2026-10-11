@@ -1,0 +1,39 @@
+# Git hooks for edikt. Tool versions are pinned in mise.toml.
+#
+#   mise install && lefthook install
+#
+# Skip one command for a single run: LEFTHOOK_EXCLUDE=gosec git push
+#
+# These are the checks that run in this repository as published. The full test
+# suite runs in the development repository; CONTRIBUTING.md says how a change
+# gets there.
+
+output:
+  - failure
+
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      root: "tools/edikt/"
+      glob: "*.go"
+      run: 'out="$(gofmt -l {staged_files})"; [ -z "$out" ] || { echo "gofmt needed:"; echo "$out"; exit 1; }'
+    shellcheck:
+      glob: "*.sh"
+      run: shellcheck -S error {staged_files}
+
+pre-push:
+  parallel: true
+  commands:
+    go-vet:
+      run: scripts/go-lint.sh vet
+    staticcheck:
+      run: scripts/go-lint.sh staticcheck
+    gosec:
+      run: scripts/go-lint.sh gosec
+    # No branch-tracking or latest-alias install URL on a user-facing surface.
+    install-urls:
+      run: >-
+        ! grep -rnE 'raw\.githubusercontent\.com/[^/]+/[^/]+/main/|releases/latest/download/'
+        README.md website/ --include='*.md' --include='*.yml' --include='*.yaml'
+        --exclude-dir=.vitepress --exclude-dir=node_modules

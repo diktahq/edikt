@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
+	"github.com/diktahq/edikt/tools/edikt/internal/projectroot"
 	"github.com/spf13/cobra"
 )
 
@@ -65,20 +66,8 @@ func init() {
 // string + nil if not found — the no-config case is normal and produces
 // the "001 / none yet" fallback output.
 func findProjectRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for {
-		if _, statErr := os.Stat(filepath.Join(dir, ".edikt", "config.yaml")); statErr == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", nil // hit filesystem root
-		}
-		dir = parent
-	}
+	root, _, err := projectroot.FindFromCwd()
+	return root, err
 }
 
 func runNextID(out io.Writer, kind string) error {

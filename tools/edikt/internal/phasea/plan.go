@@ -163,6 +163,12 @@ type PlanOptions struct {
 	// ReasonMissing IS the bootstrap case and refusing would break every
 	// legitimate first compile.
 	Bootstrap bool
+
+	// ContractLead, when set, returns the one-line contract report for the
+	// project at the given root. A refusal for an unresolvable extractor leads
+	// with it. It is a callback because the report is built in a package that
+	// imports this one.
+	ContractLead func(root string) string
 }
 
 // PlanOutcome is Plan()'s result. Plan is non-nil only when ExitCode ==
@@ -201,10 +207,18 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 	// real subagent dispatches downstream.
 	promptVersion, promptNote, pverr := ResolveExtractorPromptVersionDetail(root)
 	if pverr != nil || promptVersion == ExtractorPromptVersionUnknown {
-		msg := fmt.Sprintf(
-			"refusing to emit a plan: extractor prompt_version resolved to %s (%v) — "+
-				"an unpinned extraction contract is never silently baked into a plan (ADR-055 §4 by analogy)",
+		// Every refusal for an unresolvable extractor is two lines: the contract
+		// report's own line alone (the one `edikt doctor --contract-state` prints,
+		// which carries the remedy), then the specific detail. The line is supplied by
+		// the caller because the report lives in a package that imports this one.
+		detail := fmt.Sprintf("refusing to emit a plan: extractor prompt_version resolved to %s (%v); an unpinned extraction contract is never silently baked into a plan",
 			ExtractorPromptVersionUnknown, pverr)
+		msg := detail
+		if opts.ContractLead != nil {
+			if lead := opts.ContractLead(root); lead != "" {
+				msg = lead + "\n" + detail
+			}
+		}
 		// This refusal happens BEFORE any corpus work (deliberately — see
 		// the comment above), so there is no corpus_hash to derive a real
 		// plan_id from — journal with the sentinel.
@@ -220,7 +234,7 @@ func Plan(opts PlanOptions) (*PlanOutcome, error) {
 	}
 
 	// Resolved from the same installed agent file prompt_version was just
-	// read from (candidate order: project-local, then profile), so by the
+	// read from (the project's when it has one, else the profile's), so by the
 	// time prompt_version resolved successfully this should too — the
 	// "unrecorded" fallback exists for a read racing a concurrent edit
 	// between the two resolutions, not as an expected steady-state value on

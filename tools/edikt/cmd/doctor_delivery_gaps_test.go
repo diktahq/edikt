@@ -15,20 +15,9 @@ import (
 
 func gapProject(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
-	for _, d := range []string{
-		".edikt", "docs/architecture/decisions", "docs/architecture/invariants",
-		"docs/guidelines", ".claude/rules/governance",
-	} {
-		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write(t, root, ".edikt/config.yaml", "paths:\n  decisions: docs/architecture/decisions\n  invariants: docs/architecture/invariants\n  guidelines: docs/guidelines\n")
-	// A healthy baseline: one ambient directive, one routed glob.
-	write(t, root, ".claude/rules/governance.md", "# Governance\n\n- Something MUST hold. (ref: INV-001)\n")
-	write(t, root, ".claude/rules/governance/delivery-map.yaml",
-		"schema_version: 1\nglobs:\n  \"src/**/*.go\":\n    - id: \"INV-001:d01\"\n      grade: must\n")
+	isolateDoctorEnv(t, true)
+	root := newGapProject(t)
+	installValidatedExtractor(t, root)
 	return root
 }
 

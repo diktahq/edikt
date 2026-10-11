@@ -20,6 +20,8 @@ var (
 	doctorCheckSnapshot  bool
 	doctorFailOnDrift    bool
 	doctorCreateSnapshot bool
+	doctorContractState  bool
+	doctorAgentFile      string
 )
 
 var doctorCmd = &cobra.Command{
@@ -42,6 +44,18 @@ between deliberate governance updates. Use --create-snapshot to write
 a fresh baseline; --fail-on-drift makes drift exit 1.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// --contract-state is handled FIRST and alone: it prints one line and
+		// returns before any other doctor work, so it reads and writes nothing
+		// else. doctor is exempt from the version gate and the front door, which
+		// is why the report lives here and not on a walled verb.
+		agentFileGiven := cmd.Flags().Changed("agent-file")
+		if agentFileGiven && !doctorContractState {
+			return &exitCodeError{code: 3, msg: "--agent-file requires --contract-state"}
+		}
+		if doctorContractState {
+			return runContractState(cmd.OutOrStdout(), doctorAgentFile, agentFileGiven)
+		}
+
 		// --check-snapshot suppresses the standard health checks and
 		// becomes the sole subject of this invocation. The flag is
 		// adopter-facing (SPEC-009 Plan D Phase 7 / SR-015 — the one  // edikt-guard:allow
@@ -591,6 +605,10 @@ func init() {
 		"with --check-snapshot, exit 1 when drift is detected (default: drift is reported but doctor exits 0)")
 	doctorCmd.Flags().BoolVar(&doctorCreateSnapshot, "create-snapshot", false,
 		"with --check-snapshot, write a fresh baseline from the current compiled governance tree")
+	doctorCmd.Flags().BoolVar(&doctorContractState, "contract-state", false,
+		"print the extraction contract's state on one line and exit (0 validated, 10 rejected or unrecorded, 11 unmeasured); reads the installed extractor, writes nothing")
+	doctorCmd.Flags().StringVar(&doctorAgentFile, "agent-file", "",
+		"with --contract-state, report this sidecar-extractor.md instead of the installed one (a preview)")
 	rootCmd.AddCommand(doctorCmd)
 }
 

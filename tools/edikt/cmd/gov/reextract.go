@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/diktahq/edikt/tools/edikt/internal/projectroot"
 	"github.com/diktahq/edikt/tools/edikt/internal/reextract"
 	"github.com/spf13/cobra"
 )
@@ -53,11 +54,7 @@ Flags:
   --skip-fixture-proof  bypass the fixture-validation precondition (rare; see --help)`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		root := "."
-		if len(args) > 0 {
-			root = args[0]
-		}
-
+		root := reextractProjectRoot(args)
 		if reextractRestamp {
 			return reextractRestampDone(root)
 		}
@@ -108,6 +105,20 @@ func reextractRestampDone(root string) error {
 	}
 	fmt.Fprintf(os.Stdout, "re-stamped %d ledger entry(ies) of %d done (batch %s)\n", n, st.Done+n, st.PromptVersion)
 	return nil
+}
+
+// reextractProjectRoot is the explicit argument when given, otherwise the
+// project root found by walking parents from cwd (projectroot.Find, the same
+// finder `phasea plan` and `doctor` use). It falls back to "." when no project
+// is found, which is what the command did before.
+func reextractProjectRoot(args []string) string {
+	if len(args) > 0 {
+		return args[0]
+	}
+	if root, found, err := projectroot.FindFromCwd(); err == nil && found {
+		return root
+	}
+	return "."
 }
 
 func reextractReportStatus(root string) error {

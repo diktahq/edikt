@@ -12,6 +12,7 @@ import (
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 	"github.com/diktahq/edikt/tools/edikt/internal/migrate"
 	"github.com/diktahq/edikt/tools/edikt/internal/phaseb"
+	"github.com/diktahq/edikt/tools/edikt/internal/reextract"
 	"github.com/diktahq/edikt/tools/edikt/internal/sidecar"
 	"github.com/diktahq/edikt/tools/edikt/internal/trust"
 	"github.com/diktahq/edikt/tools/edikt/model"
@@ -202,17 +203,18 @@ Flags:
 
 		// Sidecar-present: two-phase mode.
 		res, err := govrun.RunTwoPhase(govrun.TwoPhaseOptions{
-			ProjectRoot: projectRoot,
-			CheckOnly:   checkFlag,
-			NoWait:      noWaitFlag,
-			JSONMode:    jsonFlag,
-			OnLoss:      onLossFlag,
+			ProjectRoot:  projectRoot,
+			CheckOnly:    checkFlag,
+			NoWait:       noWaitFlag,
+			JSONMode:     jsonFlag,
+			OnLoss:       onLossFlag,
+			ContractLead: func(r string) string { return reextract.ReportInstalledContract(r).Summary },
 		}, clk)
 		if jsonFlag {
 			emitTwoPhaseJSON(res, err)
 		}
 		if err != nil {
-			if !jsonFlag {
+			if !jsonFlag && !govrun.IsReported(err) {
 				fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			}
 			os.Exit(1)

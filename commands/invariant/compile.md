@@ -24,6 +24,7 @@ Per the relevant decision (sidecar architecture), directive metadata for every a
   - `INV-NNN` (e.g., `INV-NNN`) — resolve to `{invariants_dir}/INV-NNN-*.md`
   - An absolute or repo-relative path to an invariant markdown file
   - Empty / omitted — regenerate every active invariant's sidecar
+- `--bootstrap` — optional, together with a single-artifact target. It states that this invariant has never had a sidecar, so there is nothing a regeneration could destroy. Never add it to get past a refusal for an invariant whose sidecar might have been LOST: a lost sidecar's `manual_directives` would be destroyed silently. Pass it only when the user passed it; strip it from `$ARGUMENTS` before resolving the target.
 
 ## Instructions
 
@@ -58,11 +59,23 @@ trust. The stat-before/after discipline this step used to carry asked the model 
 an unchanged file; a plan's pre-dispatch snapshot, compared by restore, makes "unchanged" a
 measured thing.
 
+<!-- contract-report:compile-block:start -->
+**Report the extraction contract state before dispatch.** This is a report, not a gate: it never asks a question, never stops the run, and never refuses to compile this invariant itself. Run this one call now, before A1, exactly as written:
+
+```bash
+EDIKT_INVOKER=/edikt:invariant:compile edikt doctor --contract-state
+```
+
+It prints one line and exits with a code. Branch on the EXIT CODE only, never on the text of the line. Exit 0 (validated): say nothing about the contract, here or in the final confirmation, and continue to A1. Exit 10 (rejected, or no entry in the record): show the user the line it printed, verbatim, then continue to A1. Exit 11 (unmeasured): show the user the line it printed, verbatim, then continue to A1. Any other exit (an older binary without the flag): show the user the fixed sentence `extraction contract state is UNMEASURED: this binary cannot report it`, then continue to A1. Showing the line means writing it as text in your reply, on a line of its own, as the first thing you say and before any further tool call: the user does not read a command's output, so a line left in the tool result has not been shown. In every case remember whether the exit was 0, and the line you showed, for the final confirmation. When the line says the state is UNMEASURED, it ends with what to do about it: show it in full, and do not attempt that repair yourself, because changing an agent file is the user's decision. If A1 then refuses, report its message verbatim and stop, as A1 says: the contract line above already told the user why and what to do.
+<!-- contract-report:compile-block:end -->
+
 **A1 — a one-item plan for exactly this artifact:**
 
 ```bash
 edikt phasea plan --artifact "{ABS_PATH_TO_INV}"
 ```
+
+Append ` --bootstrap` to that command when, and only when, the user passed `--bootstrap`. Never add it yourself, and never to get past a refusal.
 
 **If the sidecar is ABSENT, A1 REFUSES, and that refusal is doing real work.** A
 re-extraction rebuilds the sidecar from the parent document — but a sidecar's
@@ -77,7 +90,7 @@ so it asks instead of guessing:
 
 - the sidecar was **lost** (deleted, a bad merge, an ignore rule) — restore it first, then
   re-run. `git checkout -- <sidecar>` if it is tracked.
-- it **never existed** and this is a first extraction — re-run with `--bootstrap`.
+- it **never existed** and this is a first extraction — re-run this command with `--bootstrap` added to its arguments (e.g. `/edikt:invariant:compile <target> --bootstrap`).
 
 Exit 0 prints the plan path; the plan carries one item with `reason: "requested"` — it is
 planned whether or not the stale detector would have selected it ("the extractor missed a
@@ -229,6 +242,10 @@ Invariant sidecar regeneration:
   {n} regenerated, {m} unchanged, {k} skipped (revoked).
   Next: Run /edikt:gov:compile to update governance.
 ```
+
+<!-- contract-report:compile-confirm:start -->
+When the contract-state call exited with anything other than 0, repeat in the confirmation the line you showed before dispatch, verbatim and on a line of its own, and follow it with one sentence: review the sidecar's directives against the prose before relying on them. When it exited 0, the confirmation does not mention the contract.
+<!-- contract-report:compile-confirm:end -->
 
 If any extractor invocation fails, list the failures and exit non-zero.
 

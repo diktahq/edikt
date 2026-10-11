@@ -69,24 +69,6 @@ func verifyAnchorsAgainstParent(sidecarPath, parentPath string) error {
 	return fmt.Errorf("%s", b.String())
 }
 
-// tallyAnchors counts valid vs broken anchors instead of returning on the first
-// fault.
-//
-// It deliberately reuses sidecar.VerifyAnchors — the SAME oracle
-// verifyAnchorsAgainstParent above calls — so the gate and the diagnostic can
-// never disagree about whether an anchor holds. A second implementation here
-// would be a second definition of "quotes the parent", and the receipt would
-// eventually claim something the gate does not.
-//
-// Anchor state is reported even when the sidecar is over the length cap, which
-// is the point: the guideline-event-transport artifact had 83 valid anchors and
-// four over-cap sentences, and collapsing that into "schema-invalid" made a
-// four-sentence split indistinguishable from a failed extraction.
-func tallyAnchorsOn(sc *sidecar.Sidecar, parentPath string) (valid, broken int) {
-	valid, faults := anchorFaultsOn(sc, parentPath)
-	return valid, len(faults)
-}
-
 // anchorFaultsOn is tallyAnchorsOn with the faults themselves, which the
 // correction prompt needs: each one's parent line range, class and, for a
 // whitespace-only quote, the parent's own bytes.

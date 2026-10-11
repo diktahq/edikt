@@ -96,7 +96,9 @@ func statusMd(t *testing.T, root, rel, status string) string {
 // expect: docs/architecture/{decisions,invariants}/, docs/guidelines/.
 func scaffoldProject(t *testing.T) string {
 	t.Helper()
+	isolateDoctorEnv(t, true)
 	root := t.TempDir()
+	installValidatedExtractor(t, root)
 	for _, d := range []string{
 		"docs/architecture/decisions",
 		"docs/architecture/invariants",

@@ -309,7 +309,10 @@ If INSTALLED_VERSION == PROJECT_VERSION AND there are no changes detected in ste
 ```
 ✅ Already up to date (edikt {INSTALLED_VERSION}) — nothing to upgrade.
 ```
-and stop.
+
+<!-- contract-report:upgrade-step1-stop:start -->
+Before this stop, run both Step 2c contract calls: they need no other Step 2 result, and the stop must not come first. Then print the two labelled `Extraction contract (` lines, verbatim, beneath the message above, followed by the fixed line Step 3 prints when either call's exit was not 0, and then stop. "Nothing to upgrade" is about files; it is never a statement about the extraction contract, so the report is not skipped here.
+<!-- contract-report:upgrade-step1-stop:end -->
 
 If INSTALLED_VERSION != PROJECT_VERSION, always proceed with the upgrade — the version difference alone is reason enough.
 
@@ -503,6 +506,8 @@ A `{{var}}` slot appearing in the template but not in either list is a gap in th
 
 **`render(template, opaque_values)` → text.** Substitute each config-derived var from the CURRENT `.edikt/config.yaml` — never from `opaque_values`, even if a value happens to be present there. Substitute each opaque var from `opaque_values[var]` if present (from either `detemplate` or `detemplate_lenient`, depending on caller), else leave the raw `{{var}}` token in place.
 
+**The managed block's bytes (one definition; `/edikt:init` writes the same record and uses it too).** In this section `installed_block`, `new_block` and every "block" mean the bytes from the `[edikt:start]` line through the `[edikt:end]: #` line inclusive, with no trailing newline. `render` returns text in that form (a trailing newline of the template file is dropped), so `render(...) == installed_block` is a byte comparison of like with like. The record's `managed_hash` is the `sha256` of exactly those bytes, and its `template_hash` is the `md5` of the raw template file.
+
 **The migration bypass, and why it's a file, not an env var.** INV-005's guard blocks any Edit/Write whose byte range overlaps CLAUDE.md's managed region unless an allowlisted bypass is present. `EDIKT_MIGRATION_IN_PROGRESS=1` is `edikt upgrade`'s own bypass, set inside its own Go process for its own direct `os.WriteFile` calls — writes that never cross `PreToolUse` at all. This command's writes go through Claude Code's own `Edit` tool instead, a different path: each `Bash` tool call is a fresh subshell, so an `export` in one call is invisible to the separate hook subprocess spawned for a later `Edit` call — an env var set that way is never actually reachable. Bracket every Edit into the managed region with the file-based signal instead, which survives across tool calls because it's real filesystem state:  edikt-guard:allow
 
 ```bash
@@ -576,6 +581,28 @@ if opaque_values is not FAIL AND render(current_template, opaque_values) == inst
   report "   ✓ CLAUDE.md — managed block already current (provenance seeded)"
   return
 ```
+
+**Prior-template check (runs before the prompt below; mirrors §2c's check for agents).** A block that no human ever edited can still fail the strict match above: it was written by an earlier release's template, and the current template has text it lacks. Projects set up by `/edikt:init` before init wrote a record are all in this state. Prompting here would be wrong twice over: nothing is in doubt, and with no human to answer the prompt takes `s`, so the project would never receive the update. For each earlier shipped template at `<edikt root>/versions/*/templates/CLAUDE.md.tmpl` (the edikt root resolved as in §0y-bis: `$_edikt_root_g`, or the project-mode root when `.edikt/current/templates` exists; skip the version being installed):
+
+```
+for prior_template in <edikt root>/versions/*/templates/CLAUDE.md.tmpl (skip the current version):
+  extracted = detemplate(installed_block, prior_template)
+  if extracted is not FAIL AND render(prior_template, extracted) == installed_block:
+    # The installed block equals, byte for byte, what that release's template
+    # produces from its own values: it is an unedited earlier template.
+    # Treat it as the safe-replace case (Step 6), with no prompt.
+    new_block = render(current_template, extracted)   # opaque values carried from the
+                                                      # extraction, config-derived values
+                                                      # from the current config
+    Edit $CLAUDE_MD_PATH's block to new_block under the migration marker bracket above.
+    write_record(project_root, claude_md_path=CLAUDE_MD_PATH, template_hash=current_template_hash,
+                 template_version=CURRENT_EDIKT_VERSION, managed_hash=sha256(new_block))
+    emit_event "upgrade_claude_md_path" { path: "bootstrap_prior_template_match" }
+    report "   ⬆ CLAUDE.md — managed block updated (it matched the <version> template unedited)"
+    return
+```
+
+`<version>` is the directory name under `versions/`. The comparison is an exact render match, never a similarity score: one changed byte, in the template's own text or in an opaque value that no longer round-trips, is a mismatch. If no earlier template matches, including when none remain on disk (retention is not guaranteed, see `edikt prune`), fall through to the prompt below and keep its safe default. Absence of a match means "unknown", never "edited": the block may come from a release this machine no longer has, or a config path may have changed since it was written, and either way the check has proved nothing in either direction.
 
 <!-- stop: managed-block-no-provenance -->
 Otherwise, ask via `AskUserQuestion`, showing installed vs. `render(current_template, detemplate_lenient(installed_block, current_template))` — the lenient extractor, not the strict `opaque_values` computed above (which may be `FAIL`). With no human to answer, take the safe side — `s` (skip): no file
@@ -865,17 +892,26 @@ agent the registry declares and the project lacks is unreachable from that
 loop and its absence reads as nothing to do. Install every missing one:
 
 ```bash
+# edikt-test-block: always-installed-agents
 ALWAYS="$(awk '/^always:/{f=1;next} /^[a-z_]+:/{f=0} f && /^  - /{print $2}' "$EDIKT_TEMPLATES/agents/_registry.yaml")"
+AGENT_FAILS=0
 for slug in $ALWAYS; do
   src="$EDIKT_TEMPLATES/agents/$slug.md"
   dst=".claude/agents/$slug.md"
-  [ -f "$src" ] || { echo "  ⚠ Agent            $slug declared in the registry but absent from the payload — reinstall edikt"; continue; }
+  [ -f "$src" ] || { echo "  ⚠ Agent            $slug declared in the registry but absent from the payload — reinstall edikt"; AGENT_FAILS=$((AGENT_FAILS+1)); continue; }
   if [ ! -f "$dst" ]; then
-    mkdir -p .claude/agents && cp "$src" "$dst"
-    echo "  ✓ Agent            installed $slug (declared always-installed; it was missing)"
+    if mkdir -p .claude/agents 2>/dev/null && cp "$src" "$dst" 2>/dev/null && cmp -s "$src" "$dst"; then
+      echo "  ✓ Agent            installed $slug (declared always-installed; it was missing)"
+    else
+      echo "  ✗ Agent            $slug NOT installed: the copy into .claude/agents/ failed (this directory may be write-protected in this session); the dispatch to $slug will not reach a specialist until it is installed"
+      AGENT_FAILS=$((AGENT_FAILS+1))
+    fi
   fi
 done
+[ "$AGENT_FAILS" -eq 0 ]
 ```
+
+A non-zero result here is reported in the Step 3 summary as agents NOT installed, never as installed, and the upgrade continues.
 
 An agent already present is left to the provenance flow below — this step adds
 what the registry declares and the project lacks, and nothing else. `edikt
@@ -902,6 +938,33 @@ If the user declines an optional agent, add it to `agents.custom` in config so f
 
 After installing or updating any agent, output: `Note: Agents register at session start — restart Claude Code to dispatch them natively. Until then, commands fall back automatically.`
 
+<!-- contract-report:upgrade-step2c:start -->
+**Extraction contract state — reported on every run that reaches the summary, changed or not.** Two extractors matter and they can differ: the one installed in the project now, and the template this version ships. The payload's `sidecar-extractor.md` can be byte-identical to the installed one, and a project's own copy can be custom, preserved or skipped, so a report tied to "the extractor is being replaced" would miss exactly the upgrade that needs it. This runs whenever `sidecar-extractor` is installed in the project or is about to be (it is declared always-installed above), regardless of the classification result, `<!-- edikt:custom -->`, or `agents.custom`. Run these two calls as two separate tool calls, the first and then the second, each plainly on one line. Capture nothing and discard no output, so each tool call shows its line and its exit code. The first reports the extractor installed now:
+
+```bash
+EDIKT_INVOKER=/edikt:upgrade "${EDIKT_BIN:-edikt}" doctor --contract-state
+```
+
+The second reports this version's template:
+
+```bash
+EDIKT_INVOKER=/edikt:upgrade "${EDIKT_BIN:-edikt}" doctor --contract-state --agent-file "$EDIKT_TEMPLATES/agents/sidecar-extractor.md"
+```
+
+The line each prints and the exit code its tool call reports are that call's report; note all four for Step 3. `EDIKT_BIN` and `EDIKT_TEMPLATES` are the values resolved in 0y and 0y-bis. A shell that does not carry variables from one call to the next has to be given them again in the same call: prefix the call with the 0y-bis resolution, or substitute the literal path.
+
+For each call separately:
+
+- Exit `0`, `10` or `11`: the printed line is that call's report; carry it to Step 3 verbatim.
+- Any other exit (a binary that predates the flag, the version gate, the front door, `SELF_UPGRADE=skip` with an old binary): that call's report is this fixed sentence, whatever the call printed:
+
+```
+extraction contract state is UNMEASURED: this binary cannot report it
+```
+
+Never omit a report silently, never treat a missing report as validated, and never branch on the text of a line, only on the exit codes. Carry both exit codes to Step 3 too.
+<!-- contract-report:upgrade-step2c:end -->
+
 #### 2c.1 Skills reconciliation (.claude/skills/)
 
 List directories under `$EDIKT_TEMPLATES/skills/`. For each, check whether `.claude/skills/{name}/SKILL.md` exists in the project.
@@ -913,6 +976,26 @@ Unlike agents, these are edikt's own on-demand methodology packages (deciding wh
 ```
 
 If a project has hand-edited a skill file, leave it alone — do not overwrite a file whose content already differs from `$EDIKT_TEMPLATES/skills/{name}/SKILL.md`; only install what's missing.
+
+**How to install a missing skill.** The write guard treats `.claude/skills/edikt-*/SKILL.md` as generated output and refuses a tool write to it; the in-progress marker is the signal this command already uses for its own writes. For each missing skill, in this order, one tool call per step:
+
+1. Create the marker, in one Bash call:
+
+```bash
+# edikt-test-block: skill-install-open
+mkdir -p .edikt/state && touch .edikt/state/.migration-in-progress
+```
+
+2. Write `.claude/skills/{name}/SKILL.md` with the Write tool, content byte-identical to `$EDIKT_TEMPLATES/skills/{name}/SKILL.md`.
+
+3. Verify and remove the marker, in one Bash call that removes it whether or not the comparison passes:
+
+```bash
+# edikt-test-block: skill-install-close
+cmp -s "$EDIKT_TEMPLATES/skills/{name}/SKILL.md" ".claude/skills/{name}/SKILL.md"; rc=$?; rm -f .edikt/state/.migration-in-progress; exit $rc
+```
+
+4. Report the skill installed only when that comparison passed; otherwise report it NOT installed and say why. Never leave the marker behind, including when step 2 is refused or interrupted: if the Write fails, still run step 3 before anything else. A marker left on disk switches the write guard off for the whole project.
 
 #### 2e-bis. Project templates check — delegated to doctor
 
@@ -978,6 +1061,9 @@ Agents (.claude/agents/)
   ⬆  dba.md   — template added 12 lines (pure expansion, safe to apply)
   ⚠  security.md  — installed file has 8 lines not in template (USER DIVERGENCE — preview diff before accepting)
   ✓  architect.md  — up to date
+  ✓  sidecar-extractor.md  — up to date
+     Extraction contract (installed now): <the line from the first Step 2c call, verbatim>
+     Extraction contract (template): <the line from the second Step 2c call, verbatim>
 
 Rule packs (.claude/rules/)
   ⬆  go.md          1.0 → 1.2
@@ -995,6 +1081,27 @@ CLAUDE.md
 ─────────────────────────────────────────────────────
 4 hook changes, 2 agents, 2 rule packs, 1 config addition, 1 CLAUDE.md migration
 ```
+
+<!-- contract-report:upgrade-step3:start -->
+**The extraction contract prints on every run that reaches this summary**, directly under the `sidecar-extractor` row of the Agents section, as exactly these two labelled lines, always both, indented to match, each followed by that Step 2c call's report verbatim:
+
+```
+Extraction contract (installed now): <the line from the first Step 2c call, verbatim>
+Extraction contract (template): <the line from the second Step 2c call, verbatim>
+```
+
+They print when the row reads up to date, when the project's extractor is marked custom, and when the summary would otherwise say "Already up to date". Do not compare the two lines' text. Add one sentence of instruction saying which one the project ends up with: the template's when this run installs or replaces `sidecar-extractor`, and the installed one when that row is custom, preserved or skipped.
+
+When EITHER Step 2c call's exit was not 0, print this one fixed line beneath them:
+
+```
+Compiling a sidecar for a new or edited artifact still works; review the result. Whether re-extraction is available: edikt gov reextract --status
+```
+
+When both exits were 0: nothing beneath them.
+
+This is information ahead of the confirmation in Step 4, not a question: it adds no prompt and changes no default. When a line says the state is UNMEASURED, it ends with what to do about it: show it in full, and do not attempt that repair yourself, because changing an agent file is the user's decision.
+<!-- contract-report:upgrade-step3:end -->
 
 If no rule packs are installed (`.claude/rules/` is missing or empty), show:
 ```
@@ -1449,9 +1556,11 @@ almost nobody. Nothing is dispatched in this step without an explicit yes.
 Run after Step 6's completion output, only if the upgrade itself succeeded
 (don't offer a follow-on when the run above failed or is incomplete):
 
+<!-- contract-report:upgrade-step7:start -->
 ```bash
-EDIKT_INVOKER=/edikt:upgrade edikt gov reextract --status --json
+EDIKT_INVOKER=/edikt:upgrade "${EDIKT_BIN:-edikt}" gov reextract --status --json
 ```
+<!-- contract-report:upgrade-step7:end -->
 
 If the binary is absent, or the status check fails, or `eligible` is `0`,
 say nothing further — this is a silent skip, not a warning; an empty offer

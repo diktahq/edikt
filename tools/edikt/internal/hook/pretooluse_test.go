@@ -24,7 +24,7 @@ func TestPreToolUseNormalizesBeforeAllowlistComparison(t *testing.T) {
 		{"fullwidth folds to the ascii basename", "ＣＬＡＵＤＥ.md", "claude.md"},
 		{"case folds", "Settings.JSON", "settings.json"},
 		{"surrounding whitespace stripped", "  settings.json  ", "settings.json"},
-		{"control characters removed", "settings​.json", "settings​.json"},
+		{"control characters removed", "settings\u200b.json", "settings\u200b.json"},
 	}
 	for _, c := range cases {
 		if got := scopeKey(c.in); got != c.want {

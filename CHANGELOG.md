@@ -1,5 +1,178 @@
 # edikt changelog
 
+## v0.9.1 (2026-10-11)
+
+**0.9.1: edikt now says what state the extraction contract is in, where it matters.** 0.9.0
+ships extraction contract v11, which edikt's own validation record lists as rejected, and
+nothing said so where you act on it: `/edikt:upgrade` installed it without a word, `edikt
+doctor` recommended `:compile` as the plain remedy for a missing sidecar, and the three
+per-artifact compile commands ran it silently. Only `gov reextract` reported the state. Upgrade,
+doctor and the compile commands now report it, from one source, so they cannot disagree.
+
+**This release still ships extraction contract v11, and it is still rejected.** Nothing here
+validates a contract. Compiling a sidecar for a new or edited artifact still works; review the
+result against the prose before you rely on it. `gov reextract` still refuses.
+
+### Upgrading from 0.9.0
+
+- Run `/edikt:upgrade` in each project. The first upgrade from 0.9.0 does not show the new
+  contract lines: that run uses the 0.9.0 command that is already loaded. Run `/edikt:upgrade`
+  once more, or `edikt doctor --contract-state`, to see them.
+- An existing project's CLAUDE.md block gains the "Before Recording a Decision" section (below).
+  If you have not edited the block, upgrade updates it without asking. If you have, it still
+  asks.
+- Nothing else needs a change. The extractor template is the same file as in 0.9.0, so an
+  upgrade does not replace your project's extractor.
+
+### Behaviour changes you can hit
+
+- **The project's extractor always wins.** The contract version, the model and the contract
+  digest all come from the project's `.claude/agents/sidecar-extractor.md` when that file
+  exists. The profile's copy is consulted only when the project has none. Two copies that
+  declare different versions no longer refuse; the project's is the answer.
+- **A project extractor that exists but cannot be used is never answered for by the profile's
+  copy.** An extractor with no `prompt_version`, a malformed one, an unreadable one and an empty
+  one all leave the contract state unmeasured. `gov reextract` refuses, and a compile's plan
+  step refuses, each naming the remedy. Before, the profile's extractor was used silently.
+- **`prompt_version` must be a plain positive integer.** `4.9`, `04` and `"11"` are refused as
+  unmeasured. `4.9` used to read as version 4 and report "validated".
+- **A refusal for an extractor that cannot be resolved leads with the contract line and its
+  remedy on a line of its own,** and the detail follows beneath it.
+- **`edikt gov compile` prints a refused plan once.** The two-line refusal used to appear twice
+  on stderr, as it did in 0.9.0.
+- **A testable plan phase no longer needs a command on every criterion.** `/edikt:sdlc:plan`
+  writes a criterion whose evidence is observed or judged without a `verify`, and tells you never
+  to invent one. `edikt verify` then refused the whole criteria file ("testable phases require a
+  verify command"), so a plan could follow the command or load, not both. It now loads. A
+  criterion with no `verify` in a testable phase is reported as `unmeasured: no verify command`,
+  never as passed, and `edikt verify <plan> --phase N` exits non-zero while any criterion is
+  unmeasured, so such a phase is not marked done by the runner. Recording a person's verdict on
+  an observed or judged criterion is not in this release. If you relabelled a phase to get past
+  the refusal, you can label it `testable` again. Run `/edikt:upgrade` to refresh the project's
+  copy of the schema.
+
+### Changed
+
+- **`edikt doctor --contract-state [--agent-file <path>]`** prints one line: the contract's
+  version and whether it is validated, rejected, has no entry in the validation record, or is
+  unmeasured. Exit 0 means validated, 10 rejected or no entry, 11 unmeasured. It is never
+  refused by the version gate or the front door, and it writes nothing. `--agent-file` reports
+  a named extractor file (for example a template) instead of the installed one.
+- **`gov reextract --status --json` gains `contract_state`** (`validated`, `rejected`,
+  `unrecorded` or `unmeasured`). `contract_validated` is unchanged and equals
+  `contract_state == "validated"`.
+- **Doctor prints the contract's state directly under every compile remedy it gives** when the
+  contract is not validated: the missing-sidecar error, the delivery-gaps finding, and the
+  rejected-options note, as a `contract: …` line. When the contract is validated the output is
+  unchanged from 0.9.0.
+- **`/edikt:adr:compile`, `/edikt:invariant:compile` and `/edikt:guideline:compile` report the
+  contract before they plan.** Compiling one artifact stays allowed under a contract that is not
+  validated: the command shows the line first, carries on, and repeats it in the confirmation
+  with a reminder to review the sidecar against the prose. Under a validated contract it says
+  nothing. All three now accept `--bootstrap`, which the first compile of an artifact
+  with no sidecar needs and which the commands used to tell you to pass and could not accept.
+- **`/edikt:upgrade` shows two contract lines in its summary, before the confirmation:** the
+  extractor installed now, and the template this version ships. They print on every run that
+  reaches the summary, including when the extractor is already up to date.
+- **`/edikt:upgrade` installs and reports more accurately.** An agent is reported installed only
+  when its copy succeeded. The shipped governance-authoring skill now installs with the write
+  guard active, byte for byte, where the guard used to deny the write. An unedited CLAUDE.md
+  block is updated without asking, including a block that matches an earlier shipped template;
+  `/edikt:init` now writes the record upgrade uses to tell whether the block was edited.
+- **Every unmeasured state says what to do next.**
+- **The always-loaded instructions gain "Before Recording a Decision".** Before suggesting or
+  writing an ADR, an invariant or a guideline, Claude loads the governance-authoring skill and
+  applies its gates. The usual answer is to record nothing. `/edikt:capture` and the session
+  sweep gate every candidate, invariants included, and name the gate that fails. Phrases such as
+  "record this" and "that's a hard rule" now go to capture rather than straight to a command
+  that writes a record.
+
+### Contributing
+
+- **Pull requests are now welcome.** `CONTRIBUTING.md` says how one lands, which checks run in
+  the public repository and which do not, and how to report a vulnerability privately. The
+  repository now carries `mise.toml` and `lefthook.yml`, so the lint checks run locally.
+
+### Corrections to 0.9.0's notes
+
+- 0.9.0 said work on a validated contract "continues in 0.9.1". It continues in 0.9.2.
+
+### Known issues
+
+- **`gov reextract` still refuses.** The shipped contract, v11, is rejected in the validation
+  record. Compiling a sidecar for a new or edited artifact, and `gov compile`, still work. Do
+  not work around the refusal with `--skip-fixture-proof`; that flag is for the validation run
+  itself.
+- **Under Claude Code's Bash sandbox, some steps fail and must be re-run outside it.** The
+  sandbox does not let a shell command write `.claude/agents/`, `.claude/skills/` or
+  `.claude/settings.json`. Steps of `/edikt:upgrade` and `gov compile` that write there from a
+  shell command fail under it. Re-run that step outside the sandbox. A fix is planned for 0.9.2.
+- **Five other commands that dispatch the extractor do not print the contract line:**
+  `/edikt:gov:compile`, `/edikt:migrate`, `/edikt:adr:new`, `/edikt:invariant:new` and
+  `/edikt:guideline:new`.
+- **On a compile, the contract line is relayed by the model.** The command tells Claude to print
+  it first and to repeat it word for word in the confirmation, and it did so in the release
+  check. Its timing and wording can still vary between models and runs. `edikt doctor
+  --contract-state` always prints it. A delivery that does not depend on the model is planned
+  for 0.9.2.
+- **Arguments passed to a command can overwrite `$0`, `$1`… inside it.** Claude Code replaces
+  those tokens in a command file with the command's arguments. With `/edikt:upgrade --offline`,
+  one awk expression in the rule-pack step is rewritten, and prices in `/edikt:sdlc:plan`'s
+  model table are garbled. Present in 0.9.0. Claude usually works around it; if a step of
+  upgrade fails on a malformed awk command, re-run `/edikt:upgrade` without arguments.
+- **`/edikt:upgrade` installs the always-installed agents before it shows the summary,** not
+  after the confirmation.
+- **`edikt doctor` can report one artifact as missing its sidecar when it is not.** This happens
+  for an artifact carrying the `edikt:migration:skip` marker: one of doctor's checks honours the
+  marker and another does not.
+
+### edikt's own test suite (for maintainers)
+
+Nothing in this section affects your projects unless it says so. edikt's own test suite does not pass in full on this release. Each failing suite is listed
+here with its cause. The security and hook suites pass in full; they are the only enforcement
+INV-003 and INV-006 have, so they are never waived.
+
+- **`extractor-contract-validated`**: fails because the shipped contract is not validated.
+  This release ships v11 and the validation record lists it as rejected; a validated contract is
+  planned for 0.9.2.
+
+- **`spec-plan-coverage`**: 160 requirements across SPEC-008, SPEC-009, SPEC-011 and SPEC-025
+  are not yet covered by any acceptance criterion in their plans, and two plans point at a spec
+  file that does not resolve. The check is correct; the remaining backfill is still to do. No
+  effect on your projects.
+
+- **`release-plan-set-complete`**: fails while any phase planned for this release is still
+  open. The only open one is the phase that closes the release, so this clears when the release
+  is done. No effect on your projects.
+
+- **`corpus-gates`**: three findings in edikt's own governance. The anchor check still counts
+  unmeasured anchor drift as a failure: `gov compile --check` now prints the real stale count
+  instead of a hardcoded `0`, but the check has not been switched to read it. Three proposed
+  ADRs have no sidecar and are counted as unmeasured rather than skipped. Two directives
+  contain unresolved bare ordinals. No effect on your projects.
+
+- **`corpus-coverage`**: ADR-054 was superseded by ADR-085 after the coverage baseline was
+  taken, and the check has no way to accept an artifact leaving the corpus legitimately. One
+  behavioral verify in edikt's own governance is still waiting for human approval, and the
+  check counts it on purpose. No effect on your projects.
+
+- **`check-anchor-provenance`**: ADR-086's five directives and prohibitions state obligations
+  that their recorded source quotes do not contain. Known and not fixed. Affects edikt's own
+  governance only.
+
+- **`consumer-migration`**: the `doctor` issue listed under Known issues above, and
+  `delivery-map.yaml`'s header still refers to a "ROUTING TABLE" that no longer exists.
+
+- **`globmatch-python-parity`**: fails only on a machine that once ran edikt's Python
+  integration tests, because a leftover `test/integration/.venv/` gets scanned. It passed in the
+  0.9.1 release run, on a checkout without that directory. Not a product defect.
+
+- **`integration`**: the 0.9.1 release run skipped this tier. It needs a logged-in Claude Code
+  profile, which the release run did not have. In 0.9.0, 21 of these end-to-end tests failed
+  inside edikt's full test run and passed when run on their own, because the test runner
+  isolates `CLAUDE_CONFIG_DIR` so no test can touch a real Claude profile, which leaves them
+  with no credentials. That is not fixed in this release. Not a product defect.
+
 ## v0.9.0 (2026-10-10)
 
 **0.9.0: write-time governance retired.** edikt no longer injects rules or blocks edits while

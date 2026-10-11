@@ -41,7 +41,7 @@ Group the changed files into logical areas (e.g., "webhook delivery (3 files)", 
 Nothing built in this session — no captures needed.
 ```
 
-And stop.
+And stop. (If the user asked about one specific thing, answer for that thing first with the gates in Step 3, then stop.)
 
 ## Step 2: Plan progress
 
@@ -64,7 +64,7 @@ Then check existing ADRs:
 ls {paths.decisions}/*.md 2>/dev/null || ls docs/architecture/decisions/*.md 2>/dev/null
 ```
 
-Read the ADR list. **Run every candidate through the GL-001 capture gates before surfacing it**, the same gates `/edikt:capture` uses. Burden of proof is on CAPTURE, not silence; the default is DEMOTE, and a healthy session produces zero ADRs. Auto-reject candidates that restate upstream docs or defaults, are derivable from code or tests, are living state, are task-scoped, or exist to justify a change to a reviewer. G0: skip anything already covered by an existing ADR or invariant. Then G2 needs all three: a REAL rejected alternative, a choice that is expensive to reverse or constrains future structure, dependencies, interfaces, data, or security, and a re-litigation risk without the record. A candidate with no real rejected alternative is a fact, not a decision — surface nothing.
+Read the ADR list, then read `.claude/skills/edikt-governance-authoring/SKILL.md` (if it is absent, say `governance-authoring skill not installed — run /edikt:upgrade` and give no verdict). **Run every candidate, of every kind, through the gates in that skill**, the same ones `/edikt:capture` uses, and give each one a verdict (see Output format). If the user asked about one specific thing ("record this", "should this be an ADR"), answer for that thing first and say so, before the sweep. Burden of proof is on CAPTURE, not silence; the default is DEMOTE, and a healthy session produces zero ADRs. Auto-reject candidates that restate upstream docs or defaults, are derivable from code or tests, are living state, are task-scoped, or exist to justify a change to a reviewer. G0: skip anything already covered by an existing ADR or invariant. Then G2 needs all three: a REAL rejected alternative, a choice that is expensive to reverse or constrains future structure, dependencies, interfaces, data, or security, and a re-litigation risk without the record. A candidate with no real rejected alternative is a fact, not a decision — its verdict is "nothing to record", naming the ADR gate.
 
 Surface an ADR candidate only for a product architecture choice: a new boundary, a contract others depend on (an API, an event, a shared schema), a data store, a cross-context dependency, or an external provider in the product's call path.
 
@@ -78,7 +78,7 @@ Every ADR candidate is a suggestion. Never draft one from this sweep, and never 
 
 ## Step 4: Scan for uncaptured constraints
 
-Review the conversation for constraint language:
+Collect candidates from the conversation's constraint language:
 - "never...", "always must...", "required on all...", "violating this would..."
 
 Then check existing invariants:
@@ -87,7 +87,7 @@ Then check existing invariants:
 ls docs/invariants/*.md 2>/dev/null || ls docs/architecture/invariants/*.md 2>/dev/null
 ```
 
-Only flag constraints not already captured in an existing invariant file.
+Do not drop a constraint here: it is a candidate. Judge it with the gates in the `edikt-governance-authoring` skill (the same ones as Step 3). A constraint already captured in an existing invariant file is judged as already captured.
 
 ## Step 5: Scan for doc gaps
 
@@ -106,7 +106,7 @@ Before surfacing any suggestion:
 - Verify it's not already in `docs/invariants/` (or `docs/architecture/invariants/`)
 - Verify it's not already documented
 
-Only surface genuinely missing captures.
+Only surface genuinely missing captures as possible captures; a candidate that was judged and rejected still gets its one-line "nothing to record" verdict.
 
 ## Output format
 
@@ -117,21 +117,29 @@ Built:    {changed areas — e.g., "webhook delivery (3 files), DB migration"}
 Commits:  {recent commit messages, or "none yet"}
 Updated:  {plan progress changes, or "no plans updated"}
 
+You asked about: {the thing} (answered first; only when the user asked about one thing)
+  → {a verdict line, in one of the two forms below}
+
 Possible captures:
-  💡 ADR: {decision description} — {the G2 verdict: the rejected alternative, the reversal cost, the re-litigation risk}
+  💡 ADR: {decision description} — {the ADR gate's verdict: the rejected alternative, the reversal cost, the re-litigation risk}
      → suggestion only — /edikt:adr:new if you want it recorded
 
-  💡 Invariant: {constraint description}
-     → Run /edikt:invariant:new to capture
+  💡 Invariant: {constraint description} — {the invariant gate's verdict: why no single home in code, how it is falsified, what guards it}
+     → /edikt:invariant:new if you want it recorded
+
+  💡 Guideline: {default and its named exception}
+     → /edikt:guideline:new if you want it recorded
+
+  ➖ Nothing to record: {candidate} — fails {gate}: {reason in one line}
 
   📄 Doc gap: {new public surface} — not in {doc file}
      → Run /edikt:docs:review to review
 
 ─────────────────────────────────────────────────────
-{count} possible captures — none of them blocks anything; record only what you choose to.
+{count} possible captures, {m} judged not worth recording — none of them blocks anything; record only what you choose to.
 ```
 
-If there are no possible captures, output instead:
+If there are no candidates at all, output instead:
 ```
 ✅ Session looks complete — nothing missed.
 

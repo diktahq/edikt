@@ -82,7 +82,7 @@ func renderedCorpus(projectRoot string) (string, int, error) {
 			if !strings.HasSuffix(p, ".md") && !strings.HasSuffix(p, ".yaml") {
 				return nil
 			}
-			data, rerr := os.ReadFile(p)
+			data, rerr := os.ReadFile(p) // #nosec G122 -- reads compiled surfaces in the project tree edikt itself renders; a concurrent swap of that tree is not in the threat model
 			if rerr != nil {
 				return nil
 			}

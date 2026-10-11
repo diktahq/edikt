@@ -30,6 +30,10 @@ Reads the `## Rules` section of each guideline and produces MUST/NEVER directive
 4. Generates `reminders:` (pre-action interrupts) and `verification:` (checklist items).
 5. Writes the canonical sidecar at `{guideline}.edikt.yaml` (siblings the prose).
 
+<!-- contract-report:website-compile:start -->
+Before it plans or dispatches anything, the command runs a contract check, and the check itself never refuses, pauses or asks. What you see depends on the result. When the extraction contract is validated, you see nothing. When it is rejected, or has no entry in the validation record, the command prints one line saying so before it dispatches the extractor, and repeats that line in the confirmation. When the state could not be measured (an older binary, or no readable extractor), it prints one line saying that, and the line ends with what to do about it. The command shows it to you in full and does not make that repair itself, because changing an agent file is your decision. When no extractor can be read, the compile that follows is refused by the plan step, which repeats that line first. Whenever the compile goes ahead under a contract that is not validated, the confirmation repeats the line and adds a reminder to review the sidecar's directives against the prose before relying on them.
+<!-- contract-report:website-compile:end -->
+
 ```yaml
 # docs/guidelines/api-design.edikt.yaml
 schema_version: 2

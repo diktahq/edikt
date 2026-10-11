@@ -81,6 +81,9 @@ func runRejectedOptionsCheck(projectRoot string, w io.Writer) (warns int, ran bo
 			printHeader()
 			fmt.Fprintf(w, "  INFO: %s has %d considered options but no sidecar — skipping prohibition check (run /edikt:adr:compile first)\n",
 				rel(projectRoot, mdPath), optCount)
+			if line := missingSidecarContractLine(projectRoot); line != "" {
+				fmt.Fprintln(w, line)
+			}
 			continue
 		}
 

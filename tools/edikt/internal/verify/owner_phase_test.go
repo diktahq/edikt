@@ -128,24 +128,3 @@ phases:
 		t.Error("phase_metadata did not survive the load — the text its author wrote is gone")
 	}
 }
-
-// A testable phase still requires a verify. owner must not have loosened it.
-func TestLoadCriteria_TestableStillRequiresVerify(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, "PLAN-y-criteria.yaml")
-	body := `schema_version: 1
-plan: PLAN-y
-phases:
-  - id: "1"
-    classification: testable
-    criteria:
-      - id: AC-1.1
-        statement: no verify here
-`
-	if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadCriteria(p); err == nil {
-		t.Fatal("a testable phase with no verify must still be rejected")
-	}
-}

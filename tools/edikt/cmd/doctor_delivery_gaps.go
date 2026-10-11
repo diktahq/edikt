@@ -64,7 +64,9 @@ type deliveryGap struct {
 	Detail      []string
 	Consequence string
 	Remedy      string
-	Fatal       bool
+	// RemedyContract, when set, is printed on the line directly under Remedy.
+	RemedyContract string
+	Fatal          bool
 }
 
 // runDeliveryGapsCheck reports compiles that succeeded while delivering less
@@ -110,6 +112,9 @@ func runDeliveryGapsCheck(projectRoot string, w io.Writer) (errs, warns int, ran
 		fmt.Fprintf(w, "           → %s\n", g.Consequence)
 		if g.Remedy != "" {
 			fmt.Fprintf(w, "           run: %s\n", g.Remedy)
+			if g.RemedyContract != "" {
+				fmt.Fprintln(w, g.RemedyContract)
+			}
 		}
 	}
 	return errs, warns, true
@@ -392,6 +397,9 @@ func artifactsWithoutSidecar(root string, cfg govrun.Config) []deliveryGap {
 		Consequence: "an artifact with no sidecar contributes NO directives to any surface — it is accepted and governs nothing",
 		Remedy:      compileRemedyFor(missing),
 		Fatal:       true,
+		// The remedy runs the installed extraction contract; say what state
+		// it is in (nothing when validated).
+		RemedyContract: missingSidecarContractLine(root),
 	}}
 }
 

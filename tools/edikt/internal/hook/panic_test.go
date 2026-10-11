@@ -68,7 +68,8 @@ func TestPanicRecovery(t *testing.T) {
 			reg := NewRegistry()
 			reg.Register(name, func(inv *Invocation) Result {
 				var nilMap map[string]string
-				nilMap["boom"] = "this is a nil map write" // real panic, not panic("x")
+				//lint:ignore SA5000 deliberate: the test needs a real runtime panic, not panic("x")
+				nilMap["boom"] = "this is a nil map write"
 				return Result{}
 			})
 

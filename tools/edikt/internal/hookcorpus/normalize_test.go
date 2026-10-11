@@ -222,3 +222,29 @@ func TestFSDiffNormalizesContent(t *testing.T) {
 		t.Fatalf("a real content change did not register as modified: %+v", d2)
 	}
 }
+
+// On Linux os.TempDir() is "/tmp", which is the same path on every machine. The
+// TempDir pass exists for macOS's per-user /var/folders/…/T, which is not.
+// Masking "/tmp" rewrote fixture payloads' own fixed paths ("/tmp/wt-teardown"
+// → "<TMPDIR>/wt-teardown") and made every replay of them differ from a
+// recording taken on macOS — a harness artifact, not a hook difference.
+func TestNormalizerLeavesSharedTmpAlone(t *testing.T) {
+	in := []byte("CWD_CHANGED /tmp/edikt-monorepo/apps/api\n")
+
+	n, err := NewNormalizer(NormalizerConfig{TempDir: "/tmp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := n.Apply(in); string(out) != string(in) {
+		t.Fatalf("TempDir=/tmp must not be masked: got %q", out)
+	}
+
+	// Control: a per-user temp dir is still masked.
+	n, err = NewNormalizer(NormalizerConfig{TempDir: "/var/folders/ab/xyz/T"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, _ := n.Apply([]byte("x /var/folders/ab/xyz/T/run1 y")); string(out) != "x <TMPDIR>/run1 y" {
+		t.Fatalf("a per-user TempDir must still be masked: got %q", out)
+	}
+}

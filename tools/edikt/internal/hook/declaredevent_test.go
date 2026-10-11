@@ -1,27 +1,8 @@
 package hook
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
-
-// repoRoot walks up from the test's cwd to the checkout root, which carries
-// templates/hooks/registry.yaml — the dev-mode rung of ResolveRegistryPath.
-func declaredEventRepoRoot(t *testing.T) string {
-	t.Helper()
-	wd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for d := wd; d != "/"; d = filepath.Dir(d) {
-		if _, err := os.Stat(filepath.Join(d, "templates", "hooks", RegistryFileName)); err == nil {
-			return d
-		}
-	}
-	t.Fatalf("no templates/hooks/%s above %s", RegistryFileName, wd)
-	return ""
-}
 
 // The regression: a payload without hook_event_name used to reach the
 // encoder as "" and the deny was dropped (fail-open). The registry row is the

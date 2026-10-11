@@ -134,4 +134,4 @@ edikt tracks Claude Code feature adoption internally. Hook protocol, agent front
 
 ---
 
-[License](LICENSE) · [Changelog](CHANGELOG.md) · [edikt.dev](https://edikt.dev)
+[License](LICENSE) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [edikt.dev](https://edikt.dev)

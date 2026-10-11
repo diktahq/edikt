@@ -1,0 +1,72 @@
+# Captured from tag v0.9.0 (commit d511c3fa52ff080a0a86b01eb7676c7cc28eb8e7): the complete output of the sidecar check, the delivery-gaps check and the rejected-options check of 'edikt doctor' for each fixture project, with an extractor at prompt_version 4. Root normalised to <ROOT>.
+=== one-adr | sidecar
+  ── Sidecar Health ─────────────────────────────
+  ERROR: MISSING: docs/architecture/decisions/ADR-terminology.md has no sidecar — run /edikt:adr:compile
+=== one-adr | delivery-gaps
+  ── Delivery Gaps ──────────────────────────────
+    🔴 ERROR: 1 accepted artifact(s) have no sidecar
+           docs/architecture/decisions/ADR-terminology.md
+           → an artifact with no sidecar contributes NO directives to any surface — it is accepted and governs nothing
+           run: /edikt:adr:compile — one per artifact listed above
+=== one-adr | rejected-options
+=== three-adrs | sidecar
+  ── Sidecar Health ─────────────────────────────
+  ERROR: MISSING: docs/architecture/decisions/ADR-alpha.md has no sidecar — run /edikt:adr:compile
+  ERROR: MISSING: docs/architecture/decisions/ADR-beta.md has no sidecar — run /edikt:adr:compile
+  ERROR: MISSING: docs/architecture/decisions/ADR-gamma.md has no sidecar — run /edikt:adr:compile
+=== three-adrs | delivery-gaps
+  ── Delivery Gaps ──────────────────────────────
+    🔴 ERROR: 3 accepted artifact(s) have no sidecar
+           docs/architecture/decisions/ADR-alpha.md
+           docs/architecture/decisions/ADR-beta.md
+           docs/architecture/decisions/ADR-gamma.md
+           → an artifact with no sidecar contributes NO directives to any surface — it is accepted and governs nothing
+           run: /edikt:adr:compile — one per artifact listed above
+=== three-adrs | rejected-options
+=== one-invariant | sidecar
+  ── Sidecar Health ─────────────────────────────
+  ERROR: MISSING: docs/architecture/invariants/INV-hooks.md has no sidecar — run /edikt:invariant:compile
+=== one-invariant | delivery-gaps
+  ── Delivery Gaps ──────────────────────────────
+    🔴 ERROR: 1 accepted artifact(s) have no sidecar
+           docs/architecture/invariants/INV-hooks.md
+           → an artifact with no sidecar contributes NO directives to any surface — it is accepted and governs nothing
+           run: /edikt:invariant:compile — one per artifact listed above
+=== one-invariant | rejected-options
+=== one-guideline | sidecar
+  ── Sidecar Health ─────────────────────────────
+  ERROR: MISSING: docs/guidelines/GUIDE-style.md has no sidecar — run /edikt:guideline:compile
+=== one-guideline | delivery-gaps
+  ── Delivery Gaps ──────────────────────────────
+    🔴 ERROR: 1 accepted artifact(s) have no sidecar
+           docs/guidelines/GUIDE-style.md
+           → an artifact with no sidecar contributes NO directives to any surface — it is accepted and governs nothing
+           run: /edikt:guideline:compile — one per artifact listed above
+=== one-guideline | rejected-options
+=== mix | sidecar
+  ── Sidecar Health ─────────────────────────────
+  ERROR: MISSING: docs/architecture/decisions/ADR-alpha.md has no sidecar — run /edikt:adr:compile
+  ERROR: MISSING: docs/architecture/decisions/ADR-beta.md has no sidecar — run /edikt:adr:compile
+  ERROR: MISSING: docs/architecture/invariants/INV-hooks.md has no sidecar — run /edikt:invariant:compile
+  ERROR: MISSING: docs/guidelines/GUIDE-style.md has no sidecar — run /edikt:guideline:compile
+=== mix | delivery-gaps
+  ── Delivery Gaps ──────────────────────────────
+    🔴 ERROR: 4 accepted artifact(s) have no sidecar
+           docs/architecture/decisions/ADR-alpha.md
+           docs/architecture/decisions/ADR-beta.md
+           docs/architecture/invariants/INV-hooks.md
+           docs/guidelines/GUIDE-style.md
+           → an artifact with no sidecar contributes NO directives to any surface — it is accepted and governs nothing
+           run: /edikt:adr:compile / /edikt:invariant:compile / /edikt:guideline:compile — one per artifact listed above
+=== mix | rejected-options
+=== proposed-with-options | sidecar
+  ── Sidecar Health ─────────────────────────────
+  skipped: docs/architecture/decisions/ADR-options.md has no sidecar and needs none (status: proposed — only accepted ADRs and active invariants compile)
+  All sidecar checks passed.
+=== proposed-with-options | delivery-gaps
+  ── Delivery Gaps ──────────────────────────────
+    ok   compiled surface delivers what it declares
+=== proposed-with-options | rejected-options
+  ── Rejected Options Coverage ───────────────────
+  INFO: docs/architecture/decisions/ADR-options.md has 2 considered options but no sidecar — skipping prohibition check (run /edikt:adr:compile first)
+  All ADRs with considered options have prohibition coverage.

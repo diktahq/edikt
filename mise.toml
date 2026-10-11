@@ -1,0 +1,13 @@
+# Development tool versions for edikt. Every version is pinned exactly; bump a
+# version here, never in a workflow or a script.
+#
+#   mise install            # install everything below
+#   lefthook install        # arm the git hooks in lefthook.yml
+
+[tools]
+go = "1.26.3"
+bun = "1.3.11"                                       # website build
+lefthook = "2.2.1"
+shellcheck = "0.11.0"
+"go:github.com/securego/gosec/v2/cmd/gosec" = "2.26.1"
+"go:honnef.co/go/tools/cmd/staticcheck" = "2026.1"

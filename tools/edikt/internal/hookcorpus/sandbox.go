@@ -260,7 +260,7 @@ func copyTree(src, dst string, tr Trace) error {
 				return fmt.Errorf("base tree symlink %s -> %s escapes %s — refusing",
 					p, link, realSrc)
 			}
-			return os.Symlink(link, target)
+			return os.Symlink(link, target) // #nosec G122 -- the link target was checked to stay within the base tree just above; the sandbox is a test-harness temp dir
 		default:
 			tr.emit("copy-file", p)
 			return copyFile(p, target)
@@ -363,7 +363,7 @@ func SnapshotTree(root string, tr Trace) (*Snapshot, error) {
 			snap.Files[rel] = hashBytes(body)
 			return nil
 		}
-		body, rerr := os.ReadFile(p) //nolint:gosec // inside the sandbox
+		body, rerr := os.ReadFile(p) // #nosec G122 -- reads inside the test-harness sandbox it created
 		if rerr != nil {
 			if os.IsNotExist(rerr) {
 				return nil

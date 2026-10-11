@@ -22,6 +22,12 @@ No edikt config found. Run /edikt:init to set up this project.
 ```
 And stop.
 
+### 0b. Load the gates, and find what was asked
+
+Read `.claude/skills/edikt-governance-authoring/SKILL.md`. It holds the gates that decide whether something is an invariant, an ADR, a guideline or nothing. This command does not restate them; every judgement below is made by reading that file. If it is not installed, say `governance-authoring skill not installed — run /edikt:upgrade` and give no verdict, because a verdict without the gates is the model's own judgement.
+
+If the user asked about one specific thing ("record this", "should this be an ADR", "capture that"), that thing is the first candidate and is answered first, under its own heading in step 4, before anything else in the session is swept. Say so in the report; never fold it silently into the sweep. `$ARGUMENTS` may name it.
+
 ### 1. Scan for ADR Candidates
 
 Review the conversation history for architectural decisions that were made but not captured. Look for signals:
@@ -45,7 +51,7 @@ Never surface any of these as an ADR candidate:
 
 When the product itself is a tool, its shipped tooling is product architecture; the exclusion covers only tooling that does not ship.
 
-**Run every candidate through the GL-001 capture gates before proposing it.** Burden of proof is on CAPTURE, not silence; the reviewer default is DEMOTE — an ADR must argue past guideline, a guideline past nothing, and a healthy session produces zero ADRs. Auto-reject candidates that restate upstream docs/defaults, are derivable from code or tests, are living state, are task-scoped, or exist to justify a change to a reviewer. G0: skip anything already captured (ADR/INV titles, sidecar signals, spec provenance). A candidate with no REAL rejected alternative is a fact, not a decision — propose nothing, or at most a commit-message note. Present each surviving candidate WITH its gate verdict (G1/G2/G3) so the user rules on classification, not just capture.
+Steps 1 to 3 only collect candidates. Judging them is step 3b, and it applies to every candidate of every kind.
 
 ### 2. Scan for Invariant Candidates
 
@@ -54,7 +60,7 @@ Look for hard constraints mentioned in the conversation. Look for signals:
 - Violation-consequence framing: "if we ever do X, Y will break"
 - Explicit exclusions: "we're never doing X", "this is off-limits"
 
-Filter out preferences and guidelines — only flag things where violation causes real harm.
+Collect these as candidates without filtering them here; step 3b decides which of them is an invariant, and a preference or a rule with a named exception is judged there, not dropped silently.
 
 ### 3. Scan for Documentation Gaps
 
@@ -65,6 +71,15 @@ Look for code-level decisions or explanations given in the conversation that sho
 - API contract decisions
 - Schema or data model decisions without a corresponding spec
 
+### 3b. Judge every candidate
+
+Every candidate from steps 1 and 2, and the thing the user asked about, goes through the gates in the `edikt-governance-authoring` skill, in the order that skill gives, starting with whether it is already captured. The burden of proof is on recording: an ADR must argue past a guideline, a guideline past nothing, and a healthy session produces zero records. Each candidate ends with exactly one verdict:
+
+- the kind it qualifies as (invariant, ADR or guideline), with the command that records it, offered as a suggestion only; or
+- nothing to record, with the gate that fails (the skill's own label: already captured, the invariant gate, the ADR gate, the guideline gate, or the auto-reject class it falls in) and the reason, in one line.
+
+A candidate with no real rejected alternative is a fact, not a decision: its verdict is nothing to record, naming the ADR gate.
+
 ### 4. Report Findings
 
 Output findings in this format:
@@ -74,21 +89,17 @@ Output findings in this format:
  CAPTURE SWEEP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-ADR Candidates ({n} found)
+You asked about: {the thing} (answered first)
+  → {one verdict line, in the form below}
 
-  1. {Decision topic}
-     Decision: {what was decided}
-     Alternatives considered: {what was rejected}
-     Rationale: {why}
-     → Suggestion only — /edikt:adr:new if you want it recorded (its intake gates may still refuse it)
+Verdicts ({n} candidates, one line each)
 
-  {repeat for each candidate}
+  1. {Decision or constraint, in a few words}
+     → {Invariant | ADR | Guideline}: /edikt:invariant:new | /edikt:adr:new | /edikt:guideline:new if you want it recorded (its intake gates may still refuse it)
+     Why: {the rejected alternative and the reversal cost for an ADR; the consequence of violation for an invariant; the named exception for a guideline}
 
-Invariant Candidates ({n} found)
-
-  1. {Constraint}
-     Consequence of violation: {what breaks}
-     → Run /edikt:invariant:new to capture this
+  2. {Decision or constraint, in a few words}
+     → Nothing to record — fails {gate}: {reason in one line}
 
   {repeat for each candidate}
 
@@ -101,9 +112,11 @@ Documentation Gaps ({n} found)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-If no candidates found in any category, output for that section:
+Omit the "You asked about" block when the user did not ask about one thing. A candidate is never dropped without a line: a rule or decision that was stated and judged not worth recording appears as a "Nothing to record" verdict naming the gate that fails.
+
+If no candidates were found at all, output for the verdicts section:
 ```
-  None found — no uncaptured decisions in this category.
+  None found — no decisions or constraints to judge in this session.
 ```
 
 ### 5. Confirm
@@ -111,7 +124,7 @@ If no candidates found in any category, output for that section:
 ```
 ✅ Capture sweep complete
 
-Next: nothing above is required — a healthy session produces zero ADRs. Use /edikt:adr:new or /edikt:invariant:new only for an item you choose to record.
+Next: nothing above is required — a healthy session produces zero ADRs. Use /edikt:adr:new, /edikt:invariant:new or /edikt:guideline:new only for an item you choose to record.
 ```
 
 ---

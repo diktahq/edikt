@@ -57,7 +57,7 @@
               "informational",
               "owner"
             ],
-            "description": "testable = every criterion carries an executable verify command; operational = observable but not machine-checkable; informational = context only; owner = completion is a human decision (a ruling, a sign-off, a go/no-go) and the criteria are never executed. owner is deliberately distinct from informational: informational means there is nothing to check, owner means a person must act and may not have, and a report scanned for outstanding human work must be able to tell them apart."
+            "description": "testable = every criterion carries a falsifier and a declared evidence kind (mechanical, observed or judged); a verify command is required only where the evidence is mechanical, and a criterion without one is reported by the runner as unmeasured, never as passed; operational = observable but not machine-checkable; informational = context only; owner = completion is a human decision (a ruling, a sign-off, a go/no-go) and the criteria are never executed. owner is deliberately distinct from informational: informational means there is nothing to check, owner means a person must act and may not have, and a report scanned for outstanding human work must be able to tell them apart."
           },
           "completion_promise": {
             "type": "string"
@@ -90,7 +90,7 @@
                 },
                 "verify": {
                   "type": "string",
-                  "description": "Shell command exiting 0 when the criterion holds. Required when the phase is testable; omit the key entirely (never verify: null) otherwise."
+                  "description": "Shell command exiting 0 when the criterion holds. Declare one only where the evidence is mechanical. Where it is observed or judged, omit the key entirely (never verify: null, never a command invented to fill the field); in a testable phase the runner then reports the criterion as unmeasured."
                 },
                 "requirements": {
                   "type": "array",
@@ -122,29 +122,6 @@
                   "minimum": 1,
                   "description": "Optional per-criterion timeout in seconds, overriding the runner's 30 s default for a criterion that legitimately runs longer (a release gate, an install-and-upgrade path). Absent means the default. Added 2026-09-02 (PLAN-v090-release Phase 0): without it the runner recorded such criteria as timeout and a release plan could never flip its own gate."
                 }
-              }
-            }
-          }
-        },
-        "if": {
-          "properties": {
-            "classification": {
-              "const": "testable"
-            }
-          },
-          "required": [
-            "classification"
-          ]
-        },
-        "then": {
-          "properties": {
-            "criteria": {
-              "items": {
-                "required": [
-                  "id",
-                  "statement",
-                  "verify"
-                ]
               }
             }
           }

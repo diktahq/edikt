@@ -242,10 +242,13 @@ func (c *CriteriaFile) Validate() error {
 			if cr.Statement == "" {
 				return fmt.Errorf("phases[%s].criteria[%s].statement: required", p.ID, cr.ID)
 			}
-			if p.Classification == ClassTestable && cr.Verify == "" {
-				return fmt.Errorf("phases[%s].criteria[%s]: testable phases require a verify command",
-					p.ID, cr.ID)
-			}
+			// A testable phase does NOT require a verify on every criterion.
+			// Testable means every criterion carries a falsifier and a declared
+			// evidence kind (mechanical, observed or judged); only mechanical
+			// evidence has a command. Requiring one here made a plan written as
+			// commands/sdlc/plan.md instructs unloadable, so authors either
+			// invented a command or relabelled the phase. RunCriterion reports
+			// a criterion with no verify as unmeasured, which gates the phase.
 		}
 	}
 	return nil

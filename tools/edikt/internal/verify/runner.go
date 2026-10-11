@@ -34,7 +34,20 @@ const (
 	// Unmeasured is NOT failed. The rule may well hold; nothing here established
 	// that it does, and INV-013's line is that a measured zero and a failed  edikt-guard:allow
 	// measurement must not look the same to a reader.
-	StatusUnmeasured           = "unmeasured: subject unreadable"
+	StatusUnmeasured = "unmeasured: subject unreadable"
+	// StatusUnmeasuredNoCommand marks a criterion of a testable phase that
+	// declares no verify command: its evidence is observed or judged, so there
+	// is nothing here for the runner to execute. It is unmeasured for the same
+	// reason as an unreadable subject (the runner established nothing about the
+	// rule) and it gates a phase the same way. It is a separate status so the
+	// report says which of the two happened: "create the subject" is the wrong
+	// advice for a criterion that is waiting on a person.
+	//
+	// It is never "skipped". Skipped belongs to operational, informational and
+	// owner phases, which the runner does not claim to complete. A testable
+	// phase is a completion claim, and a criterion in it that nobody measured
+	// leaves that claim unproven.
+	StatusUnmeasuredNoCommand  = "unmeasured: no verify command"
 	StatusSkippedOperational   = "skipped: operational"
 	StatusSkippedInformational = "skipped: informational"
 	// StatusSkippedSuppressed marks a directive listed in the sidecar's own
@@ -75,7 +88,8 @@ type RunOptions struct {
 // RunCriterion executes one criterion under bash -c, honoring the phase's
 // classification:
 //
-//	testable → must have verify; execute it
+//	testable → execute verify when one is declared; a criterion without one
+//	           (observed or judged evidence) is unmeasured, never passed
 //	operational → verify optional; if present, run; else mark skipped
 //	informational → never executed; marked skipped
 //
@@ -93,7 +107,15 @@ func RunCriterion(phase Phase, c Criterion, opts RunOptions) Result {
 			return Result{ID: c.ID, Statement: c.Statement, Status: StatusSkippedOperational}
 		}
 	case ClassTestable:
-		// verify is guaranteed by Validate(); fall through.
+		if c.Verify == "" {
+			return Result{
+				ID:            c.ID,
+				Statement:     c.Statement,
+				Status:        StatusUnmeasuredNoCommand,
+				ExitCode:      -4,
+				StderrExcerpt: noCommandDetail,
+			}
+		}
 	default:
 		// Unreachable through LoadCriteria, which rejects any classification
 		// outside the enum. Reached only by a caller constructing a Phase
@@ -112,6 +134,18 @@ func RunCriterion(phase Phase, c Criterion, opts RunOptions) Result {
 		opts.Timeout = time.Duration(c.TimeoutS) * time.Second
 	}
 	return RunOne(c.ID, c.Statement, c.Verify, opts)
+}
+
+// noCommandDetail is what the report says about a testable criterion with no
+// verify command. It names the remedy that applies, which is not the one an
+// unreadable subject gets.
+const noCommandDetail = "no verify command declared: this criterion's evidence is observed or judged, and the runner cannot measure it. A person must check it against its falsifier; the runner will not report it passed"
+
+// IsUnmeasured reports whether status is one of the unmeasured statuses. Every
+// place that counts, marks or gates on "unmeasured" asks this, so a status
+// added here cannot be counted in one place and missed in another.
+func IsUnmeasured(status string) bool {
+	return status == StatusUnmeasured || status == StatusUnmeasuredNoCommand
 }
 
 // RunOne executes a single verify command and returns the recorded Result.

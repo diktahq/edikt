@@ -60,11 +60,6 @@ func TestSchema_missingRequired(t *testing.T) {
 			"classification",
 		},
 		{
-			"testable without verify",
-			"plan: x\nschema_version: 1\nphases:\n  - id: '1'\n    name: x\n    classification: testable\n    criteria:\n      - id: 1.1\n        statement: x\n",
-			"testable phases require a verify command",
-		},
-		{
 			"duplicate criterion id",
 			"plan: x\nschema_version: 1\nphases:\n  - id: '1'\n    name: x\n    classification: testable\n    criteria:\n      - id: 1.1\n        statement: a\n        verify: 'true'\n      - id: 1.1\n        statement: b\n        verify: 'true'\n",
 			"duplicate id",

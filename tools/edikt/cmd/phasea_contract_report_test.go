@@ -19,8 +19,8 @@ func TestPhaseaPlan_ReportsRejectedContractOnStderr(t *testing.T) {
 		version int
 		want    []string // substrings of the stderr report; nil means no report
 	}{
-		{"rejected", 11, []string{"extraction contract v11", "REJECTED", "reported, not refused"}},
-		{"unrecorded", 99, []string{"extraction contract v99", "no validation record", "reported, not refused"}},
+		{"rejected", 11, []string{"extraction contract v11 is REJECTED in this build's validation record", "reported, not refused"}},
+		{"unrecorded", 99, []string{"extraction contract v99 has no entry in this build's validation record", "reported, not refused"}},
 		{"validated", 4, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

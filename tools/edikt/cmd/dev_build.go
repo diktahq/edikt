@@ -21,10 +21,12 @@ func goTool() (string, error) {
 	if p, err := exec.LookPath("go"); err == nil {
 		return p, nil
 	}
+	//lint:ignore SA1019 fallback for a test process without go on PATH; the toolchain that built this binary is the right one there
 	cand := filepath.Join(runtime.GOROOT(), "bin", "go")
 	if _, err := os.Stat(cand); err == nil {
 		return cand, nil
 	}
+	//lint:ignore SA1019 see above
 	return "", fmt.Errorf("go toolchain not found on PATH or under GOROOT (%s)", runtime.GOROOT())
 }
 

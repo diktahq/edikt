@@ -1100,6 +1100,14 @@ Four cases:
 
 Never Write the whole file — use Read + Edit.
 
+**Provenance record.** After the block is written (the first three cases; the fourth stops and writes nothing), record where it came from, so `/edikt:upgrade` can tell an unedited block from an edited one without asking. The record lives where `/edikt:upgrade` §2b reads it: `~/.edikt/state/claude-md-managed.json`, a JSON object keyed by the absolute project root. Read the file (treat a missing file as `{}`; if it exists and does not parse, leave it alone and say `provenance record not written: ~/.edikt/state/claude-md-managed.json is unreadable`), set this project's entry, and write the file back, keeping every other project's entry as it was. The entry has exactly these fields:
+
+- `claude_md_path` — the file the block was written to, relative to the project root (`CLAUDE.md`).
+- `template_hash` — the `md5` of the raw bytes of `$EDIKT_TEMPLATES/CLAUDE.md.tmpl`, before any substitution.
+- `template_version` — the installed edikt version.
+- `managed_hash` — the `sha256` of the managed block's bytes: the bytes from the `[edikt:start]` line through the `[edikt:end]: #` line inclusive, with no trailing newline, exactly as defined in `/edikt:upgrade` §2b ("The managed block's bytes"). Hash what is now in the file, not what you meant to write.
+- `installed_at` — the time of the write, UTC, ISO 8601.
+
 **`.claude/settings.json`** — Read the template from `$EDIKT_TEMPLATES/settings.json.tmpl`. The template contains the placeholder `${EDIKT_HOOK_DIR}` which MUST be substituted before writing. Claude Code runs each hook `command:` through a shell, so variables in it ARE expanded — but nothing sets `EDIKT_HOOK_DIR` in a hook's environment, so a left-over placeholder expands to the empty string and every hook fails with `/bin/sh: /<hook>.sh: No such file or directory`.
 
 **Substitution rule — the portable form.** This file is committed with the project, so it MUST NOT carry one machine's home or checkout path. Replace `${EDIKT_HOOK_DIR}` with one of the anchored tokens the host's shell expands at hook-fire time:
@@ -1209,10 +1217,25 @@ The version field records when the agent was installed, not when it was last tou
 
 **Skills** — For every directory under `$EDIKT_TEMPLATES/skills/`, read its `SKILL.md` and write it, byte-identical (no substitutions, no stack filtering — these are edikt's own on-demand methodology packages, not project-specific rule packs), to `.claude/skills/{name}/SKILL.md`:
 
+The write guard treats `.claude/skills/edikt-*/SKILL.md` as generated output and refuses a tool write to it; the in-progress marker is the signal init and upgrade already use for their own writes, so install each skill in this order, one tool call per step:
+
+1. Create the marker, in one Bash call:
+
 ```bash
-# Skill template path: $EDIKT_TEMPLATES/skills/{name}/SKILL.md
-# Write to:            .claude/skills/{name}/SKILL.md
+# edikt-test-block: skill-install-open
+mkdir -p .edikt/state && touch .edikt/state/.migration-in-progress
 ```
+
+2. Write `.claude/skills/{name}/SKILL.md` with the Write tool, content byte-identical to `$EDIKT_TEMPLATES/skills/{name}/SKILL.md`.
+
+3. Verify and remove the marker, in one Bash call that removes it whether or not the comparison passes:
+
+```bash
+# edikt-test-block: skill-install-close
+cmp -s "$EDIKT_TEMPLATES/skills/{name}/SKILL.md" ".claude/skills/{name}/SKILL.md"; rc=$?; rm -f .edikt/state/.migration-in-progress; exit $rc
+```
+
+4. Report the skill installed only when that comparison passed; otherwise report it NOT installed and say why. Never leave the marker behind, including when step 2 is refused or interrupted: if the Write fails, still run step 3 before anything else. A marker left on disk switches the write guard off for the whole project.
 
 These always install — they carry edikt's governance methodology (deciding what qualifies as an ADR vs. invariant vs. guideline, and when to record nothing), not stack-dependent content, so there is no enable/disable step to run first.
 

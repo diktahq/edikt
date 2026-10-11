@@ -119,6 +119,13 @@ type TwoPhaseOptions struct {
 	// non-zero), "accept" (warn + continue), "auto" (abort in non-TTY,
 	// accept otherwise; the default). Empty string is treated as "auto".
 	OnLoss string
+
+	// ContractLead, when set, returns the one-line contract report for a project
+	// root (the line `edikt doctor --contract-state` prints). The plan step's
+	// refusal leads with it, so a compile that cannot plan names the extractor's
+	// state first. It is supplied by the caller because the report lives in a
+	// package that imports this one.
+	ContractLead func(root string) string
 }
 
 // TwoPhaseResult summarizes the run for both prose UI and --json output.
@@ -597,16 +604,33 @@ func RunTwoPhase(opts TwoPhaseOptions, clk model.Clock) (*TwoPhaseResult, error)
 			fmt.Fprintf(opts.Stderr, "Phase A — extractor model: %s\n", m)
 		}
 
-		planOut, planErr := phasea.Plan(phasea.PlanOptions{ProjectRoot: opts.ProjectRoot})
+		planOut, planErr := phasea.Plan(phasea.PlanOptions{ProjectRoot: opts.ProjectRoot, ContractLead: opts.ContractLead})
 		if planErr != nil || planOut == nil || planOut.ExitCode != phasea.ExitPlanEmitted {
 			msg := "phase A: could not emit a dispatch plan"
+			detail := ""
 			if planOut != nil && planOut.Message != "" {
-				msg = msg + ": " + planOut.Message
+				detail = planOut.Message
 			} else if planErr != nil {
-				msg = msg + ": " + planErr.Error()
+				detail = planErr.Error()
+			}
+			lead := ""
+			if opts.ContractLead != nil {
+				// The plan step already led its message with the report line on
+				// a line of its own; lift it to the front of this one so the
+				// summary is line 1 and the phase text is line 2.
+				if l := opts.ContractLead(opts.ProjectRoot); l != "" && strings.HasPrefix(detail, l+"\n") {
+					lead = l
+					detail = strings.TrimPrefix(detail, l+"\n")
+				}
+			}
+			if detail != "" {
+				msg = msg + ": " + detail
+			}
+			if lead != "" {
+				msg = lead + "\n" + msg
 			}
 			fmt.Fprintln(opts.Stderr, "error: "+msg)
-			return res, errors.New(msg)
+			return res, &ReportedError{Err: errors.New(msg)}
 		}
 
 		res.PhaseAPlanID = planOut.Plan.PlanID
@@ -1183,4 +1207,17 @@ func flockRelease(f *os.File) func() {
 		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 		_ = f.Close()
 	}
+}
+
+// ReportedError marks an error whose message RunTwoPhase has already printed
+// to its Stderr. A caller that prints the returned error as well says it twice.
+type ReportedError struct{ Err error }
+
+func (e *ReportedError) Error() string { return e.Err.Error() }
+func (e *ReportedError) Unwrap() error { return e.Err }
+
+// IsReported reports whether err (or anything it wraps) was already printed.
+func IsReported(err error) bool {
+	var r *ReportedError
+	return errors.As(err, &r)
 }

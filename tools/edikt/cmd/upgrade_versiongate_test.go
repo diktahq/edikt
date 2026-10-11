@@ -126,6 +126,7 @@ func TestUpgradeGate_AllConsumersUseHelper(t *testing.T) {
 		}
 
 		fset := token.NewFileSet()
+		//lint:ignore SA1019 the test only reads file ASTs in one directory; build tags are irrelevant here
 		pkgs, err := parser.ParseDir(fset, ".", func(fi os.FileInfo) bool {
 			return strings.HasSuffix(fi.Name(), ".go")
 		}, parser.SkipObjectResolution)

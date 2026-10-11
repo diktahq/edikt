@@ -220,9 +220,11 @@ func emitUnmeasured(w io.Writer, r *verify.Report) {
 		// reader reading the summary are looking at one symbol, not two.
 		fmt.Fprintf(w, "  U %s — %s\n      %s\n", c.ID, c.Statement, detail)
 	}
-	fmt.Fprint(w, "An unmeasured criterion is NOT a pass and NOT a failure: its verify never\n"+
-		"reached the thing it names, so it says nothing about the rule. The phase is\n"+
-		"not done. Create the subject, or fix the verify to name one that exists.\n")
+	fmt.Fprint(w, "An unmeasured criterion is NOT a pass and NOT a failure: nothing here\n"+
+		"established whether its rule holds. The phase is not done. Where a verify\n"+
+		"names a subject that is missing, create the subject or fix the verify.\n"+
+		"Where a criterion declares no verify, a person checks it; this runner\n"+
+		"cannot, and does not report it passed.\n")
 }
 
 // emitProgress writes a single status line per criterion to w.
@@ -235,7 +237,7 @@ func emitProgress(w io.Writer, p verify.Phase, r verify.Result) {
 		mark = "x"
 	case verify.StatusTimeout:
 		mark = "T"
-	case verify.StatusUnmeasured:
+	case verify.StatusUnmeasured, verify.StatusUnmeasuredNoCommand:
 		// Its own mark. Under "?" it was indistinguishable from a status this
 		// switch had never heard of, which is how a class that gates the phase
 		// read as a class nobody had classified.

@@ -65,25 +65,30 @@ func TestResolvePromptVersion_ProjectPinnedProfileUnpinnedSelectsProjectAndSaysS
 	if err != nil || got != "v4" {
 		t.Fatalf("got %q err=%v, want v4", got, err)
 	}
-	for _, want := range []string{"found 2 definitions", "selected " + filepath.Join(root, ExtractorAgentRelPath) + " (project overrides profile)", profile + " carries no prompt_version"} {
+	for _, want := range []string{"found 2 definitions", "selected " + filepath.Join(root, ExtractorAgentRelPath) + " (project)", "ignored because the project has its own", profile, "carries no prompt_version"} {
 		if !strings.Contains(note, want) {
 			t.Fatalf("note %q lacks %q", note, want)
 		}
 	}
 }
 
-func TestResolvePromptVersion_TwoPinnedCopiesDisagreeRefuses(t *testing.T) {
+// Two usable copies that pin different versions no longer refuse: the project's
+// is the answer, and the note says the profile's differs as information.
+func TestResolvePromptVersion_TwoPinnedCopiesDisagreeSelectsProjectAndSaysSo(t *testing.T) {
 	root := t.TempDir()
 	writeAgent(t, root, "---\nname: sidecar-extractor\nprompt_version: 4\n---\n")
 	profile := writeProfileAgent(t, "---\nname: sidecar-extractor\nprompt_version: 3\n---\n")
-	got, _, err := ResolveExtractorPromptVersionDetail(root)
-	if err == nil || got != ExtractorPromptVersionUnknown {
-		t.Fatalf("two pinned copies at different versions must refuse; got %q err=%v", got, err)
+	got, note, err := ResolveExtractorPromptVersionDetail(root)
+	if err != nil || got != "v4" {
+		t.Fatalf("two usable copies at different versions: got %q err=%v, want v4 from the project", got, err)
 	}
-	for _, want := range []string{"conflict", "v4", "v3", profile} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("refusal %q lacks %q", err.Error(), want)
+	for _, want := range []string{"selected " + filepath.Join(root, ExtractorAgentRelPath) + " (project)", profile, "ignored because the project has its own", "pins v3", "differs from the project's v4", "information only"} {
+		if !strings.Contains(note, want) {
+			t.Fatalf("note %q lacks %q", note, want)
 		}
+	}
+	if strings.Contains(strings.ToLower(note), "conflict") || strings.Contains(strings.ToLower(note), "overrides profile") {
+		t.Fatalf("note must not call a differing profile copy a conflict: %q", note)
 	}
 }
 
@@ -92,7 +97,7 @@ func TestResolvePromptVersion_TwoPinnedCopiesAgreeSelectsProject(t *testing.T) {
 	writeAgent(t, root, "---\nname: sidecar-extractor\nprompt_version: 4\n---\n")
 	writeProfileAgent(t, "---\nname: sidecar-extractor\nprompt_version: 4\n---\n")
 	got, note, err := ResolveExtractorPromptVersionDetail(root)
-	if err != nil || got != "v4" || !strings.Contains(note, "project overrides profile") {
+	if err != nil || got != "v4" || !strings.Contains(note, "ignored because the project has its own") || !strings.Contains(note, "pins v4 as well") {
 		t.Fatalf("got %q note=%q err=%v", got, note, err)
 	}
 }

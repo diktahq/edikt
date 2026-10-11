@@ -117,6 +117,9 @@ func runSidecarChecks(projectRoot string, w io.Writer) (errs int, warns int, ran
 			}
 			fmt.Fprintf(w, "  ERROR: MISSING: %s has no sidecar — run /edikt:%s:compile\n",
 				rel(projectRoot, md), kind)
+			if line := missingSidecarContractLine(projectRoot); line != "" {
+				fmt.Fprintln(w, line)
+			}
 			errs++
 		}
 	}

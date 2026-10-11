@@ -57,7 +57,9 @@ func sidecarWithCoverage(relMdPath string, prohibCount, manualMustNot, manualOth
 // scaffoldRejectedOptionsProject creates a temp project with the decisions dir.
 func scaffoldRejectedOptionsProject(t *testing.T) string {
 	t.Helper()
+	isolateDoctorEnv(t, true)
 	root := t.TempDir()
+	installValidatedExtractor(t, root)
 	dir := filepath.Join(root, "docs/architecture/decisions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)

@@ -33,6 +33,7 @@ import (
 	_ "embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -40,7 +41,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"errors"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -210,7 +210,8 @@ func Run(opts Options) (*Result, error) {
 			// A batch whose contract cannot be named cannot be resumed,
 			// compared, or attributed. UNKNOWN is reported, never
 			// substituted with a plausible version.
-			return nil, fmt.Errorf("cannot determine the extraction contract version (%s): %w", v, err)
+			return nil, fmt.Errorf("%s\ncannot determine the extraction contract version (%s): %w",
+				ReportInstalledContract(opts.ProjectRoot).Summary, v, err)
 		}
 		promptVersion = v
 	}
@@ -233,8 +234,8 @@ func Run(opts Options) (*Result, error) {
 	// escape hatch (see --skip-fixture-proof) for the rare case a maintainer
 	// is certain a contract is fine despite the shipped record.
 	if !opts.SkipFixtureProof {
-		if _, why := ContractValidated(promptVersion); why != "" {
-			return nil, fmt.Errorf("refusing to dispatch: %s", why)
+		if _, why := contractValidated(promptVersion); why != "" {
+			return nil, fmt.Errorf("%s\nrefusing to dispatch: %s", ReportContract(promptVersion).Summary, why)
 		}
 	}
 
@@ -401,9 +402,10 @@ func Run(opts Options) (*Result, error) {
 		parents = append(parents, t.ParentPath)
 	}
 	planOut, planErr := phasea.Plan(phasea.PlanOptions{
-		ProjectRoot: opts.ProjectRoot,
-		Force:       opts.Force,
-		Artifacts:   parents,
+		ProjectRoot:  opts.ProjectRoot,
+		Force:        opts.Force,
+		Artifacts:    parents,
+		ContractLead: func(r string) string { return ReportInstalledContract(r).Summary },
 	})
 
 	// Nothing to plan is a SUCCESS, not a failure. It is the ordinary result
@@ -430,10 +432,24 @@ func Run(opts Options) (*Result, error) {
 
 	if planErr != nil || planOut == nil || planOut.ExitCode != phasea.ExitPlanEmitted {
 		msg := "re-extraction could not emit a dispatch plan"
+		detail := ""
 		if planOut != nil && planOut.Message != "" {
-			msg = msg + ": " + planOut.Message
+			detail = planOut.Message
 		} else if planErr != nil {
-			msg = msg + ": " + planErr.Error()
+			detail = planErr.Error()
+		}
+		// The plan step's refusal is "<summary>\n<detail>": keep the summary
+		// alone on line 1 and put this verb's own text on line 2.
+		lead := ""
+		if l := ReportInstalledContract(opts.ProjectRoot).Summary; l != "" && strings.HasPrefix(detail, l+"\n") {
+			lead = l
+			detail = strings.TrimPrefix(detail, l+"\n")
+		}
+		if detail != "" {
+			msg = msg + ": " + detail
+		}
+		if lead != "" {
+			msg = lead + "\n" + msg
 		}
 		return res, errors.New(msg)
 	}
@@ -533,9 +549,14 @@ type StatusReport struct {
 	// first, or it offers work that cannot run.
 	ContractValidated     bool   `json:"contract_validated"`
 	DispatchBlockedReason string `json:"dispatch_blocked_reason,omitempty"`
+
+	// ContractState names the state ContractValidated folds into a boolean:
+	// validated | rejected | unrecorded | unmeasured. contract_validated is
+	// true exactly when this is "validated".
+	ContractState string `json:"contract_state"`
 }
 
-// ContractValidated answers whether an extraction contract has been proven on
+// contractValidated answers whether an extraction contract has been proven on
 // the frozen fixture set, from THIS BUILD's embedded record.
 //
 // ONE implementation, two callers, deliberately. The dispatcher refuses on it
@@ -552,26 +573,33 @@ type StatusReport struct {
 // PARSE THE FIELD, do not grep the file. A substring match found "v4" inside
 // the PROSE of the rejected-v5 entry and let an unrecorded contract through — a
 // check matching the shape of the answer rather than the answer.
-func ContractValidated(promptVersion string) (bool, string) {
-	state, why := ContractValidationState(promptVersion)
+func contractValidated(promptVersion string) (bool, string) {
+	state, why := contractValidationState(promptVersion)
 	return state == ContractStateValidated, why
 }
 
-// The states ContractValidationState distinguishes. Rejected and unrecorded
+// The states contractValidationState distinguishes. Rejected and unrecorded
 // are different facts and a reader needs to know which: one was judged and
 // refused, the other was never put to the question.
 const (
 	ContractStateValidated  = "validated"
 	ContractStateRejected   = "rejected"
 	ContractStateUnrecorded = "unrecorded"
-	ContractStateUnreadable = "unreadable"
+	contractStateUnreadable = "unreadable"
 )
 
-// ContractValidationState is ContractValidated's single implementation, with
-// the state named rather than folded into a boolean, for a caller that REPORTS
-// the state instead of refusing on it (`phasea plan`). `why` is empty exactly
-// when the state is validated.
-func ContractValidationState(promptVersion string) (state, why string) {
+// contractValidationState is ContractValidated's single implementation, with
+// the state named rather than folded into a boolean. It is UNEXPORTED on
+// purpose: a caller that reports the state goes through ReportContract (and
+// its installed / agent-file variants), so no command can compute a state of
+// its own and disagree with the others. `why` is empty exactly when validated.
+func contractValidationState(promptVersion string) (state, why string) {
+	return contractStateFrom(fixtureProofYAML, promptVersion)
+}
+
+// contractStateFrom is contractValidationState with the record bytes as a
+// parameter, so a test can force the unreadable state the embed cannot reach.
+func contractStateFrom(record []byte, promptVersion string) (state, why string) {
 	var proof struct {
 		Validated []struct {
 			PromptVersion string `yaml:"prompt_version"`
@@ -581,9 +609,16 @@ func ContractValidationState(promptVersion string) (state, why string) {
 			Reason        string `yaml:"reason"`
 		} `yaml:"rejected"`
 	}
-	if yerr := yaml.Unmarshal(fixtureProofYAML, &proof); yerr != nil {
-		return ContractStateUnreadable, fmt.Sprintf("the embedded fixture-validation record could not be parsed (%v) — "+
+	if yerr := yaml.Unmarshal(record, &proof); yerr != nil {
+		return contractStateUnreadable, fmt.Sprintf("the embedded fixture-validation record could not be parsed (%v) — "+
 			"an unreadable validation record is not a validation", yerr)
+	}
+	// A record that parses but names nothing (nil, empty, comment-only, wrong
+	// keys, a page of HTML that happens to be valid YAML) was not READ: it is
+	// not a record in which this version is merely absent.
+	if len(proof.Validated) == 0 && len(proof.Rejected) == 0 {
+		return contractStateUnreadable, "the embedded fixture-validation record holds no entries — " +
+			"an unreadable validation record is not a validation"
 	}
 	for _, v := range proof.Validated {
 		if v.PromptVersion == promptVersion {
@@ -626,13 +661,21 @@ func Status(root string) (*StatusReport, error) {
 		return nil, err
 	}
 	ledger := loadLedger(filepath.Join(root, LedgerRelPath))
-	validated, why := ContractValidated(promptVersion)
+	report := ReportInstalledContract(root)
+	validated, why := contractValidated(promptVersion)
+	if report.State == ContractStateUnmeasured {
+		// One computation: the state and the reason must tell one story. An
+		// unmeasured contract is not "unrecorded", and --skip-fixture-proof
+		// cannot be offered for a contract nobody measured.
+		why = report.Summary
+	}
 	st := &StatusReport{
 		PromptVersion:         promptVersion,
 		LedgerPrompt:          ledger.PromptVersion,
 		Eligible:              len(pairs),
 		ContractValidated:     validated,
 		DispatchBlockedReason: why,
+		ContractState:         report.State,
 	}
 	// A ledger written under a different contract carries no completions for
 	// this one. Reporting its counts here would be the unmeasured-as-measured
@@ -655,7 +698,6 @@ func Status(root string) (*StatusReport, error) {
 	sort.Strings(st.FailedIDs)
 	return st, nil
 }
-
 
 // discoverEligible returns the live artifact pairs a batch covers: every
 // non-skipped artifact in the configured governance directories.

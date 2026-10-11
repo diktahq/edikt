@@ -35,6 +35,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -103,11 +104,18 @@ type Normalizer struct {
 // Ordered longest-prefix-first at build time so <sandbox>/project is masked as
 // project-root before <sandbox> is masked as tmpdir-path.
 func (c NormalizerConfig) literalPasses() []pass {
+	// A TempDir of "/tmp" is the same on every machine (Linux), so masking it
+	// buys nothing and rewrites fixture payloads' own fixed /tmp paths. Only a
+	// per-user temp dir (macOS /var/folders/…/T) varies and needs masking.
+	tempDir := c.TempDir
+	if filepath.Clean(tempDir) == "/tmp" {
+		tempDir = ""
+	}
 	out := []pass{
 		{token: PassProjectRoot, literal: c.ProjectRoot, placeholder: "<PROJECT_ROOT>"},
 		{token: PassHomePath, literal: c.HomeDir, placeholder: "<HOME>"},
 		{token: PassTmpdir, literal: c.SandboxRoot, placeholder: "<TMPDIR>"},
-		{token: PassTmpdir, literal: c.TempDir, placeholder: "<TMPDIR>"},
+		{token: PassTmpdir, literal: tempDir, placeholder: "<TMPDIR>"},
 	}
 	for _, sid := range c.SessionIDs {
 		out = append(out, pass{token: PassSessionID, literal: sid, placeholder: "<SESSION_ID>"})

@@ -88,7 +88,7 @@ func (r *Report) AnyUnmeasured() bool {
 func (r *Report) UnmeasuredCriteria() []Result {
 	var out []Result
 	for _, c := range r.Criteria {
-		if c.Status == StatusUnmeasured {
+		if IsUnmeasured(c.Status) {
 			out = append(out, c)
 		}
 	}
@@ -106,7 +106,7 @@ func (r *Report) BuildSummary() {
 			r.Summary.Failed++
 		case StatusTimeout:
 			r.Summary.Timeout++
-		case StatusUnmeasured:
+		case StatusUnmeasured, StatusUnmeasuredNoCommand:
 			// NOT folded into Skipped, and the distinction is the point of
 			// SR-004: skipped means no verify was declared, unmeasured means one
 			// exists and its subject could not be read. Collapsing them would

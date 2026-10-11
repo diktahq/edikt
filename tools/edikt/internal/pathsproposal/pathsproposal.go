@@ -190,7 +190,7 @@ func EnumerateFiles(root string) ([]string, error) {
 	// WalkDir lstats its root: a symlinked root is visited as one
 	// non-directory entry and the walk returns no files and no error, so every
 	// proposal would be validated against an empty universe. Refuse it by name
-	// rather than report "matches none of the 0 files" (SPEC-024 SR-011).
+	// rather than report "matches none of the 0 files".
 	if fi, lerr := os.Lstat(root); lerr == nil && fi.Mode()&fs.ModeSymlink != 0 {
 		if resolved, rerr := filepath.EvalSymlinks(root); rerr == nil {
 			return nil, fmt.Errorf("enumerate files under %s: the root is a symbolic link and is not followed; use the resolved path %s", root, resolved)

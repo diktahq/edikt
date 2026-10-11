@@ -129,7 +129,8 @@ against a higher budget.`,
 			if err != nil {
 				return &exitCodeError{code: phasea.ExitRefused, msg: err.Error()}
 			}
-			out, err := phasea.Plan(phasea.PlanOptions{ProjectRoot: root, Force: force, Artifact: artifact, Bootstrap: bootstrap})
+			out, err := phasea.Plan(phasea.PlanOptions{ProjectRoot: root, Force: force, Artifact: artifact, Bootstrap: bootstrap,
+				ContractLead: func(r string) string { return reextract.ReportInstalledContract(r).Summary }})
 			if err == nil && out != nil && out.ExitCode == phasea.ExitPlanEmitted && out.Plan != nil && len(out.Plan.Items) > 0 {
 				if line := contractStateReport(out.Plan.Items[0].PromptVersion); line != "" {
 					fmt.Fprintln(cmd.ErrOrStderr(), line)
@@ -157,21 +158,11 @@ against a higher budget.`,
 // could clear the record, so the plan is written, exit 0, and the state is
 // named. The full reasoning lives in the record; this line points at it.
 func contractStateReport(promptVersion string) string {
-	state, _ := reextract.ContractValidationState(promptVersion)
-	switch state {
-	case reextract.ContractStateRejected:
-		return fmt.Sprintf("phasea plan: extraction contract %s is RECORDED AS REJECTED on the frozen fixture set in "+
-			"this build's validation record (%s) — its extractions have dropped bodies; the plan was written "+
-			"anyway (reported, not refused)", promptVersion, reextract.FixtureProofRelPath)
-	case reextract.ContractStateUnrecorded:
-		return fmt.Sprintf("phasea plan: extraction contract %s has no validation record in this build — neither "+
-			"validated nor rejected on the frozen fixture set (%s); the plan was written anyway (reported, not "+
-			"refused)", promptVersion, reextract.FixtureProofRelPath)
-	case reextract.ContractStateUnreadable:
-		return fmt.Sprintf("phasea plan: this build's extraction-contract validation record could not be read, so "+
-			"contract %s is unmeasured; the plan was written anyway (reported, not refused)", promptVersion)
+	r := reextract.ReportContract(promptVersion)
+	if r.State == reextract.ContractStateValidated {
+		return ""
 	}
-	return ""
+	return "phasea plan: " + r.Summary + "; the plan was written anyway (reported, not refused)"
 }
 
 func newPhaseARestoreCmd() *cobra.Command {

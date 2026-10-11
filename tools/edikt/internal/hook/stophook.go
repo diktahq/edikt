@@ -1293,7 +1293,7 @@ func grepRecursiveList(dirs []string, needle, includeGlob string) []string {
 					return nil
 				}
 			}
-			body, rerr := os.ReadFile(p) //nolint:gosec // inside a project-declared governance dir
+			body, rerr := os.ReadFile(p) // #nosec G122 -- reads inside a project-declared governance dir; a local race on the user's own tree is not in the threat model
 			if rerr != nil {
 				return nil
 			}

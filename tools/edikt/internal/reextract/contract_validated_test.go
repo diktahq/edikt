@@ -20,8 +20,8 @@ func TestContractValidated_RejectedIsNotTheSameFactAsUnrecorded(t *testing.T) {
 	// v5 is in the shipped record's `rejected:` list; v999 is in neither list.
 	// A reader needs to know which — one was judged and refused, the other was
 	// never put to the question — so the two must not produce the same message.
-	okRejected, whyRejected := ContractValidated("v5")
-	okUnknown, whyUnknown := ContractValidated("v999")
+	okRejected, whyRejected := contractValidated("v5")
+	okUnknown, whyUnknown := contractValidated("v999")
 
 	if okRejected || okUnknown {
 		t.Fatalf("neither v5 (rejected) nor v999 (unrecorded) may validate: got %v / %v", okRejected, okUnknown)
@@ -40,13 +40,13 @@ func TestContractValidated_RejectedIsNotTheSameFactAsUnrecorded(t *testing.T) {
 func TestContractValidated_AcceptsOnlyWhatTheRecordValidates(t *testing.T) {
 	// v4 is the one validated entry in the shipped record. If this ever fails,
 	// the record changed and every other assertion here needs re-reading.
-	if ok, why := ContractValidated("v4"); !ok {
+	if ok, why := contractValidated("v4"); !ok {
 		t.Fatalf("v4 is recorded as validated and must pass: %s", why)
 	}
-	if ok, _ := ContractValidated(""); ok {
+	if ok, _ := contractValidated(""); ok {
 		t.Error("an empty contract version must never validate")
 	}
-	if ok, _ := ContractValidated(phasea.ExtractorPromptVersionUnknown); ok {
+	if ok, _ := contractValidated(phasea.ExtractorPromptVersionUnknown); ok {
 		t.Error("an UNRESOLVABLE contract version must never validate — not knowing is not proof")
 	}
 }
@@ -58,7 +58,7 @@ func TestContractValidated_DoesNotSubstringMatchTheRejectedProse(t *testing.T) {
 	// hypothetical: a substring implementation passes v4 for the wrong reason
 	// and would also pass any version whose string appears anywhere in it.
 	for _, v := range []string{"v3", "v5", "v40", "v04"} {
-		if ok, _ := ContractValidated(v); ok {
+		if ok, _ := contractValidated(v); ok {
 			t.Errorf("%s is not under `validated:` and must not pass — a substring match on the "+
 				"record's prose is how this broke before", v)
 		}

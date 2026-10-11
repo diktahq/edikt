@@ -34,12 +34,6 @@ import (
 	"github.com/diktahq/edikt/tools/edikt/internal/govrun"
 )
 
-// dupHolder is one artifact claiming an id.
-type dupHolder struct {
-	ID   string
-	Path string
-}
-
 // collectArtifactIDs walks the configured artifact directories of one project
 // root and returns id -> paths. Directories that do not exist are skipped;
 // directories that cannot be read set readFailed, because an unreadable
