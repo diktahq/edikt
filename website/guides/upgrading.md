@@ -223,7 +223,7 @@ through:
 direct upgrade from v0.7.x to v0.9.0 skips a minor line — edikt only supports direct upgrade
 from the immediately prior line.
 Step through the intermediate release first, or run:
-  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
 ```
 
 You have two options when this fires:
@@ -273,7 +273,7 @@ edikt rollback
 Stay on a specific version:
 
 ```bash
-edikt use v0.9.0        # activate v0.9.0 immediately
+edikt use v0.9.1        # activate v0.9.1 immediately
 edikt upgrade --pin v0.9.0  # fetch v0.9.0 and pin it
 ```
 

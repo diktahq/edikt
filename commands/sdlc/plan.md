@@ -457,7 +457,7 @@ When a phase completes (generator outputs the completion promise):
      ```
      ❌ Evaluator template missing — cannot run evaluation.
         Expected: {path}
-        Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+        Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
         Or disable evaluation: /edikt:config set evaluator.phase-end false
      ```
      Do NOT silently skip evaluation. This is a hard failure.

@@ -19,7 +19,7 @@ All committed to your repo. Your whole team gets identical governance. New to ed
 ## 1. Install
 
 ```bash
-curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
 ```
 
 Installs the v0.9.0 Go launcher (`bin/edikt`) and the versioned payload under `~/.edikt/`. Cosign-verified release assets, pinned to a specific release tag.
@@ -30,8 +30,8 @@ The installer asks whether to install globally or into the current project only.
 
 ```bash
 brew install diktahq/tap/edikt
-edikt install v0.9.0
-edikt use v0.9.0
+edikt install v0.9.1
+edikt use v0.9.1
 ```
 
 Three commands rather than one, because a Homebrew formula installs a **binary** — the launcher — and nothing else. The payload it runs (commands, agents, hooks, rule packs) is a separate download, so `brew install` on its own leaves you with a working `edikt` binary and no `/edikt:*` commands in Claude Code.

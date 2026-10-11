@@ -118,7 +118,7 @@ ls -la .edikt/ 2>/dev/null || echo "No .edikt/ directory"
        Installed: {INSTALLED}
        Required:  {PROJECT}
 
-    Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+    Run: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
     Then re-run /edikt:init.
     ```
     Stop here.
@@ -1076,7 +1076,7 @@ Tier mapping:
 If the template file doesn't exist at the expected path:
 ```
 Rule template not found: $EDIKT_TEMPLATES/rules/{tier}/{name}.md
-Install edikt globally: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+Install edikt globally: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
 ```
 
 **`CLAUDE.md`** — Read the template from `$EDIKT_TEMPLATES/CLAUDE.md.tmpl`. Sentinel merge using `[edikt:start]` / `[edikt:end]` markers. Fill template variables from config.

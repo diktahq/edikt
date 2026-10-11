@@ -245,7 +245,7 @@ This is a major upgrade. The launcher cannot self-upgrade across major versions 
 This is a major upgrade (v{INSTALLED_VERSION} → v{LATEST_VERSION}).
 Run the installer to complete the upgrade:
 
-  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
 
 Then re-run /edikt:upgrade to apply project changes.
 ```
@@ -288,7 +288,7 @@ No edikt config found. Run /edikt:init to set up this project.
 Check that `$EDIKT_TEMPLATES` (resolved in §0y-bis) is non-empty and the directory it points to exists. If not:
 ```
 edikt templates not found. Re-install edikt:
-  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash
+  curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash
 ```
 
 Use the Bash tool to read both versions — do NOT infer or guess them:

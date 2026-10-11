@@ -261,7 +261,7 @@ done
 ```
 
 - `[ok] Reference templates installed ({n}/6)` if all six are present.
-- `[!!] Reference templates incomplete ({n}/6 found) — run curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash to reinstall` if any are missing.
+- `[!!] Reference templates incomplete ({n}/6 found) — run curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash to reinstall` if any are missing.
 
 **Compiled governance:**
 - Read the render manifest at `.claude/rules/governance/manifest.yaml`. It is the enumeration of what compile produced; the four checks below are asked of THAT set, not of a directory listing.
@@ -274,7 +274,7 @@ done
 - **Compile schema version check.** The current schema is `COMPILE_SCHEMA_VERSION = 3`, declared at the top of `commands/gov/compile.md`. For generated `governance.md`:
   - Read `compile_schema_version` from YAML frontmatter.
   - If `< 3`: `[!!] Governance compiled with schema v{n} (current: v3) — run /edikt:gov:compile to regenerate`
-  - If `> 2`: `[!!] Governance compiled with schema v{n} — installed edikt only supports v2. Upgrade edikt: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.0/install.sh | bash`
+  - If `> 2`: `[!!] Governance compiled with schema v{n} — installed edikt only supports v2. Upgrade edikt: curl -fsSL https://github.com/diktahq/edikt/releases/download/v0.9.1/install.sh | bash`
   - If equal: no output (covered by the `[ok]` line above)
   - Note: `compiled_by` and `compiled_at` HTML comments are informational only. NEVER check them programmatically or use them to determine staleness.
 - For each topic file in `governance/`, check `paths:` frontmatter exists:
